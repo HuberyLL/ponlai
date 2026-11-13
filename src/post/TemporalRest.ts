@@ -27,7 +27,7 @@
 // in flight, a sky transition still running, the haze's own rest not done: VolumetricHaze.ts).
 // Anything else that changes the image without changing
 // the key (a GUI control, a weather jump, a seek to the same time) bumps the epoch
-// (`restEpoch.bump( reason )`): the scene events (SceneEvents.ts `sceneEvent`) call it from every
+// (`restEpoch.bump( reason )`): the scene events (SceneEvents.ts `renderEvent`) call it from every
 // site that changes the scene, `__PONLAI__.taa.restart()` among them.
 //
 // The key is built by `restKey`, which the page's settled signal (Settled.ts) shares under every

@@ -5,9 +5,8 @@
 // before it, or in which box. A box keeps the anchors whose jittered point lies in it, so boxes
 // that tile the plane build every anchor once, and a box plants exactly what the whole island
 // plants there (tools/verify-world-chunks.mjs, S5).
-import { hash3i, mulberry32, type Rng } from './noise.ts';
+import { hash3i, mulberry32, type Rng, type Bounds } from '../renderData.ts';
 import { VEGETATION_SPACING as CELL } from './types.ts';
-import type { Bounds } from '../RenderTypes.ts';
 import type { SDF } from './types.ts';
 
 // The jitter keeps a point within 0.475 of a cell from its cell's centre.

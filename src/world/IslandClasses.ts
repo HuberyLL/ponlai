@@ -1,4 +1,4 @@
-import { classifyBy, type ClassRule } from '../debug/Classes.ts';
+import { classifyBy, type ClassRule } from '../render.ts';
 
 // The island's kinds for the kinds' view (debug/Classes.ts, `flags=classes`): which of the scene's
 // meshes and materials are ground, rock, grass, leaves, wood and figure, told by the names and

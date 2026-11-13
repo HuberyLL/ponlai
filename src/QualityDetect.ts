@@ -1,6 +1,4 @@
-import { QUALITY, QUALITY_TIERS, DEFAULT_QUALITY, isQualityTier, type QualityTier } from './Quality.ts';
-import { renderPixelRatio } from './post/RenderScale.ts';
-import type { SettingsQuery } from './Settings.ts';
+import { QUALITY, QUALITY_TIERS, DEFAULT_QUALITY, isQualityTier, type QualityTier, renderPixelRatio, type SettingsQuery } from './renderSetup.ts';
 
 // Parked with the medium and low tiers (Quality.ts `PARKED_QUALITY`): high is the only active tier,
 // so `chooseQuality` takes `?quality` or else loads high, and never times the GPU (the measurement

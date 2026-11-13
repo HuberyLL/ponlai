@@ -3,34 +3,12 @@
 // then renders, the loop that paces it, and the controls a tool holds, resumes and steps it by
 // (`loop`, `step`, `setTime`).
 import { pageStore } from '../PageSettings.ts';
-import { settings as params } from '../Settings.ts';
+import { nightAmbientShare, duskForce, yunpengNightShare, cloudedShare, updateLeafLight, type HazeFrame, DynamicResolution, TAAU_MAX_UPSCALE, GpuFrameTimer, PassScaling, renderScaleKey, PeriodicWork, FramePacer, PAUSED_QUEUE, gpuDevice, threeAnimation, frameBookkeeping, shared, ambientGrade, TEST_MODE, AA_MODE, AFTER_RESOLVE, TEMPORAL, preExposure, PRE_EXPOSURE_PENDING, renderEvent, type TemporalFrame, type SettleFrame, prepassScene, opaquePrepassScene, type RenderParts } from '../render.ts';
+import { settings as params, dynamicRange, renderPixelRatio, outputPixelRatio } from '../renderSetup.ts';
 import * as THREE from 'three/webgpu';
-import { isCameraInputTarget } from '../camera/FreeCameraControls.ts';
-import { nightAmbientShare, duskForce, yunpengNightShare } from '../sky/DayCycle.ts';
-import { cloudedShare } from '../sky/Weather.ts';
+import { isCameraInputTarget, setYunpengNight, updateSwardTint, type IslandParts } from '../island.ts';
 import { QualityDetector, qualityLines, rememberQuality } from '../QualityDetect.ts';
-import { setYunpengNight } from '../world/Yunpeng.ts';
-import { updateLeafLight } from '../world/vegetation/LeafLight.ts';
-import { updateSwardTint } from '../materials/SwardTint.ts';
-import type { HazeFrame } from '../weather/VolumetricHaze.ts';
-import { dynamicRange, renderPixelRatio, outputPixelRatio } from '../post/RenderScale.ts';
-import { DynamicResolution, TAAU_MAX_UPSCALE, GpuFrameTimer, PassScaling, renderScaleKey, PeriodicWork } from '../post/DynamicResolution.ts';
-import { FramePacer, PAUSED_QUEUE } from '../post/FramePacer.ts';
-import { gpuDevice } from '../three/Backend.ts';
-import { threeAnimation, frameBookkeeping } from '../three/FrameLoop.ts';
-import { shared } from '../shared.ts';
-import { ambientGrade } from '../lighting/AmbientGrade.ts';
-import { TEST_MODE } from '../debug/TestMode.ts';
-import { AA_MODE, AFTER_RESOLVE, TEMPORAL } from '../post/Antialiasing.ts';
-import { preExposure, PRE_EXPOSURE_PENDING } from '../post/PreExposure.ts';
-import { sceneEvent } from '../post/SceneEvents.ts';
-import type { TemporalFrame } from '../post/TemporalAA.ts';
-import type { SettleFrame } from '../post/Settled.ts';
-import { prepassScene } from '../world/VegetationPrepass.ts';
-import { opaquePrepassScene } from '../world/OpaquePrepass.ts';
-import type { RenderParts } from '../RenderStages.ts';
 import type { PageParts } from './Page.ts';
-import type { IslandParts } from '../IslandStages.ts';
 
 // Deterministic stepping for the clip tools (tools/capture-clip.mjs; debug builds only): stops the
 // live loop and drives the tick itself, `frames` times, `dt` seconds apart, with nothing taken from
@@ -151,9 +129,10 @@ export function createFrameSizing( render: RenderParts, page: PageParts ) {
 /** The dynamic resolution, the pacer and the tick. */
 export function createFrame( render: RenderParts, island: IslandParts, page: PageParts ) {
 
-	const { profiler, DEBUG, quality, gpuTiming, renderer, submitBatch, DPR_CAP, resolution, scene, waterScene, rainScene, afterScene, camera, sky, dayCycle, weather, weatherEffects, wind, lighting, applyEnvironmentFill, sun, sunShadow, shadowDirection, prepareHaze, prepareSkyState, publishLighting, retuneSky, fft, waveMaps, pipeline, groundBounce, shoreWaves, ambientRelight, refractedSun, stormSea } = render;
-	const { controls, framingGlide, islandTurn, freeControls, trample, wenyao, growth, poseIslandView, holdsFraming, followFraming } = island;
-	const { qualityChoice, loading, gui, S, reviewView, setCameraView, environmentLook, frameStats, weatherView, windView, resize, refreshStoreKey, applyRenderScale, describeRenderScale } = page;
+	const { profiler, DEBUG, quality, gpuTiming, renderer, submitBatch, DPR_CAP, resolution, scene, waterScene, rainScene, afterScene, camera, sky, dayCycle, weather, wind, lighting, applyEnvironmentFill, sun, sunShadow, shadowDirection, prepareHaze, prepareSkyState, publishLighting, retuneSky, fft, waveMaps, pipeline, groundBounce, shoreWaves, ambientRelight, refractedSun, stormSea } = render;
+	const { controls, framingGlide, islandTurn, freeControls, trample, wenyao, growth } = island;
+	const { poseIslandView, holdsFraming, followFraming } = page.framing;
+	const { qualityChoice, loading, gui, S, reviewView, setCameraView, environmentLook, frameStats, weatherEffects, weatherView, windView, resize, refreshStoreKey, applyRenderScale, describeRenderScale } = page;
 	page.tick = tick;
 
 	// ------------------------------------------------------------------ loop
@@ -249,11 +228,11 @@ export function createFrame( render: RenderParts, island: IslandParts, page: Pag
 	// a resize of the canvas cuts the history; resize() itself also serves render-scale changes, which do not
 	addEventListener( 'resize', () => {
 
-		sceneEvent( 'resize' );
+		renderEvent( 'resize' );
 		// the island view's framing follows the window's aspect, at once
 		const follow = holdsFraming();
 		resize();
-		poseIslandView( island.islandViewOptions, island.islandTurned, island.islandZoom );
+		poseIslandView( page.framing.viewOptions, island.islandTurned, island.islandZoom );
 		if ( follow ) followFraming( false );
 
 	} );
@@ -281,10 +260,10 @@ export function createFrame( render: RenderParts, island: IslandParts, page: Pag
 			// the game pauses its own clock; the sea keeps moving
 			if ( page.game ) page.game.togglePause();
 			else { render.paused = ! render.paused; dayCycle.paused = render.paused; }
-			sceneEvent( 'key toggle' );
+			renderEvent( 'key toggle' );
 
 		}
-		if ( e.code === 'KeyH' ) { gui.show( gui._hidden ); sceneEvent( 'key toggle' ); }
+		if ( e.code === 'KeyH' ) { gui.show( gui._hidden ); renderEvent( 'key toggle' ); }
 		if ( e.code === 'KeyR' || e.code === 'Digit1' ) setCameraView( 'island' );
 		if ( e.code === 'Digit2' ) setCameraView( 'horizon' );
 		if ( e.code === 'Digit3' ) setCameraView( 'sky' );
@@ -401,7 +380,7 @@ export function createFrame( render: RenderParts, island: IslandParts, page: Pag
 			if ( zoom === 0 || zoom === 1 ) islandTurn.stopZoom();
 			if ( turn !== 0 || zoom !== island.islandZoom ) {
 
-				poseIslandView( island.islandViewOptions, island.islandTurned + turn, zoom );
+				poseIslandView( page.framing.viewOptions, island.islandTurned + turn, zoom );
 				followFraming( false );
 
 			}
@@ -599,7 +578,7 @@ export function startLoop( render: RenderParts, island: IslandParts, page: PageP
 	page.animation = animation;
 	animation.setContext( pacer.context );
 	renderer.setAnimationLoop( animationLoop );
-	sceneEvent( 'loop start' );
+	renderEvent( 'loop start' );
 	// High's first frames find its render scale behind the loading screen: from the nominal it jumps
 	// to the scale the GPU's times call for within a second, out of sight (at most REVEAL_WAIT ms).
 	// The game's islanders show before it lifts too: their figures arrive after the first frames once
@@ -667,7 +646,7 @@ export function createLoopControls( render: RenderParts, page: PageParts ) {
 			if ( loop.running ) return;
 			loop.running = true;
 			page.steeredLast = false;
-			sceneEvent( 'loop start' );
+			renderEvent( 'loop start' );
 			clock.reset();
 			animation.start();
 
@@ -689,7 +668,7 @@ export function createLoopControls( render: RenderParts, page: PageParts ) {
 
 		} else {
 
-			sceneEvent( 'visible' );
+			renderEvent( 'visible' );
 			if ( ! hiddenStop ) return;
 			loop.start();
 			// its first frames (cloud history, a whole bake) do not steer the scale

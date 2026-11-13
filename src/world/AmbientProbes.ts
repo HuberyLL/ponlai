@@ -85,13 +85,10 @@
 import { CULM, LEAF_COLOURS, LEAF_SHARE, PURPLE_CULMS } from './BambooColours.ts';
 import { GROVES, culmAt, groveAt } from './BambooGroves.ts';
 import { islandSurfaceHeight, solidSide, ISLAND_BOTTOM, ISLAND_PEAK, ISLAND_TOP, type Footprint, type HeightFn } from './WorldShapes.ts';
-import type { Bounds } from '../RenderTypes.ts';
+import { type Bounds, smoothstep, bodyReflectance, META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis, type AmbientLattice } from '../renderData.ts';
 import { FLOOR_ALBEDO, SEABED_TILE } from './SeabedTile.ts';
-import { smoothstep } from './noise.ts';
-import { bodyReflectance } from '../ocean/SeaOptics.ts';
 import type { SolidBounds } from '../lighting/SkyOcclusion.ts';
 import type { SDF } from './types.ts';
-import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis, type AmbientLattice } from '../lighting/ProbeFormat.ts';
 
 // ------------------------------------------------------------------ the lattice
 

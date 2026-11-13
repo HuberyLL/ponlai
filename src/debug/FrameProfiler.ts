@@ -120,7 +120,7 @@ interface Frame {
 }
 
 /** A finished frame, as read by the profiling tool. Times in milliseconds. */
-export interface FrameRecord {
+interface FrameRecord {
 	id: number;
 	t: number; // since navigation start
 	interval: number; // rAF time since the previous frame

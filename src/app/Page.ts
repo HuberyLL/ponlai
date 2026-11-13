@@ -3,19 +3,16 @@
 // renderer's (RenderStages.ts) and the island's (IslandStages.ts).
 import type * as THREE from 'three/webgpu';
 import type GUI from 'lil-gui';
-import type { WeatherName, WindLevel } from '../sky/Weather.ts';
-import type { QualityTier } from '../Quality.ts';
+import type { SceneOptions, WeatherName, WindLevel, DynamicResolution, GpuFrameTimer, PassScaling, FramePacer, FrameStats, PipelineSettings } from '../render.ts';
+import type { QualityTier, SettingsQuery } from '../renderSetup.ts';
 import type { QualityDetector } from '../QualityDetect.ts';
-import type { DynamicResolution, GpuFrameTimer, PassScaling } from '../post/DynamicResolution.ts';
-import type { FramePacer } from '../post/FramePacer.ts';
-import type { FrameStats } from '../debug/FrameStats.ts';
-import type { Game } from '../game/Game.ts';
+import type { Game } from '../game/index.ts';
+import type { IslandFraming } from '../island.ts';
 import type { CameraView } from './CameraViews.ts';
 import type { SceneRequest } from './Scene.ts';
 import type { StepOptions } from './Frame.ts';
 import type { QualityChoice, QualityLines } from '../QualityDetect.ts';
 import type { PipelineCount } from '../debug/PipelineCounter.ts';
-import type { PipelineSettings } from '../post/Pipeline.ts';
 
 export interface PageParts {
 	ground: { soil: boolean };
@@ -25,6 +22,8 @@ export interface PageParts {
 	reloadWithQuality: ( tier: QualityTier | null ) => void;
 	GAME: boolean;
 	game: Game | null;
+	/** the scene a query names, with the page's defaults: the load's and a scene jump's */
+	sceneOptions: ( query: SettingsQuery ) => SceneOptions;
 	gui: GUI;
 	S: PipelineSettings;
 	cameraSettings: { mode: string };
@@ -34,9 +33,12 @@ export interface PageParts {
 	unwidenFov: () => void;
 	setCameraMode: ( mode: string ) => void;
 	setCameraView: ( view: CameraView ) => void;
+	framing: IslandFraming;
 	environmentLook: { exposure: boolean };
 	autoQuality: QualityLines;
 	frameStats: FrameStats;
+	/** the GUI's switches for the rain and the wet surfaces, which the frame reads */
+	weatherEffects: { rain: boolean; wetness: boolean };
 	weatherView: { preset: WeatherName; seconds: number };
 	windView: { level: WindLevel; heading: number };
 	shownWind: string;

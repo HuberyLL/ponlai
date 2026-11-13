@@ -1,25 +1,11 @@
 import * as THREE from 'three/webgpu';
 import { attribute, float, mix, smoothstep, uniform, vec3 } from 'three/tsl';
-import { GroundBounceLightingModel } from '../lighting/GroundBounce.ts';
-import { receiveScreenAO } from '../post/GTAO.ts';
-import { receiveScreenShadow } from '../post/MeadowShade.ts';
-import type { Shared } from '../shared.ts';
-import { debugFlags } from '../debug/DebugFlags.ts';
-import { NIGHT_METER_LIFT } from '../look/DayLook.ts';
-import { mulberry32, type Rng } from './noise.ts';
+import { GroundBounceLightingModel, receiveScreenAO, receiveScreenShadow, type Shared, debugFlags, NIGHT_METER_LIFT, runSteps, leafFlutter, mainBend, useVegetationMotion, PLANT_PART, PlantInstances, levelDraws, placeVertex, plantPoint, type PlantDraw, type PlantInstance, type PlantPool, IDENTITY_COLOUR, plantTint, type PlantTint, rootHash, type KindGrowth, type VegetationKind, type LocalLightKind, type LocalSource, writeMeter } from '../render.ts';
+import { mulberry32, type Rng } from '../renderData.ts';
 import { SEABED_TILE } from './SeabedTile.ts';
-import { runSteps } from './Steps.ts';
 import type { WorldData } from './types.ts';
 import { islandSurfaceHeight } from './WorldShapes.ts';
 import { plantClumps, type ClumpLand, type ClumpSite } from './YunpengSites.ts';
-import { leafFlutter, mainBend } from './vegetation/Deform.ts';
-import { useVegetationMotion } from './vegetation/Material.ts';
-import { PLANT_PART, PlantInstances, levelDraws, placeVertex, plantPoint, type PlantDraw, type PlantInstance, type PlantPool } from './vegetation/PlantInstances.ts';
-import { IDENTITY_COLOUR, plantTint, type PlantTint } from './vegetation/TreeSurfaces.ts';
-import { rootHash } from '../weather/Wind.ts';
-import type { KindGrowth, VegetationKind } from './vegetation/Registry.ts';
-import type { LocalLightKind, LocalSource } from '../lighting/LocalLights.ts';
-import { writeMeter } from '../lighting/MeterLight.ts';
 
 // The yunpeng (芸蓬) of Yuanjiao: "a grass named yunpeng, white as snow, a stem two zhang long; seen
 // at night it gives a white light; it makes a staff" (Wang Jia, Shiyi ji, book 10). Yuanjiao and

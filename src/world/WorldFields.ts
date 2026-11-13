@@ -2,10 +2,9 @@ import * as THREE from 'three/webgpu';
 import { texture, vec2 } from 'three/tsl';
 import { SEABED_TILE } from './SeabedTile.ts';
 import { RIM_CELL } from './RimGround.ts';
-import { textureSteps } from './Upload.ts';
+import { textureSteps, gpuDevice, gpuTexture } from '../render.ts';
 import type { WorldData } from './types.ts';
-import type { ShoreField } from '../RenderTypes.ts';
-import { gpuDevice, gpuTexture } from '../three/Backend.ts';
+import type { ShoreField } from '../renderData.ts';
 
 // The world fields on the GPU (ChunkMerge.ts assembles them on the CPU): the shore's sea-level
 // distance and the floor's height (32-bit floats), the floor's beds and the rim ground (half

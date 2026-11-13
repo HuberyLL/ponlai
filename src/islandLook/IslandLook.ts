@@ -1,4 +1,4 @@
-import type { Look } from '../look/Look.ts';
+import type { Look } from '../renderSetup.ts';
 import { SEA } from './Sea.ts';
 import { DAY } from './Day.ts';
 import { AMBIENT } from './Ambient.ts';

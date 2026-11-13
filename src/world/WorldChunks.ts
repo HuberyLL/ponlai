@@ -44,7 +44,7 @@ import type { ChunkData } from './Chunks.ts';
 import { cacheBrowser } from './WorldCache.ts';
 import type { ChunkJob, ChunkReply, CacheResult } from './chunkWorker.ts';
 import type { WorldData, WorldOptions } from './types.ts';
-import { CANOPY_SHADE } from '../lighting/AmbientSample.ts';
+import { CANOPY_SHADE } from '../render.ts';
 
 // bumped whenever what a record holds changes without the generator's sources changing
 const CACHE_FORMAT = 6;

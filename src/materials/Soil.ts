@@ -3,7 +3,7 @@ import { float, texture, uniform } from 'three/tsl';
 import { sampleMeadow } from './Meadow.ts';
 import { ISLAND_TOP, SWELL, islandSurfaceHeight, islandSwell } from '../world/WorldShapes.ts';
 import { GROWTH } from '../world/IslandGrowth.ts';
-import { noise3, smoothstep } from '../world/noise.ts';
+import { noise3, smoothstep } from '../renderData.ts';
 import { GROVES, groveAt, litterAt, litterGateDensity, shootClusters } from '../world/BambooGroves.ts';
 
 // The root bed cut open at the meadow's shoulder (TerrainMaterial's root-soil cut).

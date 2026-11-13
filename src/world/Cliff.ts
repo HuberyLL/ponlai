@@ -71,7 +71,7 @@
 //   its own top) and carry no turf (TerrainMaterial keeps it off them). No waterfalls; moss and
 //   greenery on the wall stay in its upper 1.2 m (TerrainMaterial).
 
-import { hash3i, noise3, smax, smoothstep } from './noise.ts';
+import { hash3i, noise3, smax, smoothstep } from '../renderData.ts';
 
 type Field = ( x: number, z: number ) => number;
 

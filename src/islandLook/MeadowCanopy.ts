@@ -1,4 +1,4 @@
-import type { MeadowCanopyLook } from '../look/Look.ts';
+import type { MeadowCanopyLook } from '../renderSetup.ts';
 
 // The island's meadow canopy look (src/islandLook/: the island's numbers for the renderer's look
 // tables, look/Look.ts; look/MeadowCanopyLook.ts reads these).

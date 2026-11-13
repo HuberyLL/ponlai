@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { ADULT_HEIGHT, STOOP, builtAge, elderAt, growth, type Sex } from './Ages.ts';
 import { planProportions, reshape, rerig, type Proportions } from './Proportions.ts';
-import { boundsSteps, runSteps } from '../world/Steps.ts';
+import { boundsSteps, runSteps } from '../render.ts';
 
 // A figure's body at an age (Ages.ts's curves), on its own load of the rig. Everything an age
 // changes is made again from what the file holds, never from the last body:

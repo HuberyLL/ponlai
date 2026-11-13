@@ -1,33 +1,37 @@
 // The page's camera views: the island view the land is framed in (placed from the query's dist /
 // polar / az, or the land's own framing), the review views (horizon, sky), the free flight, the
 // widening of the field of view near the ground and the orbit's limits. The island's stages call
-// them through the hooks this module hangs on the island's object, since a land that grows
-// reframes its view.
-import { settings as params, type SettingsQuery } from '../Settings.ts';
+// the island view's framing (`IslandFraming`, on the page's parts as `framing`), which the entry
+// hands them, since a land that grows reframes its view.
+import { renderEvent, type RenderParts } from '../render.ts';
+import { settings as params, type SettingsQuery } from '../renderSetup.ts';
 import * as THREE from 'three/webgpu';
-import { IslandCameraControls } from '../camera/IslandCameraControls.ts';
-import { frameIsland, landFitDistance } from '../camera/IslandFraming.ts';
-import { sceneEvent } from '../post/SceneEvents.ts';
-import type { RenderParts } from '../RenderStages.ts';
-import type { IslandParts } from '../IslandStages.ts';
+import { IslandCameraControls, frameIsland, landFitDistance, type IslandFraming, type IslandParts } from '../island.ts';
 import type { PageParts } from './Page.ts';
 
 export type CameraView = 'island' | 'horizon' | 'sky';
 
-/** The camera's views and modes, and the hooks the island's stages frame the land by. */
+/** The camera mode a query names: `camera=free` flies free, anything else orbits the island. */
+export function cameraMode( options: SettingsQuery ): 'free' | 'orbit' {
+
+	return options.get( 'camera' ) === 'free' ? 'free' : 'orbit';
+
+}
+
+/** The camera's views and modes, and the framing the island's stages frame the land by. */
 export function createCameraViews( render: RenderParts, island: IslandParts, page: PageParts ) {
 
-	const { renderer, camera, sky, loaded } = render;
+	const { renderer, camera, sky } = render;
 	const { target, controls, initialCameraPosition, initialCameraQuaternion, initialCameraTarget, framingGlide, initialCameraFov, orbitMaxPolar, orbitMinDistance, freeControls } = island;
-	island.frameLand = frameLand;
-	island.poseIslandView = poseIslandView;
-	island.holdsFraming = holdsFraming;
-	island.followFraming = followFraming;
+	// (the options the island view was last posed at: the page's own query at first)
+	let viewOptions: SettingsQuery = params;
+	const framing: IslandFraming = { frameLand, poseIslandView, holdsFraming, followFraming, get viewOptions() { return viewOptions; } };
+	page.framing = framing;
 	page.applyOrbitLimit = applyOrbitLimit;
 	page.unwidenFov = unwidenFov;
 	page.setCameraMode = setCameraMode;
 	page.setCameraView = setCameraView;
-	const cameraSettings = { mode: loaded.camera as string };
+	const cameraSettings = { mode: cameraMode( params ) as string };
 	page.cameraSettings = cameraSettings;
 	const reviewView = { camera: 'island' as CameraView };
 	page.reviewView = reviewView;
@@ -93,10 +97,9 @@ export function createCameraViews( render: RenderParts, island: IslandParts, pag
 	// controls of its own with the page's limits, the camera left where it is: a scene jump's
 	// (`establishScene`), and again for the same options and turn when the island grows (Growth.ts) or
 	// the window's shape changes, so the view frames the land shown, and at every step of a turn.
-	island.islandViewOptions = params;
 	function poseIslandView( options: SettingsQuery, turn = 0, zoom = 0 ): void {
 
-		island.islandViewOptions = options;
+		viewOptions = options;
 		island.islandTurned = turn;
 		island.islandZoom = zoom;
 		const probe = camera.clone();
@@ -186,7 +189,7 @@ export function createCameraViews( render: RenderParts, island: IslandParts, pag
 
 		}
 		cameraSettings.mode = mode;
-		sceneEvent( 'camera mode' );
+		renderEvent( 'camera mode' );
 		controls.enabled = mode === 'orbit';
 		freeControls.enabled = mode === 'free';
 		applyOrbitLimit();
@@ -201,7 +204,7 @@ export function createCameraViews( render: RenderParts, island: IslandParts, pag
 		freeControls.clearInput();
 		settleOrbit();
 		reviewView.camera = view;
-		sceneEvent( 'view jump' );
+		renderEvent( 'view jump' );
 		if ( view === 'sky' ) {
 
 			camera.position.copy( island.onLand( 0, 15, 0 ) );
@@ -222,7 +225,7 @@ export function createCameraViews( render: RenderParts, island: IslandParts, pag
 		} else {
 
 			// (back to the query's heading, at the farthest zoom)
-			if ( island.islandTurned !== 0 || island.islandZoom !== 0 ) poseIslandView( island.islandViewOptions );
+			if ( island.islandTurned !== 0 || island.islandZoom !== 0 ) poseIslandView( viewOptions );
 			controls.target.copy( initialCameraTarget );
 			camera.position.copy( initialCameraPosition );
 			camera.quaternion.copy( initialCameraQuaternion );

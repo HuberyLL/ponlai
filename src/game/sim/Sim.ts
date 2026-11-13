@@ -14,7 +14,7 @@ import { random } from './rng.ts';
 import { ageOf, drawLifespan, paceOf } from './life.ts';
 import { GROWTH_STEPS, POPULATION_START, SAVE_VERSION, SECONDS_PER_GAME_DAY, SECONDS_PER_YEAR, WALK_SPEED, piecesFor } from './types.ts';
 import type { EntityId, IslandInput, SimState, Vec2, Villager } from './types.ts';
-import type { Body, Sex } from '../../characters/Ages.ts';
+import type { Body, Sex } from '../../islandLand.ts';
 // the game's content: it registers its definitions, which the simulation reads (registry.ts)
 import './content/index.ts';
 

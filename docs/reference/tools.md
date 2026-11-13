@@ -1316,7 +1316,15 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   known ones, fails, and so does a known one that no longer imports upward (the list only
   shrinks). It also walks the chunk worker's imports (`src/world/chunkWorker.ts`) as the build's
   world generator plugin does (`tools/vite-world-generator.mjs`) and fails on any package import
-  the plugin would refuse. Run it after adding a file or an import across folders. Its page check
+  the plugin would refuse. Run it after adding a file or an import across folders.
+  Its exits check reads the packages' exits from `tools/layers.json` (`exits`: each package's page
+  exit and headless exit, and the renderer's setup exit; `lazy`: the modules the page loads on
+  demand). An exit holds re-exports of its own package only; an import from one package into
+  another, or from the app layer into one, names an exit or a lazy exit; a lazy exit is imported
+  dynamically or with `import type` only. Every name an exit exports is taken by a file of another
+  package or the page (a lazy exit that is a module of its package, by any other file), and no name
+  leaves through two exits. The files a headless or setup exit loads (`import type`
+  left out) import relative paths only. Its page check
   keeps the render and island layers and the game's simulation off the page: TypeScript's checker
   resolves every name there, and one that is a page global (`location`, `localStorage`,
   `sessionStorage`, `document`, `window`, `navigator`, `URLSearchParams`, the animation frame
@@ -1330,8 +1338,19 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   parameter, a field of an instance, or an operation its owner exports). A write from another layer
   than the owner's must also be on a second list (`ACROSS`).
   Its userData check reads the list of `userData` keys the renderer declares (`src/UserData.ts`)
-  and fails when a file of the render layer names a key that is not there, or when the list holds
-  a key no file names. A key reached through an alias of the bag is not seen.
+  and each upper layer's list of the keys it keeps to itself (`tools/layers.json`, `userData`: the
+  island's in `src/world/IslandUserData.ts`). It fails when a file names a key that is on neither
+  the renderer's list nor its own layer's, or when a list holds a key no file of its layer names
+  (the renderer's: no file at all). A key reached through an alias of the bag is not seen.
+- `tools/verify-exits.mjs` (plain `node`, no options, about a second) checks the packages' exits
+  (`tools/layers.json`, `exits`). It loads each headless exit (`src/renderData.ts`,
+  `src/islandLand.ts`, `src/game/sim/index.ts`) and the renderer's setup exit
+  (`src/renderSetup.ts`) in plain node and fails when one throws or leaves a name it exports
+  undefined. It reads every file a page or setup exit (`src/render.ts`, `src/island.ts`,
+  `src/game/index.ts`, `src/renderSetup.ts`) loads and fails on an `await` or a page global
+  (`location`, the storage, `document`, `window`, `navigator`, the animation frame callbacks,
+  `Worker`, `indexedDB`, `fetch`) in the code that runs as the module loads. Run it after a change
+  to what an exit loads.
 - `tools/verify-extensions.mjs` (plain `node`, no options; it loads the page's modules through
   Vite's SSR loader, a few seconds) checks the renderer's extension points. It registers a plant
   kind, a kind of local light, an extra pass, scene events and histories of its own and fails
@@ -1344,7 +1363,9 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   (`src/Settings.ts`, the one entrance every option is read through) against
   `docs/reference/url-options.md`: the table of every option at the page's end is the one written
   from the declarations (`--write` rewrites it), every declared option is named in the page's
-  prose, and every option the prose writes with a value is declared. It also checks that the page
+  prose, and every option the prose writes with a value is declared. No option is declared in a
+  layer above the lowest layer whose code reads it (`tools/layers.json`; its header says which
+  reads it sees), so the table's owner is a layer that reads it. It also checks that the page
   installs the settings before any module that reads them loads (`index.html` loads
   `src/Boot.ts`, which imports `src/PageSettings.ts` before it imports `src/main.ts`
   dynamically), and that no address the tools put on a page draws a `[settings]` warning: the
@@ -1352,7 +1373,7 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   `tools/**/*.mjs` (its header says which literals count). A usage a tool needs is declared in
   `src/Settings.ts`, not changed in the tool. Run it after adding or changing an option.
 - `tools/check.mjs` (`npm run check [-- --full]`) runs the checks every commit passes, one after
-  another: the type check, `verify-layers`, `verify-settings`, `verify-file-size`,
+  another: the type check, `verify-layers`, `verify-exits`, `verify-settings`, `verify-file-size`,
   `verify-three-internals`, `verify-no-binaries`, `verify-game`, `verify-i18n`, `verify-ink`,
   `verify-framegraph`, `verify-day-cycle`, `verify-weather-state`, `verify-wind`,
   `verify-local-lights` and `verify-extensions`, then

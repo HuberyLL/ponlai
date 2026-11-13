@@ -24,7 +24,7 @@
 //   level RefractedSun cuts its own, as it does for meshes without them.
 // - The caster columns' and the subsets' format is the renderer's (lighting/CasterFormat.ts).
 
-import { LEVEL_MARGIN, type CasterColumns } from '../lighting/CasterFormat.ts';
+import { LEVEL_MARGIN, type CasterColumns } from '../renderData.ts';
 
 /** The chunks' caster column cell (m), their CasterColumns' `cell`: finer than SunShadow's (a 16 m
  * box's longer side over 64). */

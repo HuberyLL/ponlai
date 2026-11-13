@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { ISLAND_PEAK, ISLAND_TOP, SWELL } from '../world/WorldShapes.ts';
+import { ISLAND_PEAK, ISLAND_TOP, SWELL } from '../islandLand.ts';
 import type { GridApi, Vec2 } from './sim/types.ts';
 
 // The point of the island's ground under the pointer, shared by the player's controls and the

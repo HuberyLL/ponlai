@@ -125,9 +125,10 @@ nothing below a host reads the page or the wall clock (the save's timestamp asid
   what it builds on its layer's one object; the game starts from those two objects. The page's own
   parts are in [src/app/](src/app/): the cameras' views, the frame loop, the GUI, the scene jump,
   the diagnostics and the handles the tools drive (it mounts them on `window`). The page also holds
-  the address, the reloads and the browser's storage, and the quality tier's table of cost knobs
-  ([src/Quality.ts](src/Quality.ts)). It is the only part that touches the browser's page: the
-  layers below take the canvas, the settings and the storage from it
+  the address, the reloads and the browser's storage, and it chooses the quality tier
+  ([src/QualityDetect.ts](src/QualityDetect.ts)); the tiers' table of cost knobs
+  ([src/Quality.ts](src/Quality.ts)) is the renderer's. It is the only part that touches the
+  browser's page: the layers below take the canvas, the settings and the storage from it
   ([tools/verify-layers.mjs](tools/verify-layers.mjs), its page check, keeps them off the page).
 - **The world** ([src/world/](src/world/)): the island generated from its land. The land grows a
   piece at a time; the generator runs in 16 m chunks on a pool of workers, its chunks are cached,
@@ -271,3 +272,21 @@ searches the owners for the scene's names.
    *Why:* a presentation written per piece of content needs a change in every part for every new
    resource. One written per category shows anything the rules can make on the day it is added,
    and art then replaces the defaults one at a time.
+10. **A package is imported through its exits.** The renderer, the island and the game are
+    packages, and each offers two exits, files of re-exports only: one for the page
+    ([src/render.ts](src/render.ts), [src/island.ts](src/island.ts),
+    [src/game/index.ts](src/game/index.ts)) and a headless one, free of three.js, for the chunk
+    worker and node ([src/renderData.ts](src/renderData.ts),
+    [src/islandLand.ts](src/islandLand.ts), [src/game/sim/index.ts](src/game/sim/index.ts)). The
+    renderer has a third, its setup exit ([src/renderSetup.ts](src/renderSetup.ts)): the
+    settings, the look and the quality tiers, which the page's first module installs before the
+    renderer's other modules load and read them, and which node loads too. Each exit exports only
+    the names another package takes, each name from one exit. Another package, or the page,
+    imports a package only through them; the modules the page loads on demand (the debug probes
+    and the game itself) are lazy exits, imported dynamically, so they stay in chunks of their own
+    ([tools/verify-layers.mjs](tools/verify-layers.mjs)). An exit loads its whole package, so a
+    module does nothing as it loads but declare and register: no `await` and no read of the page
+    ([tools/verify-exits.mjs](tools/verify-exits.mjs), which also loads the headless and setup
+    exits in node). *Why:* what a package offers is a list that can be read and reviewed,
+    and a change inside a package cannot break another; a module that worked as it loaded once
+    made the order of the imports part of the program.

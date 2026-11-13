@@ -1,6 +1,6 @@
-// Checks the direction of the imports between the code's layers, that the world's chunk worker
-// imports only plain code, that the renderer and the island keep off the page, which files
-// write another module's state, that the renderer names only the userData keys it declares, and
+// Checks the direction of the imports between the code's layers, that a package is imported only
+// through its exits, that the world's chunk worker and the headless exits import only plain code, that the renderer and the island keep off the page, which files
+// write another module's state, that each layer names only the userData keys declared for it, and
 // that no module reads the look where none is installed. CPU only, no GPU, a few seconds (the page and state checks run
 // TypeScript's checker over src/).
 //   node tools/verify-layers.mjs
@@ -11,7 +11,14 @@
 // and app (the page's entry, which assembles the others). A file may import its own layer and the
 // layers below it, never one above: a lower layer defines an interface and the higher one fills
 // it. Which layer a file belongs to is not its folder's name: some files sit in another layer's
-// folder until the files move, so `tools/layers.json` maps every file under `src/` to its layer.
+// folder until the files move, so `tools/layers.json` maps every file under `src/` to its layer
+// (`files`). The three lower layers are packages, and each offers two exits (`exits`), files of
+// re-exports only: one for the page (render.ts, island.ts, game/index.ts) and a headless one for
+// the code that loads without three.js, in the chunk worker and in node (renderData.ts,
+// islandLand.ts, game/sim/index.ts). The renderer has a third, its setup exit (renderSetup.ts):
+// what the page needs before the renderer's other modules load (the settings, the look, the quality
+// tiers and the render scale they set), which loads in node too. The modules the page loads on
+// demand are lazy exits (`lazy`): the page exits leave them out, so they keep chunks of their own.
 //
 // Guarantees, each a failure (exit 1) when broken:
 // - Every code file under `src/` (.ts, .mts, .js, .mjs) has a layer in `tools/layers.json`, and
@@ -22,6 +29,20 @@
 //   (static imports, `import type`, re-exports, side-effect and dynamic imports) plus workers'
 //   `new URL( '<path>', import.meta.url )`. Package imports are not layered; imports of data files
 //   (JSON, CSS) are not checked.
+// - The exits: each one `tools/layers.json` names exists in its package's layer and holds only
+//   re-exports of its own package's files. An import from one package into another (or from the
+//   app layer into a package) names an exit of that package or a lazy exit. A lazy exit is imported
+//   dynamically or with `import type` only, from anywhere, so it stays out of the page's chunks.
+//   Every name an exit exports (by TypeScript's checker) is taken from it by a file of another
+//   package or of the app layer, through an import, a re-export or a dynamic import that names it
+//   (a namespace import takes them all); a lazy exit that is not one of its package's exits is a
+//   module of the package as well, and its names need only some other file that takes them. No
+//   name is exported by two exits.
+//   The exits' own tests (the headless and setup ones load in node, the page ones neither await
+//   nor read the page at load) are tools/verify-exits.mjs.
+// - Each headless exit, the setup exit and every file they load (static imports and re-exports,
+//   `import type` left out) import relative paths only: no package, three.js least of all, so node
+//   and a worker load them as they are.
 // - The chunk worker (src/world/chunkWorker.ts) and everything it imports, followed through
 //   relative imports, imports no package except the files tools/vite-world-generator.mjs hashes:
 //   the same walk and the same exceptions as the build's world generator plugin, run here so the
@@ -44,19 +65,25 @@
 //   property chain rooted at the variable (`state.field = x`, `uniforms.gain.value = x`), found
 //   through the import's binding; a method that mutates (`vector.copy( x )`) and a GUI bound to a
 //   field are not seen.
-// - The userData check: a file of the render layer names only the `userData` keys the renderer
-//   declares (src/UserData.ts: the key, who sets it, who reads it, what it means), and every key
-//   declared there is named by some file under src/. A key counts where it is written after the
+// - The userData check: a file names only the `userData` keys the renderer declares
+//   (src/UserData.ts: the key, who sets it, who reads it, what it means) and, above the renderer,
+//   those its own layer declares it keeps to itself (`userData` in tools/layers.json: each layer's
+//   file and list, the island's world/IslandUserData.ts). Every key on the renderer's list is named
+//   by some file under src/, every key on a layer's list by a file of that layer, and no layer's
+//   list repeats a key of the renderer's. A key counts where it is written after the
 //   bag (`x.userData.key`, `x.userData[ 'key' ]`); one reached through an alias of the bag
 //   (`const data = material.userData`) or a computed name is not seen.
 // - The look checks: the renderer draws with the look its page installs (src/look/Look.ts), which
 //   a module reads as it loads (`readLook(`), so a reader that loads where no look is installed
 //   takes the neutral one without a word. Neither that module nor any reader is among the files
-//   the chunk worker loads (the world is generated without the look, and no worker installs one),
-//   nor among the files the headless game loads (every src/ module tools/play-game.mjs and its
-//   fixture name, with what those load: the game is played without the look),
-//   and no reader is among the files the entry's first module (src/PageSettings.ts) loads, which
-//   installs the look and must have run before the first reader does. The files a file loads are
+//   the chunk worker loads (the world is generated without the look, and no worker installs one).
+//   No reader is among the files the headless game loads (every src/ module tools/play-game.mjs
+//   and its fixture name, with what those load: the game is played without the look); look/Look.ts
+//   itself may be, through the setup exit, whose settings the game's words read (it reads nothing
+//   while no reader loads),
+//   and no reader is among the files the entry's first module (src/PageSettings.ts) or the
+//   renderer's setup exit loads: the first installs the look and must have run before the first
+//   reader does, and the second is what it installs the look through. The files a file loads are
 //   its static imports and re-exports followed through relative specifiers, `import type` left
 //   out (it is erased) and dynamic imports too (they load later).
 //
@@ -166,6 +193,36 @@ function imports( file ) {
 		if ( to ) out.push( { to, spec } );
 
 	}
+	return out;
+
+}
+
+/** Each import of a file, relative or not: its specifier and how it loads ('static', 'type' for
+ * `import type` / `export type` and `import( ... )` types, 'dynamic' for `import( ... )`). */
+function importKinds( file ) {
+
+	const source = ts.createSourceFile( file, readFileSync( path.join( SRC, file ), 'utf8' ), ts.ScriptTarget.Latest, true );
+	const out = [];
+	const visit = ( node ) => {
+
+		if ( ( ts.isImportDeclaration( node ) || ts.isExportDeclaration( node ) ) && node.moduleSpecifier && ts.isStringLiteralLike( node.moduleSpecifier ) ) {
+
+			const typeOnly = ts.isImportDeclaration( node ) ? node.importClause?.isTypeOnly : node.isTypeOnly;
+			out.push( { spec: node.moduleSpecifier.text, kind: typeOnly ? 'type' : 'static' } );
+
+		} else if ( ts.isCallExpression( node ) && node.expression.kind === ts.SyntaxKind.ImportKeyword && node.arguments[ 0 ] && ts.isStringLiteralLike( node.arguments[ 0 ] ) ) {
+
+			out.push( { spec: node.arguments[ 0 ].text, kind: 'dynamic' } );
+
+		} else if ( ts.isImportTypeNode( node ) && ts.isLiteralTypeNode( node.argument ) && ts.isStringLiteralLike( node.argument.literal ) ) {
+
+			out.push( { spec: node.argument.literal.text, kind: 'type' } );
+
+		}
+		ts.forEachChild( node, visit );
+
+	};
+	visit( source );
 	return out;
 
 }
@@ -319,8 +376,83 @@ function userDataKeys( program ) {
 
 }
 
+/** Each name a file under src/ takes from another file, as a map from the file it names (under
+ * src/) to { name: [ the files that take it ] }: the names of its `import` and `import type`
+ * declarations and re-exports (the exported name, not a local alias), and of its dynamic imports
+ * where the name is written at the import (`( await import( ... ) ).name`, `const { name } = await
+ * import( ... )`, `import( ... ).Type` in a type). A namespace import (`import * as`) takes every
+ * name and is recorded as '*'. */
+function takenNames( program ) {
+
+	const taken = new Map();
+	const take = ( from, spec, name ) => {
+
+		const to = resolve( from, spec );
+		if ( ! to ) return;
+		if ( ! taken.has( to ) ) taken.set( to, new Map() );
+		const names = taken.get( to );
+		if ( ! names.has( name ) ) names.set( name, new Set() );
+		names.get( name ).add( from );
+
+	};
+	for ( const source of program.getSourceFiles() ) {
+
+		const file = path.relative( SRC, source.fileName ).split( path.sep ).join( '/' );
+		if ( file.startsWith( '..' ) ) continue;
+		const visit = ( node ) => {
+
+			if ( ts.isImportDeclaration( node ) && ts.isStringLiteralLike( node.moduleSpecifier ) ) {
+
+				const spec = node.moduleSpecifier.text, clause = node.importClause;
+				if ( clause?.name ) take( file, spec, 'default' );
+				const bindings = clause?.namedBindings;
+				if ( bindings && ts.isNamespaceImport( bindings ) ) take( file, spec, '*' );
+				else if ( bindings ) for ( const el of bindings.elements ) take( file, spec, ( el.propertyName ?? el.name ).text );
+
+			} else if ( ts.isExportDeclaration( node ) && node.moduleSpecifier && ts.isStringLiteralLike( node.moduleSpecifier ) ) {
+
+				const spec = node.moduleSpecifier.text;
+				if ( ! node.exportClause || ts.isNamespaceExport( node.exportClause ) ) take( file, spec, '*' );
+				else for ( const el of node.exportClause.elements ) take( file, spec, ( el.propertyName ?? el.name ).text );
+
+			} else if ( ts.isCallExpression( node ) && node.expression.kind === ts.SyntaxKind.ImportKeyword && node.arguments[ 0 ] && ts.isStringLiteralLike( node.arguments[ 0 ] ) ) {
+
+				const spec = node.arguments[ 0 ].text;
+				let up = node.parent;
+				while ( up && ( ts.isAwaitExpression( up ) || ts.isParenthesizedExpression( up ) ) ) up = up.parent;
+				if ( up && ts.isPropertyAccessExpression( up ) ) take( file, spec, up.name.text );
+				else if ( up && ts.isVariableDeclaration( up ) && ts.isObjectBindingPattern( up.name ) ) for ( const el of up.name.elements ) take( file, spec, ( el.propertyName ?? el.name ).text );
+				else take( file, spec, '*' );
+
+			} else if ( ts.isImportTypeNode( node ) && ts.isLiteralTypeNode( node.argument ) && ts.isStringLiteralLike( node.argument.literal ) ) {
+
+				const q = node.qualifier;
+				take( file, node.argument.literal.text, q ? ( ts.isIdentifier( q ) ? q.text : q.left.getText( source ) ) : '*' );
+
+			}
+			ts.forEachChild( node, visit );
+
+		};
+		visit( source );
+
+	}
+	return taken;
+
+}
+
+/** The names a module exports, by TypeScript's checker. */
+function exportedNames( program, file ) {
+
+	const checker = program.getTypeChecker();
+	const source = program.getSourceFile( path.join( SRC, file ) );
+	const symbol = source && checker.getSymbolAtLocation( source );
+	return symbol ? checker.getExportsOfModule( symbol ).map( ( s ) => s.name ) : [];
+
+}
+
 const failures = [];
-const table = JSON.parse( readFileSync( TABLE, 'utf8' ) );
+const layers = JSON.parse( readFileSync( TABLE, 'utf8' ) );
+const table = layers.files;
 const files = walk( SRC ).sort();
 
 // the table against the files
@@ -358,8 +490,59 @@ for ( const from of files ) {
 
 }
 const known = new Set( KNOWN );
-for ( const [ key, layers ] of upward ) if ( ! known.has( key ) ) failures.push( `upward import (${ layers }): ${ key }` );
+for ( const [ key, pair ] of upward ) if ( ! known.has( key ) ) failures.push( `upward import (${ pair }): ${ key }` );
 for ( const key of KNOWN ) if ( ! upward.has( key ) ) failures.push( `KNOWN lists ${ key }, which no longer imports upward: remove the entry` );
+
+// the exits
+const exits = new Map(); // file -> { layer, side: 'page' | 'headless' | 'setup' }
+for ( const [ layer, sides ] of Object.entries( layers.exits ) ) for ( const [ side, file ] of Object.entries( sides ) ) exits.set( file, { layer, side } );
+const lazy = new Set( layers.lazy );
+for ( const layer of Object.keys( RANK ).filter( ( l ) => l !== 'app' ) ) if ( ! layers.exits[ layer ]?.page || ! layers.exits[ layer ]?.headless ) failures.push( `tools/layers.json: the ${ layer } package has no page or no headless exit` );
+for ( const [ file, { layer } ] of exits ) {
+
+	if ( table[ file ] !== layer ) { failures.push( `tools/layers.json: the exit ${ file } is not in the ${ layer } layer` ); continue; }
+	const source = ts.createSourceFile( file, readFileSync( path.join( SRC, file ), 'utf8' ), ts.ScriptTarget.Latest, false );
+	for ( const statement of source.statements ) {
+
+		const to = ts.isExportDeclaration( statement ) && statement.moduleSpecifier && resolve( file, statement.moduleSpecifier.text );
+		if ( ! to ) failures.push( `${ file }: an exit holds re-exports only (\`export { ... } from './...'\`)` );
+		else if ( table[ to ] !== layer ) failures.push( `${ file }: re-exports ${ to }, which is not in its package (${ layer })` );
+
+	}
+
+}
+for ( const file of lazy ) if ( ! ( table[ file ] in RANK ) || table[ file ] === 'app' ) failures.push( `tools/layers.json: the lazy exit ${ file } is not a file of a package` );
+let across = 0;
+for ( const from of files ) {
+
+	for ( const { spec, kind } of importKinds( from ) ) {
+
+		const to = resolve( from, spec );
+		if ( ! to || ! ( to in table ) ) continue;
+		if ( lazy.has( to ) && kind === 'static' ) failures.push( `${ from }: imports ${ to } statically, a lazy exit the page loads on demand: \`import( ... )\` it, or \`import type\`` );
+		if ( table[ from ] === table[ to ] || table[ to ] === 'app' ) continue;
+		across ++;
+		const exit = exits.get( to );
+		if ( exit || lazy.has( to ) ) continue;
+		failures.push( `${ from }: imports ${ to } across packages: import it from ${ Object.values( layers.exits[ table[ to ] ] ).join( ' or ' ) }, the ${ table[ to ] } package's exits` );
+
+	}
+
+}
+
+// the headless and setup exits' reach: relative imports only
+const headlessFiles = new Set();
+for ( const [ file, { side } ] of exits ) {
+
+	if ( side === 'page' ) continue;
+	for ( const f of loadClosure( file ) ) {
+
+		headlessFiles.add( f );
+		for ( const { spec } of importKinds( f ) ) if ( ! spec.startsWith( '.' ) ) failures.push( `${ f }: imports '${ spec }', and the headless exit ${ file } loads it: a headless exit's files import relative paths only` );
+
+	}
+
+}
 
 // the chunk worker's imports
 let workerFiles = 0;
@@ -383,12 +566,15 @@ for ( const f of lookReaders ) if ( workerLoads.has( f ) ) failures.push( `look 
 const entryLoads = loadClosure( 'PageSettings.ts' );
 if ( ! entryLoads.has( LOOK ) ) failures.push( `look check: PageSettings.ts does not load ${ LOOK }: the entry installs the look there` );
 for ( const f of lookReaders ) if ( entryLoads.has( f ) ) failures.push( `look check: PageSettings.ts loads ${ f }, which reads the look before the entry installs it` );
+const SETUP = [ ...exits ].find( ( [ , { side } ] ) => side === 'setup' )?.[ 0 ];
+const setupLoads = SETUP ? loadClosure( SETUP ) : new Set();
+if ( ! SETUP ) failures.push( 'look check: tools/layers.json names no setup exit, through which the entry installs the look' );
+for ( const f of lookReaders ) if ( setupLoads.has( f ) ) failures.push( `look check: the setup exit ${ SETUP } loads ${ f }, which reads the look before the entry installs it` );
 // the headless game: every src/ module tools/play-game.mjs and its fixture name, static or dynamic
 const HEADLESS = [ 'tools/play-game.mjs', 'tools/game-fixture.mjs' ];
 const headlessLoads = new Set();
 for ( const tool of HEADLESS ) for ( const [ , f ] of readFileSync( path.join( ROOT, tool ), 'utf8' ).matchAll( /['"]\.\.\/src\/([^'"]+\.ts)['"]/g ) ) for ( const g of loadClosure( f ) ) headlessLoads.add( g );
 if ( ! headlessLoads.has( 'game/Session.ts' ) ) failures.push( `look check: ${ HEADLESS[ 0 ] } does not load game/Session.ts: the headless game's files were not found` );
-if ( headlessLoads.has( LOOK ) ) failures.push( `look check: the headless game loads ${ LOOK } (the game is played without the look: tools/play-game.mjs installs none)` );
 for ( const f of lookReaders ) if ( headlessLoads.has( f ) ) failures.push( `look check: the headless game loads ${ f }, which reads the look` );
 
 // the page check
@@ -429,18 +615,65 @@ for ( const pair of ACROSS ) {
 
 }
 
-// the userData check
-const { USER_DATA } = await import( pathToFileURL( path.join( SRC, 'UserData.ts' ) ).href );
+// the exits' names: each taken by another package, each from one exit
+const taken = takenNames( program );
+const exitNames = new Map(); // name -> the exits that export it
+let exitNameCount = 0;
+for ( const file of new Set( [ ...exits.keys(), ...lazy ] ) ) {
+
+	// a lazy exit that is not one of its package's exits is a module of the package as well, whose
+	// names the package's own files may take too
+	const layer = table[ file ], module = ! exits.has( file );
+	const takers = taken.get( file ) ?? new Map();
+	const takenBy = ( name ) => [ ...( takers.get( name ) ?? [] ), ...( takers.get( '*' ) ?? [] ) ].some( ( f ) => module ? f !== file : table[ f ] !== layer );
+	for ( const name of exportedNames( program, file ) ) {
+
+		exitNameCount ++;
+		if ( ! exitNames.has( name ) ) exitNames.set( name, [] );
+		exitNames.get( name ).push( file );
+		if ( takenBy( name ) ) continue;
+		if ( module ) failures.push( `${ file }: exports ${ name }, which no other file takes from it: do not export it` );
+		else failures.push( `${ file }: exports ${ name }, which no file outside the ${ layer } package takes from it: leave it out of the exit` );
+
+	}
+
+}
+for ( const [ name, from ] of exitNames ) if ( from.length > 1 ) failures.push( `${ name }: exported by ${ from.join( ' and ' ) }: a name leaves its package through one exit` );
+
+// the userData check: the renderer's keys, and each upper layer's own
+const userLists = {};
+for ( const [ layer, { file, list } ] of Object.entries( layers.userData ?? {} ) ) {
+
+	if ( table[ file ] !== layer ) failures.push( `tools/layers.json: the userData list ${ file } is not in the ${ layer } layer` );
+	userLists[ layer ] = { file, keys: ( await import( pathToFileURL( path.join( SRC, file ) ).href ) )[ list ] ?? {} };
+
+}
+const USER_DATA = userLists.render?.keys ?? {};
+if ( ! userLists.render ) failures.push( 'tools/layers.json: names no userData list for the render layer' );
 const userKeys = userDataKeys( program );
 for ( const { file, line, key } of userKeys ) {
 
-	if ( table[ file ] === 'render' && ! ( key in USER_DATA ) ) failures.push( `${ file }:${ line }: names userData.${ key }, which src/UserData.ts does not declare (render layer): declare the key there` );
+	const layer = table[ file ];
+	if ( key in USER_DATA ) continue;
+	if ( layer !== 'render' && userLists[ layer ] && key in userLists[ layer ].keys ) continue;
+	const own = layer === 'render' ? '' : userLists[ layer ] ? `, or src/${ userLists[ layer ].file } if the ${ layer } layer keeps it to itself` : `, or a list of the ${ layer } layer's own (tools/layers.json, userData) if it keeps it to itself`;
+	failures.push( `${ file }:${ line }: names userData.${ key }, which src/${ userLists.render?.file } does not declare (${ layer } layer): declare the key there${ own }` );
 
 }
-for ( const key of Object.keys( USER_DATA ) ) if ( ! userKeys.some( ( hit ) => hit.key === key ) ) failures.push( `src/UserData.ts declares '${ key }', which no file under src/ names: remove the entry` );
+for ( const [ layer, { file, keys } ] of Object.entries( userLists ) ) {
 
-console.log( `verify-layers: ${ files.length } files, ${ edges } imports, ${ upward.size } upward (${ KNOWN.length } known), chunk worker ${ workerFiles } files, ${ pageHits.length } page globals named (${ Object.keys( PAGE_NEEDS ).length } files allowed), ${ statePairs } writes of another file's state (${ ACROSS.length } across layers), ${ Object.keys( USER_DATA ).length } userData keys declared, ${ lookReaders.length } readers of the look (none in the chunk worker's ${ workerLoads.size } files, the headless game's ${ headlessLoads.size } or the entry's first ${ entryLoads.size })` );
-for ( const [ key, layers ] of [ ...upward ].sort() ) console.log( `  ${ known.has( key ) ? 'known' : 'NEW  ' } ${ layers }: ${ key }` );
+	for ( const key of Object.keys( keys ) ) {
+
+		if ( layer !== 'render' && key in USER_DATA ) failures.push( `src/${ file } declares '${ key }', which the renderer's list declares too: remove the entry` );
+		const named = userKeys.some( ( hit ) => hit.key === key && ( layer === 'render' || table[ hit.file ] === layer ) );
+		if ( ! named ) failures.push( `src/${ file } declares '${ key }', which no file ${ layer === 'render' ? 'under src/' : `of the ${ layer } layer` } names: remove the entry` );
+
+	}
+
+}
+
+console.log( `verify-layers: ${ files.length } files, ${ edges } imports, ${ upward.size } upward (${ KNOWN.length } known), ${ across } across packages, ${ exits.size } exits and ${ lazy.size } lazy, the headless and setup exits' ${ headlessFiles.size } files, chunk worker ${ workerFiles } files, ${ pageHits.length } page globals named (${ Object.keys( PAGE_NEEDS ).length } files allowed), ${ statePairs } writes of another file's state (${ ACROSS.length } across layers), ${ Object.entries( userLists ).map( ( [ l, { keys } ] ) => `${ Object.keys( keys ).length } ${ l }` ).join( ' and ' ) } userData keys declared, ${ exitNameCount } names in the exits, ${ lookReaders.length } readers of the look (none in the chunk worker's ${ workerLoads.size } files, the headless game's ${ headlessLoads.size }, the entry's first ${ entryLoads.size } or the setup exit's ${ setupLoads.size })` );
+for ( const [ key, pair ] of [ ...upward ].sort() ) console.log( `  ${ known.has( key ) ? 'known' : 'NEW  ' } ${ pair }: ${ key }` );
 if ( failures.length ) {
 
 	console.log( `FAIL (${ failures.length })` );

@@ -1,4 +1,4 @@
-import type { WeatherName } from '../sky/Weather.ts';
+import type { WeatherName } from '../render.ts';
 import { Chronicle } from './Chronicle.ts';
 import type { RecordSave } from './Chronicle.ts';
 import { readSave, writeSave } from './save.ts';

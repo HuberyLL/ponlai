@@ -1,15 +1,15 @@
 // The entry's first step: starts the world's generation as the page's modules load (the island's
 // world/WorldStart.ts `startWorld`), on the land a resumed game's save grew. main.ts imports this
-// module early (after the page's settings, PageSettings.ts), so the world's workers run while the
-// rest of the page loads and sets up; the island's start knows no save, so the entry reads it here.
+// module before the page's own (app/), so the world's workers run while the page sets up the
+// renderer; the island's start knows no save, so the entry reads it here.
 //
 // Debug pages (main.ts's DEBUG: the dev server, ?debug, ?profile) say when the world is in, as
 // `window.__PONLAI_WORLD__` (`ready`, and `ms`, the page's clock then), set as the world starts: the
 // capture tool loads a page with its GPU use held back and without a GPU slot, and takes the slot
 // only once the world is generated (tools/capture.mjs, "The slot after the world").
-import { startWorld } from './world/WorldStart.ts';
-import { readSlot, resumesSave, savedPieces } from './game/save.ts';
-import { settings } from './Settings.ts';
+import { startWorld } from './island.ts';
+import { readSlot, resumesSave, savedPieces } from './game/sim/index.ts';
+import { settings } from './renderSetup.ts';
 
 const params = settings;
 
@@ -17,7 +17,6 @@ const params = settings;
 // island its save grew: its piece count is the land's step, unless the `grow` option is given.
 const pieces = params.has( 'game' ) && ! params.has( 'grow' ) && resumesSave( params ) ? savedPieces( readSlot() ) ?? 0 : 0;
 
-export { worldProgress, landFraming, worldCacheOn } from './world/WorldStart.ts';
 /** The land's options (the world's seed and its step) and the world's job, which main.ts awaits. */
 export const { landOptions, worldJob } = startWorld( { pieces, webgpu: 'gpu' in navigator } );
 if ( import.meta.env.DEV || params.has( 'debug' ) || params.has( 'profile' ) ) {

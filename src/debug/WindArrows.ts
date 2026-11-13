@@ -1,12 +1,8 @@
 import * as THREE from 'three/webgpu';
 import { attribute, clamp, float, mix, positionGeometry, varying, vec2, vec3 } from 'three/tsl';
-import { setWindDisplacement, windField, type WindUniforms } from '../weather/Wind.ts';
-import { previousSway, useRestPoseShadows } from '../world/VegetationShadow.ts';
-import { followWindMotionFlag } from '../world/WindMotion.ts';
+import { setWindDisplacement, windField, type WindUniforms, previousSway, useRestPoseShadows, followWindMotionFlag, CANOPY_TOP, GAIN } from '../render.ts';
 import { islandSurfaceHeight } from '../world/WorldShapes.ts';
-import { CANOPY_TOP } from '../lighting/MeadowCanopy.ts';
 import { sampleShore } from './ChunkBorders.ts';
-import { GAIN } from './WindView.ts';
 import type { WorldData } from '../world/types.ts';
 
 // The wind view's arrows (`windView`, see WindView.ts): main.ts builds them on first show and again

@@ -4,30 +4,16 @@ import {
 	cameraPosition, specularColor, specularColorBlended, specularF90,
 	normalize, abs, pow, sqrt, max, min, dot, sign, mix, smoothstep, clamp, fract, floor, sin, cos, exp, log2, select, dFdx, dFdy, length, varying,
 } from 'three/tsl';
-import type { Shared } from '../shared.ts';
-import { DETAIL_SIZE, SCAN_TOP_MIP } from './ProceduralTextures.ts';
+import { type Shared, DETAIL_SIZE, SCAN_TOP_MIP, GTAO, floorOcclusion, receiveScreenAO, screenAOAt, type WaveMaps, underwaterLight, UnderwaterLightingModel, type UnderwaterLight, type UnderwaterModelOptions, TURF_CANOPY_DEPTH, meadowCanopyLight, meadowGroundLight, puddleField, puddleRipples, DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness, hexReadScan, heightBlend, type HexScan, debugFlags, setDebugFlag, FSR3, fsr3MipBiasScale, MEADOW_SHADE, SS_SHADOW, meadowGroundShade, screenShadowAt, writeMeter, liftKeyWorld } from '../render.ts';
+import { settings } from '../renderSetup.ts';
 import { SCAN_LAYER, type GroundTextures } from './GroundTextures.ts';
-import { GTAO, floorOcclusion, receiveScreenAO, screenAOAt } from '../post/GTAO.ts';
 import { LAWN_GAIN, LAWN_TONE, MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_MAX_DROP, groundGains } from './Meadow.ts';
 import { SOIL_EXTENT, SOIL_HEIGHT_RANGE, SOIL_PALETTE, soilGroveSwell, soilUniforms } from './Soil.ts';
 import { RIM_FRINGE_FADE, RIM_INNER_LIMIT, RIM_MAX_DROP } from '../world/RimGround.ts';
 import { BARE_GROUND, GRASS_ROOTS, GRASS_SHADOW, meadowMean, rootsSky, meadowGroundRuns, meadowLayerLight } from '../world/Grass.ts';
 import { CROWN_SCALE, swardField } from '../world/SwardField.ts';
-import type { WaveMaps } from '../ocean/WaveMaps.ts';
-import { underwaterLight, UnderwaterLightingModel, type UnderwaterLight, type UnderwaterModelOptions } from '../lighting/Underwater.ts';
-import { TURF_CANOPY_DEPTH, meadowCanopyLight, meadowGroundLight } from '../lighting/MeadowCanopy.ts';
-import { puddleField, puddleRipples } from '../weather/Puddles.ts';
 import { seabedAlbedo } from './SeabedLook.ts';
 import { FLOOR_ALBEDO } from '../world/SeabedTile.ts';
-import { DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness } from './Wetness.ts';
-import { hexReadScan, heightBlend, type HexScan } from './HexTiling.ts';
-import { debugFlags, setDebugFlag } from '../debug/DebugFlags.ts';
-import { FSR3 } from '../post/Antialiasing.ts';
-import { fsr3MipBiasScale } from '../post/fsr3/MipBias.ts';
-import { MEADOW_SHADE, SS_SHADOW, meadowGroundShade, screenShadowAt } from '../post/MeadowShade.ts';
-import { writeMeter } from '../lighting/MeterLight.ts';
-import { liftKeyWorld } from '../lighting/KeyLift.ts';
-import { settings } from '../Settings.ts';
 
 // The meadow's ground shaded by its crowns toward the light (`meadowGroundLight`); off with
 // `flags=groundCast:false` at load (the canopy's mean depth instead).

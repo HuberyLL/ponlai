@@ -1,5 +1,4 @@
-import { DAY_PRESETS } from '../../../sky/DayCycle.ts';
-import type { WeatherName } from '../../../sky/Weather.ts';
+import { DAY_PRESETS, type WeatherName } from '../../../render.ts';
 import { t } from '../i18n/i18n.ts';
 import type { Catalogue } from '../i18n/i18n.ts';
 

@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { CLICK_SLOP } from '../../camera/IslandCameraControls.ts';
+import { CLICK_SLOP } from '../../island.ts';
 import { BAG_CAPACITY, total } from '../sim/items.ts';
 import { CRITICAL_NEED, LOW_NEED } from '../sim/needs.ts';
 import { needs as needKinds } from '../sim/registry.ts';

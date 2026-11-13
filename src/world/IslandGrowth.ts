@@ -24,7 +24,7 @@
 // flood and the rounding work in windows around the piece. `GROWTH` holds every parameter.
 
 import { Field2D, roundCorners } from './Field2D.ts';
-import { fbm2, hash3i, mulberry32, smoothstep } from './noise.ts';
+import { fbm2, hash3i, mulberry32, smoothstep } from '../renderData.ts';
 
 export const GROWTH = {
 	cell: 0.25, // the land lattice's cell (m)

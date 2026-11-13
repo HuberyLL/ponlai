@@ -1,14 +1,11 @@
 // The scene jump: `establishScene` moves the page to another scene as a fresh load of its query
 // holds it, and SCENE_OPTIONS names the query options that make a scene (the tools read the list
 // from this file: tools/parity/adhoc.mjs).
-import { settings as params, type SettingName } from '../Settings.ts';
-import type { DayPreset } from '../sky/DayCycle.ts';
-import type { WeatherName } from '../sky/Weather.ts';
-import { weatherWind } from '../weather/Wind.ts';
-import { sceneEvent } from '../post/SceneEvents.ts';
-import { registerSceneHistories, registerLightHistories, type RenderParts } from '../RenderStages.ts';
-import { registerIslandHistories, type IslandParts } from '../IslandStages.ts';
+import { type DayPreset, type WeatherName, weatherWind, renderEvent, registerSceneHistories, registerLightHistories, type RenderParts } from '../render.ts';
+import { settings as params, type SettingName } from '../renderSetup.ts';
+import { registerIslandHistories, type IslandParts } from '../island.ts';
 import type { PageParts } from './Page.ts';
+import { cameraMode } from './CameraViews.ts';
 
 // A whole scene at once, as a page loads it (the capture tools' one page per set; the profiler's
 // scene switches). `establishScene( query )` (a string or URLSearchParams) leaves the page as a
@@ -17,7 +14,7 @@ import type { PageParts } from './Page.ts';
 // frame equals the fresh load's, to the byte wherever the fresh load repeats itself
 // (tools/verify-scene-jump.mjs checks every parity view from several scenes before).
 // - The scene's options (SCENE_OPTIONS) come from the query, each one left out at its load default
-//   (`sceneOptions`): the weather established (wet in rain; auto weather without `weather`), the day
+//   (render.ts `sceneOptions`, with the page's defaults): the weather established (wet in rain; auto weather without `weather`), the day
 //   clock (hour or preset, moon phase, day length, paused), the scene clock (`t`, `paused`) and the
 //   wind integrated to it, the cloud override.
 // - The camera: the orbit's island view at the query's dist / polar / az (`placeOrbit`, as the load
@@ -48,9 +45,9 @@ export type SceneRequest = string | URLSearchParams | { weather?: WeatherName; p
 /** The scene jump. */
 export function createSceneControls( render: RenderParts, island: IslandParts, page: PageParts ) {
 
-	const { sceneOptions, dayCycle, weather, wind, bakeExplicitly, refreshEnvironment, history } = render;
-	const { controls, growth, poseIslandView } = island;
-	const { setCameraMode, setCameraView, timeView, pacer } = page;
+	const { dayCycle, weather, wind, bakeExplicitly, refreshEnvironment, history } = render;
+	const { controls, growth } = island;
+	const { sceneOptions, setCameraMode, setCameraView, framing: { poseIslandView }, timeView, pacer } = page;
 	// What a jump clears of the scenes before, registered layer by layer in the order it is
 	// cleared (post/SceneHistory.ts): the renderer's, the island's, the renderer's light, the page's.
 	registerSceneHistories( render );
@@ -65,7 +62,7 @@ export function createSceneControls( render: RenderParts, island: IslandParts, p
 		if ( ! Number.isFinite( t ) || t < 0 ) throw new RangeError( 'Scene time must be finite and non-negative' );
 		render.simTime = t;
 		wind.reset( { ...weatherWind( weather.state ), time: t } );
-		sceneEvent( 'seek' );
+		renderEvent( 'seek' );
 		return refreshEnvironment();
 
 	};
@@ -107,7 +104,7 @@ export function createSceneControls( render: RenderParts, island: IslandParts, p
 			controls.clearInput();
 			setCameraMode( 'orbit' );
 			setCameraView( 'island' );
-			if ( next.camera === 'free' ) setCameraMode( 'free' );
+			if ( cameraMode( query ) === 'free' ) setCameraMode( 'free' );
 			// the shoal at the query's approach (0 without one), put on it at once
 			await growth.approachNow( Number( query.get( 'approach' ) ?? 0 ) );
 
@@ -127,7 +124,7 @@ export function createSceneControls( render: RenderParts, island: IslandParts, p
 
 		}
 		history.jump( 'before bake' );
-		sceneEvent( 'establish scene' );
+		renderEvent( 'establish scene' );
 		render.manualSun = false;
 		await bakeExplicitly();
 		history.jump( 'after bake' );

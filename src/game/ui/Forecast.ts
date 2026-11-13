@@ -2,7 +2,7 @@ import type { Game } from '../Game.ts';
 import { upright } from './Brush.ts';
 import type { Stroke } from './Brush.ts';
 import { iconSvg, setIcon } from './Icons.ts';
-import type { WeatherName } from '../../sky/Weather.ts';
+import type { WeatherName } from '../../render.ts';
 import { nightness, weatherIcon, weatherKind } from './data/weather.ts';
 import type { WeatherKind } from './data/weather.ts';
 import { attr, css, el, svgEl } from './dom.ts';

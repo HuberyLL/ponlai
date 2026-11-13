@@ -1,5 +1,5 @@
-import type { DayKey } from '../post/DayKeys.ts';
-import type { IslandSkyRow, Rgb, SkyLook } from '../look/Look.ts';
+import type { DayKey } from '../render.ts';
+import type { IslandSkyRow, Rgb, SkyLook } from '../renderSetup.ts';
 
 // The island's sky look (src/islandLook/: the island's numbers for the renderer's look tables,
 // look/Look.ts; look/SkyLook.ts reads these, and its header says what each table is). Upper-case

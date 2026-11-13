@@ -2,26 +2,9 @@
 // 30 frames, and `window.__PONLAI__`, the scene's handles for the capture and profiling tools and
 // the console. Both exist only on the dev server or with `?debug` / `?profile`.
 import * as THREE from 'three/webgpu';
-import type { QualityProfile } from '../Quality.ts';
-import { soilUniforms } from '../materials/Soil.ts';
-import { meadowCanopy } from '../lighting/MeadowCanopy.ts';
-import type { GradeChanges } from '../post/GradeLut.ts';
-import { DynamicResolution } from '../post/DynamicResolution.ts';
-import { shared } from '../shared.ts';
-import { setGroundGain } from '../materials/Meadow.ts';
-import { ambientGrade } from '../lighting/AmbientGrade.ts';
-import { liftedKeyDirection } from '../lighting/KeyLift.ts';
-import { debugFlags } from '../debug/DebugFlags.ts';
-import { tuneApi } from '../debug/Tune.ts';
-import { AA_MODE, AA_SOURCE } from '../post/Antialiasing.ts';
-import { motionState, taaCut, motionCheck } from '../post/Motion.ts';
-import { jitter } from '../post/Jitter.ts';
-import { restEpoch } from '../post/TemporalRest.ts';
-import { preExposure } from '../post/PreExposure.ts';
-import { sceneEvent } from '../post/SceneEvents.ts';
-import { gtaoUniforms } from '../post/GTAO.ts';
-import type { RenderParts } from '../RenderStages.ts';
-import type { IslandParts } from '../IslandStages.ts';
+import { meadowCanopy, type GradeChanges, DynamicResolution, shared, ambientGrade, liftedKeyDirection, debugFlags, tuneApi, AA_MODE, AA_SOURCE, motionState, taaCut, motionCheck, jitter, restEpoch, preExposure, renderEvent, gtaoUniforms, type RenderParts } from '../render.ts';
+import type { QualityProfile } from '../renderSetup.ts';
+import { soilUniforms, setGroundGain, MEADOW_EXTENT, swardField, type IslandParts } from '../island.ts';
 import type { PageParts } from './Page.ts';
 
 // The dynamic scale's clock as a debug hook (`__PONLAI__.dynamicClock`): `suspend()` holds the
@@ -164,9 +147,9 @@ export function createDiagnostics( render: RenderParts, island: IslandParts, pag
 /** The scene's handles on `window.__PONLAI__`. */
 export function exposeDebugHandles( render: RenderParts, island: IslandParts, page: PageParts ) {
 
-	const { DEBUG, quality, renderer, submitBatch, scene, camera, sky, dayCycle, weather, weatherEffects, wind, applySkyQuality, sun, sunShadow, invalidateSunShadow, retuneSky, refreshEnvironment, applySun, setHour, setPreset, setWeather, setWind, fft, waveMaps, seaDetail, pipeline, groundBounce, shoreWaves, ambient, ambientRelight, refractedSun, stormSea, hazeKey, motionPasses } = render;
+	const { DEBUG, quality, renderer, submitBatch, scene, camera, sky, dayCycle, weather, wind, applySkyQuality, sun, sunShadow, invalidateSunShadow, retuneSky, refreshEnvironment, applySun, setHour, setPreset, setWeather, setWind, fft, waveMaps, seaDetail, pipeline, groundBounce, shoreWaves, ambient, ambientRelight, refractedSun, stormSea, hazeKey, motionPasses } = render;
 	const { controls, freeControls, landInfo, fields, wenyao, grass, yunpeng, bamboo, growth } = island;
-	const { pipelineCount, cameraSettings, setCameraMode, setCameraView, dynamicResolution, pacer, setTime, establishScene, loop, step } = page;
+	const { pipelineCount, cameraSettings, setCameraMode, setCameraView, weatherEffects, dynamicResolution, pacer, setTime, establishScene, loop, step } = page;
 
 	if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, waveMaps, water: render.water, pipeline, shared, refractedSun, groundBounce,
 		// the direction the surfaces take the key's light from, the low key's lift included (lighting/KeyLift.ts)
@@ -184,16 +167,16 @@ export function exposeDebugHandles( render: RenderParts, island: IslandParts, pa
 		ambientRelight,
 		// the look's knobs from a script (the GUI's raise their own events): the first table's grade
 		// (GradeLut.ts), the meadow's and the cliff's albedos (groundGains), the leaves' (shared.leafGain)
-		setGrade: ( changes?: GradeChanges ) => { pipeline.setGrade( changes ); sceneEvent( 'retune' ); },
-		setLawnGain: ( gain: number ) => { setGroundGain( 'lawnGain', gain ); groundBounce.invalidate(); sceneEvent( 'retune' ); },
-		setRockGain: ( gain: number ) => { setGroundGain( 'rockGain', gain ); sceneEvent( 'retune' ); },
-		setLeafGain: ( gain: number ) => { shared.leafGain.value = gain; sceneEvent( 'retune' ); }, grass, wenyao, fallingLeaves: island.fallingLeaves, meadowCanopy, characters: island.characters, game: page.game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain: render.rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => render.simTime, nominalScale: () => page.nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
+		setGrade: ( changes?: GradeChanges ) => { pipeline.setGrade( changes ); renderEvent( 'retune' ); },
+		setLawnGain: ( gain: number ) => { setGroundGain( 'lawnGain', gain ); groundBounce.invalidate(); renderEvent( 'retune' ); },
+		setRockGain: ( gain: number ) => { setGroundGain( 'rockGain', gain ); renderEvent( 'retune' ); },
+		setLeafGain: ( gain: number ) => { shared.leafGain.value = gain; renderEvent( 'retune' ); }, grass, wenyao, fallingLeaves: island.fallingLeaves, meadowCanopy, characters: island.characters, game: page.game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain: render.rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => render.simTime, nominalScale: () => page.nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 		// the tunable parameters (debug/Tune.ts): set( { name: value } ), get, list, reset, query; a value
 		// the environment's bakes depend on rebakes them at once (`retuneSky`, sky/SkyRetune.ts), as the
 		// load bakes
 		tune: tuneApi( () => {
 
-			if ( ! retuneSky() ) sceneEvent( 'retune' );
+			if ( ! retuneSky() ) renderEvent( 'retune' );
 
 		} ),
 		// the scene's linear radiance over screen boxes (debug/Radiance.ts), loaded on first call
@@ -202,7 +185,6 @@ export function exposeDebugHandles( render: RenderParts, island: IslandParts, pa
 		// round the origin, for tools that pick a view over the meadow
 		meadowMap: async () => {
 
-			const [ { swardField }, { MEADOW_EXTENT } ] = await Promise.all( [ import( '../world/SwardField.ts' ), import( '../materials/Meadow.ts' ) ] );
 			const image = swardField.value.image as { data: Uint8Array; width: number };
 			return { data: image.data, size: image.width, extent: MEADOW_EXTENT };
 
@@ -234,7 +216,7 @@ export function exposeDebugHandles( render: RenderParts, island: IslandParts, pa
 		taa: pipeline.resolver ? {
 			resolve: pipeline.resolver, settings: pipeline.resolver.settings, knobs: pipeline.temporal?.knobs ?? null, rest: pipeline.resolver.rest, epoch: restEpoch,
 			get converged() { return pipeline.resolver!.converged; },
-			restart: () => sceneEvent( 'restart' ),
+			restart: () => renderEvent( 'restart' ),
 		} : null,
 		// FSR 3 (post/fsr3/Fsr3Upscaler.ts, aa=fsr3): its rest, live settings and diagnostics()
 		fsr3: pipeline.fsr3,

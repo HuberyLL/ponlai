@@ -9,12 +9,8 @@ import {
 	Fn, attribute, float, vec2, vec3, color, sin, cos, mix, smoothstep, floor, fract, abs, sign, select, length,
 	normalize, cross, positionGeometry, normalGeometry, normalLocal, positionPrevious,
 } from 'three/tsl';
-import type { Shared } from '../shared.ts';
-import type { WaveMaps } from '../ocean/WaveMaps.ts';
-import { underwaterLight, UnderwaterLightingModel } from '../lighting/Underwater.ts';
-import { TEMPORAL } from '../post/Antialiasing.ts';
+import { type Shared, type WaveMaps, underwaterLight, UnderwaterLightingModel, TEMPORAL, writeMeter } from '../render.ts';
 import { PART, type Anatomy } from './FishGeometry.ts';
-import { writeMeter } from '../lighting/MeterLight.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;

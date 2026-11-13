@@ -1,7 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { Fn, uniform, vec2, vec3, vec4, float, floor } from 'three/tsl';
-import { solarVolumeVisibility } from '../lighting/SolarShadow.ts';
-import { compileLatentInto } from '../post/graph/Compile.ts';
+import { solarVolumeVisibility, compileLatentInto } from '../render.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;

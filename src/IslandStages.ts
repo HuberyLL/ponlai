@@ -4,10 +4,11 @@
 // scans, the world's data and land, its meshes, its debug views, the vegetation, and the growth in
 // place. The rules of RenderStages.ts hold here too: the statements' order is part of the image,
 // and a stage that ends in a wait returns its promise to the entry.
-// - The page's camera views (app/CameraViews.ts) need the document, so the page hangs them on the
-//   object as the hooks the land's changes call: `frameLand`, `holdsFraming`, `followFraming`,
-//   `poseIslandView`, `islandViewOptions`.
-import { settings as params, type SettingsQuery } from './Settings.ts';
+// - The page's camera views (app/CameraViews.ts) need the document, so the page builds the island
+//   view's framing (`IslandFraming`), which the land's changes call, and hands it to the stages that
+//   frame the land (`createVegetation`, `createGrowth`).
+import { WIND_VIEW, shared, testSources, debugFlags, TEST_MODE, declareSceneEvents, installVegetationPrepass, createDisplacementField, displacementField, installOpaquePrepass, GTAO, SS_SHADOW, Vegetation, defaultPlant, installWindMotionFlag, type RenderParts } from './render.ts';
+import { settings as params, type SettingsQuery } from './renderSetup.ts';
 import * as THREE from 'three/webgpu';
 import { FreeCameraControls } from './camera/FreeCameraControls.ts';
 import { IslandCameraControls } from './camera/IslandCameraControls.ts';
@@ -18,15 +19,12 @@ import { bakeGroundTextures } from './materials/GroundTextures.ts';
 import { buildWorldMeshes } from './world/World.ts';
 import type { WorldData } from './world/types.ts';
 import { WorldFields } from './world/WorldFields.ts';
-import { Growth } from './world/Growth.ts';
+import { Growth, type GrowthGame } from './world/Growth.ts';
 import { worldProgress, landFraming, worldCacheOn } from './world/WorldStart.ts';
 import { buildChunkBorders } from './debug/ChunkBorders.ts';
-import { WIND_VIEW } from './debug/WindView.ts';
 import { windArrowGeometry, buildWindArrows } from './debug/WindArrows.ts';
 import { buildGrass, plantGrass, grassKind } from './world/Grass.ts';
 import { buildYunpeng, yunpengKind, yunpengLights } from './world/Yunpeng.ts';
-import { shared } from './shared.ts';
-import { testSources } from './lighting/LocalLights.ts';
 import { landBounds, islandSurfaceHeight } from './world/WorldShapes.ts';
 import { GROWTH, LandLattice } from './world/IslandGrowth.ts';
 import { walkPoints } from './world/WalkPath.ts';
@@ -38,23 +36,11 @@ import { Trample } from './world/vegetation/Trample.ts';
 import { PROPORTION_NAMES, type ProportionName, PROPORTIONS } from './characters/Proportions.ts';
 import { type Body, parseBodies } from './characters/Ages.ts';
 import { CharacterShadow } from './characters/CharacterShadow.ts';
-import { debugFlags } from './debug/DebugFlags.ts';
-import { TEST_MODE } from './debug/TestMode.ts';
-import { declareSceneEvents } from './post/SceneEvents.ts';
-import { installVegetationPrepass } from './world/VegetationPrepass.ts';
-import { createDisplacementField, displacementField } from './world/vegetation/Displacement.ts';
-import { installOpaquePrepass } from './world/OpaquePrepass.ts';
-import { GTAO } from './post/GTAO.ts';
-import { SS_SHADOW } from './post/MeadowShade.ts';
-import { Vegetation } from './world/vegetation/Registry.ts';
-import { defaultPlant } from './world/vegetation/DefaultPlant.ts';
 import { registerIslandClasses } from './world/IslandClasses.ts';
-import { installWindMotionFlag } from './world/WindMotion.ts';
 import { ISLANDER, HANMING, ISLANDER_LOOKS, HANMING_LOOKS } from './characters/looks.ts';
-import type { RenderParts } from './RenderStages.ts';
 import type { GroundTextures } from './materials/GroundTextures.ts';
 import type { LoadedWorld } from './world/WorldChunks.ts';
-import type { Bounds } from './RenderTypes.ts';
+import type { Bounds } from './renderData.ts';
 import type { WorldMeshes } from './world/World.ts';
 import type { Yunpeng } from './world/Yunpeng.ts';
 import type { Bamboo } from './world/Bamboo.ts';
@@ -92,17 +78,14 @@ export interface IslandParts {
 	characterShadow: CharacterShadow;
 	textures: GroundTextures;
 	fallingLeaves: FallingLeaves | null;
-	t0: number;
 	worldCache: LoadedWorld;
 	data: WorldData;
 	land: LandLattice;
 	landBox: Bounds;
-	measureLand: ( next: LandLattice ) => LandMeasure;
 	landScale: number;
 	onLand: ReturnType<typeof landFraming>[ 'onLand' ];
 	outline: number[];
 	landInfo: { seed: number; step: number; bounds: Bounds; centroid: { x: number; z: number }; scale: number; target: number[] };
-	setLand: ( next: LandLattice, step: number, measured?: LandMeasure ) => void;
 	fields: WorldFields;
 	walk: [ number, number ][];
 	world: WorldMeshes;
@@ -110,16 +93,10 @@ export interface IslandParts {
 	chunkView: { borders: boolean; lines: THREE.LineSegments | null };
 	shownData: WorldData;
 	showChunkBorders: ( on: boolean ) => void;
-	showWindArrows: () => void;
 	grass: THREE.Group;
-	vegetation: Vegetation<WorldData>;
 	yunpeng: Yunpeng;
-	setLocalSources: () => void;
 	bamboo: Bamboo;
-	sunCasters: THREE.Box3;
 	heldOpaque: THREE.Box3[];
-	holdPlants: () => void;
-	setSunCasters: () => void;
 	islandMaxDistance: number;
 	SCENE_LOOK: Look;
 	GAME_LOOKS: readonly Look[];
@@ -131,11 +108,44 @@ export interface IslandParts {
 	worldInfo: { worldTriangles: number };
 	growth: Growth<LandMeasure>;
 	approachWritten: boolean;
-	frameLand: () => void;
-	islandViewOptions: SettingsQuery;
-	poseIslandView: ( options: SettingsQuery, turn?: number, zoom?: number ) => void;
-	holdsFraming: () => boolean;
-	followFraming: ( glide?: boolean ) => void;
+}
+
+/** What the island's stages hand one another and nothing else reads: on the same object, off the
+ * IslandParts the page sees. */
+interface StageParts {
+	t0: number;
+	/** the box of everything that casts into the sun's map (`setSunCasters`, `holdOpaque`) */
+	sunCasters: THREE.Box3;
+	measureLand: ( next: LandLattice ) => LandMeasure;
+	setLand: ( next: LandLattice, step: number, measured?: LandMeasure ) => void;
+	showWindArrows: () => void;
+	vegetation: Vegetation<WorldData>;
+	setLocalSources: () => void;
+	holdPlants: () => void;
+	setSunCasters: () => void;
+}
+
+/** The island's parts as its own stages see them. */
+function staged( island: IslandParts ): IslandParts & StageParts {
+
+	return island as IslandParts & StageParts;
+
+}
+
+/** The island view's framing on the land shown, which the page builds (app/CameraViews.ts) and
+ * the land's changes call. */
+export interface IslandFraming {
+	/** places the island view on the land as the load places it */
+	frameLand(): void;
+	/** the options (dist / polar / az) the island view was last posed at */
+	readonly viewOptions: SettingsQuery;
+	/** poses the island view at `options`, the heading turned by `turn` (rad), at `zoom`, the camera
+	 * left where it is */
+	poseIslandView( options: SettingsQuery, turn?: number, zoom?: number ): void;
+	/** whether the camera holds the island view's pose, or glides toward it */
+	holdsFraming(): boolean;
+	/** takes the camera to the island view's pose: a glide, or at once */
+	followFraming( glide?: boolean ): void;
 }
 
 /** The island's camera controls and the free flight's. */
@@ -237,7 +247,7 @@ export function awaitWorld( render: RenderParts, island: IslandParts, { worldJob
 
 	worldProgress.show = ( text ) => setStatus( `Generating the island…${ text }` );
 	worldProgress.show( worldProgress.text );
-	island.t0 = performance.now();
+	staged( island ).t0 = performance.now();
 	// a failed world must not leave the loading screen saying it is still generating
 	return worldJob.catch( ( error: unknown ) => {
 
@@ -253,8 +263,8 @@ export function createLand( render: RenderParts, island: IslandParts, { landOpti
 
 	const { mark } = render;
 	const { target, worldCache } = island;
-	island.measureLand = measureLand;
-	island.setLand = setLand;
+	staged( island ).measureLand = measureLand;
+	staged( island ).setLand = setLand;
 	worldProgress.show = null;
 	const data = worldCache.data;
 	island.data = data;
@@ -347,7 +357,7 @@ export function createWorldViews( render: RenderParts, island: IslandParts ) {
 		} else scene.add( windArrows = buildWindArrows( island.shownData, shared.wind ) );
 
 	};
-	island.showWindArrows = showWindArrows;
+	staged( island ).showWindArrows = showWindArrows;
 	showWindArrows();
 
 }
@@ -355,18 +365,19 @@ export function createWorldViews( render: RenderParts, island: IslandParts ) {
 /**
  * The meadow, the yunpeng and its lights, the bamboo, the sun's casters and the islanders' looks.
  */
-export function createVegetation( render: RenderParts, island: IslandParts ) {
+export function createVegetation( render: RenderParts, island: IslandParts, { framing }: { framing: IslandFraming } ) {
 
 	const { mark, setStatus, renderer, scene, sunShadow } = render;
-	const { controls, data, world, frameLand } = island;
-	island.setSunCasters = setSunCasters;
+	const { controls, data, world } = island;
+	const { frameLand } = framing;
+	staged( island ).setSunCasters = setSunCasters;
 	island.compileDraws = compileDraws;
 	const grass = buildGrass( plantGrass( data.vegetation ), shared );
 	island.grass = grass;
 	// The vegetation's kinds (vegetation/Registry.ts), in the order the scene draws them; every list
 	// of vegetation below reads it.
 	const vegetation = new Vegetation<WorldData>( ( sites, name ) => defaultPlant( shared, sites, name ) );
-	island.vegetation = vegetation;
+	staged( island ).vegetation = vegetation;
 	vegetation.add( grassKind( grass ) );
 	// the yunpeng's clumps in the meadow, instances of a few prototypes at two levels (Yunpeng.ts)
 	const yunpeng = buildYunpeng( data, shared );
@@ -379,7 +390,7 @@ export function createVegetation( render: RenderParts, island: IslandParts ) {
 	render.localLights.add( yunpengLights( yunpeng ) );
 	// (the test sources are loaded once: a growth does not move them)
 	render.localLights.add( { name: 'light test', cost: 'none', testMode: 'stateless', land: 'independent', sources: () => testLights } );
-	island.setLocalSources = () => render.localLights.refresh();
+	staged( island ).setLocalSources = () => render.localLights.refresh();
 	// the bamboo over the whole island, instances of a few prototypes at two levels (Bamboo.ts,
 	// vegetation/PlantInstances.ts), its leaves drawn once here (BambooMaterials.ts)
 	const bamboo = buildBamboo( data, { shared, atlas: bambooAtlas() } );
@@ -393,10 +404,10 @@ export function createVegetation( render: RenderParts, island: IslandParts ) {
 	// and floor, and the plants without a prepass of their own
 	if ( GTAO || SS_SHADOW ) installOpaquePrepass( [ world.group, ...vegetation.roots( ( kind ) => ! kind.prepass ) ] );
 	// Everything that casts into the sun's map: the figures cast through their own map, and the sea
-	// floor's stones only into the refracted one. The game's props grow it (holdOpaque below), and so
+	// floor's stones only into the refracted one. The game's props grow it (`holdOpaque`), and so
 	// does the island (setSunCasters again at each growth step).
 	const sunCasters = new THREE.Box3();
-	island.sunCasters = sunCasters;
+	staged( island ).sunCasters = sunCasters;
 	// the boxes the game's props hold (holdOpaque), kept over the island's growth
 	const heldOpaque: THREE.Box3[] = [];
 	island.heldOpaque = heldOpaque;
@@ -409,7 +420,7 @@ export function createVegetation( render: RenderParts, island: IslandParts ) {
 		yunpengBox.setFromObject( yunpeng.root );
 
 	};
-	island.holdPlants = holdPlants;
+	staged( island ).holdPlants = holdPlants;
 	holdPlants();
 	heldOpaque.push( bambooBox, yunpengBox );
 	function setSunCasters(): void {
@@ -436,8 +447,8 @@ export function createVegetation( render: RenderParts, island: IslandParts ) {
 	frameLand();
 	// Drops stop on the first surface they meet: rock, turf, leaves (the meadow's blades are generated
 	// as they draw, Grass.ts, and stay out of the bake).
-	render.rain.collision.setArea( island.landBox );
-	render.rain.bakeCollision( renderer, [ world.group, ...vegetation.roots( ( kind ) => kind.rainBake ) ] );
+	render.rain!.collision.setArea( island.landBox );
+	render.rain!.bakeCollision( renderer, [ world.group, ...vegetation.roots( ( kind ) => kind.rainBake ) ] );
 	mark( 'meshes' );
 	setStatus( 'Waking the villagers…' );
 	// The islanders are the Hanming people (src/characters/looks.ts HANMING: a woven bamboo hat, a
@@ -476,11 +487,25 @@ export function createVegetation( render: RenderParts, island: IslandParts ) {
 
 }
 
+/** Holds a box that may rise above all the island grows (a game's prop): the sun's map grows to
+ * hold it and the sea's reflection marches it (now, or once the sea is made: `heldOpaque`), and
+ * both keep it over the island's growth. */
+export function holdOpaque( render: RenderParts, island: IslandParts, box: THREE.Box3 ): void {
+
+	const { sunCasters } = staged( island );
+	island.heldOpaque.push( box.clone() );
+	if ( ! sunCasters.containsBox( box ) ) render.sunShadow.setCasters( sunCasters.union( box ) );
+	render.water?.hold( box );
+
+}
+
 /** The island's growth in place and everything that follows a land's swap. */
-export function createGrowth( render: RenderParts, island: IslandParts, { landOptions, game }: { landOptions: { worldSeed: number; step: number }; game: ConstructorParameters<typeof Growth>[ 0 ][ 'game' ] } ) {
+export function createGrowth( render: RenderParts, island: IslandParts, { landOptions, game, framing }: { landOptions: { worldSeed: number; step: number }; game: GrowthGame | null; framing: IslandFraming } ) {
 
 	const { renderer, scene, groundBounce, shoreWaves, ambient, refractedSun } = render;
-	const { controls, t0, worldCache, data, measureLand, setLand, fields, world, wenyao, chunkView, showChunkBorders, showWindArrows, vegetation, setLocalSources, heldOpaque, holdPlants, setSunCasters, poseIslandView, holdsFraming, followFraming } = island;
+	const { controls, worldCache, data, fields, world, wenyao, chunkView, showChunkBorders, heldOpaque } = island;
+	const { t0, measureLand, setLand, showWindArrows, vegetation, setLocalSources, holdPlants, setSunCasters } = staged( island );
+	const { poseIslandView, holdsFraming, followFraming } = framing;
 
 	console.info( `world: ${ worldCache.hits } of ${ worldCache.chunks + 1 } records from the cache (${ worldCache.cache })`, data.timings, 'triangles', world.triangles, 'in', Math.round( performance.now() - t0 ), 'ms' );
 
@@ -495,7 +520,7 @@ export function createGrowth( render: RenderParts, island: IslandParts, { landOp
 	const worldInfo = { worldTriangles: world.triangles };
 	island.worldInfo = worldInfo;
 	const growth = new Growth( {
-		renderer, world, fields, vegetation, shoreWaves, refractedSun, ambient, rain: render.rain, characters: island.characters, game,
+		renderer, world, fields, vegetation, shoreWaves, refractedSun, ambient, rain: render.rain!, characters: island.characters, game,
 		measure: measureLand,
 		onSwap: ( next, version, measured ) => {
 
@@ -510,7 +535,7 @@ export function createGrowth( render: RenderParts, island: IslandParts, { landOp
 			const follow = holdsFraming();
 			controls.setIsland( world.grounds, island.outline );
 			island.islandMaxDistance = controls.maxDistance;
-			poseIslandView( island.islandViewOptions, island.islandTurned, island.islandZoom );
+			poseIslandView( framing.viewOptions, island.islandTurned, island.islandZoom );
 			if ( follow ) followFraming();
 			island.shownData = version;
 			wenyao.setWorld( version );

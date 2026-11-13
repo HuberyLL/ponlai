@@ -1,4 +1,4 @@
-import type { WeatherName } from '../../../sky/Weather.ts';
+import type { WeatherName } from '../../../render.ts';
 import type { RecordEntry } from '../../Chronicle.ts';
 import { lookup, t } from '../i18n/i18n.ts';
 import { needLook } from './needs.ts';

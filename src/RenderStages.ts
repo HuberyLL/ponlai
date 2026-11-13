@@ -13,7 +13,7 @@
 //   entry's to order.
 // - What the island gives a stage comes as an argument typed by the renderer's own types: this
 //   file names nothing of the island's.
-import { settings as params, type SettingName, type SettingsQuery } from './Settings.ts';
+import { settings as params, numberSetting, type SettingsQuery } from './Settings.ts';
 import * as THREE from 'three/webgpu';
 import { Sky } from './sky/Sky.ts';
 import { DAY_PRESETS, type DayPreset, DayCycle, sunRising } from './sky/DayCycle.ts';
@@ -34,7 +34,7 @@ import { Pipeline } from './post/Pipeline.ts';
 import { postOptionsFromURL } from './post/PostOptions.ts';
 import { hazeKeyAt, type HazeKey } from './weather/HazeKeys.ts';
 import { OUTPUT_PIXEL_RATIO_CAP, outputPixelRatio } from './post/RenderScale.ts';
-import { SubmitBatch } from './post/SubmitBatch.ts';
+import { SubmitBatch, type SubmitDevice } from './post/SubmitBatch.ts';
 import { installCacheKeyPatches, installBindingPatches, primeSharedNodes } from './three/ThreePatches.ts';
 import { checkRenderer } from './three/Internals.ts';
 import { isWebGPU, gpuDevice } from './three/Backend.ts';
@@ -43,7 +43,7 @@ import { installOpenShadow } from './lighting/SolarShadow.ts';
 import { createLocalLights, type LocalLights } from './lighting/LocalLights.ts';
 import { SunShadow } from './lighting/SunShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
-import { installGroundBounce, GroundBounce } from './lighting/GroundBounce.ts';
+import { installGroundBounce, GroundBounce, type BounceGround } from './lighting/GroundBounce.ts';
 import { updateKeyLift, liftedKeyDirection, liftedKeyHeight } from './lighting/KeyLift.ts';
 import { keyGlint } from './lighting/SurfaceBRDF.ts';
 import { AmbientVolume, type AmbientView } from './lighting/AmbientVolume.ts';
@@ -52,28 +52,98 @@ import { lowSunSkyLift, AmbientSky, AmbientRelight } from './lighting/AmbientRel
 import { type TuneOptions, tune } from './debug/Tune.ts';
 import { markSkyRetune, skyRetune } from './sky/SkyRetune.ts';
 import { TEMPORAL, AFTER_RESOLVE } from './post/Antialiasing.ts';
-import type { SceneLatents } from './post/ExtraPass.ts';
+import type { ExtraPass, SceneLatents } from './post/ExtraPass.ts';
+import type { AmbientLattice } from './lighting/ProbeFormat.ts';
+import type { SubmergedSubset } from './lighting/CasterFormat.ts';
+import type { Bounds, ShoreField } from './RenderTypes.ts';
+import type { FrameProfiler } from './debug/FrameProfiler.ts';
 import { motionUniforms, MOTION_CLASS, motionCheck } from './post/Motion.ts';
 import { SceneHistory } from './post/SceneHistory.ts';
 import { jitter } from './post/Jitter.ts';
 import { preExposure } from './post/PreExposure.ts';
-import { sceneEvent } from './post/SceneEvents.ts';
+import { renderEvent } from './post/SceneEvents.ts';
 import { TemporalAA } from './post/TemporalAA.ts';
 import { watchPipelines } from './post/Settled.ts';
 import { MOON_GLINT_RADIUS, SCENE_RADIANCE_SCALE } from './lighting/Radiometry.ts';
 import { SUN_GLINT_DISC } from './lighting/SunDisc.ts';
 import { debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
 
-/** A scene as the query names it: what a load and a scene jump both establish. */
-type SceneOptions = { weather: WeatherName; wind: { level: WindLevel | undefined; heading: number | undefined }; autoWeather: boolean; day: { hour: number; dayLength: number; paused: boolean; moonPhase: number }; preset: DayPreset | null; paused: boolean; time: number; clouds: number | null; camera: string };
+/** A scene as the query names it: what a load and a scene jump both establish (`sceneOptions`). */
+export interface SceneOptions {
+	weather: WeatherName;
+	wind: { level: WindLevel | undefined; heading: number | undefined };
+	/** the weather evolves on its own (the query names neither the weather nor its wind) */
+	autoWeather: boolean;
+	day: { hour: number; dayLength: number; paused: boolean; moonPhase: number };
+	preset: DayPreset | null;
+	/** the scene clock held */
+	paused: boolean;
+	/** the scene clock (s) */
+	time: number;
+	/** the clouds' coverage, over the weather's (0..1), or null */
+	clouds: number | null;
+}
 
-export interface RenderParts {
-	profiler: ReturnType<typeof import( './debug/FrameProfiler.ts' ).createFrameProfiler> | null;
-	mark: ( name: string ) => void | undefined;
+/** What a query leaves to the page: the day clock's hour and length (s) where it names none, and
+ * whether a parked weather may load (Weather.ts `PARKED_WEATHER`: debug pages only). */
+export interface SceneDefaults { hour: number; dayLength: number; parkedWeather: boolean }
+
+/**
+ * The scene a query's options set: the weather (held when one is asked for, else evolving on its
+ * own), the day clock and its preset, the scene clock and the cloud override. The load reads its
+ * own query with it, and a scene jump (`establishScene`) the query it is given, with the same
+ * defaults, so the two agree. The moon (a full one by default) and the stars stand fixed in the
+ * sky (DayCycle.ts MOON, STARS); the phase shapes only the drawn moon. A parked weather
+ * (Weather.ts `PARKED_WEATHER`) is refused unless the defaults allow it and falls back to fair. The
+ * wind (Weather.ts) takes `wind` (a level) and `windDir` (a heading, degrees in WeatherState's
+ * convention), each over the sky's own wind; naming the weather or either of them holds the
+ * weather, its wind included.
+ */
+export function sceneOptions( options: SettingsQuery, defaults: SceneDefaults ): SceneOptions {
+
+	let weather = options.get( 'weather' ) ?? 'fair';
+	const preset = options.get( 'preset' );
+	if ( ! defaults.parkedWeather && isParkedWeather( weather ) ) {
+
+		console.warn( `weather=${ weather } is parked (debug builds only, ?debug): showing fair` );
+		weather = 'fair';
+
+	}
+	return {
+		weather: Object.hasOwn( WEATHER_PRESETS, weather ) ? weather as WeatherName : 'fair',
+		wind: {
+			level: isWindLevel( options.get( 'wind' ) ) ? options.get( 'wind' ) as WindLevel : undefined,
+			heading: options.has( 'windDir' ) && Number.isFinite( Number( options.get( 'windDir' ) ) ) ? Number( options.get( 'windDir' ) ) : undefined,
+		},
+		autoWeather: ! options.has( 'weather' ) && ! options.has( 'wind' ) && ! options.has( 'windDir' ),
+		day: { hour: numberSetting( 'hour', defaults.hour, options ),
+			dayLength: Math.max( 30, numberSetting( 'dayLength', defaults.dayLength, options ) ),
+			paused: options.has( 'paused' ) || options.get( 'clock' ) === 'paused', moonPhase: numberSetting( 'moon', 0.5, options ) },
+		preset: preset && Object.hasOwn( DAY_PRESETS, preset ) ? preset as DayPreset : null,
+		paused: options.has( 'paused' ),
+		time: Math.max( 0, numberSetting( 't', 0, options ) ),
+		// Explicit cloud tuning is a review override; selecting a weather preset restores authored coverage.
+		clouds: options.has( 'clouds' ) ? THREE.MathUtils.clamp( numberSetting( 'clouds', 0.32, options ), 0, 1 ) : null,
+	};
+
+}
+
+/** What the page hands the renderer as it creates it (`createRenderer`), which the later stages
+ * and the page read on RenderParts. */
+export interface RenderHost {
+	/** the frame profiler (?profile), loaded only then */
+	profiler: FrameProfiler | null;
+	/** marks a step of the load for the profiler (nothing without one) */
+	mark: ( name: string ) => void;
+	/** a debug page: the dev server, ?debug or ?profile */
 	DEBUG: boolean;
 	qualityTier: QualityTier;
 	quality: Readonly<QualityProfile>;
+	/** shows a line on the loading screen */
 	setStatus: ( s: string ) => void;
+}
+
+export interface RenderParts extends RenderHost {
 	gpuTiming: boolean;
 	renderer: THREE.WebGPURenderer;
 	submitBatch: SubmitBatch;
@@ -85,27 +155,22 @@ export interface RenderParts {
 	afterScene: THREE.Scene;
 	camera: THREE.PerspectiveCamera;
 	sky: Sky;
-	numberParam: ( name: SettingName, fallback: number, options?: SettingsQuery ) => number;
-	sceneOptions: ( options: SettingsQuery ) => SceneOptions;
-	loaded: SceneOptions;
 	dayCycle: DayCycle;
 	weather: Weather;
-	weatherEffects: { rain: boolean; wetness: boolean };
 	seaFogView: { on: boolean };
 	dayFogView: { on: boolean };
-	requestedPreset: string | null;
 	manualSun: boolean;
 	paused: boolean;
 	simTime: number;
 	wind: Wind;
-	rain: Rain;
+	/** the rain, made with the frame's passes (`createSeaAndPipeline`) */
+	rain?: Rain;
 	skyElapsed: number;
 	lastSkyTime: number;
 	lastSkyHour: number;
 	lastWeatherSignature: string;
 	cloudOverride: number | null;
 	skyQuality: { value: QualityTier };
-	runtime: { refractedSun: RefractedSun | null };
 	applySkyQuality: ( q?: Readonly<QualityProfile> ) => void;
 	runtimeQuality: Readonly<QualityProfile>;
 	lighting: { skyFill: number };
@@ -117,11 +182,9 @@ export interface RenderParts {
 	invalidateSunShadow: () => void;
 	shadowDirection: THREE.Vector3;
 	sunUpdates: Promise<void>;
-	hazeReady: boolean;
 	prepareHaze: ( state: Readonly<WeatherState> ) => void;
 	prepareSkyState: () => void;
 	publishLighting: () => void;
-	bakeEnvironment: () => Promise<void>;
 	jumpsInFlight: number;
 	bakeExplicitly: () => Promise<void>;
 	retuneSky: () => boolean;
@@ -132,21 +195,18 @@ export interface RenderParts {
 	setWeather: ( name: WeatherName, seconds?: number ) => Promise<void>;
 	setWind: ( choice: WindChoice, seconds?: number ) => Promise<void>;
 	applySkyFill: () => void;
-	water: Water;
-	ambientSky: AmbientSky;
+	/** the sea's surface, made once the island's data exists (`createWater`) */
+	water?: Water;
 	fft: OceanFFT;
 	waveMaps: WaveMaps;
 	seaDetail: SeaDetail;
 	fgview: string | null;
 	pipeline: Pipeline;
 	latents: SceneLatents;
-	overlayLatents: SceneLatents;
-	warming: Promise<[ void, void, void, void, void | undefined ]>;
 	groundBounce: GroundBounce;
 	shoreWaves: ShoreWaves;
 	ambient: AmbientVolume;
 	ambientRelight: AmbientRelight;
-	hazeShadowCompiled: Promise<void>;
 	ambientView: { mode: AmbientView };
 	refractedSun: RefractedSun;
 	stormSea: StormSea;
@@ -154,10 +214,41 @@ export interface RenderParts {
 	motionPasses: () => { pass: string; scene: THREE.Scene; keeps: boolean }[];
 }
 
-/** The renderer itself. Returns its init, which the entry awaits. */
-export function createRenderer( render: RenderParts ) {
+/** The scene's fields the sea and the ground's bounce read, over the bounds of shared.shoreXform:
+ * the shore's sea-level distance (m, negative over the land) and the sea floor's height (m). */
+export interface SceneFields { shore: THREE.TextureNode; floor: THREE.TextureNode }
 
-	const { profiler, quality } = render;
+/** What lies under the sea for the refracted sun: the group it draws, and the triangles of each
+ * mesh that lie under the water (the rest are left out). */
+export interface SubmergedWorld { group: THREE.Group; subsets?: ReadonlyMap<THREE.Object3D, SubmergedSubset> }
+
+/** What the renderer's stages hand one another and nothing else reads: on the same object, off the
+ * RenderParts the island and the page see. */
+interface StageParts {
+	/** the scene the page loaded */
+	loaded: SceneOptions;
+	runtime: { refractedSun: RefractedSun | null };
+	hazeReady: boolean;
+	bakeEnvironment: () => Promise<void>;
+	ambientSky: AmbientSky;
+	overlayLatents: SceneLatents;
+	/** the compiles ahead of the first frame, which `awaitWarmUp` waits for */
+	warming: Promise<unknown>;
+	hazeShadowCompiled: Promise<void>;
+}
+
+/** The renderer's parts as its own stages see them. */
+function staged( render: RenderParts ): RenderParts & StageParts {
+
+	return render as RenderParts & StageParts;
+
+}
+
+/** The renderer itself, with what the page hands it. Returns its init, which the entry awaits. */
+export function createRenderer( render: RenderParts, host: RenderHost ) {
+
+	const { profiler, mark, DEBUG, qualityTier, quality, setStatus } = host;
+	Object.assign( render, { profiler, mark, DEBUG, qualityTier, quality, setStatus } );
 
 	// ------------------------------------------------------------------ renderer
 
@@ -195,25 +286,25 @@ export function setUpRenderer( render: RenderParts ) {
 	installBindingPatches( renderer );
 	// three submits every pass on its own; the frame reaches the GPU in a few submits instead
 	// (SubmitBatch.ts: a submit per pass kept Chrome's GPU process from presenting the page on time)
-	render.submitBatch = new SubmitBatch( gpuDevice<ConstructorParameters<typeof SubmitBatch>[ 0 ]>( renderer ), { debug: DEBUG } );
+	render.submitBatch = new SubmitBatch( gpuDevice<SubmitDevice>( renderer ), { debug: DEBUG } );
 	// the settled signal counts the async pipeline compiles in flight (post/Settled.ts; debug only)
 	if ( DEBUG ) watchPipelines( gpuDevice( renderer ) );
 
 }
 
 /** The canvas at its starting size, the scenes the frame draws and the camera. */
-export function createScenes( render: RenderParts, { viewport }: { viewport: { host: HTMLElement; width: number; height: number } } ) {
+export function createScenes( render: RenderParts, { viewport, dpr }: { viewport: { host: HTMLElement; width: number; height: number }; dpr: number | null } ) {
 
 	const { renderer } = render;
 	// the table of what a cut or a scene jump clears, which every owner of a history joins
 	render.history = new SceneHistory();
 	// The scene renders at a pixel ratio set by the quality tier (see RenderScale.ts), at most the
-	// display's and DPR_CAP (the canvas's cap: native 4K on a 2x display at high's maximum, or `?dpr`);
-	// the canvas matches the display and the frame graph upscales to it.
+	// display's and DPR_CAP (the canvas's cap: native 4K on a 2x display at high's maximum, or `dpr`,
+	// the page's explicit ratio); the canvas matches the display and the frame graph upscales to it.
 	// Explicit DPR captures and the full-resolution control lift the tier's pixel budget and pin a
 	// dynamic scale at its nominal.
-	render.DPR_CAP = params.has( 'dpr' ) ? Number( params.get( 'dpr' ) ) : OUTPUT_PIXEL_RATIO_CAP;
-	render.resolution = { full: params.has( 'dpr' ), render: '', scale: '', gpu: '–' };
+	render.DPR_CAP = dpr ?? OUTPUT_PIXEL_RATIO_CAP;
+	render.resolution = { full: dpr !== null, render: '', scale: '', gpu: '–' };
 	renderer.setPixelRatio( outputPixelRatio( 1 ) );
 	renderer.setSize( viewport.width, viewport.height );
 	renderer.shadowMap.enabled = true;
@@ -235,80 +326,30 @@ export function createScenes( render: RenderParts, { viewport }: { viewport: { h
 }
 
 /**
- * The scene the query names, the sky, the day and the weather, the wind, the rain and the sky's
- * quality knobs.
+ * The scene the page loads (`sceneOptions`), the sky, the day and the weather, the wind, the rain
+ * and the sky's quality knobs. `seaFog` and `dayFog` start the deep sea fog and the day's fog layer
+ * on.
  */
-export function createSky( render: RenderParts ) {
+export function createSky( render: RenderParts, { scene: loaded, seaFog, dayFog }: { scene: SceneOptions; seaFog: boolean; dayFog: boolean } ) {
 
-	const { DEBUG, quality, renderer } = render;
-	render.sceneOptions = sceneOptions;
+	const { quality, renderer } = render;
 
 	// ------------------------------------------------------------------ sky, light, water optics
 
 	const sky = new Sky( renderer, { elevation: 32, azimuth: - 8 } );
 	render.sky = sky;
 	sky.setEnvironmentSource( quality.environmentSource );
-	const numberParam = ( name: SettingName, fallback: number, options: SettingsQuery = params ) => {
-
-		const value = Number( options.get( name ) ?? fallback );
-		return Number.isFinite( value ) ? value : fallback;
-
-	};
-	render.numberParam = numberParam;
-	// The scene a query's options set: the weather (held when one is asked for, else evolving on its
-	// own), the day clock and its preset, the scene clock and the cloud override. The load reads its
-	// own query with it, and a scene jump (`establishScene`) the query it is given, so the two agree.
-	// A 48-minute day, as in many open-world games: slow enough to watch the light change. The game's
-	// day is 24 minutes at 1x, so a day's work and its evening fit one sitting. The moon (a full one
-	// by default) and the stars stand fixed in the sky (DayCycle.ts MOON, STARS); the phase shapes only
-	// the drawn moon. The game starts at 8 (see Game.ts), so the sky is lit
-	// once for that hour. A parked weather (Weather.ts `PARKED_WEATHER`) is refused outside a debug
-	// build and falls back to fair; the load and a scene jump read it here alike, and so does ?game,
-	// whose weather is the page's. The wind (Weather.ts) takes `wind` (a level) and `windDir` (a
-	// heading, degrees in WeatherState's convention), each over the sky's own wind; naming the
-	// weather or either of them holds the weather, its wind included.
-	function sceneOptions( options: SettingsQuery ) {
-
-		let weather = options.get( 'weather' ) ?? 'fair';
-		const preset = options.get( 'preset' );
-		if ( ! DEBUG && isParkedWeather( weather ) ) {
-
-			console.warn( `weather=${ weather } is parked (debug builds only, ?debug): showing fair` );
-			weather = 'fair';
-
-		}
-		return {
-			weather: Object.hasOwn( WEATHER_PRESETS, weather ) ? weather as WeatherName : 'fair',
-			wind: {
-				level: isWindLevel( options.get( 'wind' ) ) ? options.get( 'wind' ) as WindLevel : undefined,
-				heading: options.has( 'windDir' ) && Number.isFinite( Number( options.get( 'windDir' ) ) ) ? Number( options.get( 'windDir' ) ) : undefined,
-			},
-			autoWeather: ! options.has( 'weather' ) && ! options.has( 'wind' ) && ! options.has( 'windDir' ),
-			day: { hour: numberParam( 'hour', params.has( 'game' ) ? 8 : DAY_PRESETS[ 'golden-hour' ], options ),
-				dayLength: Math.max( 30, numberParam( 'dayLength', params.has( 'game' ) ? 1440 : 2880, options ) ),
-				paused: options.has( 'paused' ) || options.get( 'clock' ) === 'paused', moonPhase: numberParam( 'moon', 0.5, options ) },
-			preset: preset && Object.hasOwn( DAY_PRESETS, preset ) ? preset as DayPreset : null,
-			paused: options.has( 'paused' ),
-			time: Math.max( 0, numberParam( 't', 0, options ) ),
-			// Explicit cloud tuning is a review override; selecting a weather preset restores authored coverage.
-			clouds: options.has( 'clouds' ) ? THREE.MathUtils.clamp( numberParam( 'clouds', 0.32, options ), 0, 1 ) : null,
-			camera: options.get( 'camera' ) === 'free' ? 'free' : 'orbit',
-		};
-
-	}
-	const loaded = sceneOptions( params );
-	render.loaded = loaded;
+	staged( render ).loaded = loaded;
 	const dayCycle = new DayCycle( loaded.day );
 	render.dayCycle = dayCycle;
 	const weather = new Weather( loaded.weather, loaded.wind );
 	render.weather = weather;
-	render.weatherEffects = { rain: true, wetness: true };
 	// The deep sea fog (look/HazeLook.ts SEA_FOG): a switch beside the weather, off unless
-	// `?seaFog` or the GUI turns it on, whatever the sky.
-	render.seaFogView = { on: params.has( 'seaFog' ) };
+	// `seaFog` or the GUI turns it on, whatever the sky.
+	render.seaFogView = { on: seaFog };
 	// The day's fog layer under a clear or fair sky (weather/HazeKeys.ts `fogLayer`): a switch, off
-	// unless `?dayFog` or the GUI turns it on.
-	render.dayFogView = { on: params.has( 'dayFog' ) };
+	// unless `dayFog` or the GUI turns it on.
+	render.dayFogView = { on: dayFog };
 	weather.auto = loaded.autoWeather;
 	// The day sky's level and exponent per clouded sky (Weather.ts `daySky`, `daySkyExponent`),
 	// tunable on debug pages
@@ -330,7 +371,6 @@ export function createSky( render: RenderParts ) {
 		weather.setPresetValue( name, field, value() );
 
 	}
-	render.requestedPreset = params.get( 'preset' );
 	if ( loaded.preset ) dayCycle.setPreset( loaded.preset );
 	render.manualSun = false;
 	render.paused = loaded.paused;
@@ -346,7 +386,8 @@ export function createSky( render: RenderParts ) {
 /** The sky's runtime quality, the environment's fill, the sun's light and its shadow map. */
 export function createLight( render: RenderParts ) {
 
-	const { qualityTier, quality, scene, sky, loaded, dayCycle } = render;
+	const { qualityTier, quality, scene, sky, dayCycle } = render;
+	const { loaded } = staged( render );
 	render.applySkyQuality = applySkyQuality;
 	render.applyEnvironmentFill = applyEnvironmentFill;
 	// the local lights' registry, which the island's kinds of light join (LocalLights.ts)
@@ -360,7 +401,7 @@ export function createLight( render: RenderParts ) {
 	render.skyQuality = { value: qualityTier };
 	// The tier's runtime knobs (a debug override may replace some of them: `s.applyQuality( { ... } )`).
 	const runtime = { refractedSun: null as RefractedSun | null };
-	render.runtime = runtime;
+	staged( render ).runtime = runtime;
 	function applySkyQuality( q: Readonly<QualityProfile> = quality ): void {
 
 		sky.setCloudView( q.cloudView );
@@ -371,7 +412,7 @@ export function createLight( render: RenderParts ) {
 		render.rain?.setQuality( q.rainDrops );
 		if ( runtime.refractedSun ) runtime.refractedSun.angleGate = THREE.MathUtils.degToRad( q.refractedSun.angleGate );
 		render.runtimeQuality = q;
-		sceneEvent( 'apply quality' );
+		renderEvent( 'apply quality' );
 
 	}
 	render.runtimeQuality = quality;
@@ -436,10 +477,11 @@ export function createKey( render: RenderParts ) {
 export function createEnvironment( render: RenderParts ) {
 
 	const { setStatus, renderer, scene, sky, dayCycle, weather, seaFogView, dayFogView, lighting, applyEnvironmentFill, sun, invalidateSunShadow, shadowDirection } = render;
+	const stage = staged( render );
 	render.prepareHaze = prepareHaze;
 	render.prepareSkyState = prepareSkyState;
 	render.publishLighting = publishLighting;
-	render.bakeEnvironment = bakeEnvironment;
+	stage.bakeEnvironment = bakeEnvironment;
 	render.bakeExplicitly = bakeExplicitly;
 	render.retuneSky = retuneSky;
 	render.refreshEnvironment = refreshEnvironment;
@@ -460,10 +502,10 @@ export function createEnvironment( render: RenderParts ) {
 	// medium the frame and the environment's bake read (the bake lays it over its source: Sky.ts
 	// `fogEnvironment`), so a bake sees the haze of the state it bakes.
 	// (the first bake runs before the pipeline holds the haze: `hazeReady` below)
-	render.hazeReady = false;
+	stage.hazeReady = false;
 	function prepareHaze( state: Readonly<WeatherState> ): void {
 
-		if ( ! render.hazeReady ) return;
+		if ( ! stage.hazeReady ) return;
 		const rising = sunRising( sky.sunDir );
 		// the parked fog weather's share of the sky, by the front's smoothstep as `skyMix` blends: exact
 		// at rest and, for the sun's Rayleigh beam, on a front between the fog and the overcast sky, for
@@ -543,7 +585,7 @@ export function createEnvironment( render: RenderParts ) {
 		// left in the sky. It takes every value as it stands (`retuneSky`).
 		sky.reset( shared.wind.direction.value, render.simTime );
 		skyRetune.dirty = false;
-		if ( render.hazeReady ) render.pipeline.air.noteBake();
+		if ( stage.hazeReady ) render.pipeline.air.noteBake();
 		prepareSkyState();
 		await sky.update();
 		scene.environment = sky.envMap!.texture;
@@ -582,10 +624,10 @@ export function createEnvironment( render: RenderParts ) {
 	// started a bake.
 	function retuneSky(): boolean {
 
-		if ( render.hazeReady && render.pipeline.air.bakeStale ) markSkyRetune();
+		if ( stage.hazeReady && render.pipeline.air.bakeStale ) markSkyRetune();
 		if ( ! skyRetune.dirty ) return false;
 		skyRetune.dirty = false;
-		sceneEvent( 'retune' );
+		renderEvent( 'retune' );
 		void bakeExplicitly();
 		return true;
 
@@ -605,14 +647,14 @@ export function createEnvironment( render: RenderParts ) {
 
 	}
 
-	render.setHour = async ( hour: number ) => { dayCycle.setHour( hour ); sceneEvent( 'set hour' ); await refreshEnvironment(); };
-	render.setPreset = async ( preset: DayPreset ) => { dayCycle.setPreset( preset ); sceneEvent( 'set preset' ); await refreshEnvironment(); };
+	render.setHour = async ( hour: number ) => { dayCycle.setHour( hour ); renderEvent( 'set hour' ); await refreshEnvironment(); };
+	render.setPreset = async ( preset: DayPreset ) => { dayCycle.setPreset( preset ); renderEvent( 'set preset' ); await refreshEnvironment(); };
 	render.setWeather = async ( name: WeatherName, seconds = 20 ) => {
 
 		render.cloudOverride = null;
 		weather.auto = false;
 		weather.setWeather( name, seconds );
-		sceneEvent( seconds === 0 ? 'weather jump' : 'weather front' );
+		renderEvent( seconds === 0 ? 'weather jump' : 'weather front' );
 		if ( seconds === 0 ) await refreshEnvironment();
 
 	};
@@ -622,7 +664,7 @@ export function createEnvironment( render: RenderParts ) {
 
 		weather.auto = false;
 		weather.setWind( choice, seconds );
-		sceneEvent( seconds === 0 ? 'weather jump' : 'weather front' );
+		renderEvent( seconds === 0 ? 'weather jump' : 'weather front' );
 		if ( seconds === 0 ) await refreshEnvironment();
 
 	};
@@ -643,7 +685,7 @@ export function createEnvironment( render: RenderParts ) {
 	// the sky's harmonics for the ambient light's relight (lighting/AmbientRelight.ts), projected from
 	// every bake's environment source from the first on
 	const ambientSky = new AmbientSky( renderer );
-	render.ambientSky = ambientSky;
+	stage.ambientSky = ambientSky;
 	sky.onEnvironmentSource = ( source, atlases, read ) => ambientSky.project( source, atlases, read );
 
 	setStatus( 'Lighting the sky…' );
@@ -665,7 +707,7 @@ export function publishSkyLight( render: RenderParts ) {
 }
 
 /** The sea's waves and detail, then the frame's passes with the passes the entry adds. */
-export function createSeaAndPipeline( render: RenderParts, { rainCeiling, extraPasses }: { rainCeiling: number; extraPasses: ConstructorParameters<typeof Pipeline>[ 6 ] } ) {
+export function createSeaAndPipeline( render: RenderParts, { rainCeiling, extraPasses }: { rainCeiling: number; extraPasses: readonly ExtraPass[] } ) {
 
 	const { profiler, DEBUG, quality, renderer, scene, waterScene, rainScene, afterScene, camera, sky, wind, sun, sunShadow } = render;
 	// tidewater's two wave systems at the prevailing heading (Wind.ts `spectrumWind`) and tidewater's
@@ -738,7 +780,7 @@ export function createSeaAndPipeline( render: RenderParts, { rainCeiling, extraP
 	const overlayLatents: SceneLatents = TEMPORAL
 		? { latent: ( pass, objects, kernels ) => pipeline.graph.latent( pass === 'rainAfter' || ( pass === 'water' && AFTER_RESOLVE ) ? 'rainAfter' : 'overlay', objects, kernels ) }
 		: pipeline.graph;
-	render.overlayLatents = overlayLatents;
+	staged( render ).overlayLatents = overlayLatents;
 
 	// ------------------------------------------------------------------ first-use pipelines
 
@@ -761,13 +803,13 @@ export function createSeaAndPipeline( render: RenderParts, { rainCeiling, extraP
 		sky.lightning.registerLatent( pipeline.graph ),
 		pipeline.graph.warm( { scene, waterScene, rainScene, afterScene: AFTER_RESOLVE ? afterScene : undefined, camera, water: null, sun, time: render.simTime } ).then( () => pipeline.resolver?.warm() ),
 	] );
-	render.warming = warming;
+	staged( render ).warming = warming;
 	warming.catch( () => undefined ); // reported where it is awaited, before the loop
 
 }
 
 /** What the island's fields build first: the ground's bounce and the shore's waves. */
-export function createBounceAndShore( render: RenderParts, { fields, bounceGround, shoreData }: { fields: ConstructorParameters<typeof GroundBounce>[ 0 ][ 'fields' ] & { shore: ConstructorParameters<typeof ShoreWaves>[ 3 ]; floor: ConstructorParameters<typeof ShoreWaves>[ 5 ] }; bounceGround: ConstructorParameters<typeof GroundBounce>[ 0 ][ 'ground' ]; shoreData: ConstructorParameters<typeof ShoreWaves>[ 1 ] } ) {
+export function createBounceAndShore( render: RenderParts, { fields, bounceGround, shoreData }: { fields: SceneFields; bounceGround: BounceGround; shoreData: ShoreField } ) {
 
 	const { renderer, sky, sunShadow, fft, waveMaps } = render;
 	// the sunlight the ground bounces up (lighting/GroundBounce.ts), which every lit material adds: so
@@ -777,13 +819,23 @@ export function createBounceAndShore( render: RenderParts, { fields, bounceGroun
 
 }
 
+/** Starts the wave maps' bake in the frame's passes (post/PipelinePasses.ts), once the world's
+ * meshes that read them are built. */
+export function startWaveMaps( render: RenderParts ) {
+
+	const { pipeline, waveMaps } = render;
+	pipeline.waveMaps = waveMaps;
+
+}
+
 /**
  * The ambient light's probes and their relight, the refracted sun and the storm sea. Returns the
  * refracted sun's first map, which the entry awaits.
  */
-export function createAmbient( render: RenderParts, { ambientData, world }: { ambientData: ConstructorParameters<typeof AmbientVolume>[ 1 ]; world: { group: THREE.Group; subsets: Parameters<RefractedSun[ 'setCasters' ]>[ 1 ] } } ) {
+export function createAmbient( render: RenderParts, { ambientData, world }: { ambientData: AmbientLattice; world: SubmergedWorld } ) {
 
-	const { DEBUG, renderer, scene, sky, weather, runtime, ambientSky, waveMaps, pipeline } = render;
+	const { DEBUG, renderer, scene, sky, weather, waveMaps, pipeline } = render;
+	const { runtime, ambientSky } = staged( render );
 	// The ambient light's probes on the GPU (lighting/AmbientVolume.ts), relit every frame into their
 	// irradiance (lighting/AmbientRelight.ts), which every lit island material reads for its ambient
 	// diffuse (lighting/AmbientSample.ts: installed before any of them builds), and their debug view
@@ -797,7 +849,7 @@ export function createAmbient( render: RenderParts, { ambientData, world }: { am
 	// the environment's own harmonics, which the specular's relight divides by (AmbientSample.ts)
 	installEnvironmentHarmonics( ambientRelight );
 	// the haze's shadow kernels read the probes' sky visibility, so they compile now (Pipeline.ts)
-	render.hazeShadowCompiled = pipeline.compileHazeShadow();
+	staged( render ).hazeShadowCompiled = pipeline.compileHazeShadow();
 	const ambientView = { mode: ( DEBUG && params.get( 'ambientProbes' ) || 'off' ) as AmbientView };
 	render.ambientView = ambientView;
 	ambient.show( ambientView.mode, scene );
@@ -813,7 +865,7 @@ export function createAmbient( render: RenderParts, { ambientData, world }: { am
 }
 
 /** The water's surface, over the land's box and what the game holds above it. */
-export function createWater( render: RenderParts, { fields, landBox, islandSea, heldOpaque }: { fields: { shore: ConstructorParameters<typeof ShoreWaves>[ 3 ]; floor: ConstructorParameters<typeof ShoreWaves>[ 5 ] }; landBox: ConstructorParameters<typeof Water>[ 0 ][ 'land' ]; islandSea: { readonly openSea: { readonly from: number; readonly to: number }; readonly reflectorTop: number }; heldOpaque: THREE.Box3[] } ) {
+export function createWater( render: RenderParts, { fields, landBox, islandSea, heldOpaque }: { fields: SceneFields; landBox: Bounds; islandSea: { readonly openSea: { readonly from: number; readonly to: number }; readonly reflectorTop: number }; heldOpaque: THREE.Box3[] } ) {
 
 	const { quality, renderer, waterScene, rainScene, afterScene, sky, sunShadow, applySkyFill, fft, waveMaps, seaDetail, pipeline, shoreWaves } = render;
 
@@ -848,13 +900,14 @@ export function createWater( render: RenderParts, { fields, landBox, islandSea, 
  */
 export function bakeWithHaze( render: RenderParts ) {
 
-	const { bakeEnvironment } = render;
+	const stage = staged( render );
+	const { bakeEnvironment } = stage;
 	// the hour's and the weather's key, written each frame (weather/HazeKeys.ts)
 	render.hazeKey = { deck: 0, overcastDeck: 0, amount: 1, sigmaRed: 1, sigmaGreen: 1, sigmaBlue: 1, desaturate: 0, gain: 1, mist: 0, sunRayleigh: 0, rayleighWeight: 1, mieWeight: 1,
 		top: 10, width: 50, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0 };
 	// the haze exists now: bake the environment again, so it holds the haze every later bake lays over
 	// it (Sky.ts `fogEnvironment`) and a fresh load equals a jump
-	render.hazeReady = true;
+	stage.hazeReady = true;
 	return bakeEnvironment();
 
 }
@@ -862,7 +915,8 @@ export function bakeWithHaze( render: RenderParts ) {
 /** Returns the warm-up of every pipeline the frame draws with, which the entry awaits. */
 export function awaitWarmUp( render: RenderParts ) {
 
-	const { overlayLatents, warming, hazeShadowCompiled, stormSea } = render;
+	const { stormSea } = render;
+	const { overlayLatents, warming, hazeShadowCompiled } = staged( render );
 
 	// The storm's foam and spray need the world's shore fields, so they register (and compile) last;
 	// the loop then waits for every first-use pipeline (see "first-use pipelines"), the haze's shadow

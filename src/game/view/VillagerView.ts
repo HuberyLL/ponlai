@@ -1,8 +1,7 @@
 import * as THREE from 'three/webgpu';
-import { animate, FIGURE_HEIGHT, type Villager as Figure } from '../../characters/Villagers.ts';
-import type { Sex } from '../../characters/Ages.ts';
+import { animate, FIGURE_HEIGHT, type Villager as Figure, TRAMPLE, type TrampleWalker } from '../../island.ts';
+import type { Sex } from '../../islandLand.ts';
 import type { EntityId, GridApi, Villager } from '../sim/types.ts';
-import { TRAMPLE, type TrampleWalker } from '../../world/vegetation/Trample.ts';
 
 // One islander on screen: the sim's body drawn by a loaded figure (or a plain stand-in when the
 // figure cannot load). Position interpolates between the last two ticks, the heading turns

@@ -51,7 +51,7 @@ import { type Aov, type AovResult, type RingsOptions, type RingsResult, forCellT
 
 type Box = [ number, number, number, number ];
 export interface RadianceOptions { boxes?: Record<string, Box>; source?: 'opaque' | 'hdr' | 'sharp' | 'meterLight'; image?: [ number, number ]; grid?: [ number, number ]; nonSky?: boolean; cell?: number; texels?: boolean; aov?: Aov; rings?: RingsOptions }
-export interface BoxRadiance {
+interface BoxRadiance {
 	px: number; rgb: [ number, number, number ]; Y: number; Yp: [ number, number, number ];
 	oklab: { L: number; a: number; b: number; C: number; h: number };
 	range: { below: number; zero: number; above: number; min: number; max: number };
@@ -63,7 +63,7 @@ const HALF_NORMAL = 2 ** - 14, HALF_MAX = 65504;
 const round = ( x: number, digits = 6 ): number => Number( x.toPrecision( digits ) );
 
 /** Oklab of a linear Rec. 709 colour (Ottosson's matrices). */
-export function oklab( r: number, g: number, b: number ): { L: number; a: number; b: number; C: number; h: number } {
+function oklab( r: number, g: number, b: number ): { L: number; a: number; b: number; C: number; h: number } {
 
 	const l = Math.cbrt( 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b );
 	const m = Math.cbrt( 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b );

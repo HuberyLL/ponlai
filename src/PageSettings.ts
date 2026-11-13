@@ -10,11 +10,9 @@
 // The rest of the page's own state outside the scene lives here too: the reload with changed
 // options (a load setting's new value) and the browser's storage for what a page remembers between
 // visits (the dynamic resolution's scale).
-import { installSettings, parseSettings, settingProblems, type SettingName } from './Settings.ts';
+import { installSettings, parseSettings, settingProblems, type SettingName, installLook, NEUTRAL_LOOK } from './renderSetup.ts';
 import { chooseQuality, type QualityChoice } from './QualityDetect.ts';
-import { installLook } from './look/Look.ts';
-import { NEUTRAL_LOOK } from './look/NeutralLook.ts';
-import { ISLAND_LOOK } from './islandLook/IslandLook.ts';
+import { ISLAND_LOOK } from './islandLand.ts';
 
 const query = parseSettings( location.search );
 for ( const problem of settingProblems( query ) ) console.warn( `[settings] ${ problem }` );

@@ -6,26 +6,12 @@ import {
 	positionWorld, specularColor, specularColorBlended, specularF90, vertexIndex, workgroupArray, workgroupBarrier, workgroupId,
 } from 'three/tsl';
 import { LAWN_GAIN, MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_SIZE, groundGains, supportsMeadow } from '../materials/Meadow.ts';
-import { GUST_GAIN, GUST_MEAN, gustAt, gustJitter, wave, windStrength, type WindState } from '../weather/Wind.ts';
+import { GUST_GAIN, GUST_MEAN, gustAt, gustJitter, wave, windStrength, type WindState, RESPONSE, displacementAt, runSteps, CANOPY_SHADE, transmission, vegetationMaterial, unjitteredPadded, TEMPORAL, debugFlags, MEADOW_SHADE, meadowShadeAt, meadowShadeFloor, receiveScreenAO, textureSteps, type VegetationKind, type Shared, tune, tuneApply, tuneUniform, liftKeyWorld } from '../render.ts';
 import { VEGETATION_STRIDE as STRIDE, type WorldData } from './types.ts';
-import { RESPONSE, displacementAt } from './vegetation/Displacement.ts';
-import { noise3, smoothstep as smoothstepNumber } from './noise.ts';
-import { runSteps } from './Steps.ts';
+import { noise3, smoothstep as smoothstepNumber } from '../renderData.ts';
 import { GROVES, grassOnLitter } from './BambooGroves.ts';
 import { soilGroveAt } from '../materials/Soil.ts';
-import { CANOPY_SHADE } from '../lighting/AmbientSample.ts';
 import { canopySteps, crownSteps, setCanopyTop, setSwardField, swardSteps } from './SwardField.ts';
-import { transmission, vegetationMaterial } from './vegetation/Material.ts';
-import { unjitteredPadded } from './vegetation/VegetationCull.ts';
-import { TEMPORAL } from '../post/Antialiasing.ts';
-import { debugFlags } from '../debug/DebugFlags.ts';
-import { MEADOW_SHADE, meadowShadeAt, meadowShadeFloor } from '../post/MeadowShade.ts';
-import { receiveScreenAO } from '../post/GTAO.ts';
-import { textureSteps } from './Upload.ts';
-import type { VegetationKind } from './vegetation/Registry.ts';
-import type { Shared } from '../shared.ts';
-import { tune, tuneApply, tuneUniform } from '../debug/Tune.ts';
-import { liftKeyWorld } from '../lighting/KeyLift.ts';
 
 // The meadow: one grass blade per cell of a world grid, generated on the GPU every time the view
 // changes. Each blade is drawn on its own, not as a card of many, so the wind moves every blade and

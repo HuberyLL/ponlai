@@ -1,4 +1,4 @@
-import type { WeatherName } from '../../sky/Weather.ts';
+import type { WeatherName } from '../../render.ts';
 import type { RecordEntry } from '../Chronicle.ts';
 import { clockText } from '../sim/clock.ts';
 import type { EntityId } from '../sim/types.ts';

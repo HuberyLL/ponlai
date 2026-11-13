@@ -3,19 +3,13 @@ import { generateVersion, type LoadedWorld, type VersionChunks } from './WorldCh
 import { mergeSteps } from './ChunkMerge.ts';
 import { GROWTH, LandLattice } from './IslandGrowth.ts';
 import { landBounds } from './WorldShapes.ts';
-import type { Bounds } from '../RenderTypes.ts';
+import type { Bounds } from '../renderData.ts';
 import { derive, islandMesh, seabedGeometry, stonesGeometry, type WorldMeshes } from './World.ts';
 import type { WorldFields, FieldsPrepared } from './WorldFields.ts';
-import { geometrySteps, textureSteps } from './Upload.ts';
-import { boundsSteps } from './Steps.ts';
+import { geometrySteps, textureSteps, boundsSteps, type GrowthInput, type GrowthSteps, type Vegetation, type VegetationKind, type ShoreWaves, type ShoreFields, type RefractedSun, type AmbientPrepared, type AmbientVolume, type Rain } from '../render.ts';
 import { walkLoopDistance, walkPoints } from './WalkPath.ts';
-import type { GrowthInput, GrowthSteps, Vegetation, VegetationKind } from './vegetation/Registry.ts';
 import type { ChunkData } from './Chunks.ts';
 import type { IslandChunk, WorldData } from './types.ts';
-import type { ShoreWaves, ShoreFields } from '../ocean/ShoreWaves.ts';
-import type { RefractedSun } from '../lighting/RefractedSun.ts';
-import type { AmbientPrepared, AmbientVolume } from '../lighting/AmbientVolume.ts';
-import type { Rain } from '../weather/Rain.ts';
 import { Villagers } from '../characters/Villagers.ts';
 import { SeabedRise } from './SeabedRise.ts';
 
@@ -88,6 +82,13 @@ import { SeabedRise } from './SeabedRise.ts';
 //   `approach` and `approachNow` start the generation first, so a page that only moves the GUI's
 //   Approach slider gets a pending piece. Its writes count in `work` (stage 'rise').
 
+/** What the growth tells the game (?game): the pending piece once it is ready (`setComing`), the
+ * new land after a swap (`setIsland`), each with the world's chunks on that land. */
+export interface GrowthGame {
+	setComing( land: LandLattice, chunks: readonly ChunkData[] ): void;
+	setIsland( land: LandLattice, chunks: readonly ChunkData[] ): void;
+}
+
 /** What the growth changes on the page: its world objects, and the page's own hooks. */
 export interface GrowthPage<M = unknown> {
 	renderer: THREE.WebGPURenderer;
@@ -101,12 +102,8 @@ export interface GrowthPage<M = unknown> {
 	ambient: AmbientVolume;
 	rain: Rain;
 	characters: Villagers | null;
-	/** the game (?game): the pending piece once it is ready (`setComing`), the new land after a swap
-	 * (`setIsland`), each with the world's chunks on that land */
-	game: {
-		setComing( land: LandLattice, chunks: readonly ChunkData[] ): void;
-		setIsland( land: LandLattice, chunks: readonly ChunkData[] ): void;
-	} | null;
+	/** the game (?game) */
+	game: GrowthGame | null;
 	/** the page's own land-dependent state, in the swap's frame */
 	/** what the page measures of a land (its box and framing), ahead in a step of the preparation */
 	measure( land: LandLattice ): M;
