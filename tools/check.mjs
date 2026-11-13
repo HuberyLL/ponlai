@@ -17,8 +17,9 @@
 // The commit-time list, in order (cheap and wide first, so a broken type fails before the rest):
 // the type check (`npm run typecheck`), the code lint (`npm run lint`, tools/repo/lint/plugin.mjs),
 // verify-layers, verify-exits, verify-settings, verify-file-size, verify-headers (the modules'
-// header first lines), verify-three-internals and verify-kit (tools/repo/), tools/verify-no-binaries.mjs (every file in the index),
-// verify-skill-links (tools/repo/), the game's verify-game, verify-i18n and verify-ink
+// header first lines), verify-tool-manuals (the tools' manuals and `--help`),
+// verify-three-internals and verify-kit (tools/repo/), tools/verify-no-binaries.mjs (every file in
+// the index), verify-skill-links (tools/repo/), the game's verify-game, verify-i18n and verify-ink
 // (tools/game/), the renderer's verify-framegraph, verify-day-cycle, verify-weather-state,
 // verify-wind, verify-local-lights, verify-extensions and verify-look-params (tools/render/), then
 // tools/repo/verify-lint.mjs, and the docs' lint (`npm run lint:docs`) when a Markdown file is
@@ -77,6 +78,7 @@ const checks = [
 	[ 'verify-settings', node( 'repo/verify-settings.mjs' ) ],
 	[ 'verify-file-size', node( 'repo/verify-file-size.mjs' ) ],
 	[ 'verify-headers', node( 'repo/verify-headers.mjs' ) ],
+	[ 'verify-tool-manuals', node( 'repo/verify-tool-manuals.mjs' ) ],
 	[ 'verify-three-internals', node( 'repo/verify-three-internals.mjs' ) ],
 	[ 'verify-kit', node( 'repo/verify-kit.mjs' ) ],
 	[ 'verify-no-binaries', node( 'verify-no-binaries.mjs' ) ],
