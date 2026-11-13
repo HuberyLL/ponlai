@@ -6,9 +6,11 @@ named after the step of the skill that reads it. A project of your own copies th
 fills in its own facts.
 
 Each tool's manual is its header (`node <tool> --help`; the index: `docs/reference/tools.md`).
-Every command that renders in a browser runs under the GPU lock
-(`node tools/kit/gpu-lock.mjs run --shared -- <command>` for captures and probes) and every wait
-goes through `tools/kit/job.mjs` (`AGENTS.md`; `docs/reference/gpu-lock.md`). Changes hold in the
+Every command that renders in a browser runs under the GPU lock and every wait goes through
+`tools/kit/job.mjs` (`AGENTS.md`; `docs/reference/gpu-lock.md`). The capture, probe and verify
+tools lease a shared slot themselves (their headers say so); a command of one's own runs under
+`node tools/kit/gpu-lock.mjs run --shared -- <command>`, and wrapping a tool so does no harm (its
+captures take the wrapper's slot over). Changes hold in the
 kept weathers (clear, fair) and on high at 4K output; the parked ones are out of every default set
 (`docs/reference/tools.md`, Parked weathers and quality tiers).
 
@@ -25,6 +27,7 @@ What to run after which change, beyond the skill's comparison:
 | Something that depends on the land's shape | `tools/island/verify-growth-swap.mjs` (a grown page against a fresh load of its land); how it joins the growth: `packages/island/world/Growth.ts`'s header. |
 | A new scene state, a scene event, a history | `tools/island/verify-scene-jump.mjs` (History). |
 | Anything that may build a pipeline after load (a swap, a first draw) | `tools/render/verify-first-use.mjs`. |
+| Which objects a pass or system takes (a selection, a filter, a registry) | Before the captures, read the pass's own counts and the objects it took on both builds with `tools/kit/probe.mjs` (for the vegetation prepass, `scene.userData.vegetationPrepass`); `verify-growth-swap` when the selection also runs on what a Grow adds. |
 | A change for speed | `measuring-performance-changes` and its binding; the image check is this skill's. |
 
 Cases that move pixels while correct: splitting or merging draws (`docs/reference/three-behaviour.md`,
@@ -37,6 +40,9 @@ Split draws) and the order materials first build in (Build order).
   crop anchors (`views.mjs crops <view>`): 1:1 boxes on its subjects, cut by `diff-set.py
   --crops-from`. Views of one's own: `--view "name:query[::js]"`; a knob's values: `--sweep`
   (`tools/kit/parity/capture-set.mjs`'s header).
+- A view that can see the change: switch the part off or coarsen it with its URL option
+  (`docs/reference/url-options.md`, Every option; for example `vegPrepass=0`) and check the view
+  moves.
 - The test scenes (`scenes.html`): `ball` (an 18 % grey card, albedo and roughness rows), `empty`
   (level ground under the sky), `plants` (a patch of the default plant kind), `sea` (two balls in
   the open sea). They load in seconds and draw with the renderer's neutral look, and show no
@@ -54,13 +60,18 @@ Split draws) and the order materials first build in (Build order).
   stores a commit's set, and `--check <root>/<sha>/<set> --ref-url <start commit's url>` captures
   the change and compares it, making the reference first when it is missing. `--repeat` shoots each
   view twice for its A/A. One view: `tools/kit/capture.mjs`.
+- The store's root is `artifacts/parity` (git-ignored; the default of `carry.mjs` and
+  `baseline.mjs`), so a set lives at `artifacts/parity/<sha>/<set>`. Both sides use the same
+  `--size`; capture-set's default is `1728x1117@2`, and `--size 1920x1080@2` gives the 4K output the
+  rules judge at.
 - The store and its key: `tools/kit/reference.mjs`'s header (the capture tools' sources listed in
   `tools/project.mjs` `reference.toolFiles`, the browser build, the options; a server whose build
   inputs differ is refused). When to recapture, a new browser build and taking over an earlier
   commit's baseline (`tools/kit/parity/carry.mjs`): `tools/kit/parity/README.md`.
 - The test scenes: on the start commit's server, `node tools/render/scenes.mjs <url> <out> --verify
   --write-ref` (without `--scenes` it takes the scenes whose shots repeat to the pixel, not `sea`);
-  the references go to `artifacts/scenes/reference/<look>/` (git-ignored).
+  the references go to `artifacts/scenes/reference/<look>/` (git-ignored), or to `--ref <dir>`,
+  which keeps one comparison's references apart from that default folder.
 
 ## Compare
 
