@@ -1219,8 +1219,10 @@ A file at its line limit (`verify-file-size`) takes the same comment at the end 
 `// eslint-disable-line ponlai/<rule> -- <reason>`, so the exception adds no line. A real violation
 that cannot be fixed yet is excepted the same way, its reason starting with `known violation:`. A
 disable comment that no longer suppresses anything is an error, so the exceptions stay true. For
-`ponlai/scene-clock`, a reading that only measures how long something took, budgets a slice of work
-or times out a wait is an exception; one that decides what the scene shows is a violation.
+`ponlai/scene-clock`, a reading that only measures how long something took, budgets a slice of work,
+times out a wait or paces the game's interface in the player's time (its animations, the wheel's
+repeat limit: they go on while the scene is paused) is an exception; one that decides what the scene
+shows is a violation.
 
 To add a rule:
 
