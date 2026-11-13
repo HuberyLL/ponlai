@@ -70,8 +70,9 @@ The modules loaded on demand are lazy exits.
 ### `vegetation/`
 
 What every plant kind shares: the material, the coverage (`Coverage.ts`), the leaf textures, the
-instances (`Instances.ts`), the GPU cull (`VegetationCull.ts`), the wind's deforms, the LOD
-(`Lod.ts`) and the physics.
+instances (`Instances.ts`, kept for kinds to come: no kind uses it today), the GPU cull
+(`VegetationCull.ts`), the wind's deforms, the LOD (`Lod.ts`) and the physics (`Physics.ts`, kept
+for the hanging kinds to come: no kind uses it today).
 
 - `Registry.ts`: the registry of plant kinds. `DefaultPlant.ts`: the plant a kind without art is
   drawn with.
