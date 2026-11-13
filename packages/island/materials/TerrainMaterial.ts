@@ -921,7 +921,7 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 		// The island's jointed wall occludes much of its own sky; a share of that occlusion keeps
 		// the shadowed blocks airy while the crevices stay dark, though never black: the whole
 		// product keeps the floor every receiver of the screen's occlusion keeps (post/GTAO.ts
-		// AO_FLOOR).
+		// `floorOcclusion`).
 		// A pocket keeps less of it again: the sky it sees past its rim is what lights it in the shade,
 		// and at full occlusion a small one read as a black hole.
 		// The turf's roots keep the share of the sky the blades over them leave (GRASS_ROOTS.sky). The

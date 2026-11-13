@@ -125,7 +125,8 @@ try {
 	installSettings( parseSettings( '' ) );
 	await installIslandLook( ( file ) => server.ssrLoadModule( `/${ file }` ) );
 	const { createShared, installShared } = await load( 'shared.ts' );
-	const shared = createShared();
+	const { ISLAND_LOOK } = await server.ssrLoadModule( '/packages/island/look/IslandLook.ts' );
+	const shared = createShared( ISLAND_LOOK );
 	installShared( shared );
 	const THREE = await server.ssrLoadModule( 'three/webgpu' );
 

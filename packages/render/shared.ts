@@ -3,6 +3,7 @@ import { float, uniform, vec3 } from 'three/tsl';
 import { createWindUniforms } from './weather/Wind.ts';
 import { displacementUniforms } from './vegetation/Displacement.ts';
 import { ABSORPTION, BACKSCATTER, FORWARD_ANGLE, FORWARD_SCATTER, SCATTER } from './ocean/SeaOptics.ts';
+import type { Look } from './look/Look.ts';
 
 // Uniforms shared by the water, the terrain and the vegetation (one node each, read by every
 // material that uses it).
@@ -14,7 +15,10 @@ import { ABSORPTION, BACKSCATTER, FORWARD_ANGLE, FORWARD_SCATTER, SCATTER } from
 // - It is installed once, as the settings are (Settings.ts): a second install throws. A read before
 //   the install throws too, at the read, naming the field (its stack names the reader): unlike the
 //   settings and the look, the uniforms have no defaults a reader could take instead.
-export const createShared = () => ( {
+// - The look's numbers every material's shader reads take their tables here, as an argument
+//   (look/Look.ts; the entry hands over the set it installs): the ambient occlusion's floor. So
+//   two objects made from two sets hold their own (tools/verify-look-params.mjs).
+export const createShared = ( look: SharedTables ) => ( {
 	time: uniform( 0 ),
 	wind: createWindUniforms(),
 	// the displacement field the islanders part the meadow through (world/Trample.ts): the
@@ -85,7 +89,13 @@ export const createShared = () => ( {
 	// log2 of the sky's geometric-mean luminance (Sky.meterLog2Node, scene units): the exposure's
 	// sky term, the dome's metering illuminance being this luminance's
 	skyMeterLog2: float( 0 ) as THREE.Node<'float'>,
+	// the least ambient occlusion a surface keeps where its own and the screen's multiply (the
+	// look's floor: post/GTAO.ts `floorOcclusion`), a number, which the shaders take as a constant
+	aoFloor: look.occlusion.floor,
 } );
+
+/** The look's tables the shared object takes (`createShared`). */
+export type SharedTables = Pick<Look, 'occlusion'>;
 
 export type Shared = ReturnType<typeof createShared>;
 

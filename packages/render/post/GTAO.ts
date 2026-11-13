@@ -5,7 +5,7 @@ import {
 } from 'three/tsl';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tuneUniform } from '../debug/Tune.ts';
-import { AO_FLOOR } from '../look/OcclusionLook.ts';
+import { shared } from '../shared.ts';
 import { MEADOW_SHADE } from './MeadowShade.ts';
 import { loadTier, qualityProfile } from '../Quality.ts';
 
@@ -61,9 +61,9 @@ type V4 = THREE.Node<'vec4'>;
 // grass one cell beside a culm is 11 % darker, less than the shaded grass three or more cells off
 // any culm (16 %), over the three views with shaded grass beside culms, and from the management
 // camera's distance under the 50-degree sun 6 % against 9 % (the two views): no halo.
-// Where it and a surface's own occlusion multiply, the product keeps AO_FLOOR (the look's,
-// look/OcclusionLook.ts): the deepest crevice or contact keeps a share of the ambient light and
-// never turns black.
+// Where it and a surface's own occlusion multiply, the product keeps a floor (the look's, which the
+// shared uniforms take where they are made: shared.ts `aoFloor`): the deepest crevice or contact
+// keeps a share of the ambient light and never turns black.
 //
 // Every material that reads the ambient light takes it into its own occlusion: the blades multiply
 // it into their own from root to tip, the other receivers multiply it in whole, and the ground on
@@ -180,11 +180,11 @@ export const gtaoUniforms = {
 	edge: uniform( 50 ), maxTexels: uniform( 128 ), fullDistance: uniform( 22 ),
 };
 
-/** A surface's ambient occlusion `ao` (its own times the screen's) held at AO_FLOOR or above
- * (look/OcclusionLook.ts: the least a surface keeps, the look's). */
+/** A surface's ambient occlusion `ao` (its own times the screen's) held at the floor or above
+ * (shared.ts `aoFloor`: the least a surface keeps, the look's), a constant in the shader. */
 export function floorOcclusion( ao: F ): F {
 
-	return max( ao, AO_FLOOR );
+	return max( ao, shared.aoFloor );
 
 }
 

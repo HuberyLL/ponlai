@@ -295,7 +295,7 @@ export interface SkyLook {
 	keyThroughCloud: number;
 }
 
-// ---- the ambient occlusion (look/OcclusionLook.ts)
+// ---- the ambient occlusion (shared.ts `createShared`, read by post/GTAO.ts `floorOcclusion`)
 
 export interface OcclusionLook {
 	/** The least ambient occlusion a surface keeps where its own and the screen's multiply. */

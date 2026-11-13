@@ -100,7 +100,7 @@ import { overcastDeckLight, withMoon } from '../sky/Weather.ts';
 //                   plants' own), times the screen-space
 //                   occlusion on the materials that take it (post/GTAO.ts `receiveScreenAO`; the
 //                   island's ground takes it in its own `aoNode`), the product held at
-//                   post/GTAO.ts AO_FLOOR where the two multiply, and the islanders' baked
+//                   the look's floor (post/GTAO.ts `floorOcclusion`) where the two multiply, and the islanders' baked
 //                   occlusion in their fill. The local lights take the same occlusion
 //                   (`diffuseOcclusion`, lighting/LocalLights.ts).
 // The water, the sky, the clouds, the haze and the rain are not the island's ambient and do not

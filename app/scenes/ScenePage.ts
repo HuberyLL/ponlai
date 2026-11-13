@@ -39,8 +39,9 @@ if ( ! testScene ) {
 
 }
 
-// the scene's uniforms, which every material reads: made and installed before anything builds
-const shared = createShared();
+// the scene's uniforms, which every material reads: made from the look the entry installed (the
+// neutral set, or the island's under `renderLook=ponlai`) and installed before anything builds
+const shared = createShared( installedLook() );
 installShared( shared );
 const render = {} as RenderParts;
 

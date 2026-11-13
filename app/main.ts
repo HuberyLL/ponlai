@@ -31,8 +31,9 @@ import { createGui, addLookFolders, addHazeFolders } from './Gui.ts';
 import { createDiagnostics, exposeDebugHandles } from './Diagnostics.ts';
 import { createSceneControls } from './Scene.ts';
 
-// the scene's uniforms, which every material reads: made here and installed before anything builds
-const shared = createShared();
+// the scene's uniforms, which every material reads: made here, from the look the entry installed
+// (PageSettings.ts), and installed before anything builds
+const shared = createShared( PAGE_LOOK );
 installShared( shared );
 
 const render = {} as RenderParts;
