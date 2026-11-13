@@ -52,6 +52,7 @@ r186, each with the check that sees it.
     (`skills/measuring-performance-changes/SKILL.md`).
 11. Go through the entries marked r186 in `docs/reference/three-behaviour.md`, each with its
     check. Where three no longer behaves as an entry says, remove the code that works around it and
-    the entry, and the line of `AGENTS.md`'s rule table or the lint rule that states it.
+    the entry, and the line of `AGENTS.md` (or `packages/render/AGENTS.md`) or the lint rule that
+    states it.
 12. Update the comments that name the old version (search for `r186`, the current revision) and
     `CREDITS.md` where it names one.

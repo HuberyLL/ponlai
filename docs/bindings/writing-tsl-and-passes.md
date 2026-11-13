@@ -20,8 +20,9 @@ Contents:
 
 ## Read first
 
-The behaviour page is `docs/reference/three-behaviour.md`; `AGENTS.md`'s table of shader, pass and
-GPU rules names its sections in brackets. Read these sections for what the change touches:
+The behaviour page is `docs/reference/three-behaviour.md`; the shader and GPU rules of `AGENTS.md`
+(Shaders and GPU work) and `packages/render/AGENTS.md` name its sections in brackets. Read these
+sections for what the change touches:
 
 | The change touches | Sections of the behaviour page |
 | --- | --- |
@@ -121,8 +122,9 @@ node tools/render/wgsl-build.mjs <entry> [--out <dir>] [--q "<query>"] [--featur
 ## Record
 
 - A new behaviour of three or WebGPU: an entry in `docs/reference/three-behaviour.md` (behaviour,
-  what the code does, where, its check, **r186** when it is three's own), and a row in `AGENTS.md`'s
-  shader, pass and GPU rules naming the mistake it came from. A finding that adds to an existing
-  entry goes into that entry, under its existing row.
+  what the code does, where, its check, **r186** when it is three's own), and a line naming its
+  section in `AGENTS.md`, Shaders and GPU work, or in `packages/render/AGENTS.md` when it binds the
+  renderer alone; the mistake it came from goes in the commit message. A finding that adds to an
+  existing entry goes into that entry, under its existing line.
 - A rule that can be checked: a lint rule in `tools/repo/lint/` or a `verify-*` tool, in the same
   change (`AGENTS.md`, Adding a rule).

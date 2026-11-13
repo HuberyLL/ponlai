@@ -84,11 +84,11 @@ request at a level from the table, the variable or a bump keeps it, and shared r
 `PONLAI_GPU_LOCK_AGE_S` shortens the threshold for the lock's own tests only. The level is worked
 out whenever the queue is ranked, so a table change reorders requests already waiting.
 
-Scheduling is done by the user or a main session with the scheduling table, never by a session
-itself. An entry's match is a substring of one of a request's session names or of its label. A
-request's session names are the names of the checkouts (a worktree, or the main checkout) that hold
-the script it runs and its working directory, and that directory's own name. So a tool started by
-its absolute path from another directory is still matched by its worktree's name, and the main
+The scheduling table ranks other runs: `prio set` adds or replaces an entry, and a run never adds
+one for itself. An entry's match is a substring of one of a request's session names or of its label.
+A request's session names are the names of the checkouts (a worktree, or the main checkout) that
+hold the script it runs and its working directory, and that directory's own name. So a tool started
+by its absolute path from another directory is still matched by its worktree's name, and the main
 checkout's name matches only requests from the main checkout. The longest match wins, an entry past
 its `--for` is ignored, and the level applies to all of the session's requests, shared and exclusive
 alike.
@@ -135,6 +135,5 @@ user allows it (`node tools/kit/display-gate.mjs status`). The gate is a switch,
 headed. A run is headed only for what a screen alone shows: pacing and cadence, late frames, the
 frame pacer's rate, the dynamic scale under a player's drags, and the display tools' own tests
 (`tools/render/profile-frame.mjs --display`). Everything else, GPU cost and tuning included, runs
-headless. A headed run covers at most 3 scenes, and whoever dispatches one tells the user
-beforehand, as information rather than a question. A headed run that is not allowed now is recorded
-as pending and run later in one batch.
+headless. A headed run covers at most 3 scenes. A headed run that is not allowed now is recorded as
+pending and run later in one batch.
