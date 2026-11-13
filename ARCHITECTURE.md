@@ -2,7 +2,8 @@
 
 How Ponlai is put together: its layers, what each one owns, how data flows between them, and the
 rules that cut across them. It stays at that level. What each module does and why is in the
-module's header comment; the file-by-file guide is the Map in [AGENTS.md](AGENTS.md); the game's
+module's header comment; the file-by-file guide is
+[docs/reference/code-map.md](docs/reference/code-map.md); the game's
 design (what it is, not how the code runs it) is
 [docs/explanation/game-design.md](docs/explanation/game-design.md); the
 look is [docs/explanation/art-direction.md](docs/explanation/art-direction.md). A change that adds a
@@ -248,17 +249,48 @@ folder is its layer.
    *Why:* rules that each defend against bad data do it differently and miss cases (a count that is
    not a number fell back to 1; a key named `__proto__` broke a copy). One check keeps the rules
    short and the refusals uniform.
-4. **Determinism and path independence.** The simulation, the world and its growth, the weather and
-   every state integrated over time are functions of the land, the seeds, the clock and the calls
-   made, never of the path taken, the thread count or the frame rate. *Why:* a save must play on as
-   the original; a grown page must hold the world a fresh load holds; a headless run must repeat
-   byte for byte, so a change to the rules shows as a difference in its output; and captures of the
-   paused page are compared byte for byte. AGENTS.md's "Rules for every change" gives the rendering
-   side's forms of this rule: the test mode, the chunk contract, the growth swap.
-5. **Generic generation.** The island grows one piece at a time, so everything placed on it or
-   fitted to it derives from the land and fixed-seed fields, never from coordinates placed by hand,
-   and counts follow the measured coast or area. *Why:* the island the player grows is never the one
-   anyone tuned by hand.
+4. **Determinism and path independence.** The simulation, the world and its growth, the weather, the
+   wind and every state integrated over time (the wind's travel, the fog's time) are functions of
+   the land, the seeds, the scene clock, the weather and the calls made, never of the path taken,
+   the thread count or the frame rate. A grown page holds the world a fresh load of its land holds,
+   and a scene jump (`establishScene` in [app/Scene.ts](app/Scene.ts)) the scene a fresh load of the
+   same query holds. The world's chunks and the growth's swap keep the rule for generation (the
+   header comments of [packages/island/world/Chunks.ts](packages/island/world/Chunks.ts) and
+   [packages/island/world/Growth.ts](packages/island/world/Growth.ts)).
+
+   Rendering may keep a history-dependent effect (a temporal resolve, exposure adaptation, lighting
+   or fog accumulated over frames, vegetation that responds to what passes through it, a per-frame
+   physics simulation) when it meets three conditions: a scene jump clears its history, as it clears
+   all state a scene leaves behind (a cache, a history, a size that only grows, a window that
+   follows the camera); on a still scene it converges to the same image whatever came before, or it
+   can be frozen or turned off in the test mode; and outside the test mode its frames are compared
+   within a tolerance ([tools/parity/README.md](tools/parity/README.md), Temporal tolerance). Its
+   per-frame update reads the scene clock's step, never the wall clock, so a stepped clip repeats
+   (rule 17 names the three cadences that follow the wall clock's step). The test mode is a paused
+   page under MSAA, with every history-dependent effect frozen or off, shot once the page's
+   `settled` signal holds ([docs/reference/tools.md](docs/reference/tools.md), Test mode). There a
+   paused frame is exactly repeatable and equals a fresh load's, and refactors are checked byte for
+   byte; under the temporal modes a paused page shows its rest image, compared within the
+   tolerance. A new history-dependent effect follows
+   [docs/how-to/check-a-change.md](docs/how-to/check-a-change.md), Add a history-dependent effect.
+
+   *Why:* a save must play on as the original; a grown page must hold the world a fresh load holds;
+   a headless run must repeat byte for byte, so a change to the rules shows as a difference in its
+   output; and captures of the paused page are compared byte for byte.
+   [tools/verify-world-chunks.mjs](tools/verify-world-chunks.mjs),
+   [tools/verify-growth-swap.mjs](tools/verify-growth-swap.mjs),
+   [tools/verify-scene-jump.mjs](tools/verify-scene-jump.mjs) and the parity captures keep the
+   rule, and the code lint's `ponlai/scene-clock` refuses the wall clock in code that changes the
+   scene.
+5. **Generic generation.** The island grows one piece at a time
+   ([docs/explanation/game-design.md](docs/explanation/game-design.md), How the island grows), so
+   everything placed on it derives from the land's footprint, the island's SDF and noise fields
+   with fixed seeds (hashes of position, or random streams seeded per world-anchored cell, never one
+   running stream across many items), never from coordinates placed by hand, and counts follow the
+   measured coast length or area. So does everything fitted to the land on the page: the views, the
+   camera's limits, the shore and rain fields, the reflection's box, the walking loop and the
+   game's grid. Generation stays deterministic whatever the thread count (rule 4). *Why:* the
+   island the player grows is never the one anyone tuned by hand.
 6. **The game stays headless.** The rules and the session reach neither three.js nor the DOM, and
    the page only hosts them. *Why:* the same game runs in the page, in the play tool and in the
    checks, with nothing copied between them, and a brain can be judged offline against what the page
