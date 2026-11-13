@@ -1,6 +1,6 @@
 """Build the moon's web textures from NASA's CGI Moon Kit (public domain).
 
-Usage: uv run --with pillow --with numpy tools/build-moon-textures.py [source-dir]
+Usage: uv run --with pillow --with numpy tools/island/build-moon-textures.py [source-dir]
 
 source-dir (default artifacts/third-party/nasa-moon) holds two files from
 https://svs.gsfc.nasa.gov/4720/ (NASA's Scientific Visualization Studio):

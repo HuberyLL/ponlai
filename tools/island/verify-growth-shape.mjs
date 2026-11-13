@@ -4,12 +4,12 @@
 // land, that old land is never lost and that the land stays 16 m inside the lattice at the growth
 // horizon. Writes a sheet of the first eight seeds to artifacts/growth/shape-sheet-<label>.png.
 //
-// node tools/verify-growth-shape.mjs [--label name] [--seeds 32]
+// node tools/island/verify-growth-shape.mjs [--label name] [--seeds 32]
 
-import { assert, assertions } from './assert-count.mjs';
+import { assert, assertions } from '../assert-count.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
-import { GROWTH, LandLattice, growLand, nextPiece } from '../packages/island/world/IslandGrowth.ts';
+import { GROWTH, LandLattice, growLand, nextPiece } from '../../packages/island/world/IslandGrowth.ts';
 
 const args = process.argv.slice( 2 );
 const arg = ( name, fallback ) => {

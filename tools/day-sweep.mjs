@@ -18,7 +18,7 @@
 // It only combines the tools that exist: tools/colour-rows.mjs shoots the frames (tools/parity/
 // capture-set.mjs on one warm page, the scene jump from frame to frame, under the shared GPU lock)
 // and reads the sky, the sea and the land of each; tools/img.py sheet and thumb lay them out and
-// shrink them; tools/day-sweep-plot.py draws the curves. `report` runs the second half again on
+// shrink them; tools/island/day-sweep-plot.py draws the curves. `report` runs the second half again on
 // the frames already in <outDir> (new thresholds, a comparison, a sheet that failed).
 //
 // The cameras (--views names them; the default is the scope's; every frame of a camera from the
@@ -822,7 +822,7 @@ function report( out, options, thinNow ) {
 	all.sort( ( a, b ) => b.ratio - a.ratio );
 	writeFileSync( path.join( out, 'jumps.txt' ), `# every camera: steps beyond what the neighbours' slope predicts: log2 luminance over ${ thr.stops.toFixed( 3 ) } stops, or Oklab (a, b) distance over ${ thr.de }; by size in units of the threshold (jumps-<camera>.txt lists the pairs a camera turned over)\n${ all.map( ( l ) => l.line ).join( '\n' ) }${ all.length ? '\n' : '' }` );
 	writeFileSync( path.join( out, 'colour', 'series.json' ), JSON.stringify( series ) );
-	uv( [ '--with', 'matplotlib', '--with', 'numpy', 'tools/day-sweep-plot.py', path.join( out, 'colour', 'series.json' ), out ], 'the curves' );
+	uv( [ '--with', 'matplotlib', '--with', 'numpy', 'tools/island/day-sweep-plot.py', path.join( out, 'colour', 'series.json' ), out ], 'the curves' );
 
 	// the frames a line names stay whole: both frames of each step, and the comparison's
 	const keep = new Set( all.flatMap( ( l ) => [ viewName( l.camera, l.weather, l.s.from.minute ), viewName( l.camera, l.weather, l.s.to.minute ) ] ) );

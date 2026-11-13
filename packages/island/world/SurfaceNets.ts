@@ -39,7 +39,7 @@
 // column for which it returns [ lo, hi ] samples the field only on the lattice points from just
 // below lo to just above hi and fills the rest with a constant of the right sign: inside below,
 // outside above. The caller promises that the field has no sign change outside that range, in this
-// column or within a voxel of it, so the mesh is the same (tools/verify-world-chunks.mjs compares
+// column or within a voxel of it, so the mesh is the same (tools/island/verify-world-chunks.mjs compares
 // every chunk with and without). It saves about a tenth of an inland chunk's time, not the nine
 // tenths the design estimated: far from the coast the wall's SDF already costs little per sample
 // (CliffWall's column cache), and the vertices' normals and AO dominate.

@@ -2,7 +2,7 @@
 
 Usage:
     uv run --with numpy --with pillow --with openexr --with scipy \\
-        python tools/build-milky-way.py milkyway_2020_4k.exr [public/sky/milkyway.png]
+        python tools/island/build-milky-way.py milkyway_2020_4k.exr [public/sky/milkyway.png]
 
 Source: https://svs.gsfc.nasa.gov/4851 (Deep Star Maps 2020), the 4k celestial-coordinate Milky
 Way background `milkyway_2020_4k.exr`. Credit: NASA/Goddard Space Flight Center Scientific

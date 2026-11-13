@@ -1,5 +1,5 @@
 // The chunks' derived products against today's main-thread builders (plain node, CPU only):
-//   node tools/verify-chunk-derived.mjs [--seed 1] [--steps 0,8] [--threads n]
+//   node tools/island/verify-chunk-derived.mjs [--seed 1] [--steps 0,8] [--threads n]
 //
 // Every chunk of the grown land is built on a pool of worker threads (Chunks.ts `buildChunk`), and
 // its meshes are merged as one island, one stones mesh and one floor (the tiles, lattice order of
@@ -24,19 +24,20 @@
 //             the 3 x 3 cells round it); prints the largest difference at a point.
 // It also prints the time today's builders take on these meshes and what the merge takes instead.
 // Exit code 1 on any failure.
-// A pass is recorded (tools/verify-cache.mjs): a later run with the same arguments, node and source
+// A pass is recorded (tools/island/verify-cache.mjs): a later run with the same arguments, node and source
 // files (the script's whole import graph) prints that it was skipped and exits 0; --force runs it.
 import { Worker, isMainThread, parentPort } from 'node:worker_threads';
 import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
-import { buildChunk, chunkIsland, chunkKeys, landField, landWindow, parseChunkKey } from '../packages/island/world/Chunks.ts';
-import { growLand, LandLattice } from '../packages/island/world/IslandGrowth.ts';
-import { tileIndices, TILE_SIDE } from '../packages/island/world/SeabedTile.ts';
-import { FLOOR_STEP } from '../packages/island/world/Bathymetry.ts';
-import { SEA_LEVEL } from '../packages/island/world/ChunkDerived.ts';
+import { buildChunk, chunkIsland, chunkKeys, landField, landWindow, parseChunkKey } from '../../packages/island/world/Chunks.ts';
+import { growLand, LandLattice } from '../../packages/island/world/IslandGrowth.ts';
+import { tileIndices, TILE_SIDE } from '../../packages/island/world/SeabedTile.ts';
+import { FLOOR_STEP } from '../../packages/island/world/Bathymetry.ts';
+import { SEA_LEVEL } from '../../packages/island/world/ChunkDerived.ts';
 import { verifyCache } from './verify-cache.mjs';
-import { simplifierReady } from '../packages/island/world/IslandSimplify.ts';
+import { simplifierReady } from '../../packages/island/world/IslandSimplify.ts';
+import { ROOT } from '../kit/root.mjs';
 
 // the island's simplifier (wasm) is ready before any chunk is built, in every thread
 await simplifierReady;
@@ -74,14 +75,14 @@ const argument = ( name, fallback ) => {
 
 // The consumers import modules plain node cannot load (they read `import.meta.env`, and
 // RefractedSun.ts has constructor parameter properties node's type stripping cannot erase), so they
-// load through Vite's SSR loader on the main thread only, as tools/verify-world-stats.mjs loads its
+// load through Vite's SSR loader on the main thread only, as tools/island/verify-world-stats.mjs loads its
 // planting (they read the page's settings as a page without options: packages/render/Settings.ts).
 // three's WebGPU build, written for a page, loads under node as it is.
 async function loadConsumers() {
 
 	const { createServer } = await import( 'vite' );
 	const server = await createServer( {
-		root: fileURLToPath( new URL( '../', import.meta.url ) ), configFile: false, logLevel: 'error', appType: 'custom',
+		root: `${ ROOT }/`, configFile: false, logLevel: 'error', appType: 'custom',
 		server: { middlewareMode: true, hmr: false, ws: false, watch: null }, optimizeDeps: { noDiscovery: true, include: [] },
 	} );
 	const THREE = await server.ssrLoadModule( 'three/webgpu' );

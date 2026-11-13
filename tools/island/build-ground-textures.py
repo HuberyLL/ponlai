@@ -1,6 +1,6 @@
 """Build the meadow ground's web textures from two Poly Haven scans (CC0).
 
-Usage: uv run --with pillow --with numpy tools/build-ground-textures.py [source-dir]
+Usage: uv run --with pillow --with numpy tools/island/build-ground-textures.py [source-dir]
 
 source-dir (default artifacts/third-party/polyhaven) holds each scan's 1K maps in a folder of its
 id, `<id>_diff_1k.jpg` (colour, sRGB), `<id>_nor_gl_1k.jpg` (OpenGL normals) and

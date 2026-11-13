@@ -277,7 +277,7 @@ folder is its layer.
    *Why:* a save must play on as the original; a grown page must hold the world a fresh load holds;
    a headless run must repeat byte for byte, so a change to the rules shows as a difference in its
    output; and captures of the paused page are compared byte for byte.
-   [tools/verify-world-chunks.mjs](tools/verify-world-chunks.mjs),
+   [tools/island/verify-world-chunks.mjs](tools/island/verify-world-chunks.mjs),
    [tools/verify-growth-swap.mjs](tools/verify-growth-swap.mjs),
    [tools/verify-scene-jump.mjs](tools/verify-scene-jump.mjs) and the parity captures keep the
    rule, and the code lint's `ponlai/scene-clock` refuses the wall clock in code that changes the

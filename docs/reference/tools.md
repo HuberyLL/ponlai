@@ -316,7 +316,7 @@ shrunk to match), as `compare.txt` says, and a sky masked otherwise is marked no
 than refused; `--transitions` freezes each adjacent pair of weathers half way through a front at
 four moments and reports how far the middle frame lies from its endpoints; `report <outDir>` repeats
 the report on frames already shot. It is colour-rows (shoot --warm and rows), capture-set, `img.py
-sheet` and `thumb` and `tools/day-sweep-plot.py` combined, not a renderer of its own. The default
+sheet` and `thumb` and `tools/island/day-sweep-plot.py` combined, not a renderer of its own. The default
 and key views look 50 degrees down and hold no sky. Its header has the cameras, the times, the
 regions and the thresholds' source.
 
@@ -559,8 +559,8 @@ the yunpeng's cells), each point a scene jump with an explicit bake, its hour so
 quantities brighter (each step, the largest rise down to midnight, the exposure's direction).
 `--split` forces each of the dusk's shares (`sky.dusk.force.*`, `docs/reference/url-options.md`,
 Tunable parameters) to 0 and to 1 and puts the night's back one at a time from the twilight alone,
-for each share's term, and `--fit` solves each night share's slope from it (`tools/dusk-fit.mjs`,
-which also fits a run already made: `node tools/dusk-fit.mjs <out>`, no GPU) so that every step
+for each share's term, and `--fit` solves each night share's slope from it (`tools/island/dusk-fit.mjs`,
+which also fits a run already made: `node tools/island/dusk-fit.mjs <out>`, no GPU) so that every step
 holds at half the judge's margin, the slope no steeper than the twilight's fall, into `fit.txt`;
 `--night-split` reads the night's terms alone, `--twilight` the twilight alone (every night share
 forced to 0, without the split's other states). `--haze` also reads, in a fixed view of
@@ -1337,11 +1337,11 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   never adds ink or reaches past the outline; a short stroke keeps its ink; a long one keeps its
   first press and dries toward its exit, a thin one less than a broad one; a gauge told not to dry
   keeps its exit.
-- `tools/verify-growth-shape.mjs` (plain `node`) checks the island's growth over 32 seeds and 36
-  steps: the coast's solidity, elongation and share along the lattice axes, that a grown land
+- `tools/island/verify-growth-shape.mjs` (plain `node`) checks the island's growth over 32 seeds and
+  36 steps: the coast's solidity, elongation and share along the lattice axes, that a grown land
   equals the same steps taken one at a time through a saved land, and the lattice's margin; it
   writes a sheet of eight seeds to `artifacts/growth/shape-sheet-<label>.png`.
-- `tools/verify-world-chunks.mjs [--seeds 1,2] [--steps 12] [--threads n] [--long] [--bench]
+- `tools/island/verify-world-chunks.mjs [--seeds 1,2] [--steps 12] [--threads n] [--long] [--bench]
   [--sheets dir]` (plain `node`; run it before captures after any change to the world's generator)
   grows each seed's land step by step and builds every chunk of every step
   (`packages/island/world/Chunks.ts`) on a pool of worker threads (default min( 8, cores - 4 )). It
@@ -1364,7 +1364,7 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   `artifacts/captures/world-chunks/`). The checks' definitions are in the script's header. The
   pool's 1219 chunk builds dominate the time: the default run takes several minutes, `--long` a
   little over twice as long and `--bench` about two thirds of it.
-- `tools/verify-world-stats.mjs [--seeds 1,2] [--grow 0,8] [--threads n]` (plain `node`) builds
+- `tools/island/verify-world-stats.mjs [--seeds 1,2] [--grow 0,8] [--threads n]` (plain `node`) builds
   every chunk of whole islands on a pool of worker threads (`buildChunk`, contact shade off) and
   checks the statistics of the union of what they own, with the bounds the look was tuned on: the
   meadow's anchors per m^2 against the counts the look was tuned on (grown islands summed, 5 %); the
@@ -1373,9 +1373,9 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   scars; the cliff's scars, on each chunk's own wall: none cuts rock beyond its reach (4.5 m, 3 m)
   and none breaks off more than 0.6 m of rock above y -1 where its reach ends it. The chunk checks
   prove seams and locality; this probe proves the chunked world keeps its numbers.
-- `tools/verify-chunk-derived.mjs [--seed 1] [--steps 0,8] [--threads n]` (plain `node`, part of
-  `npm run check -- --full`; run it after a change to `packages/island/world/ChunkDerived.ts` or to
-  the builders it stands in for)
+- `tools/island/verify-chunk-derived.mjs [--seed 1] [--steps 0,8] [--threads n]` (plain `node`, part
+  of `npm run check -- --full`; run it after a change to `packages/island/world/ChunkDerived.ts` or
+  to the builders it stands in for)
   builds every chunk of the grown land on a pool of worker threads and checks the chunks' derived
   products, which the page uses, against the builders it ran before on the merged meshes (the
   builders loaded through Vite's SSR loader, three's WebGPU build imported in node): SunShadow's caster
@@ -1395,7 +1395,7 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   nor recorded. A skipped `verify-world-chunks` writes no chunk sheets. The records are JSON files
   in the main checkout's `artifacts/verify-cache/` (git-ignored), shared by every worktree, so a
   pass proven on a branch counts on its merge; delete the folder to forget them all. The helper is
-  `tools/verify-cache.mjs`.
+  `tools/island/verify-cache.mjs`.
 - `tools/verify-storage-realloc.mjs` (GPU, headless, shared lock; it serves its own page from a
   Vite server over the repository) checks what three's WebGPU backend does with storage buffers,
   for pools that outgrow their capacity (the meadow's, `vegetation/VegetationCull.ts`): rewritten in
@@ -1544,9 +1544,9 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   on, where the views' and clips' tables are, and the module that adds the pipeline tracer to an
   eval. Its summary says how many files and imports it checked.
 - `tools/benchmark-lighting.mjs` A/B-times two builds.
-- `tools/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit
-  (`uv run --with pillow --with numpy`), `tools/build-ground-textures.py` the meadow ground's from
-  two Poly Haven scans (the same way). `tools/build-star-catalog.mjs` and
-  `tools/build-milky-way.py` rebuild the night sky's data in `public/sky/` from the raw catalogue
+- `tools/island/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit
+  (`uv run --with pillow --with numpy`), `tools/island/build-ground-textures.py` the meadow ground's
+  from two Poly Haven scans (the same way). `tools/island/build-star-catalog.mjs` and
+  `tools/island/build-milky-way.py` rebuild the night sky's data in `public/sky/` from the raw catalogue
   and map (each file says where to get them and how to run it).
   `tools/bake-rainbow-table.mjs` generates `packages/render/sky/RainbowTable.data.ts`.

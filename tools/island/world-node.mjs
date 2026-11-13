@@ -1,13 +1,13 @@
 // Helpers for running the world generators in plain node (CPU only, with TypeScript stripping):
 // the page's world built serially, hashes of generated buffers and the weld that tells whether
-// meshes close up (tools/verify-world-chunks.mjs).
+// meshes close up (tools/island/verify-world-chunks.mjs).
 import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
-import { buildLand } from '../packages/island/world/chunkWorker.ts';
-import { mergeChunks } from '../packages/island/world/ChunkMerge.ts';
-import { buildChunk, landField, landWindow } from '../packages/island/world/Chunks.ts';
-import { LandLattice } from '../packages/island/world/IslandGrowth.ts';
-import { simplifierReady } from '../packages/island/world/IslandSimplify.ts';
+import { buildLand } from '../../packages/island/world/chunkWorker.ts';
+import { mergeChunks } from '../../packages/island/world/ChunkMerge.ts';
+import { buildChunk, landField, landWindow } from '../../packages/island/world/Chunks.ts';
+import { LandLattice } from '../../packages/island/world/IslandGrowth.ts';
+import { simplifierReady } from '../../packages/island/world/IslandSimplify.ts';
 
 // the island's simplifier (wasm) is ready before any chunk is built, in every thread
 await simplifierReady;

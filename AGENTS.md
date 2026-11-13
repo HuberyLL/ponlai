@@ -50,8 +50,8 @@ Detail lives where it is owned.
   in node, no GPU), `tools/profile-frame.mjs` (frame time on a production build), `tools/repo/assets.mjs`
   (the assets in `public/` against `assets.lock.json`, pulled by dev and build) and
   `tools/verify-*.mjs` (regression probes; after a change to the world's generator, run
-  `node tools/verify-world-chunks.mjs` before captures). Use them instead of a Pillow, NumPy or
-  Playwright script of one's own.
+  `node tools/island/verify-world-chunks.mjs` before captures). Use them instead of a Pillow, NumPy
+  or Playwright script of one's own.
 - Everything that renders the scene in a browser takes the GPU lock
   (`node tools/gpu-lock.mjs run [--shared] -- <command>`): timing runs hold it alone, paused
   captures and probes share it. Sessions leave `PONLAI_GPU_PRIORITY` unset.

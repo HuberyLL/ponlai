@@ -20,10 +20,12 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ROOT as TOP } from '../kit/root.mjs';
 
-const ROOT = fileURLToPath( new URL( '../', import.meta.url ) );
+// the repository's root, with its trailing separator (a file under it starts with it)
+const ROOT = TOP + sep;
 
 const SPECIFIERS = [
 	/\bfrom\s*['"]([^'"\n]+)['"]/g,

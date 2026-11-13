@@ -8,7 +8,7 @@ import { GROUND_CELL as CELL, type GroundGrid } from '../world/ChunkDerived.ts';
 // `fromGrids`: it merges the grids the world's workers made for the chunks' island meshes
 // (ChunkDerived.ts) on the world's lattice, so the main thread walks none of their vertices.
 // `build` walks the meshes' vertices on a grid from their box's corner, as the page did before;
-// tools/verify-chunk-derived.mjs checks that the two differ by less than a cell.
+// tools/island/verify-chunk-derived.mjs checks that the two differ by less than a cell.
 // A ray that reaches the sea's distance meets the sea there: its height at that distance rounds an
 // ulp or two above the sea for a few rays in a hundred, which a height test alone read as misses
 // (a wheel zoom over the water lost its anchor and closed in on the pivot).

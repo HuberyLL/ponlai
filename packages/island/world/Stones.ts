@@ -45,7 +45,7 @@
 // together as at random, none of the coast without them) read as stones sprinkled on. The shares
 // below give about 145 per 100 m, the large stones within 12 m of the coast clustered (Clark-Evans
 // 0.8 - 0.9 on seeds 1 - 3 at step 12) and up to a fifth of the coast without one;
-// tools/verify-world-stats.mjs keeps each class's stones per metre of coast, and the large stones
+// tools/island/verify-world-stats.mjs keeps each class's stones per metre of coast, and the large stones
 // near the coast, within a fifth of those counts.
 
 import { noise3, hash3i, mulberry32, smoothstep, type Rng, type Bounds } from '../../render/data.ts';

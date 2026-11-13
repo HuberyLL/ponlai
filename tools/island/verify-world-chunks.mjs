@@ -1,5 +1,5 @@
 // Chunk checks for the world generator (plain node, CPU only):
-//   node tools/verify-world-chunks.mjs [--seeds 1,2] [--steps 12] [--threads n] [--long] [--bench]
+//   node tools/island/verify-world-chunks.mjs [--seeds 1,2] [--steps 12] [--threads n] [--long] [--bench]
 //                                      [--sheets dir]
 // Run it before captures after any change to the world's generator.
 //
@@ -90,7 +90,7 @@
 // chunks `dirtyChunks` rebuilds, how many come out changed, their CPU time (summed over the jobs,
 // on a loaded pool more than alone) and their bytes. Every run writes the chunk sheet, one PNG per
 // seed (`sheet`), to --sheets (default artifacts/captures/world-chunks/).
-// A pass is recorded (tools/verify-cache.mjs): a later run with the same arguments, node and source
+// A pass is recorded (tools/island/verify-cache.mjs): a later run with the same arguments, node and source
 // files (the script's whole import graph) prints that it was skipped and exits 0; --force runs it.
 // --bench is never skipped nor recorded, and a skipped run writes no sheet.
 import { Worker, isMainThread, parentPort } from 'node:worker_threads';
@@ -101,19 +101,20 @@ import { performance } from 'node:perf_hooks';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { crc32, deflateSync } from 'node:zlib';
-import { LandLattice, nextPiece, GROWTH } from '../packages/island/world/IslandGrowth.ts';
+import { LandLattice, nextPiece, GROWTH } from '../../packages/island/world/IslandGrowth.ts';
 import {
 	buildChunk, chunkBlock, chunkBox, chunkIsland, chunkKeys, contactStones, dirtyChunks, landField, landWindow,
 	parseChunkKey, windowFootprint, R, S,
-} from '../packages/island/world/Chunks.ts';
-import { ISLAND_BOTTOM, islandSurfaceHeight, makeIslandSDF } from '../packages/island/world/WorldShapes.ts';
-import { LIP_INFO, LIP_POINTS } from '../packages/island/world/RimGround.ts';
-import { pendingFloors, riseTile, TILE_SIDE } from '../packages/island/world/SeabedTile.ts';
-import { openSeaBeds, openSeaHeight, FLOOR_STEP, OPEN_LATTICE, SHELF_CEILING } from '../packages/island/world/Bathymetry.ts';
-import { VEGETATION_STRIDE } from '../packages/island/world/types.ts';
+} from '../../packages/island/world/Chunks.ts';
+import { ISLAND_BOTTOM, islandSurfaceHeight, makeIslandSDF } from '../../packages/island/world/WorldShapes.ts';
+import { LIP_INFO, LIP_POINTS } from '../../packages/island/world/RimGround.ts';
+import { pendingFloors, riseTile, TILE_SIDE } from '../../packages/island/world/SeabedTile.ts';
+import { openSeaBeds, openSeaHeight, FLOOR_STEP, OPEN_LATTICE, SHELF_CEILING } from '../../packages/island/world/Bathymetry.ts';
+import { VEGETATION_STRIDE } from '../../packages/island/world/types.ts';
 import { hashBuffers, meshClosure, positionKey } from './world-node.mjs';
 import { verifyCache } from './verify-cache.mjs';
-import { simplifierReady } from '../packages/island/world/IslandSimplify.ts';
+import { simplifierReady } from '../../packages/island/world/IslandSimplify.ts';
+import { ROOT } from '../kit/root.mjs';
 
 // the island's simplifier (wasm) is ready before any chunk is built, in every thread
 await simplifierReady;
@@ -1392,7 +1393,7 @@ function sheet( run ) {
 		}
 
 	} );
-	const dir = argument( '--sheets', fileURLToPath( new URL( '../artifacts/captures/world-chunks/', import.meta.url ) ) );
+	const dir = argument( '--sheets', `${ ROOT }/artifacts/captures/world-chunks/` );
 	mkdirSync( dir, { recursive: true } );
 	const path = join( dir, `chunks-seed${ run.seed }.png` );
 	writeFileSync( path, png( image, W, H ) );

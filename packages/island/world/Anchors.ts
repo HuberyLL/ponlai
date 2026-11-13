@@ -4,7 +4,7 @@
 // (`anchorStream`), so what grows at an anchor never depends on which other anchors were built
 // before it, or in which box. A box keeps the anchors whose jittered point lies in it, so boxes
 // that tile the plane build every anchor once, and a box plants exactly what the whole island
-// plants there (tools/verify-world-chunks.mjs, S5).
+// plants there (tools/island/verify-world-chunks.mjs, S5).
 import { hash3i, mulberry32, type Rng, type Bounds } from '../../render/data.ts';
 import { VEGETATION_SPACING as CELL } from './types.ts';
 import type { SDF } from './types.ts';

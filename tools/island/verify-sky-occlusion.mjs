@@ -1,11 +1,11 @@
-// Run with a Node version supporting TypeScript stripping: node tools/verify-sky-occlusion.mjs.
-// --world also generates the page's world twice (from its chunks, tools/world-node.mjs), with and
+// Run with a Node version supporting TypeScript stripping: node tools/island/verify-sky-occlusion.mjs.
+// --world also generates the page's world twice (from its chunks, tools/island/world-node.mjs), with and
 // without the contact shade, and checks geometry/placement invariance.
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
-import { boundedSceneField, localSkyVisibility, contactVisibilitySampler } from '../packages/island/world/SkyOcclusion.ts';
-import { surfaceNets } from '../packages/island/world/SurfaceNets.ts';
-import { VEGETATION_STRIDE } from '../packages/island/world/types.ts';
+import { boundedSceneField, localSkyVisibility, contactVisibilitySampler } from '../../packages/island/world/SkyOcclusion.ts';
+import { surfaceNets } from '../../packages/island/world/SurfaceNets.ts';
+import { VEGETATION_STRIDE } from '../../packages/island/world/types.ts';
 import { generateWorld } from './world-node.mjs';
 
 const plane = ( x, y, z ) => y;

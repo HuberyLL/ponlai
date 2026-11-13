@@ -1,7 +1,7 @@
 // Statistical checks for the chunked world generator (plain node, CPU only):
-//   node tools/verify-world-stats.mjs [--seeds 1,2] [--grow 0,8] [--threads n]
+//   node tools/island/verify-world-stats.mjs [--seeds 1,2] [--grow 0,8] [--threads n]
 //
-// tools/verify-world-chunks.mjs proves the chunks' seams and locality (a chunk equals itself built
+// tools/island/verify-world-chunks.mjs proves the chunks' seams and locality (a chunk equals itself built
 // incrementally, from scratch and as part of a block), not that what they make still has the
 // statistics the island's look was tuned on. This probe keeps those: for every seed and growth
 // step it builds every chunk of the whole island (`buildChunk` on a pool of worker threads, each
@@ -30,21 +30,22 @@
 //           own planes would have cut beyond it above y -1 is at most 0.6 m thick (`chunkScars`).
 //
 // Every failed bound prints FAIL and sets the exit code; the run goes on to print every number.
-// A pass is recorded (tools/verify-cache.mjs): a later run with the same arguments, node and source
+// A pass is recorded (tools/island/verify-cache.mjs): a later run with the same arguments, node and source
 // files (the script's whole import graph) prints that it was skipped and exits 0; --force runs it.
 import { Worker, isMainThread, parentPort } from 'node:worker_threads';
 import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
-import { growLand, LandLattice } from '../packages/island/world/IslandGrowth.ts';
-import { buildChunk, chunkKeys, landField, landWindow, parseChunkKey, windowFootprint, R, S } from '../packages/island/world/Chunks.ts';
-import { coastWobble, islandSurfaceHeight, landArea, makeIslandSDF, ISLAND_BOTTOM } from '../packages/island/world/WorldShapes.ts';
-import { CliffWall, REACH_A, REACH_B } from '../packages/island/world/Cliff.ts';
-import { floorAt } from '../packages/island/world/Bathymetry.ts';
-import { placeStones, rockExtent, CELL, REACH } from '../packages/island/world/Stones.ts';
-import { VEGETATION_STRIDE } from '../packages/island/world/types.ts';
+import { growLand, LandLattice } from '../../packages/island/world/IslandGrowth.ts';
+import { buildChunk, chunkKeys, landField, landWindow, parseChunkKey, windowFootprint, R, S } from '../../packages/island/world/Chunks.ts';
+import { coastWobble, islandSurfaceHeight, landArea, makeIslandSDF, ISLAND_BOTTOM } from '../../packages/island/world/WorldShapes.ts';
+import { CliffWall, REACH_A, REACH_B } from '../../packages/island/world/Cliff.ts';
+import { floorAt } from '../../packages/island/world/Bathymetry.ts';
+import { placeStones, rockExtent, CELL, REACH } from '../../packages/island/world/Stones.ts';
+import { VEGETATION_STRIDE } from '../../packages/island/world/types.ts';
 import { verifyCache } from './verify-cache.mjs';
-import { simplifierReady } from '../packages/island/world/IslandSimplify.ts';
+import { simplifierReady } from '../../packages/island/world/IslandSimplify.ts';
+import { ROOT } from '../kit/root.mjs';
 
 // the island's simplifier (wasm) is ready before any chunk is built, in every thread
 await simplifierReady;
@@ -366,7 +367,7 @@ async function loadPlanting() {
 
 	const { createServer } = await import( 'vite' );
 	const server = await createServer( {
-		root: new URL( '../', import.meta.url ).pathname, configFile: false, logLevel: 'error', appType: 'custom',
+		root: `${ ROOT }/`, configFile: false, logLevel: 'error', appType: 'custom',
 		server: { middlewareMode: true, hmr: false, ws: false, watch: null }, optimizeDeps: { noDiscovery: true, include: [] },
 	} );
 	const { groveAt } = await server.ssrLoadModule( '/packages/island/world/BambooGroves.ts' );

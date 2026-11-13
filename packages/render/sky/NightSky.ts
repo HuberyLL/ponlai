@@ -9,7 +9,7 @@
  * Licensed under the MIT License; see ./a-starry-sky.LICENSE.txt.
  *
  * The moon's colour and heights come from NASA's Scientific Visualization Studio CGI Moon Kit
- * (public domain), processed by tools/build-moon-textures.py.
+ * (public domain), processed by tools/island/build-moon-textures.py.
  */
 
 import * as THREE from 'three/webgpu';
@@ -259,7 +259,7 @@ const starLayer = ( c: V3, footprint: F, conserve: boolean, cells: number, occup
 // The kit's mean lunar radius in metres: heights over it give slopes on the unit sphere.
 const LUNAR_RADIUS = 1737400;
 // Mean linear luminance of the colour map's near side, weighted by projected area on the disk
-// (printed by tools/build-moon-textures.py). Dividing by it keeps the disk's brightness in
+// (printed by tools/island/build-moon-textures.py). Dividing by it keeps the disk's brightness in
 // moonColor, so the map only redistributes it into maria, highlands and craters.
 const NEAR_SIDE_LUMINANCE = 0.397;
 // Oren-Nayar (roughness 1) radiance at normal incidence and view: the full moon's centre.
@@ -373,7 +373,7 @@ export class NightSky {
 	readonly relief = uniform( 1.4 );
 	// Strength of the earthshine over a-starry-sky's (an art control).
 	readonly earthshine = uniform( 1 );
-	// The near side's colour and LOLA heights (see tools/build-moon-textures.py). Loading
+	// The near side's colour and LOLA heights (see tools/island/build-moon-textures.py). Loading
 	// starts with the sky; the first bake waits for it, so no frame shows an untextured moon.
 	readonly colorMap: THREE.Texture;
 	readonly heightMap: THREE.Texture;

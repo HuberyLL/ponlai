@@ -13,7 +13,7 @@ export interface RimGroundSample { distance: number; roofY: number; retreat: num
 // depth the lip alternates between overgrown stretches (turf down over the shoulder) and cut-open
 // root soil (TerrainMaterial), and the meadow's tufts grow taller and lean out over the lip toward
 // the coast instead of thinning (Grass.ts). It is built per box of a world grid (RIM_BOX) and is
-// the same, bit for bit, whichever box computed it (tools/verify-world-chunks.mjs, S4 and S5).
+// the same, bit for bit, whichever box computed it (tools/island/verify-world-chunks.mjs, S4 and S5).
 
 // The rim ground lies on a world lattice: texel ( i, j ) is centred on ( ( i + 0.5 ) * RIM_CELL,
 // ( j + 0.5 ) * RIM_CELL ) whatever box it is computed for, so every box evaluates the same points.

@@ -19,7 +19,7 @@
 //   cache keeps them and the version loaded before, and deletes the rest (WorldCache.ts `keep`).
 // - `close`: closes the worker once every write has reached the cache.
 //
-// `buildLand` is a plain function, so the node tools build the same land (tools/world-node.mjs).
+// `buildLand` is a plain function, so the node tools build the same land (tools/island/world-node.mjs).
 //
 // A reply transfers every buffer under it (`post`), which detaches them here: a reply never holds a
 // view of a module-level or cached array (a table, a lattice kept for the next job, the field), only

@@ -107,8 +107,8 @@
 //     other states puts a cell's fourth digit a unit apart now and then (its largest: `hdrDrift`).
 //   - Residual: T + sum over the night names of ( q - q0 ) - q, per quantity; over 1 % of q it is
 //     listed in summary.txt (terms that act on each other: a product of shares).
-// --fit (with --split): each night share's slope solved from the split (tools/dusk-fit.mjs, whose
-//   header has the method), into fit.txt; `node tools/dusk-fit.mjs <out>` fits a run already made.
+// --fit (with --split): each night share's slope solved from the split (tools/island/dusk-fit.mjs, whose
+//   header has the method), into fit.txt; `node tools/island/dusk-fit.mjs <out>` fits a run already made.
 // --night-split: the twilight forced to 0 (sun, hazeSun, hazeSky): the night's terms alone
 //   (`night`), and the local lights forced off alone (`noLights`).
 // --twilight: the twilight alone, every night name of DUSK_FORCES forced to 0 (the split's T, as
@@ -146,7 +146,7 @@
 //     lum( E ) / pi; marked under or over 5 %), with the key's measured share
 //     of M at night beside it;
 //   fit.txt (with --fit): per weather and side each share's solved endpoints, the width's k, the
-//     margin and the overall condition, then every share placed at once (tools/dusk-fit.mjs);
+//     margin and the overall condition, then every share placed at once (tools/island/dusk-fit.mjs);
 //   terms.txt (with --split, --night-split or --twilight): per quantity and point, q, T, each night name's inc,
 //     the residual, `night` and `noLights`;
 //   compare.txt (--compare dir): every point both runs hold, value by value. In [+2.5, +4] the CPU
@@ -178,7 +178,7 @@ import { acquireGpuLock, leaseGpuLock, releaseGpuLock } from './gpu-lock.mjs';
 import { launchCapture, pngShooter, stopLoop, waitForScene, waitForSettled } from './capture-browser.mjs';
 import { WAIT_FRAMES, runInPage } from './page-eval.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
-import { fitDusk } from './dusk-fit.mjs';
+import { fitDusk } from './island/dusk-fit.mjs';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';

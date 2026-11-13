@@ -20,8 +20,8 @@ change.
    cases (the layers' upward imports, the files over the size limit, the code that reaches into
    three's internals) is fixed in the code, never by adding to its list.
 3. Before a merge, and after a change to the world's generator, run `npm run check -- --full`. It
-   adds the production build and the world's chunk checks (`tools/verify-world-chunks.mjs`,
-   `tools/verify-chunk-derived.mjs`) and takes minutes.
+   adds the production build and the world's chunk checks (`tools/island/verify-world-chunks.mjs`,
+   `tools/island/verify-chunk-derived.mjs`) and takes minutes.
 
 `npm run check` renders nothing, so it runs while another session holds the GPU lock. The checks
 that render (captures, parity, the GPU verify tools) are run by hand, as the sections below say.

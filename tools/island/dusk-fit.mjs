@@ -2,7 +2,7 @@
 // dusk-grid run with --split (tools/dusk-grid.mjs), so that a lower sun never makes a judged
 // quantity brighter. dusk-grid --fit runs it on its own points; on its own it reads a run's output:
 //
-//   node tools/dusk-fit.mjs <dusk-grid out dir> [--judge 0.02] [--views island]
+//   node tools/island/dusk-fit.mjs <dusk-grid out dir> [--judge 0.02] [--views island]
 //
 // It writes fit.txt in that directory and prints its path. No page, no GPU.
 //
@@ -228,7 +228,7 @@ if ( process.argv[ 1 ] && path.resolve( process.argv[ 1 ] ) === fileURLToPath( i
 	const opt = ( name, fallback ) => { const i = args.indexOf( `--${ name }` ); return i >= 0 ? args[ i + 1 ] : fallback; };
 	if ( ! dir || ! existsSync( dir ) ) {
 
-		console.error( 'usage: node tools/dusk-fit.mjs <dusk-grid out dir> [--judge 0.02] [--views island]' );
+		console.error( 'usage: node tools/island/dusk-fit.mjs <dusk-grid out dir> [--judge 0.02] [--views island]' );
 		process.exit( 2 );
 
 	}

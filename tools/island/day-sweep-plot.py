@@ -8,7 +8,7 @@ darkest 5 % by log2 luminance of the rows' mean colour, Oklab chroma and Oklab h
 flagged are circled on the curves in their region's colour, and the pairs of frames the camera
 turned between (a change of the picture, not of the light) are shaded.
 
-  uv run tools/day-sweep-plot.py <series.json> <outDir>
+  uv run tools/island/day-sweep-plot.py <series.json> <outDir>
 
 series.json is what day-sweep.mjs writes beside its report: { sunrise, sunset (hours), cameras:
 { <camera>: { <weather>: { points: [ { hour, elevation, ev, regions: { <region>: { log2Y, C, h } } } ],

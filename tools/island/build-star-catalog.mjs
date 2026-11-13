@@ -1,5 +1,5 @@
 // Pack the Yale Bright Star Catalogue into the compact star list the night sky draws:
-//   node tools/build-star-catalog.mjs <bsc5 catalog.gz> [public/sky/stars.bin]
+//   node tools/island/build-star-catalog.mjs <bsc5 catalog.gz> [public/sky/stars.bin]
 //
 // Source: the Bright Star Catalogue, 5th Revised Ed. (Hoffleit and Warren 1991), CDS catalogue
 // V/50 (https://cdsarc.cds.unistra.fr/viz-bin/cat/V/50), file `catalog.gz`; the byte layout is in
@@ -15,7 +15,7 @@ import { dirname } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 
 const [ source, target = 'public/sky/stars.bin' ] = process.argv.slice( 2 );
-if ( ! source ) throw new Error( 'usage: node tools/build-star-catalog.mjs <catalog.gz> [out.bin]' );
+if ( ! source ) throw new Error( 'usage: node tools/island/build-star-catalog.mjs <catalog.gz> [out.bin]' );
 
 // Fixed-width fields by the ReadMe's 1-based byte positions.
 const field = ( line, from, to ) => line.slice( from - 1, to ).trim();

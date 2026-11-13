@@ -1,5 +1,5 @@
 // One land version's chunks (Chunks.ts `ChunkData`) merged into the WorldData the page draws: the
-// page's pool (WorldChunks.ts) and the node tools' serial path (tools/world-node.mjs) both end
+// page's pool (WorldChunks.ts) and the node tools' serial path (tools/island/world-node.mjs) both end
 // here, so they draw and check the same world. Pure (no three, no DOM). A grown island's version
 // is merged in steps (`mergeSteps`, in idle time: Growth.ts), to the same result.
 //
