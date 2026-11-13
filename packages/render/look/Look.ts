@@ -309,7 +309,7 @@ export interface LocalLightsLook {
 	gain: number;
 }
 
-// ---- the meadow's canopy (look/MeadowCanopyLook.ts)
+// ---- the meadow's canopy (shared.ts `createShared`, read by lighting/MeadowCanopy.ts)
 
 /** A canopy's medium: its extinction per metre along the key's ray, and the share of the key that
  * passes between its blades whatever the path. */

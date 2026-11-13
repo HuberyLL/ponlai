@@ -1,6 +1,6 @@
-import { Fn, clamp, exp, float, length, max, min, mix, uniform } from 'three/tsl';
+import { Fn, clamp, exp, float, length, max, min, mix } from 'three/tsl';
 import type * as THREE from 'three/webgpu';
-import { MEADOW_CANOPY, MEADOW_CAST } from '../look/MeadowCanopyLook.ts';
+import { shared } from '../shared.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -21,11 +21,9 @@ type V3 = THREE.Node<'vec3'>;
 // modes. What it leaves out is the sward's own relief: the taller tussocks stand over their
 // neighbours and shade them on the side away from the light (`meadowCastLight`, once per tuft), and
 // the crowns shade the ground under and beside them (`meadowGroundLight`, the turf's).
-// The two numbers are the look's (look/MeadowCanopyLook.ts MEADOW_CANOPY).
-export const meadowCanopy = {
-	density: uniform( MEADOW_CANOPY.density ), // extinction per metre of canopy along the ray
-	open: uniform( MEADOW_CANOPY.open ), // the share of the key light that reaches any depth between the blades
-};
+// Its medium's two numbers are the look's, uniforms the shared object makes from the look's tables
+// where it is created (shared.ts `meadowCanopy`: `density`, the extinction per metre of canopy
+// along the ray, and `open`, the share of the key light that reaches any depth between the blades).
 
 // Uniforms reach a layout function only as arguments.
 const canopyLight = Fn( ( [ depth, key, density, open ]: [ F, V3, F, F ] ) => {
@@ -44,7 +42,7 @@ const canopyLight = Fn( ( [ depth, key, density, open ]: [ F, V3, F, F ] ) => {
 // vertex stage.
 export function meadowCanopyLight( depth: F, key: V3 ): F {
 
-	return canopyLight( depth, key, meadowCanopy.density, meadowCanopy.open );
+	return canopyLight( depth, key, shared.meadowCanopy.density, shared.meadowCanopy.open );
 
 }
 
@@ -63,11 +61,9 @@ export const TURF_CANOPY_DEPTH = 0.2;
 // lower than those toward the light lies in their shade, a long one under a low sun. The ray is
 // looked up at CAST_STEPS (m along the ground) up to 3.5 m, where a tussock a metre over its
 // neighbour still shades it with the sun 16 degrees up; CAST_SOFT (m) softens a crown's edge.
-// The two numbers are the look's (look/MeadowCanopyLook.ts MEADOW_CAST).
-export const meadowCast = {
-	density: uniform( MEADOW_CAST.density ), // extinction per metre of crowns along the ray
-	open: uniform( MEADOW_CAST.open ), // the share of the key that passes between the crowns' blades
-};
+// Its medium's two numbers are the look's, as the canopy's (shared.ts `meadowCast`: the extinction
+// per metre of crowns along the ray, and the share of the key that passes between the crowns'
+// blades).
 const CAST_STEPS = [ 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 3.5 ];
 const CAST_SOFT = 0.05;
 
@@ -88,7 +84,7 @@ export function meadowCastLight( crowns: THREE.TextureNode, extent: number, top:
 
 	}
 	// (along the ray: its run over the ground over the cosine of the key's elevation)
-	return mix( exp( meadowCast.density.negate().mul( path ).div( flat ) ), float( 1 ), meadowCast.open );
+	return mix( exp( shared.meadowCast.density.negate().mul( path ).div( flat ) ), float( 1 ), shared.meadowCast.open );
 
 }
 
@@ -114,6 +110,6 @@ export function meadowGroundLight( over: ( xz: THREE.Node<'vec2'> ) => F, at: V3
 		last = t;
 
 	}
-	return mix( exp( meadowCast.density.negate().mul( path ).div( flat ) ), float( 1 ), meadowCast.open );
+	return mix( exp( shared.meadowCast.density.negate().mul( path ).div( flat ) ), float( 1 ), shared.meadowCast.open );
 
 }

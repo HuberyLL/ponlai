@@ -16,8 +16,9 @@ import type { Look } from './look/Look.ts';
 //   the install throws too, at the read, naming the field (its stack names the reader): unlike the
 //   settings and the look, the uniforms have no defaults a reader could take instead.
 // - The look's numbers every material's shader reads take their tables here, as an argument
-//   (look/Look.ts; the entry hands over the set it installs): the ambient occlusion's floor. So
-//   two objects made from two sets hold their own (tools/verify-look-params.mjs).
+//   (look/Look.ts; the entry hands over the set it installs): the ambient occlusion's floor and the
+//   meadow canopy's media. So two objects made from two sets hold their own
+//   (tools/verify-look-params.mjs).
 export const createShared = ( look: SharedTables ) => ( {
 	time: uniform( 0 ),
 	wind: createWindUniforms(),
@@ -92,10 +93,16 @@ export const createShared = ( look: SharedTables ) => ( {
 	// the least ambient occlusion a surface keeps where its own and the screen's multiply (the
 	// look's floor: post/GTAO.ts `floorOcclusion`), a number, which the shaders take as a constant
 	aoFloor: look.occlusion.floor,
+	// the media the key crosses inside a meadow (lighting/MeadowCanopy.ts): the level canopy over
+	// every point of it and the crowns that stand over their neighbours, each its extinction per
+	// metre along the key's ray and the share of the key that passes between the blades whatever the
+	// path (the look's)
+	meadowCanopy: { density: uniform( look.meadowCanopy.canopy.density ), open: uniform( look.meadowCanopy.canopy.open ) },
+	meadowCast: { density: uniform( look.meadowCanopy.cast.density ), open: uniform( look.meadowCanopy.cast.open ) },
 } );
 
 /** The look's tables the shared object takes (`createShared`). */
-export type SharedTables = Pick<Look, 'occlusion'>;
+export type SharedTables = Pick<Look, 'occlusion' | 'meadowCanopy'>;
 
 export type Shared = ReturnType<typeof createShared>;
 
