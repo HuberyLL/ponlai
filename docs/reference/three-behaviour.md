@@ -29,8 +29,8 @@ mix( a, b, t ), `x.step( edge )` is step( edge, x ) and `x.smoothstep( low, high
 smoothstep( low, high, x ). Write the function form, imported from `three/tsl`
 (`post/fsr3/Upsample.ts`, the comment on `ffxLerp`).
 
-Check: the lint rule `ponlai/tsl-method-order`; `tools/wgsl-build.mjs` and the byte comparison of
-the parity captures across an upgrade.
+Check: the lint rule `ponlai/tsl-method-order`; `tools/render/wgsl-build.mjs` and the byte
+comparison of the parity captures across an upgrade.
 
 ### select() of large operands
 
@@ -71,7 +71,7 @@ the rain's materials under taa; `vegetation/VegetationLighting.ts`; `lighting/Lo
 `shadeLocalLights`). A material built twice, in two target layouts, meets it too
 (`post/Motion.ts`).
 
-Check: `tools/wgsl-build.mjs`; the byte comparison of the parity captures.
+Check: `tools/render/wgsl-build.mjs`; the byte comparison of the parity captures.
 
 ### Inline functions and varyings
 
@@ -82,7 +82,7 @@ whose result reaches a varying is a `Fn( ... ).setLayout( ... )` that takes its 
 arguments (`packages/island/world/Grass.ts` builds its blade's vertex from plain nodes for this
 reason).
 
-Check: `tools/wgsl-build.mjs` reports a stage over WebGPU's limits.
+Check: `tools/render/wgsl-build.mjs` reports a stage over WebGPU's limits.
 
 ### Several attachments
 
@@ -100,7 +100,7 @@ which three does not emit; the vegetation's depth prepass adds it
 (`vegetation/VegetationPrepass.ts`). A material that instances from storage buffers holds the
 placed position in a `toVar` (`vegetation/VegetationCull.ts`).
 
-Check: `tools/wgsl-build.mjs` (the prepass's vertex shader); the byte comparison of the parity
+Check: `tools/render/wgsl-build.mjs` (the prepass's vertex shader); the byte comparison of the parity
 captures.
 
 ## Screen and passes
@@ -138,7 +138,7 @@ Check: the byte comparison of the parity captures.
 declared multisampled and cannot be sampled with a comparison: give it a render target. three
 picks one sampler type per depth texture per material (`lighting/SolarShadow.ts`).
 
-Check: the byte comparison of the parity captures; `tools/verify-solar-shadows.mjs` (the sun's
+Check: the byte comparison of the parity captures; `tools/render/verify-solar-shadows.mjs` (the sun's
 shadow builds and filters).
 
 ### Shadow passes
@@ -174,7 +174,7 @@ never an `rtt()` inside another pass's material, and never a call around the gra
 (`post/Pipeline.ts`).
 
 Check: the lint rule `ponlai/pass-on-graph` (`rtt()`, `convertToTexture()`);
-`tools/verify-framegraph.mjs` (the declarations); the reads need judgement.
+`tools/render/verify-framegraph.mjs` (the declarations); the reads need judgement.
 
 ### The frame before
 
@@ -184,7 +184,7 @@ history is declared on the graph: a ping-pong resource read through `previous()`
 `copyToPersistent` (single-sampled, same size class and format), never a `copyTextureToTexture` of
 its own around the graph (`post/graph/GraphCompiler.ts`).
 
-Check: the lint rule `ponlai/history-on-graph`; `tools/verify-framegraph.mjs`.
+Check: the lint rule `ponlai/history-on-graph`; `tools/render/verify-framegraph.mjs`.
 
 ### Temporal modes
 
@@ -205,7 +205,7 @@ Under the temporal modes:
 A new site that changes the scene in a way its frames do not show (a seek, a jump, a new scene, a
 control that retunes a paused frame) raises a scene event (`post/SceneEvents.ts`).
 
-Check: `tools/verify-frame-graph-gpu.mjs` (the layouts); the rest needs judgement.
+Check: `tools/render/verify-frame-graph-gpu.mjs` (the layouts); the rest needs judgement.
 
 ### Split draws
 
@@ -237,7 +237,7 @@ A render three makes of its own that cannot be compiled before its first frame (
 built with the first receiver) compiles by rendering it once with asynchronous pipelines
 (`compileByRendering`, `lighting/SunShadow.ts`).
 
-Check: `tools/verify-frame-graph-gpu.mjs`, `tools/verify-first-use.mjs`.
+Check: `tools/render/verify-frame-graph-gpu.mjs`, `tools/render/verify-first-use.mjs`.
 
 ### Build order
 
@@ -249,8 +249,8 @@ than the later ones: a throwaway receiver builds them before the loop (`three/Th
 `primeSharedNodes`), so a receiver's code, and a kind's pipeline count, does not depend on which
 draws first.
 
-Check: the byte comparison of the parity captures (`tools/parity/capture-set.mjs`) and the scene
-jump (`tools/verify-scene-jump.mjs`).
+Check: the byte comparison of the parity captures (`tools/island/parity/capture-set.mjs`) and the scene
+jump (`tools/island/verify-scene-jump.mjs`).
 
 ### Draws skipped while compiling
 
@@ -258,7 +258,7 @@ jump (`tools/verify-scene-jump.mjs`).
 word (`Pipelines.isReady`), so a one-time render such as a bake waits for the warm-up that compiles
 it (`sky/Sky.ts` `warm`, `post/graph/Compile.ts` `compileByRendering`).
 
-Check: `tools/verify-first-use.mjs`; the byte comparison of the parity captures.
+Check: `tools/render/verify-first-use.mjs`; the byte comparison of the parity captures.
 
 ### Compute kernels
 
@@ -278,7 +278,7 @@ Check: none; judgement.
 pipeline, compute or render, because the shaders declare runtime-sized arrays
 (`vegetation/VegetationCull.ts`).
 
-Check: `tools/verify-storage-realloc.mjs`.
+Check: `tools/render/verify-storage-realloc.mjs`.
 
 ### Instance matrices
 
@@ -286,7 +286,7 @@ Check: `tools/verify-storage-realloc.mjs`.
 capacity, which the shader names, so a fixed capacity keeps one shader
 (`vegetation/Instances.ts`).
 
-Check: `tools/verify-growth-swap.mjs` (a swap builds no pipeline).
+Check: `tools/island/verify-growth-swap.mjs` (a swap builds no pipeline).
 
 ### Index buffers
 
@@ -294,7 +294,7 @@ Check: `tools/verify-growth-swap.mjs` (a swap builds no pipeline).
 copy is uploaded from then on: an index rewritten in place must be a `Uint32Array`
 (`util/Upload.ts`, the merged kinds' indices).
 
-Check: `tools/verify-growth-swap.mjs`.
+Check: `tools/island/verify-growth-swap.mjs`.
 
 ### Attribute usage
 

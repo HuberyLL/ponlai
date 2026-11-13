@@ -18,7 +18,7 @@ Chunk
   its window of the land field, the chunk grown by 32 m (`packages/island/world/Chunks.ts`, its header).
 
 GPU lock
-: The lock every tool that renders the scene in a browser takes (`tools/gpu-lock.mjs`): timing
+: The lock every tool that renders the scene in a browser takes (`tools/kit/gpu-lock.mjs`): timing
   runs hold it alone, paused captures and probes share it ([Tools](tools.md), GPU lock).
 
 Grow

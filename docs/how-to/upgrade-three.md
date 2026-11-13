@@ -10,8 +10,8 @@ pinned to exact versions, so the list holds until someone changes the pin.
 An upgrade is the only time the list can stop holding, and then the code says so instead of taking
 another path:
 
-- `tools/verify-three-internals.mjs` fails on each entry missing from the installed three, and on
-  each replaced, wrapped, mirrored or relied-on function whose code changed (its fingerprint).
+- `tools/repo/verify-three-internals.mjs` fails on each entry missing from the installed three, and
+  on each replaced, wrapped, mirrored or relied-on function whose code changed (its fingerprint).
 - On the page, `checkRenderer` (`packages/render/three/Internals.ts`) checks the renderer's members
   once it is initialised, and each function of `packages/render/three/` throws when a member it
   needs is missing. The error names the list's entry and the function that needs it.
@@ -28,26 +28,26 @@ r186, each with the check that sees it.
 2. Change `three` and `@types/three` together, to exact versions (no `^` or `~`), and install:
    `npm install --save-exact three@<version> @types/three@<version>`. Set the list's `three`,
    `types` and `revision` to the new versions.
-3. Run `node tools/verify-three-internals.mjs`. For each failure, read three's new code, change
+3. Run `node tools/repo/verify-three-internals.mjs`. For each failure, read three's new code, change
    the function of `packages/render/three/` that depends on the entry (or its patch, wrapper or
    mirrored copy), and update the entry. Print the new fingerprints with `--fingerprints` and record
    each only after reading the code it covers. Repeat until the check passes.
 4. Run `npm run typecheck` and `npm run build`.
-5. Compare the shader code: build the WGSL with `tools/wgsl-build.mjs` on the old version and the
-   new one (`docs/reference/tools.md`, WGSL builds), and note which shaders changed and why.
+5. Compare the shader code: build the WGSL with `tools/render/wgsl-build.mjs` on the old version and
+   the new one (`docs/reference/tools.md`, WGSL builds), and note which shaders changed and why.
 6. Run the checks that need no GPU: `npm run check -- --full`.
 7. Run the GPU checks that compare two paths of the same code, which must still pass byte for byte:
-   the scene jump (`tools/verify-scene-jump.mjs`) and the growth swap
-   (`tools/verify-growth-swap.mjs`). The page must also start without an error from
+   the scene jump (`tools/island/verify-scene-jump.mjs`) and the growth swap
+   (`tools/island/verify-growth-swap.mjs`). The page must also start without an error from
    `packages/render/three/`.
-8. Compare the image with captures from before the upgrade (`tools/parity/capture-set.mjs`). An
-   upgrade need not match byte for byte: judge it within the temporal tolerance
-   (`tools/parity/README.md`, Temporal tolerance), explain each difference, then capture new
+8. Compare the image with captures from before the upgrade (`tools/island/parity/capture-set.mjs`).
+   An upgrade need not match byte for byte: judge it within the temporal tolerance
+   (`tools/island/parity/README.md`, Temporal tolerance), explain each difference, then capture new
    reference sets.
 9. Check the pipelines: the count the page creates (`diagnostics.pipelines`,
    `packages/render/debug/PipelineCounter.ts`), that no player step creates one
-   (`tools/verify-first-use.mjs`), and that a growth swap creates none
-   (`tools/verify-growth-swap.mjs`).
+   (`tools/render/verify-first-use.mjs`), and that a growth swap creates none
+   (`tools/island/verify-growth-swap.mjs`).
 10. Measure the frame time before and after the upgrade (`docs/how-to/check-a-change.md`, Measure a
     performance change).
 11. Go through the entries marked r186 in `docs/reference/three-behaviour.md`, each with its

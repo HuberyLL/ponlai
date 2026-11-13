@@ -44,7 +44,7 @@ const page = {} as PageParts;
 const ground = { soil: params.get( 'soil' ) !== '0' };
 page.ground = ground;
 setSoilStrength( ground.soil );
-// GPU time per pass, tick time and startup marks for tools/profile-frame.mjs (?profile, or
+// GPU time per pass, tick time and startup marks for tools/render/profile-frame.mjs (?profile, or
 // ?profile=frames without the GPU timestamps). The profiler loads only then; without it the
 // renderer, its pipelines and the image are unchanged.
 const profiler = params.has( 'profile' ) ? ( await import( '../packages/render/debug/FrameProfiler.ts' ) ).createFrameProfiler( THREE.InspectorBase, { timestamps: params.get( 'profile' ) !== 'frames' } ) : null;

@@ -68,11 +68,11 @@ If the mesh can reach under the sea or stands high, tell the water (`Water.ts`, 
 
 ## 4. Place it and judge the whole frame
 
-Capture the island view before and after the change (`tools/parity/capture-set.mjs`;
+Capture the island view before and after the change (`tools/island/parity/capture-set.mjs`;
 `docs/reference/tools.md`, Captures): first on the clear day at noon, then under the other kept
 weather (fair) at the usual hours. Judge the whole frame first; crops and
-region statistics (`uv run tools/img.py`) find causes, they do not judge. What colour each surface
-shows on screen by kind and by light: `tools/colour-rows.mjs`.
+region statistics (`uv run tools/kit/img.py`) find causes, they do not judge. What colour each surface
+shows on screen by kind and by light: `tools/island/colour-rows.mjs`.
 
 ## 5. When it looks wrong, look upstream first
 
@@ -80,7 +80,7 @@ Check in this order, and stop at the first cause found:
 
 1. The exposure and the tone mapping: is the whole frame too bright or too dark?
 2. The light for that weather and hour: the balance between the key and the ambient light
-   (`tools/meadow-light.mjs` on the clear day), the sky's brightness, the haze.
+   (`tools/island/meadow-light.mjs` on the clear day), the sky's brightness, the haze.
 3. The grade.
 4. The material's model: does it lack something the real surface does (light through a leaf, the
    fuzz of moss, a wet film)? Add that to the model.

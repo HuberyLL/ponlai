@@ -20,8 +20,8 @@ change.
    cases (the layers' upward imports, the files over the size limit, the code that reaches into
    three's internals) is fixed in the code, never by adding to its list.
 3. Before a merge, and after a change to the world's generator, run `npm run check -- --full`. It
-   adds the production build and the world's chunk checks (`tools/verify-world-chunks.mjs`,
-   `tools/verify-chunk-derived.mjs`) and takes minutes.
+   adds the production build and the world's chunk checks (`tools/island/verify-world-chunks.mjs`,
+   `tools/island/verify-chunk-derived.mjs`) and takes minutes.
 
 `npm run check` renders nothing, so it runs while another session holds the GPU lock. The checks
 that render (captures, parity, the GPU verify tools) are run by hand, as the sections below say.
@@ -38,12 +38,12 @@ take minutes.
    vegetation's registry, material and shadows. Skip them for a change to the island's generator,
    materials or plant kinds, or the game, which they do not show. The open sea's scene gives
    readings, not a check to the pixel: for a change to the sea's water and waves, run
-   `node tools/scenes.mjs <baseUrl> <outDir> --scenes sea` before and after it and read the two
+   `node tools/render/scenes.mjs <baseUrl> <outDir> --scenes sea` before and after it and read the two
    `readings.tsv` side by side.
 2. Before the change, write the references on a server of the commit the change starts from:
-   `node tools/scenes.mjs <baseUrl> <outDir> --verify --write-ref`. Without `--scenes` it takes
+   `node tools/render/scenes.mjs <baseUrl> <outDir> --verify --write-ref`. Without `--scenes` it takes
    the scenes whose shots repeat to the pixel, so not the sea's.
-3. After the change, run `node tools/scenes.mjs <baseUrl> <outDir> --verify --check`. A refactor
+3. After the change, run `node tools/render/scenes.mjs <baseUrl> <outDir> --verify --check`. A refactor
    passes with every shot equal to its reference. A change that is meant to move the picture
    fails the check: read `readings.tsv` of the two runs side by side, look at the shots that
    differ, and write the references again once the differences are the intended ones.
@@ -54,19 +54,19 @@ The tool and its options: `docs/reference/tools.md`, Test scenes.
 
 ## Check a visual change
 
-1. Capture the views the change touches before and after it (`tools/capture.mjs` for one view,
-   `tools/parity/capture-set.mjs` for a list of views on one warm page;
+1. Capture the views the change touches before and after it (`tools/kit/capture.mjs` for one view,
+   `tools/island/parity/capture-set.mjs` for a list of views on one warm page;
    `docs/reference/tools.md`, Captures).
 2. Compare each capture against the previous one, and compare crops, not only the whole frame
-   (`uv run tools/img.py diff|crop|sheet|stats`).
+   (`uv run tools/kit/img.py diff|crop|sheet|stats`).
 3. Report the measured differences.
 
 Where shapes differ (growth steps, seeds, a regenerated island), judge the look by eye and region
-statistics (`tools/capture-growth.mjs`), not by pixel difference.
+statistics (`tools/island/capture-growth.mjs`), not by pixel difference.
 
 ## Measure a performance change
 
-Use `tools/profile-frame.mjs`; what its readings mean is in `docs/reference/tools.md`, Frame
+Use `tools/render/profile-frame.mjs`; what its readings mean is in `docs/reference/tools.md`, Frame
 profiler. A change is judged at high's standard (`AGENTS.md`, Rules for every change).
 
 1. Measure on a production build, under the GPU lock: the scene matrix at the default generic
@@ -77,7 +77,7 @@ profiler. A change is judged at high's standard (`AGENTS.md`, Rules for every ch
 3. Judge whether high holds 60 fps with `--accept` (under vsync), not from uncapped intervals, at
    the tier's own settings (its dynamic scale measured at its settle point with
    `--scale-settle 5`), and check how the change plays on a fast display with `--display`.
-4. Check `node tools/gpu-lock.mjs gpu` before each run (and during it when other windows stay on
+4. Check `node tools/kit/gpu-lock.mjs gpu` before each run (and during it when other windows stay on
    screen), report contended runs as such, and check the change in a normal window too, not only
    `--kiosk`.
 
@@ -90,18 +90,18 @@ keeps the test mode's byte comparisons valid this way (`docs/reference/tools.md`
 1. Register how to clear its history with the renderer's table
    (`packages/render/post/SceneHistory.ts`: `onJump` for a scene jump, `onCut` for a cut of the
    temporal modes' history), beside its creation; `establishScene` (`app/Scene.ts`) walks the table,
-   and `tools/verify-scene-jump.mjs` checks it.
+   and `tools/island/verify-scene-jump.mjs` checks it.
 2. Report it to `settled` (`packages/render/RenderStages.ts` `settleFrame`'s `pending`, the page's
    own through `FrameHost.pending`, or the rest's signature) until it has converged
    on a still scene, or freeze it or turn it off in the test mode.
 3. Freeze it or turn it off under the test mode's one switch (`packages/render/debug/TestMode.ts`;
    `docs/reference/tools.md`, Test mode).
-4. A Grow does not clear rendering history (`tools/verify-growth-swap.mjs` shoots its first view
+4. A Grow does not clear rendering history (`tools/island/verify-growth-swap.mjs` shoots its first view
    without a jump), so the effect is frozen or off under the switch there, or the swap resets it.
-5. Add its module to `WATCH.motion` in `tools/parity/carry.mjs` when its paths are not already
+5. Add its module to `WATCH.motion` in `tools/island/parity/carry.mjs` when its paths are not already
    there: with it frozen or off, the paused set no longer shows it, only the clips do.
 6. Compare its frames outside the test mode (live, clips) within a tolerance, as the temporal
-   modes' are (`tools/parity/tolerance.py`), unless they repeat pixel for pixel.
+   modes' are (`tools/kit/tolerance.py`), unless they repeat pixel for pixel.
 
 ## Add something that depends on the land's shape
 
@@ -115,4 +115,4 @@ changed chunks in one frame, and every dependent of the land's shape follows it.
    `Steps.ts`, uploads through `Upload.ts`), so the growth's share of any frame stays under 2 ms
    (`growth.work`).
 3. Check that a grown page draws a page loaded on that land bit for bit in the test mode:
-   `node tools/verify-growth-swap.mjs`.
+   `node tools/island/verify-growth-swap.mjs`.

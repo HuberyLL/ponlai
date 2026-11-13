@@ -5,7 +5,7 @@
 // rather than of its own triangles, so two tiles compute their shared border vertices alike, bit
 // for bit, and a tile stays as it was wherever the land changes farther away.
 // The shoal's pure part lives here too (`pendingFloors`, `riseTile`: SeabedRise.ts draws it, and
-// tools/verify-world-chunks.mjs R1 checks it in node).
+// tools/island/verify-world-chunks.mjs R1 checks it in node).
 
 import { FLOOR_STEP, OPEN_LATTICE, openSeaBeds, openSeaHeight, seabedBeds, seabedFloor } from './Bathymetry.ts';
 import { LAND_REACH, type Footprint } from './WorldShapes.ts';

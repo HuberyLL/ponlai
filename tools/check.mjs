@@ -7,15 +7,16 @@
 // The commit-time list, in order (cheap and wide first, so a broken type fails before the rest):
 // the type check, the code lint (`npm run lint`: the project's rules as ESLint rules,
 // eslint.config.mjs), the direction of imports between the layers, the packages' exits and the page
-// check (verify-layers), the exits' loading (verify-exits),
-// the page's settings against their docs (verify-settings), the files' size (verify-file-size), the three.js internals the code reaches into (verify-three-internals), no
-// binary in git (verify-no-binaries, every file in the index), nothing tracked under .claude/ but the
-// public skills' links (verify-skill-links), then the CPU regression tools (the
+// check (verify-layers), the exits' loading (verify-exits), the page's settings against their docs
+// (verify-settings), the files' size (verify-file-size), the three.js internals the code reaches into
+// (verify-three-internals), the generic tools apart from the project (verify-kit), no binary in git
+// (verify-no-binaries, every file in the index), nothing tracked under .claude/ but the public
+// skills' links (verify-skill-links), then the CPU regression tools (the
 // game's simulation, its words, the ink, the frame graph's compiler, the day cycle, the weather's
 // state, the wind, the local lights, the renderer's extension points, the look tables passed at creation, the
 // code lint's own rules against their fixtures), and the docs' lint (`npm run lint:docs`) when a Markdown file
-// is staged. `--full` adds `npm run build` and `tools/verify-world-chunks.mjs`, which take minutes,
-// and `tools/verify-chunk-derived.mjs` (the chunks' derived products, about a quarter of a minute on
+// is staged. `--full` adds `npm run build` and `tools/island/verify-world-chunks.mjs`, which take minutes,
+// and `tools/island/verify-chunk-derived.mjs` (the chunks' derived products, about a quarter of a minute on
 // many threads), and runs the docs' lint whatever is staged. Each check runs to its end even after
 // another failed, so one run lists every failure; its output goes to the terminal as it comes.
 //
@@ -23,12 +24,12 @@
 // minute; a slower one goes under `--full`. The checks that render (captures, parity, the GPU
 // verify tools) are run by hand (docs/how-to/check-a-change.md).
 //
-// Each check starts with the application scheduling policy (tools/qos.mjs `appPolicy`).
+// Each check starts with the application scheduling policy (tools/kit/qos.mjs `appPolicy`).
 // Exit 0 when every check passed, 1 when one failed or an option is unknown.
 import { spawnSync, execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { appPolicy } from './qos.mjs';
+import { appPolicy } from './kit/qos.mjs';
 
 const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 
@@ -58,27 +59,28 @@ function markdownStaged() {
 const checks = [
 	[ 'typecheck', npm( 'typecheck' ) ],
 	[ 'lint', npm( 'lint' ) ],
-	[ 'verify-layers', node( 'verify-layers.mjs' ) ],
-	[ 'verify-exits', node( 'verify-exits.mjs' ) ],
-	[ 'verify-settings', node( 'verify-settings.mjs' ) ],
-	[ 'verify-file-size', node( 'verify-file-size.mjs' ) ],
-	[ 'verify-three-internals', node( 'verify-three-internals.mjs' ) ],
+	[ 'verify-layers', node( 'repo/verify-layers.mjs' ) ],
+	[ 'verify-exits', node( 'repo/verify-exits.mjs' ) ],
+	[ 'verify-settings', node( 'repo/verify-settings.mjs' ) ],
+	[ 'verify-file-size', node( 'repo/verify-file-size.mjs' ) ],
+	[ 'verify-three-internals', node( 'repo/verify-three-internals.mjs' ) ],
+	[ 'verify-kit', node( 'repo/verify-kit.mjs' ) ],
 	[ 'verify-no-binaries', node( 'verify-no-binaries.mjs' ) ],
-	[ 'verify-skill-links', node( 'verify-skill-links.mjs' ) ],
-	[ 'verify-game', node( 'verify-game.mjs' ) ],
-	[ 'verify-i18n', node( 'verify-i18n.mjs' ) ],
-	[ 'verify-ink', node( 'verify-ink.mjs' ) ],
-	[ 'verify-framegraph', node( 'verify-framegraph.mjs' ) ],
-	[ 'verify-day-cycle', node( 'verify-day-cycle.mjs' ) ],
-	[ 'verify-weather-state', node( 'verify-weather-state.mjs' ) ],
-	[ 'verify-wind', node( 'verify-wind.mjs' ) ],
-	[ 'verify-local-lights', node( 'verify-local-lights.mjs' ) ],
-	[ 'verify-extensions', node( 'verify-extensions.mjs' ) ],
-	[ 'verify-look-params', node( 'verify-look-params.mjs' ) ],
-	[ 'verify-lint', node( 'verify-lint.mjs' ) ],
+	[ 'verify-skill-links', node( 'repo/verify-skill-links.mjs' ) ],
+	[ 'verify-game', node( 'game/verify-game.mjs' ) ],
+	[ 'verify-i18n', node( 'game/verify-i18n.mjs' ) ],
+	[ 'verify-ink', node( 'game/verify-ink.mjs' ) ],
+	[ 'verify-framegraph', node( 'render/verify-framegraph.mjs' ) ],
+	[ 'verify-day-cycle', node( 'render/verify-day-cycle.mjs' ) ],
+	[ 'verify-weather-state', node( 'render/verify-weather-state.mjs' ) ],
+	[ 'verify-wind', node( 'render/verify-wind.mjs' ) ],
+	[ 'verify-local-lights', node( 'render/verify-local-lights.mjs' ) ],
+	[ 'verify-extensions', node( 'render/verify-extensions.mjs' ) ],
+	[ 'verify-look-params', node( 'render/verify-look-params.mjs' ) ],
+	[ 'verify-lint', node( 'repo/verify-lint.mjs' ) ],
 ];
 if ( full || markdownStaged() ) checks.push( [ 'lint:docs', npm( 'lint:docs' ) ] );
-if ( full ) checks.push( [ 'build', npm( 'build' ) ], [ 'verify-world-chunks', node( 'verify-world-chunks.mjs' ) ], [ 'verify-chunk-derived', node( 'verify-chunk-derived.mjs' ) ] );
+if ( full ) checks.push( [ 'build', npm( 'build' ) ], [ 'verify-world-chunks', node( 'island/verify-world-chunks.mjs' ) ], [ 'verify-chunk-derived', node( 'island/verify-chunk-derived.mjs' ) ] );
 
 const results = [];
 const start = performance.now();

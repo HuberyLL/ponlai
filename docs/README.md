@@ -32,7 +32,7 @@ Facts to look up.
 - [three.js and WebGPU behaviour](reference/three-behaviour.md): what three r186, WebGPU and TSL
   do that the code is written around; read it before writing TSL or a pass of the frame graph.
 - [Glossary](reference/glossary.md): the project's own words.
-- [Parity captures](../tools/parity/README.md): capture sets, comparisons and their tolerances.
+- [Parity captures](../tools/island/parity/README.md): capture sets, comparisons and their tolerances.
 - Skill bindings (`docs/bindings/`): this project's facts for each skill in `skills/`, a page per
   skill under its name.
 

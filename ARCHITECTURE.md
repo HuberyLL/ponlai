@@ -57,11 +57,11 @@ From the bottom up:
      ([packages/game/ui/](packages/game/ui/), spec in
      [docs/explanation/ui.md](docs/explanation/ui.md)), and it keeps the autosave and the debug
      panel;
-   - the play tool ([tools/play-game.mjs](tools/play-game.mjs)), which plays the same session
+   - the play tool ([tools/game/play-game.mjs](tools/game/play-game.mjs)), which plays the same session
      headless for days with any brain and writes a transcript, a timeline and a summary, for a
      designer or for judging a brain offline;
-   - the checks ([tools/verify-game.mjs](tools/verify-game.mjs)), which drive the rules and the
-     session directly.
+   - the checks ([tools/game/verify-game.mjs](tools/game/verify-game.mjs)), which drive the rules
+     and the session directly.
 
 What each owns: the rules own what is (the state) and decide what happened (the events); the
 session owns the order in which the world is told and what is saved; a host owns only the
@@ -192,8 +192,8 @@ folder is its layer.
   same renderer stages as the island's page, gives the renderer the renderer's neutral data
   (level open ground, or the open sea far from any shore) where the island gives its own, and
   draws with the neutral look unless its entry is asked for the island's. Its files import only
-  the renderer's exits ([tools/verify-layers.mjs](tools/verify-layers.mjs)). It mounts the same
-  handles for the tools as the island's page.
+  the renderer's exits ([tools/repo/verify-layers.mjs](tools/repo/verify-layers.mjs)). It mounts the
+  same handles for the tools as the island's page.
 
 ### Flows
 
@@ -264,10 +264,10 @@ folder is its layer.
    all state a scene leaves behind (a cache, a history, a size that only grows, a window that
    follows the camera); on a still scene it converges to the same image whatever came before, or it
    can be frozen or turned off in the test mode; and outside the test mode its frames are compared
-   within a tolerance ([tools/parity/README.md](tools/parity/README.md), Temporal tolerance). Its
-   per-frame update reads the scene clock's step, never the wall clock, so a stepped clip repeats
-   (rule 17 names the three cadences that follow the wall clock's step). The test mode is a paused
-   page under MSAA, with every history-dependent effect frozen or off, shot once the page's
+   within a tolerance ([tools/island/parity/README.md](tools/island/parity/README.md), Temporal
+   tolerance). Its per-frame update reads the scene clock's step, never the wall clock, so a stepped
+   clip repeats (rule 17 names the three cadences that follow the wall clock's step). The test mode
+   is a paused page under MSAA, with every history-dependent effect frozen or off, shot once the page's
    `settled` signal holds ([docs/reference/tools.md](docs/reference/tools.md), Test mode). There a
    paused frame is exactly repeatable and equals a fresh load's, and refactors are checked byte for
    byte; under the temporal modes a paused page shows its rest image, compared within the
@@ -277,11 +277,11 @@ folder is its layer.
    *Why:* a save must play on as the original; a grown page must hold the world a fresh load holds;
    a headless run must repeat byte for byte, so a change to the rules shows as a difference in its
    output; and captures of the paused page are compared byte for byte.
-   [tools/verify-world-chunks.mjs](tools/verify-world-chunks.mjs),
-   [tools/verify-growth-swap.mjs](tools/verify-growth-swap.mjs),
-   [tools/verify-scene-jump.mjs](tools/verify-scene-jump.mjs) and the parity captures keep the
-   rule, and the code lint's `ponlai/scene-clock` refuses the wall clock in code that changes the
-   scene.
+   [tools/island/verify-world-chunks.mjs](tools/island/verify-world-chunks.mjs),
+   [tools/island/verify-growth-swap.mjs](tools/island/verify-growth-swap.mjs),
+   [tools/island/verify-scene-jump.mjs](tools/island/verify-scene-jump.mjs) and the parity captures
+   keep the rule, and the code lint's `ponlai/scene-clock` refuses the wall clock in code that
+   changes the scene.
 5. **Generic generation.** The island grows one piece at a time
    ([docs/explanation/game-design.md](docs/explanation/game-design.md), How the island grows), so
    everything placed on it derives from the land's footprint, the island's SDF and noise fields
@@ -308,7 +308,7 @@ folder is its layer.
    ([docs/explanation/game-design.md](docs/explanation/game-design.md), Actions). With content
    written into the core, each new resource touched the tick, the perception, the bag rules and the
    interface, and every later system would have multiplied that work.
-   [tools/verify-game.mjs](tools/verify-game.mjs) keeps the
+   [tools/game/verify-game.mjs](tools/game/verify-game.mjs) keeps the
    rule: it registers content of its own, plays it with no change elsewhere, and fails on a content
    id written in the core as a string, a word of a template, a property's name or a key.
    The steps for adding a piece of content:
@@ -342,7 +342,7 @@ folder is its layer.
    - a default resource in the top row, for an item without one;
    - the play tool's `[event]` line, for an event kind nothing else shows.
 
-   Player-facing words stay in the catalogues ([tools/verify-i18n.mjs](tools/verify-i18n.mjs)).
+   Player-facing words stay in the catalogues ([tools/game/verify-i18n.mjs](tools/game/verify-i18n.mjs)).
    *Why:* a presentation written per piece of content needs a change in every part for every new
    resource. One written per category shows anything the rules can make on the day it is added,
    and art then replaces the defaults one at a time.
@@ -371,7 +371,7 @@ folder is its layer.
     imports the island cannot be built, read or checked without it, and every change to the island
     then risks the frame. The worker's files are hashed into the world cache's key and run in node
     under the tools, so one import of three.js there fails the build.
-    [tools/verify-layers.mjs](tools/verify-layers.mjs) keeps the rule: it reads every import
+    [tools/repo/verify-layers.mjs](tools/repo/verify-layers.mjs) keeps the rule: it reads every import
     (static, type-only, re-export, dynamic, a worker's URL), fails on one that points upward, fails
     on a package import within the worker's or a headless exit's reach, and fails on a `userData`
     key no list declares. It does not see a key reached through an alias of the bag or by a
@@ -391,12 +391,12 @@ folder is its layer.
     page, imports a package only through them; the modules the page loads on demand (the debug
     probes and the game itself) are lazy exits, imported dynamically, so they stay in chunks of
     their own
-    ([tools/verify-layers.mjs](tools/verify-layers.mjs)). An exit loads its whole package, so a
-    module does nothing as it loads but declare and register: no `await` and no read of the page
-    ([tools/verify-exits.mjs](tools/verify-exits.mjs), which also loads the headless and setup exits
-    in node). A module may still hold state at module level (uniforms, buffers, tables) and compute
-    constants from the settings as it loads (the look it takes at creation: rule 16), so that state
-    is one per process: a page
+    ([tools/repo/verify-layers.mjs](tools/repo/verify-layers.mjs)). An exit loads its whole package,
+    so a module does nothing as it loads but declare and register: no `await` and no read of the page
+    ([tools/repo/verify-exits.mjs](tools/repo/verify-exits.mjs), which also loads the headless and
+    setup exits in node). A module may still hold state at module level (uniforms, buffers, tables)
+    and compute constants from the settings as it loads (the look it takes at creation: rule 16), so
+    that state is one per process: a page
     holds one renderer, and the parts that would clash say so (a second light table and a second
     install of the shared uniforms throw). *Why:* what a package offers is a list that can be read
     and reviewed, and a change inside a package cannot break another; a module that worked as it
@@ -428,10 +428,10 @@ folder is its layer.
     *Why:* a test scene must be able to build the
     renderer with nothing of the island's, which it cannot while parts find each other through
     module-level objects; and two writers of one value hide a dependency that breaks under the next
-    change. [tools/verify-layers.mjs](tools/verify-layers.mjs) lists the module-level objects that
-    another file writes (`STATE`, and `ACROSS` for a writer in another layer); both lists only
-    shrink. It sees an assignment rooted at the imported object, not a method that mutates it, a
-    GUI bound to a field or a write to a field of a stage's object.
+    change. [tools/repo/verify-layers.mjs](tools/repo/verify-layers.mjs) lists the module-level
+    objects that another file writes (`STATE`, and `ACROSS` for a writer in another layer); both
+    lists only shrink. It sees an assignment rooted at the imported object, not a method that
+    mutates it, a GUI bound to a field or a write to a field of a stage's object.
 13. **Only the page touches the browser's page.** The renderer, the island and the game's rules
     never reach the address, the storage, the document or the window through the page's globals.
     What they need of the browser they are given: the canvas and the elements they draw into, the
@@ -467,16 +467,16 @@ folder is its layer.
     the same code runs in a worker, in node under the tools and in a test scene, and none of them
     has this page; a module that reads the address decides its behaviour where nobody can pass it
     another.
-    [tools/verify-layers.mjs](tools/verify-layers.mjs) fails on a page global outside the files
-    listed for it (`PAGE_NEEDS`, each with the names it may use). It covers the renderer, the island
-    and the game's rules by their folders, so it does not follow the game's headless exit into the
-    save. It does not see the page reached through an element's document or window, through
+    [tools/repo/verify-layers.mjs](tools/repo/verify-layers.mjs) fails on a page global outside the
+    files listed for it (`PAGE_NEEDS`, each with the names it may use). It covers the renderer, the
+    island and the game's rules by their folders, so it does not follow the game's headless exit
+    into the save. It does not see the page reached through an element's document or window, through
     `globalThis`, or by a name off its list of the page's names (`PAGE`), and these routes are in
     use: the island asks for idle time through `globalThis.requestIdleCallback` (the growth, the
     islanders' ages) and the render scale reads `devicePixelRatio`. The frame's passes also read a
     global that a tool sets on the page (`__PONLAI_CLIP__`, set by
-    [tools/capture-clip.mjs](tools/capture-clip.mjs)) and snap the exposure's adaptation while it is
-    there: the renderer takes a state of the page by its name.
+    [tools/island/capture-clip.mjs](tools/island/capture-clip.mjs)) and snap the exposure's
+    adaptation while it is there: the renderer takes a state of the page by its name.
 14. **Outside settings are checked once, at one entrance** (rule 3, on the rendering side). The
     address's options are declared once, in one schema
     ([packages/render/Settings.ts](packages/render/Settings.ts)): a name, a type, a range, a
@@ -492,12 +492,12 @@ folder is its layer.
     (node, a worker) every option reads as absent and each reader takes its default; a tool that
     hands options to the modules installs them the same way. *Why:* fifteen modules each read the
     address their own way, a mistyped option was silently ignored, and the list of options in the
-    docs was kept by hand beside them. [tools/verify-layers.mjs](tools/verify-layers.mjs) fails on an
-    address read outside the entrance; [tools/verify-settings.mjs](tools/verify-settings.mjs) fails
-    when [docs/reference/url-options.md](docs/reference/url-options.md) and the schema differ, and
-    when an option's layer is above a layer that reads it. It sees an option read by its name
-    through the settings' entrance, not one read through a helper that takes the name as an
-    argument.
+    docs was kept by hand beside them. [tools/repo/verify-layers.mjs](tools/repo/verify-layers.mjs)
+    fails on an address read outside the entrance;
+    [tools/repo/verify-settings.mjs](tools/repo/verify-settings.mjs) fails when
+    [docs/reference/url-options.md](docs/reference/url-options.md) and the schema differ, and when
+    an option's layer is above a layer that reads it. It sees an option read by its name through the
+    settings' entrance, not one read through a helper that takes the name as an argument.
 15. **A change of the scene is announced once, and whoever keeps something of it follows.** Two
     changes reach across the layers: the scene is cut or jumps (a seek, a jump of the clock or the
     weather, a new scene, the page shown again), and the land grows. For the first, each layer
@@ -516,9 +516,9 @@ folder is its layer.
     as a stale shore on a grown page or a history that outlived a jump. An ordinary event bus would
     not do: a swap lands in one frame, never builds a pipeline, and the order of its followers is
     part of the image (rule 4), which a table walked in order keeps.
-    [tools/verify-scene-jump.mjs](tools/verify-scene-jump.mjs) and
-    [tools/verify-growth-swap.mjs](tools/verify-growth-swap.mjs) keep the result (a jumped or grown
-    page draws a fresh load's frame); no check refuses a follower named in the growth.
+    [tools/island/verify-scene-jump.mjs](tools/island/verify-scene-jump.mjs) and
+    [tools/island/verify-growth-swap.mjs](tools/island/verify-growth-swap.mjs) keep the result (a
+    jumped or grown page draws a fresh load's frame); no check refuses a follower named in the growth.
 16. **A material gives a surface's properties; the light is computed in one place; the look is
     passed in.** A material states what the surface is (its albedo, roughness, normal, what light
     passes through it, where it is wet) and names the lighting model that shades it; the model
@@ -561,8 +561,8 @@ folder is its layer.
     `createDisplayTables`), which the frame's passes read each frame and build the display chain
     and the bloom from. Two of any of them
     made from two sets hold their own numbers
-    ([tools/verify-look-params.mjs](tools/verify-look-params.mjs)), though on a debug page two
-    exposures, two sets of the day's windows, two winds, two ambient grades, two sets of the
+    ([tools/render/verify-look-params.mjs](tools/render/verify-look-params.mjs)), though on a debug
+    page two exposures, two sets of the day's windows, two winds, two ambient grades, two sets of the
     haze's tables, two of the display's or two of the sky's share their tunables by name, and the
     shared uniforms, the grade's uniforms, the display chain's uniforms for the cool share and
     overcast's highlights, and the light table are still one a page (rule 11). No module holds a
@@ -627,8 +627,8 @@ folder is its layer.
 
     *Why:* each of these was once two conventions that met in a factor nobody could name; a value's
     unit is otherwise known only to whoever wrote it.
-    [tools/verify-radiometry.mjs](tools/verify-radiometry.mjs) checks the light's scale on the page;
-    a new lit material follows [docs/how-to/add-material.md](docs/how-to/add-material.md).
+    [tools/render/verify-radiometry.mjs](tools/render/verify-radiometry.mjs) checks the light's
+    scale on the page; a new lit material follows [docs/how-to/add-material.md](docs/how-to/add-material.md).
 18. **One registered definition adds one thing.** The renderer is extended at named points, each a
     registry its owner reads in the order registered and never by name (rule 7, on the rendering
     side). The steps for each: [docs/how-to/add-to-the-renderer.md](docs/how-to/add-to-the-renderer.md).
@@ -683,17 +683,17 @@ folder is its layer.
     (`createFrameStages`), where its order belongs. *Why:* a new effect that forgot one of the three
     showed only later, as a capture that did not repeat, a frame time that crept or a grown page
     that differed from a fresh load; and a renderer that names the island's plants cannot draw
-    another scene. [tools/verify-extensions.mjs](tools/verify-extensions.mjs) registers definitions
-    of its own and searches the registries' owners for the names of the island's. It searches the
-    owners only, not the files that read a registry, and matches a name as a whole word, so not
-    inside a compound identifier (`grassLod`); a registration's `cost` is checked as a quality
-    table field by the types alone, not when the page runs.
+    another scene. [tools/render/verify-extensions.mjs](tools/render/verify-extensions.mjs)
+    registers definitions of its own and searches the registries' owners for the names of the
+    island's. It searches the owners only, not the files that read a registry, and matches a name as
+    a whole word, so not inside a compound identifier (`grassLod`); a registration's `cost` is
+    checked as a quality table field by the types alone, not when the page runs.
 19. **A source file stays under 1500 lines.** A file that passes it is split by what its parts are
     (a table of the look, the kernels of one effect, the passes of one stage), never by halving.
     The files over the limit when the rule was written are listed in the check and may only
     shrink. *Why:* files had grown past 2000 lines, each holding three or four things that changed
     for different reasons, and no reader, human or model, could hold one whole.
-    [tools/verify-file-size.mjs](tools/verify-file-size.mjs) fails on a file under
+    [tools/repo/verify-file-size.mjs](tools/repo/verify-file-size.mjs) fails on a file under
     [packages/](packages/) or [app/](app/) over the limit and on a listed one that grew; the tools
     are not counted.
 20. **Content enters through one acceptance.** A texture, a model or a baked table, and the
@@ -709,8 +709,8 @@ folder is its layer.
     ten times its neighbours' density or a texture four times the size each look fine alone and are
     found later, as a material that glows at noon, a frame time that crept or a download that
     doubled; by then the art is made. No tool runs the acceptance yet: the asset lock pins each
-    file's size and hash ([tools/assets.mjs](tools/assets.mjs)) and [CREDITS.md](CREDITS.md) its
-    origin, and the rest is checked by hand against
+    file's size and hash ([tools/repo/assets.mjs](tools/repo/assets.mjs)) and
+    [CREDITS.md](CREDITS.md) its origin, and the rest is checked by hand against
     [docs/how-to/add-material.md](docs/how-to/add-material.md) and the look values.
 21. **The frame's time is divided among the systems, and each keeps to its share.** High's standard
     is one frame's GPU time at the baseline ([packages/render/Quality.ts](packages/render/Quality.ts)).
@@ -722,8 +722,8 @@ folder is its layer.
     about which part grew, and each part grows a little with every change that fits in the frame,
     until the next one does not and nobody can say what to cut. The table and its check do not
     exist yet, and neither the passes nor the registered definitions name their system: today
-    [tools/profile-frame.mjs](tools/profile-frame.mjs) holds the frame as a whole to the standard
-    and reports each pass's GPU time, and a change reports the passes it grew.
+    [tools/render/profile-frame.mjs](tools/render/profile-frame.mjs) holds the frame as a whole to
+    the standard and reports each pass's GPU time, and a change reports the passes it grew.
 22. **Detail follows the screen, by one rule.** Everything drawn in numbers or at a distance takes
     its detail from how much of the screen it covers, not from a distance chosen per kind:
     - a kind declares its levels by the size its parts have on screen, and one standard gives the
@@ -772,6 +772,6 @@ folder is its layer.
     cannot be removed without changing the image, so they are kept where an upgrade can find them
     all. A fallback that draws a few pixels differently, or builds a pipeline more, is found weeks
     later in a capture; an error at start-up is found at once.
-    [tools/verify-three-internals.mjs](tools/verify-three-internals.mjs) checks the pin, the list
-    against the installed three, and that no file outside the folder reaches in (`TOOLS_KNOWN`,
+    [tools/repo/verify-three-internals.mjs](tools/repo/verify-three-internals.mjs) checks the pin,
+    the list against the installed three, and that no file outside the folder reaches in (`TOOLS_KNOWN`,
     the tools' list, only shrinks).

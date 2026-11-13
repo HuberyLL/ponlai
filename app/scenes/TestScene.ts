@@ -4,12 +4,12 @@
 // open sky, or the open sea over a level floor, and whatever the scene places there (plant kinds
 // among it, drawn with the registry's default plant). It declares what it tests, its views, the
 // hours and weathers it is shot at and the readings taken of it, so a tool shoots and reads it
-// without knowing the scene (tools/scenes.mjs).
+// without knowing the scene (tools/render/scenes.mjs).
 //
 // Rules:
 // - A scene imports the renderer through its exits only (render/index.ts, render/setup.ts, render/data.ts),
 //   never the island or the game, and never another layer's module by its path
-//   (tools/verify-layers.mjs).
+//   (tools/repo/verify-layers.mjs).
 // - Its surfaces are lit as every other surface is (`surface`: the shared lighting model and the
 //   metering light, docs/how-to/add-material.md).
 // - Everything it places is a function of constants: no random stream, no clock, so a load repeats.

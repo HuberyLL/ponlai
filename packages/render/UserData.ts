@@ -3,14 +3,14 @@
 // other (a material says what it takes part in, a pass finds its copies again). The bag has no
 // type, so a mark set under one spelling and read under another fails without a word. This is the
 // list of every key a file of the renderer sets or reads: where the mark sits (`on`), who sets it
-// (`sets`), who reads it (`reads`) and what it means. tools/verify-layers.mjs fails when a file
+// (`sets`), who reads it (`reads`) and what it means. tools/repo/verify-layers.mjs fails when a file
 // names a key that is not here (or, above the renderer, on its own layer's list), or when the list
 // holds a key no file names; a key reached through an alias of the bag (`const data =
 // material.userData`) is not seen. The renderer's exit offers the names (`UserDataName`) and the
 // shape of an entry (`UserDataKey`) to the layers above.
 //
 // A mark the island's or the game's code keeps to itself (set and read above the renderer) is not
-// the renderer's: it is listed on that layer's own list (tools/layers.json, `userData`; the
+// the renderer's: it is listed on that layer's own list (tools/repo/layers.json, `userData`; the
 // island's in world/IslandUserData.ts). A new mark the renderer reads is declared here with the
 // change that adds it.
 //

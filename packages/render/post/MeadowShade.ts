@@ -73,7 +73,7 @@ type M4 = THREE.UniformNode<'mat4', THREE.Matrix4>;
 // same materials read 1. Built with the meadow's shade unless `flags=ssShadow:false`
 // at load (then nothing here differs from the meadow's shade alone); at run time
 // `flags.ssShadow = false` keeps the opaque depth out of the resolve and the receivers read 1, so
-// tools/profile-frame.mjs --toggle "s.flags.ssShadow = on" times it.
+// tools/render/profile-frame.mjs --toggle "s.flags.ssShadow = on" times it.
 export const MEADOW_SHADE = SCENE_SAMPLES === 4 && ! TEMPORAL && debugFlags.meadowShade !== false;
 export const SS_SHADOW = MEADOW_SHADE && debugFlags.ssShadow !== false;
 
@@ -197,7 +197,7 @@ const GROUND_FADE = [ 10, 20 ] as const;
  * casts the leaf's own shape. Measured with an exponential falloff of the length run behind the
  * blades in place of the band: in the close views the darkest tenth of the sunlit lawn went from
  * half its median to a third, the soil's p90 over p10 from 3.5 to 7, and the sunlit soil came to
- * the sunlit blades' value (tools/meadow-light.mjs `spread`, `soil`). The fine lookups cost on the
+ * the sunlit blades' value (tools/island/meadow-light.mjs `spread`, `soil`). The fine lookups cost on the
  * turf within GROUND_FADE only: little of a game view's. */
 const GROUND: MarchTerms = { steps: 64, reach: 0.6, thick: 0.06 };
 

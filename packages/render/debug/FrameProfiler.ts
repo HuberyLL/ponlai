@@ -78,7 +78,7 @@ import { canvasContext, gpuDevice, pendingTimestamps, resolveTimestamps, takeTim
 // So the graph labels its own passes and what three's nodes render as part of them (the bloom
 // chains' passes); what runs outside the graph (the sky, the shadow maps, the ocean) is labelled
 // by hand.
-// The page (app/main.ts, app/scenes/ScenePage.ts) exposes `api` as `window.__PONLAI_PROFILE__`, read by tools/profile-frame.mjs.
+// The page (app/main.ts, app/scenes/ScenePage.ts) exposes `api` as `window.__PONLAI_PROFILE__`, read by tools/render/profile-frame.mjs.
 // `?profile=frames` keeps the frame and tick timing but skips the GPU timestamps. Measure frame
 // rates that way: with timestamp queries on, Chrome ran the same frames up to a quarter faster
 // (light scenes most; a scene that keeps the GPU saturated hardly at all), so the per-pass split

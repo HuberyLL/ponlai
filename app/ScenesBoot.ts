@@ -6,7 +6,7 @@
 // the renderer's own, so the look is the renderer's neutral one (look/NeutralLook.ts).
 // `renderLook=ponlai` on a debug page picks the island's instead, for a scene read beside the
 // island's own numbers: this entry takes them from the island's headless exit, and the scenes
-// themselves never import the island (tools/verify-layers.mjs).
+// themselves never import the island (tools/repo/verify-layers.mjs).
 import { installSettings, parseSettings, settingProblems, NEUTRAL_LOOK } from '../packages/render/setup.ts';
 import { chooseQuality } from './QualityDetect.ts';
 import { ISLAND_LOOK } from '../packages/island/land.ts';

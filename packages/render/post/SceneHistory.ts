@@ -49,7 +49,7 @@ export class SceneHistory {
 
 	}
 
-	/** The entries' names, in order (debug, and tools/verify-extensions.mjs). */
+	/** The entries' names, in order (debug, and tools/render/verify-extensions.mjs). */
 	names(): { cut: string[]; jump: string[]; afterBake: string[] } {
 
 		const of = ( list: Entry[] ) => list.map( ( entry ) => entry.name );

@@ -20,7 +20,7 @@ import type { EntityId } from './sim/types.ts';
 // its entries and the skies of each day, and `restore` takes them back into a record just reset; a
 // loaded game's simulation has emitted nothing yet, so the record notes nothing twice. A record
 // restored and hearing the same events keeps the entries the original keeps
-// (tools/verify-game.mjs). Entries are kept in the order they happened (the debug panel's
+// (tools/game/verify-game.mjs). Entries are kept in the order they happened (the debug panel's
 // placeholders aside: readers sort by tick). `version` counts the changes, so a reader redraws only
 // when it moved.
 
@@ -45,7 +45,7 @@ export interface RecordEntry {
 }
 
 /** The kinds of the simulation's events the record notes (`note`), each as an entry of the same
- * kind; a presentation that shows the others (tools/play-game.mjs) shows these through the record. */
+ * kind; a presentation that shows the others (tools/game/play-game.mjs) shows these through the record. */
 export const RECORDED: ReadonlySet<SimEvent[ 'kind' ]> = new Set( [ 'landed', 'died', 'said', 'gave', 'placed', 'built', 'need' ] );
 
 /** The record as a save holds it (plain JSON). */

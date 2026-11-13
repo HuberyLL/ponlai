@@ -16,7 +16,7 @@
 // alive), and a texture the graph does not own (an import) written that way roots its pass, as any
 // write of a persistent resource does.
 //
-// Pure TypeScript with no runtime import, so Node runs it directly (tools/verify-framegraph.mjs);
+// Pure TypeScript with no runtime import, so Node runs it directly (tools/render/verify-framegraph.mjs);
 // FrameGraph.ts executes the compiled graph with three's renderer.
 
 /** The size of a resource: a share of the scene's render, of the canvas, or fixed. The rounding is

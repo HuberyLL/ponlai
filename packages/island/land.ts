@@ -2,7 +2,7 @@
 // numbers for the renderer's look (island/look/), which load without three.js: the headless game
 // plays on them in node, and the page's settings (PageSettings.ts) take the look from here before
 // any of the renderer loads. Every file it loads imports relative paths only
-// (tools/verify-layers.mjs), and it loads in plain node (tools/verify-exits.mjs). A name is in one
+// (tools/repo/verify-layers.mjs), and it loads in plain node (tools/repo/verify-exits.mjs). A name is in one
 // exit only: these are not in island/index.ts.
 export { paceAt, parseBodies } from './characters/Ages.ts';
 export type { Body, Sex } from './characters/Ages.ts';

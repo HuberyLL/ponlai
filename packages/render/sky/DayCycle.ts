@@ -29,7 +29,7 @@ import type { Exposure } from '../look/ExposureLook.ts';
 // once the handoff has turned it (the windows' `moonKeyTop`). Each night share comes in over a window placed
 // so that what it adds in half a degree is no more than what the twilight loses in it. The aim:
 // every light the dusk is judged by (the land's, the sea's, the sky's, the haze's) falls as the
-// sun sinks, rising by no more than 2 % of itself in any half degree (tools/dusk-grid.mjs, its
+// sun sinks, rising by no more than 2 % of itself in any half degree (tools/island/dusk-grid.mjs, its
 // step-wise check, from +2 down to -8 degrees) and never climbing more than 2 % over the level it
 // held at any higher sun down to midnight (its overall check); and the exposure, in stops of
 // gain, never falls as the sun sinks to -8 degrees (its exposure check). Known exceptions to the
@@ -381,7 +381,7 @@ export function cloudMoonShare( windows: DayWindows, elevation: number, rising: 
 }
 
 /** The dusk's shares a script can force on a debug page, to take the light of the twilight and of
- * the night apart (tools/dusk-grid.mjs `--split`, `--night-split`), in the order that tool puts them
+ * the night apart (tools/island/dusk-grid.mjs `--split`, `--night-split`), in the order that tool puts them
  * back one at a time. The night's: `moonKey`, the moon's share of the key (SkyTrack.ts `moonGain`);
  * `moonSky`, of the moonlit sky (Sky.ts `moonSkyShare`, which the probes' sky gain mixes its moon's
  * part by: lighting/AmbientRelight.ts); `skyNight`, the sky's twilight night key (`skyNight`);
@@ -415,7 +415,7 @@ export function duskForced( name: DuskForce ): number | null {
 /** The values each share took as the code made it, forced or not, since a script last cleared the
  * map: [ least, greatest ] over every call (a share some frames or readers take at other values
  * shows the range). Kept on debug pages only (`TUNE_ON`, where `__PONLAI__` exists to read it):
- * elsewhere it stays empty and a call costs nothing. tools/dusk-grid.mjs reads it to report the
+ * elsewhere it stays empty and a call costs nothing. tools/island/dusk-grid.mjs reads it to report the
  * shares and to skip forcing a share to the value it already has. `hazeNight` has no value of its
  * own here (`duskForced`). */
 export const duskShares = new Map<DuskForce, [ number, number ]>();

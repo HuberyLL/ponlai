@@ -248,7 +248,7 @@ packages, into `dist/licenses/`.
   - `packages/render/sky/Clouds.ts`: the light of up to four point sources inside the cloud (an
     inverse-square core times an exponential reach) added inside the front-to-back march, from
     `CloudRaymarch.shader`, ported from HLSL to TSL.
-  - `tools/bake-rainbow-table.mjs`: a port of `VolumetricClouds/Sky/RainbowTable.cs` to
+  - `tools/render/bake-rainbow-table.mjs`: a port of `VolumetricClouds/Sky/RainbowTable.cs` to
     JavaScript (Airy theory per wavelength and drop size, primary and secondary bows with
     Fresnel, a Marshall-Palmer drop spectrum, CIE 1931 to linear sRGB, the solar disc). It
     generates `packages/render/sky/RainbowTable.data.ts`, 512 RGB entries over 0 - 64 degrees from
@@ -369,7 +369,7 @@ packages, into `dist/licenses/`.
 ## Assets
 
 These files are not in the repository: they ship in the assets release that `assets.lock.json`
-names, under the paths given here in `public/` (`tools/assets.mjs`).
+names, under the paths given here in `public/` (`tools/repo/assets.mjs`).
 
 ### Rock Face 03
 
@@ -385,7 +385,7 @@ names, under the paths given here in `public/` (`tools/assets.mjs`).
 - Author: Rob Tuytel
 - Source: [Poly Haven](https://polyhaven.com/a/brown_mud_leaves_01)
 - Licence: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)
-- Files: built by `tools/build-ground-textures.py` from the 1K maps.
+- Files: built by `tools/island/build-ground-textures.py` from the 1K maps.
   `public/textures/ground/meadow_albedo.jpg` is the diffuse map, unchanged;
   `public/textures/ground/meadow_detail.png` packs the OpenGL normal map's x and y (red, green) and
   the roughness map (blue). The open meadow's ground.
@@ -395,7 +395,7 @@ names, under the paths given here in `public/` (`tools/assets.mjs`).
 - Author: Rob Tuytel
 - Source: [Poly Haven](https://polyhaven.com/a/forrest_ground_01)
 - Licence: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)
-- Files: built by `tools/build-ground-textures.py` from the 1K maps, as Brown Mud Leaves 01:
+- Files: built by `tools/island/build-ground-textures.py` from the 1K maps, as Brown Mud Leaves 01:
   `public/textures/ground/grove_albedo.jpg` and `grove_detail.png`. The bamboo groves' floor.
 
 ### CGI Moon Kit
@@ -404,7 +404,7 @@ names, under the paths given here in `public/` (`tools/assets.mjs`).
   data (LROC WAC colour mosaic, LOLA elevation)
 - Source: [NASA SVS 4720](https://svs.gsfc.nasa.gov/4720/)
 - Licence: public domain (NASA); credited as "NASA's Scientific Visualization Studio"
-- Files: built by `tools/build-moon-textures.py` from `lroc_color_2k.jpg` and `ldem_4_uint.tif`.
+- Files: built by `tools/island/build-moon-textures.py` from `lroc_color_2k.jpg` and `ldem_4_uint.tif`.
   `public/sky/moon/moon_color.jpg` is the colour map halved to 1024 x 512 (a 2 x 2 average in
   linear light, re-encoded as sRGB JPEG). `public/sky/moon/moon_height.png` is the LOLA height
   grid area-averaged to 512 x 256, kept in the kit's 16-bit units (half-metres, +10 km) and split
@@ -467,7 +467,7 @@ names, under the paths given here in `public/` (`tools/assets.mjs`).
   its `ReadMe`)
 - Licence: none stated; the CDS distributes the catalogue freely and asks for an acknowledgement,
   which this entry is.
-- Files: `public/sky/stars.bin`, written by `tools/build-star-catalog.mjs`: for each of the 9096
+- Files: `public/sky/stars.bin`, written by `tools/island/build-star-catalog.mjs`: for each of the 9096
   stars with a position, the J2000 right ascension and declination, the V magnitude and a colour
   from B-V (see the star colours under Acknowledgements), 8 bytes per star.
 
@@ -477,7 +477,7 @@ names, under the paths given here in `public/` (`tools/assets.mjs`).
 - Source: [NASA SVS 4851](https://svs.gsfc.nasa.gov/4851), `milkyway_2020_4k.exr` (the Milky Way
   background in celestial coordinates)
 - Licence: NASA SVS asks for the credit line above.
-- Files: `public/sky/milkyway.png`, written by `tools/build-milky-way.py`: the luminance halved,
+- Files: `public/sky/milkyway.png`, written by `tools/island/build-milky-way.py`: the luminance halved,
   cleared of residual point sources by a median filter, reduced to 1024 x 512, blurred along right
   ascension toward the poles, and stored as the square root of its share of the brightest star
   clouds in 8 bits.
@@ -687,7 +687,7 @@ comment where it is used.
   then Planck's law weighted by the CIE 1931 colour matching functions in the analytic fit of
   C. Wyman, P.-P. Sloan and P. Shirley, [*Simple Analytic Approximations to the CIE XYZ Color
   Matching Functions*](https://jcgt.org/published/0002/02/01/)
-  (JCGT 2013), and the sRGB matrix (`tools/build-star-catalog.mjs`).
+  (JCGT 2013), and the sRGB matrix (`tools/island/build-star-catalog.mjs`).
 - Crepuscular rays: Kenny Mitchell,
   [*Volumetric Light Scattering as a
   Post-Process*](https://developer.nvidia.com/gpugems/gpugems3/part-ii-light-and-shadows/chapter-13-volumetric-light-scattering-post-process)
@@ -807,7 +807,7 @@ comment where it is used.
   [*FrameGraph: Extensible Rendering Architecture in
   Frostbite*](https://www.gdcvault.com/play/1024612/FrameGraph-Extensible-Rendering-Architecture-in)
   (GDC 2017), used as a technique only.
-- The tolerance that compares temporal AA captures (`tools/parity/tolerance.py`): a per-pixel
+- The tolerance that compares temporal AA captures (`tools/kit/tolerance.py`): a per-pixel
   level with the share of pixels over it bounded on the frame and in local blocks, and a mean
   error, after Unity's Graphics Test Framework (`ImageComparisonSettings`) and Unreal Engine's
   automation screenshot comparison (`FAutomationScreenshotTolerance`); NVIDIA FLIP (Andersson et

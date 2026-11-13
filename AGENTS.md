@@ -7,8 +7,8 @@ sun and the sky give it (deep clear water, chunky stone, a lush meadow that move
 with wildflowers). The look and what to avoid: `docs/explanation/art-direction.md`. The game's
 design: `docs/explanation/game-design.md` (read it before gameplay work).
 
-This file is an index of at most 20,000 characters (`npm run lint:docs` fails past it): the rules
-every change follows, what to read before a task, and the folders. Detail lives where it is owned.
+This file is an index: the rules every change follows, what to read before a task, and the folders.
+Detail lives where it is owned.
 
 ## Where things are written
 
@@ -39,28 +39,28 @@ every change follows, what to read before a task, and the folders. Detail lives 
   passes (types, code lint, layers, exits, settings, file sizes, three's internals, CPU regression
   tools), in seconds, without a GPU; `-- --full` adds the build and the world's chunks
   (`docs/how-to/check-a-change.md`). `npm run lint:docs`: Markdown, offline links, docs paths in
-  code, this file's size; `npm run lint:links` adds web links. In-page keys:
+  code; `npm run lint:links` adds web links. In-page keys:
   `docs/reference/tools.md`, Page.
 - Tools are in `tools/`, their manual in `docs/reference/tools.md` (Which tool for which question).
-  Most changes meet: `node tools/serve.mjs dev|preview` (a worktree's server on a free port),
-  `tools/capture.mjs` (one screenshot), `tools/parity/capture-set.mjs` (views on one warm page,
-  not a loop), `tools/scenes.mjs` (the renderer's test scenes checked in seconds: run
-  it first after a renderer change), `uv run tools/img.py diff|crop|sheet|stats|flicker` (image work
-  on captures), `tools/probe.mjs` (page values as JSON), `tools/wgsl-build.mjs` (TSL to WGSL in
-  node, no GPU), `tools/profile-frame.mjs` (frame time on a production build), `tools/assets.mjs`
-  (the assets in `public/` against `assets.lock.json`, pulled by dev and build) and
-  `tools/verify-*.mjs` (regression probes; after a change to the world's generator, run
-  `node tools/verify-world-chunks.mjs` before captures). Use them instead of a Pillow, NumPy or
-  Playwright script of one's own.
+  Most changes meet: `node tools/kit/serve.mjs dev|preview` (a worktree's server on a free port),
+  `tools/kit/capture.mjs` (one screenshot), `tools/island/parity/capture-set.mjs` (views on one warm
+  page, not a loop), `tools/render/scenes.mjs` (the renderer's test scenes checked in seconds: run
+  it first after a renderer change), `uv run tools/kit/img.py diff|crop|sheet|stats|flicker` (image
+  work on captures), `tools/kit/probe.mjs` (page values as JSON), `tools/render/wgsl-build.mjs` (TSL
+  to WGSL in node, no GPU), `tools/render/profile-frame.mjs` (frame time on a production build),
+  `tools/repo/assets.mjs` (the assets in `public/` against `assets.lock.json`, pulled by dev and
+  build) and `tools/**/verify-*.mjs` (regression probes; after a change to the world's generator,
+  run `node tools/island/verify-world-chunks.mjs` before captures). Use them instead of a Pillow,
+  NumPy or Playwright script of one's own.
 - Everything that renders the scene in a browser takes the GPU lock
-  (`node tools/gpu-lock.mjs run [--shared] -- <command>`): timing runs hold it alone, paused
+  (`node tools/kit/gpu-lock.mjs run [--shared] -- <command>`): timing runs hold it alone, paused
   captures and probes share it. Sessions leave `PONLAI_GPU_PRIORITY` unset.
-- Every wait goes through `tools/job.mjs`, never a sleep loop of one's own; a job is stopped with
+- Every wait goes through `tools/kit/job.mjs`, never a sleep loop of one's own; a job is stopped with
   `job.mjs stop <log>` before an agent hands back.
 - Headed browser runs take over the user's screen: run one only for what a screen alone shows, and
-  only while `node tools/display-gate.mjs status` allows it.
-- A new CPU-heavy tool imports `tools/qos.mjs` first; a one-off script runs through
-  `node tools/qos.mjs <command>`.
+  only while `node tools/kit/display-gate.mjs status` allows it.
+- A new CPU-heavy tool imports `tools/kit/qos.mjs` first; a one-off script runs through
+  `node tools/kit/qos.mjs <command>`.
 
 ## Tools
 
@@ -72,8 +72,8 @@ every change follows, what to read before a task, and the folders. Detail lives 
 
 ## Rules for every change
 
-"Enforced by" names a code lint rule (`ponlai/…`), a `tools/verify-*.mjs` check (its bare name), a
-command, or judgement. "Came from" is the mistake that led to the rule; a dash means none is on
+"Enforced by" names a code lint rule (`ponlai/…`), a `tools/**/verify-*.mjs` check (its bare name),
+a command, or judgement. "Came from" is the mistake that led to the rule; a dash means none is on
 record and the rule guards a stated convention.
 
 | Rule | Enforced by | Came from |
@@ -182,7 +182,7 @@ meets it.
   numbers, its camera, the islanders and creatures.
 - `packages/game/`: the game behind `?game`: the headless simulation (`sim/`), session, save, view
   and interface (`ui/`).
-- `tools/`: checks, captures, probes, profiling, the GPU lock, the code lint (`tools/lint/`).
+- `tools/`: checks, captures, probes, profiling, the GPU lock, the code lint (`tools/repo/lint/`).
 - `skills/`: methods as skills (linked from `.claude/skills/`); a skill's facts for this project:
   `docs/bindings/<skill-name>.md`.
 - `docs/`: the documentation by kind (`docs/README.md`). `public/` (git-ignored): the assets. File

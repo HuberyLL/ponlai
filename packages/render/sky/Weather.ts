@@ -24,7 +24,7 @@
 //   and turns it to a new heading: the prevailing 40 degrees plus an offset, nine times in ten a
 //   triangular one within +-40 degrees (most often near 0), one time in ten from the opposite
 //   quadrant (180 +- 45). Over hundreds of hours the wind is gentle 70 % of the time, fresh 13 %,
-//   light 14 % and strong 3 % (tools/verify-weather-state.mjs measures it). The wind's draws take
+//   light 14 % and strong 3 % (tools/render/verify-weather-state.mjs measures it). The wind's draws take
 //   a random stream of their own, so the sky's sequence is the one it was before the wind had
 //   levels.
 //
@@ -32,7 +32,7 @@
 // that order each turn), so its future is known: `forecast` reads it ahead without moving it (the
 // game's forecast, packages/game/ui/Forecast.ts). The chain counts its dwell down by the frames' steps
 // from the frame after a front ends, so a turn comes up to a step either side of the time read
-// ahead (tools/verify-weather-state.mjs); the forecast is read again as the weather moves on.
+// ahead (tools/render/verify-weather-state.mjs); the forecast is read again as the weather moves on.
 //
 // The weather the page runs is a fine day's: clear and fair. Cloud comes and goes between the two
 // and no further.
@@ -83,7 +83,7 @@ const smooth01 = ( t: number ) => {
  * the sun's part takes it at the sun's elevation (`sun`), the moon's at the moon's own (`moon`), by
  * the moon's `share` of that light. A closed deck and the day's keys take the moon's light as they
  * take the sun's, so a deep night's gain is the day's at the moon's height. Written so that a share
- * of 0 gives `sun` and a share of 1 `moon` exactly (tools/verify-weather-state.mjs). */
+ * of 0 gives `sun` and a share of 1 `moon` exactly (tools/render/verify-weather-state.mjs). */
 export function withMoon( sun: number, moon: number, share: number ): number {
 
 	return sun * ( 1 - share ) + moon * share;

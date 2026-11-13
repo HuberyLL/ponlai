@@ -6,7 +6,7 @@ section is named after the step of the skill that reads it. A project of your ow
 section names and fills in its own facts.
 
 Every command that renders in a browser runs under the GPU lock and every wait goes through
-`tools/job.mjs` (`AGENTS.md`). A page script used once stays in the task's artifacts folder.
+`tools/kit/job.mjs` (`AGENTS.md`). A page script used once stays in the task's artifacts folder.
 
 ## Earlier causes
 
@@ -25,34 +25,34 @@ Check a fingerprint against these first.
 
 - The still frame is the test mode: a paused page under MSAA, final once `settled` holds
   (`docs/reference/tools.md`, Test mode).
-- Serve the checkout with `node tools/serve.mjs dev`; `--sha <rev>` serves another commit for a
+- Serve the checkout with `node tools/kit/serve.mjs dev`; `--sha <rev>` serves another commit for a
   before-and-after.
-- The cheapest reproduction is a test scene of the renderer (`tools/scenes.mjs`, its header). Each
-  run loads its pages fresh, so a loop counts k of n. Take the first run as the reference of the
+- The cheapest reproduction is a test scene of the renderer (`tools/render/scenes.mjs`, its header).
+  Each run loads its pages fresh, so a loop counts k of n. Take the first run as the reference of the
   others:
 
   ```sh
-  node tools/job.mjs start --wait -- node tools/gpu-lock.mjs run --shared -- \
-    node tools/scenes.mjs <url> <out>/1 --scenes sea --times clear-noon
-  node tools/job.mjs start --wait -- node tools/gpu-lock.mjs run --shared -- \
-    node tools/scenes.mjs <url> <out>/<i> --scenes sea --times clear-noon --check --ref <out>/1/neutral
+  node tools/kit/job.mjs start --wait -- node tools/kit/gpu-lock.mjs run --shared -- \
+    node tools/render/scenes.mjs <url> <out>/1 --scenes sea --times clear-noon
+  node tools/kit/job.mjs start --wait -- node tools/kit/gpu-lock.mjs run --shared -- \
+    node tools/render/scenes.mjs <url> <out>/<i> --scenes sea --times clear-noon --check --ref <out>/1/neutral
   ```
 
 - `--verify` tells a page that does not repeat itself from fresh loads that differ: it shoots each
   view on one page, on a second page in reverse order and on a fresh page.
-- The island page: `tools/parity/capture-set.mjs` with `--repeat` (two pages, A/A) or `--check`
+- The island page: `tools/island/parity/capture-set.mjs` with `--repeat` (two pages, A/A) or `--check`
   against a stored reference (its header).
 - Readings beside each shot: the scenes' `readings.tsv` and each shot's `.json` (exposure, light);
   a capture set's `.json` holds `preExposure.ev`.
 
 ## Hash
 
-Run the skill's page script through `tools/probe.mjs`, a fresh load per probe. The page's debug
+Run the skill's page script through `tools/kit/probe.mjs`, a fresh load per probe. The page's debug
 global (`P` in a probe) reaches the renderer's parts: pass it whole as the root.
 
 ```sh
-node tools/job.mjs start --wait -- node tools/gpu-lock.mjs run --shared -- \
-  node tools/probe.mjs <url>scenes.html \
+node tools/kit/job.mjs start --wait -- node tools/kit/gpu-lock.mjs run --shared -- \
+  node tools/kit/probe.mjs <url>scenes.html \
   --q "scene=sea&debug&paused&t=12&quality=high&weather=clear&preset=noon" \
   --w 1920 --h 1080 --scale 2 --timeout 120000 \
   --until "D.settled" --eval "P.scenePage.setView('high')" --frames 4 --until "D.settled" \
@@ -67,7 +67,7 @@ node tools/job.mjs start --wait -- node tools/gpu-lock.mjs run --shared -- \
   `quietStart`).
 - An input hashed at the moment of its draw, or a redraw on its own: a probe `--eval` of your own
   reaches the module through `P` (the wave maps: `P.pipeline.waveMaps`); `--init` wraps a function
-  before the page's scripts run (`tools/probe.mjs`, its header).
+  before the page's scripts run (`tools/kit/probe.mjs`, its header).
 
 ## Fix
 
@@ -76,12 +76,12 @@ node tools/job.mjs start --wait -- node tools/gpu-lock.mjs run --shared -- \
   history-dependent effect).
 - A new fact about three.js or WebGPU goes into `docs/reference/three-behaviour.md`, and the
   module's rule into its header.
-- A fix that changes the converged image needs new stored references (`tools/parity/README.md`):
+- A fix that changes the converged image needs new stored references (`tools/island/parity/README.md`):
   the project owner decides before they are written.
 
 ## Prove
 
 - The loop of Reproduce, with N chosen as the skill says.
 - Then the checks the change touches (`docs/how-to/check-a-change.md`): the test scenes with
-  `--verify --check`, the parity set with `--check`, `tools/verify-scene-jump.mjs`,
-  `tools/verify-growth-swap.mjs`, and `npm run check`.
+  `--verify --check`, the parity set with `--check`, `tools/island/verify-scene-jump.mjs`,
+  `tools/island/verify-growth-swap.mjs`, and `npm run check`.

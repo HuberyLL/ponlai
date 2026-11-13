@@ -59,7 +59,7 @@
 //   a function of the window. The floor's height depends on the coast up to LAND_REACH (24 m) from
 //   it, so the rays read it only within 9 m of a probe (the reaches under the water; a ray above
 //   the water ends at its surface): every read of the land lies within 34 m of the chunk, the
-//   dirty rule's bound (tools/verify-world-chunks.mjs D4, D5: with the floor read to 20 m, land
+//   dirty rule's bound (tools/island/verify-world-chunks.mjs D4, D5: with the floor read to 20 m, land
 //   placed 35 m out changed coastal chunks). The march starts from a fixed CEILING, so where its
 //   samples fall is the same whatever the groves round the chunk.
 // - The groves are a participating medium over the land (Beer-Lambert), on a world-anchored 1 m grid:

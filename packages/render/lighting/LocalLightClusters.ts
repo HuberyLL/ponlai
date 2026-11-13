@@ -2,7 +2,7 @@ import { REFRACTION_GUARD } from '../ocean/Refraction.ts';
 
 // The local lights' cluster grid and its CPU side (lighting/LocalLights.ts has the why): the grid,
 // the depth slices, and each frame's sort of the sources in view with every slice's range in it.
-// Plain TypeScript with no TSL, so node runs it (tools/verify-local-lights.mjs).
+// Plain TypeScript with no TSL, so node runs it (tools/render/verify-local-lights.mjs).
 
 /** The screen tile, px at the 2K baseline, and the cluster grid: tiles across, down, depth slices. */
 export const TILE = 32;

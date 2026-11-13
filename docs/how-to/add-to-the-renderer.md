@@ -52,7 +52,7 @@ A layer above the renderer imports everything below through the renderer's exit,
    On the island this is `createVegetation` in `packages/island/IslandStages.ts`; on the scene
    page a scene returns its kinds from `build()` as `plants`, and `app/scenes/ScenePage.ts` adds
    them. A kind added after `placeVegetation` throws.
-3. Check it on the plant patch: `node tools/scenes.mjs <baseUrl> <outDir> --scenes plants`
+3. Check it on the plant patch: `node tools/render/scenes.mjs <baseUrl> <outDir> --scenes plants`
    (`docs/how-to/check-a-change.md`, Run the small scenes first).
 
 A kind drawn with the default plant (`packages/render/vegetation/DefaultPlant.ts`) is a merged
@@ -119,12 +119,12 @@ distance. A kind with those has a `root` of its own.
    jump entries are registered in `registerIslandHistories` (`packages/island/IslandStages.ts`),
    which the page calls in order with the renderer's (`app/Scene.ts`). Each list runs in the order
    registered.
-3. Run `node tools/verify-scene-jump.mjs` (`docs/reference/tools.md`) to check that a jumped page
-   draws what a fresh load draws.
+3. Run `node tools/island/verify-scene-jump.mjs` (`docs/reference/tools.md`) to check that a jumped
+   page draws what a fresh load draws.
 
 ## Check the registration
 
-1. Run `npm run check`. Its `tools/verify-extensions.mjs` registers definitions of its own at
+1. Run `npm run check`. Its `tools/render/verify-extensions.mjs` registers definitions of its own at
    every point, checks that one without its declarations is refused, and searches the
    registries' owners for the names of the island's definitions: a registry that names a kind
    fails it.

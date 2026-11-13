@@ -1,6 +1,6 @@
 import { defineConfig, type Plugin } from 'vite';
-import { assets } from './tools/vite-assets.mjs';
-import { worldGeneratorHash } from './tools/vite-world-generator.mjs';
+import { assets } from './tools/repo/vite-assets.mjs';
+import { worldGeneratorHash } from './tools/repo/vite-world-generator.mjs';
 
 // Licence texts that must travel with the built site: MIT asks for the full notice in every copy,
 // and the /*! */ headers kept in the bundle only point to these files.
@@ -65,7 +65,7 @@ function licences(): Plugin {
 
 export default defineConfig( {
 	base: './',
-	// assets(): fills the git-ignored public/ from the assets release (tools/vite-assets.mjs);
+	// assets(): fills the git-ignored public/ from the assets release (tools/repo/vite-assets.mjs);
 	// the world generator's source hash, for the world cache (packages/island/world/WorldCache.ts)
 	plugins: [ licences(), assets(), worldGeneratorHash() ],
 	server: {

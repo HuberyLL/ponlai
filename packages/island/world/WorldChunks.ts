@@ -26,8 +26,8 @@
 //   10 MB on the main thread, in a frame of a page that grows.)
 // - The merge runs once every chunk has arrived, in rows ( cj, then ci ), so the world is the same
 //   whatever order the workers finish in, and the same as the node tools' serial path
-//   (tools/world-node.mjs).
-// - Cache keys: a format version, the generator's hash (tools/vite-world-generator.mjs: every
+//   (tools/island/world-node.mjs).
+// - Cache keys: a format version, the generator's hash (tools/repo/vite-world-generator.mjs: every
 //   source the worker imports), the options, the browser, the chunk and the growth steps whose
 //   pieces hold cells the chunk reads (chunkWorker.ts, by Chunks.ts `windowCells`), so a land
 //   grown by a piece finds every chunk the dirty rule keeps. `worldCache=off` (main.ts) builds

@@ -1,6 +1,6 @@
 // The code lint (`npm run lint`): the project's mechanical rules as ESLint checks, each scoped to
 // the folders it concerns. Only the TypeScript parser and the project's own rules
-// (tools/lint/plugin.mjs, each with a message that says what to write instead); no recommended
+// (tools/repo/lint/plugin.mjs, each with a message that says what to write instead); no recommended
 // sets and no style or formatting rules: the code style is three.js's and is not linted.
 //
 // - The parser reads the code with type information (`projectService`, over tsconfig.json), which
@@ -8,16 +8,16 @@
 // - An exception is a line of its own above the line it excepts, naming the rule and a reason a
 //   reader can check: `// eslint-disable-next-line ponlai/<rule> -- <reason>`. A disable comment
 //   that no longer suppresses anything is an error, so the exceptions stay true.
-// - A new rule goes in the plugin, gets its block here and a fixture in tools/lint/fixtures/
-//   (`node tools/verify-lint.mjs` fails unless each fixture reports its rule):
+// - A new rule goes in the plugin, gets its block here and a fixture in tools/repo/lint/fixtures/
+//   (`node tools/repo/verify-lint.mjs` fails unless each fixture reports its rule):
 //   docs/reference/tools.md, Code lint.
 import tseslint from 'typescript-eslint';
-import ponlai from './tools/lint/plugin.mjs';
+import ponlai from './tools/repo/lint/plugin.mjs';
 
 const CODE = [ 'packages/**/*.ts', 'app/**/*.ts' ];
 
 export default [
-	{ ignores: [ 'dist/**', 'public/**', 'node_modules/**', 'artifacts/**', '.claude/**', 'tools/lint/fixtures/**' ] },
+	{ ignores: [ 'dist/**', 'public/**', 'node_modules/**', 'artifacts/**', '.claude/**', 'tools/repo/lint/fixtures/**' ] },
 	{
 		files: CODE,
 		languageOptions: {

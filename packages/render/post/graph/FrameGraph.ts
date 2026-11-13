@@ -53,7 +53,7 @@ import { ownDepthClears } from '../../three/ThreePatches.ts';
 // render inside a pass (a bloom chain), and the objects and kernels owners register as run only at
 // times (`latent( pass, objects, kernels )`: the rain, the bolts, the storm's spray and foam, the game's
 // props and islanders). A new
-// pass, or a draw that first shows later, joins it the same way; `tools/verify-first-use.mjs`
+// pass, or a draw that first shows later, joins it the same way; `tools/render/verify-first-use.mjs`
 // counts the pipelines any step still creates. A miss is not harmless: a material built twice under
 // two keys can be emitted with the first build's uniform names in a layout function (r186), an
 // invalid shader. Priming (rendering a pass once at startup) covers only what the walker cannot

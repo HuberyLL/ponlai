@@ -24,7 +24,7 @@ import type { Frame } from './Brush.ts';
 // deepest in, blending into the next deepest over a couple of pixels where strokes join. Sizes are
 // in the interface's units (`unit` device pixels each), so a stroke keeps its look at any scale;
 // noise comes from hashes of positions and the stroke's seed, so a stroke inks the same every time.
-// Pure TypeScript (no DOM), checked by tools/verify-ink.mjs; InkPath.ts draws it into the page.
+// Pure TypeScript (no DOM), checked by tools/game/verify-ink.mjs; InkPath.ts draws it into the page.
 
 /** A stroke to ink: its frame in device pixels, the seed its marks come from, and how dry its tail
  * runs as a share of the style's (1 by default; 0 for a gauge, whose ends must stay exact). */
