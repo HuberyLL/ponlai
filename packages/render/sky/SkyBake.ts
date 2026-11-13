@@ -10,7 +10,7 @@ import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 import { storePress } from '../post/PreExposure.ts';
 import type { WeatherState } from './Weather.ts';
 import { environmentSteps } from '../three/Environment.ts';
-import { luma, seaKnee } from '../look/SkyLook.ts';
+import { luma } from '../look/SkyLook.ts';
 import type { Sky, SkyEndpoint } from './Sky.ts';
 
 // The sky's bakes (Sky.ts, whose header says what they hold), each a function of the sky; a name in
@@ -127,13 +127,13 @@ export function beginBake( sky: Sky, version: number, readback: boolean, transit
 	// as it was
 	const ambientGain = weather?.ambientGain ?? 1;
 	sky.ambientGain.value = ambientGain;
-	// the distant sea's body (SEA_KNEE): the body is written as it stood before it followed the
+	// the distant sea's body (`look.seaKnee`): the body is written as it stood before it followed the
 	// light, the colour times the illuminance times the gain, so a body at the knee is that value
 	const sea = state.sea;
 	sea.body.copy( sky.seaColor ).multiplyScalar( illuminance ).multiplyScalar( ambientGain );
 	sea.night.copy( sky.displayNightAmbient.value ).multiplyScalar( ambientGain );
 	sea.sun = luma( sky.sunColor ) * Math.max( sky.sunDir.y, 0 ) / Math.PI * ambientGain * sky.daySky;
-	sea.knee = seaKnee() * illuminance * ambientGain;
+	sea.knee = sky.look.seaKnee() * illuminance * ambientGain;
 	sky.seaBody.value.copy( sea.body );
 	sky.seaNight.value.copy( sea.night );
 	sky.seaSun.value = sea.sun;
@@ -190,7 +190,7 @@ export function renderPanoramas( sky: Sky, bake: Bake ): void {
 
 			sky.irradiancePass.value = rt === sky.small ? 1 : 0;
 			sky.bakeStore.value = rt === sky.small ? 1 : 2 ** stops * storePress.store.value;
-			// Only the environment's source takes the island's light after sunset (ISLAND_SKY).
+			// Only the environment's source takes the island's light after sunset (`look.islandSky`).
 			const lends = rt === sky.reflectionSource;
 			sky.bakeIslandTint.value.copy( lends ? sky.islandTint.value : NEUTRAL_TINT );
 			sky.bakeIslandGain.value = lends ? sky.islandGain.value : 1;

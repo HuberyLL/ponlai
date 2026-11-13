@@ -56,7 +56,7 @@ type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
 // Volumetric clouds, one model for every sky. A kind of sky is a row of the model's parameters
-// (look/SkyLook.ts CLOUD_SKIES: the shell, the cloud type and its spread, the far fade; Weather.ts
+// (look/SkyLook.ts `cloudSkies`: the shell, the cloud type and its spread, the far fade; Weather.ts
 // WEATHER_PRESETS: the coverage and the density), and a change of weather moves every parameter
 // from one row to the next, so no sky has code of its own and any two blend. The framework is
 // tidewater's port of the Three.js Sky Pro clouds ("Partly cloudy"): the density's columns, the
@@ -111,7 +111,7 @@ type V4 = THREE.Node<'vec4'>;
 //     a fifth: the light that comes round the cloud), the tops' share growing with the height in
 //     the shell and the horizon's largest at its floor. The sky over the tops is the open sky's
 //     mean radiance over the upper hemisphere, with the clear day's gain on each body's share
-//     (`columnTopOf`, look/SkyLook.ts CLEAR_SKY): a cloud under a layer is lit by the sky above it, not by
+//     (`columnTopOf`, look/SkyLook.ts `clearSky`): a cloud under a layer is lit by the sky above it, not by
 //     the sky along the view it is seen against. The horizon's is the mean of the whole ring round
 //     the cloud over a band 3 to 24 degrees up (`horizonMean`), not the side toward the sun.
 //     The sea's light back up, on the bases: the light on the tops times the sea's albedo.
@@ -168,7 +168,7 @@ type V4 = THREE.Node<'vec4'>;
 //     sun's elevation there (`streakSunColour`, `streakLitRadius`), so the side away from the sun
 //     goes out first and the side toward it reddens last, each
 //     share under an overall colour by the sun's elevation (`keyDirect`, `keyAmbient`: Sky.ts
-//     STREAK_DIRECT, STREAK_AMBIENT: under a low sun the direct share warm and the ambient cool,
+//     `look.streakDirect`, `look.streakAmbient`: under a low sun the direct share warm and the ambient cool,
 //     so the layer reads rose on both sides of the sky rather than the yellow-white of the sun's
 //     light alone, both turning back to white between 8 and 30 degrees; white under a higher sun
 //     and by night), the night's faint ambient (`nightAmbient`, SkyTrack.ts trackClouds) taken with the
@@ -319,7 +319,7 @@ export class Clouds {
 	// each point of the layer takes through the air toward the sun at the sun's elevation there
 	// (`streaksAt`); the radius (m) over which a point's lead toward the sun raises it, and the
 	// width (degrees) of the fade as its disc sinks under the layer's horizon; and the overall
-	// colour on each of the layer's two shares (look/SkyLook.ts STREAK_DIRECT, STREAK_AMBIENT).
+	// colour on each of the layer's two shares (look/SkyLook.ts `streakDirect`, `streakAmbient`).
 	readonly streakSunColour = uniform( new THREE.Color( 1, 1, 1 ) );
 	readonly streakLitRadius = tuneUniform( 'sky.streaks.litRadius', STREAK_LIT.radius, { min: 1e5, max: 2e7, scale: 'log', onChange: markSkyRetune } );
 	readonly streakLitWidth = tuneUniform( 'sky.streaks.litWidth', STREAK_LIT.width, { min: 0.1, max: 6, onChange: markSkyRetune } );
@@ -352,7 +352,7 @@ export class Clouds {
 	// by the moon too, a fair sky's heaps read brighter in late twilight than the night's level is
 	// set with and the meter takes the scene down. A layer's column takes the whole key.
 	readonly columnSunShare = uniform( 1 );
-	// The gain the open sky over the clouds' tops takes back (look/SkyLook.ts CLEAR_SKY, `gapSky`): the
+	// The gain the open sky over the clouds' tops takes back (look/SkyLook.ts `clearSky`, `gapSky`): the
 	// clear day's sky gain over the clouded sky's, on each body's share of the sky at its own height
 	// (Sky.ts `gapGain`), read by the column's kernel alone (`columnTopOf`).
 	readonly openSkyGain = { sun: uniform( 1 ), moon: uniform( 1 ) };

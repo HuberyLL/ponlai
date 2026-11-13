@@ -10,25 +10,18 @@ import { NEUTRAL_LOOK } from './NeutralLook.ts';
 // ExposureLook.ts, DisplayLook.ts, HazeLook.ts, SkyLook.ts) and a
 // neutral set (NeutralLook.ts), which it draws with when nobody installed one. The island's
 // numbers are the island's (packages/island/look/), installed by the page's entry (PageSettings.ts)
-// after the settings and before any reader loads.
+// after the settings. It is installed once, as the settings are (Settings.ts): a second install of
+// another set throws. The same set installed again changes nothing and passes: tools/dusk-grid.mjs
+// installs the island's look in node's own modules (tools/island-look.mjs) and again in those of
+// its `--src` tree, which by default is the same tree, so the same modules and the same set.
 //
-// A reader (the sky's alone, SkyLook.ts) takes its system's numbers once, as its module loads
-// (`readLook`), into the constants it has always exported, so every consumer reads at the moment
-// it always did. That is why the look is installed first: `installLook` after a reader has loaded would leave that reader on the
-// neutral set and the rest on the installed one, so it throws and names the first reader. It is
-// installed once, as the settings are (Settings.ts): a second install of another set throws. The
-// same set installed again changes nothing and passes: tools/dusk-grid.mjs installs the island's
-// look in node's own modules (tools/island-look.mjs) and again in those of its `--src` tree, which
-// by default is the same tree, so the same modules and the same set. A
-// reader registers its tunables (debug/Tune.ts) on tables of its own, copies of the ones it was
-// handed, so an installed set stays as it was written.
-//
-// Some systems take their tables as an argument where they are created instead, not as a module
-// loads, so two made from two sets in one process hold their own numbers
-// (tools/verify-look-params.mjs): the exposure, the day's windows and the low key's lift, where the
-// renderer's sky stage creates them (ExposureLook.ts `createExposure`, DayLook.ts
-// `createDayWindows`, AmbientLook.ts `createKeyLift`); the ambient grade's table and its gains
-// under overcast's deck, where the light stage creates the grade's controller (AmbientLook.ts
+// No module reads the installed look as it loads (tools/verify-layers.mjs): every system takes its
+// tables as an argument where it is created, so two made from two sets in one process hold their
+// own numbers (tools/verify-look-params.mjs): the exposure, the day's windows, the low key's lift
+// and the sky's tables, where the renderer's sky stage creates them (ExposureLook.ts
+// `createExposure`, DayLook.ts `createDayWindows`, AmbientLook.ts `createKeyLift`, SkyLook.ts
+// `createSkyTables`, which the sky's state for a frame, its bakes and the haze's key read); the
+// ambient grade's table and its gains under overcast's deck, where the light stage creates the grade's controller (AmbientLook.ts
 // `createAmbientTables`, lighting/AmbientGrade.ts `createAmbientGrade`), which the ambient light's
 // relight reads too; the haze's keys, rows and per-sky scales, where the sky stage creates them
 // (HazeLook.ts `createHazeTables`), which weather/HazeKeys.ts `hazeKeyAt` reads by the hour and the

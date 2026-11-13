@@ -76,9 +76,10 @@
 //   list repeats a key of the renderer's. A key counts where it is written after the
 //   bag (`x.userData.key`, `x.userData[ 'key' ]`); one reached through an alias of the bag
 //   (`const data = material.userData`) or a computed name is not seen.
-// - The look checks: the renderer draws with the look its page installs (packages/render/look/Look.ts), which
-//   a module reads as it loads (`readLook(`), so a reader that loads where no look is installed
-//   takes the neutral one without a word. Neither that module nor any reader is among the files
+// - The look checks: the renderer draws with the look its page installs (packages/render/look/Look.ts).
+//   No module reads it as it loads (`readLook(`): each system takes its look's tables at creation,
+//   where a module that read the installed look as it loaded took the neutral one without a word
+//   wherever no look was installed yet. Neither that module nor any reader is among the files
 //   the chunk worker loads (the world is generated without the look, and no worker installs one).
 //   No reader is among the files the headless game loads (every module tools/play-game.mjs
 //   and its fixture name, with what those load: the game is played without the look); look/Look.ts
@@ -575,7 +576,8 @@ try {
 // the look checks: who reads the installed look (look/Look.ts `readLook`), and where they must not load
 const LOOK = 'packages/render/look/Look.ts';
 const lookReaders = files.filter( ( f ) => f !== LOOK && /\breadLook\(/.test( readFileSync( path.join( SRC, f ), 'utf8' ) ) );
-if ( ! files.includes( LOOK ) || lookReaders.length === 0 ) failures.push( `look check: ${ LOOK } or its readers (\`readLook(\`) not found` );
+if ( ! files.includes( LOOK ) ) failures.push( `look check: ${ LOOK } not found` );
+for ( const f of lookReaders ) failures.push( `look check: ${ f } reads the installed look as it loads (\`readLook(\`): a system takes its look's tables at creation` );
 const workerLoads = loadClosure( 'packages/island/world/chunkWorker.ts' );
 if ( workerLoads.has( LOOK ) ) failures.push( `look check: the chunk worker loads ${ LOOK } (the world is generated without the look: no worker installs one)` );
 for ( const f of lookReaders ) if ( workerLoads.has( f ) ) failures.push( `look check: the chunk worker loads ${ f }, which reads the look` );

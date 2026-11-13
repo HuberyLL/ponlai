@@ -9,7 +9,7 @@ import { MOON, cloudMoonShare, displayNight, duskForce, exposureNight, nightAmbi
 import { cloudedHighSun, cloudedShare, overcastDeckLight, overcastFloorSun, daySkyAt, type WeatherState } from './Weather.ts';
 import { keyed } from '../post/DayKeys.ts';
 import { tune } from '../debug/Tune.ts';
-import { CLEAR_SHADE, CLEAR_SHADE_TINT, CLEAR_SKY, CLOUD_LIGHT_TINT, CLOUD_SKIES, type CloudSky, KEY_DECK_WHITE, KEY_THROUGH_CLOUD, LOW_KEY, LOW_SUN, LOW_SUN_TINT, MOON_KEY, MOON_KEY_LUMINANCE, MOON_SKY_HUE, NIGHT_AMBIENT_HUE, NIGHT_AMBIENT_SHARE, SHADOW_DENSITY, SKY_LIGHT, STREAK_AMBIENT, STREAK_DIRECT, byElevation, islandSky, keyHue, luma, luminance709, moonHue, storeNight } from '../look/SkyLook.ts';
+import { type CloudSky, type SkyTables, byElevation, islandSky, keyHue, luma, luminance709, moonHue, storeNight } from '../look/SkyLook.ts';
 import type { Sky } from './Sky.ts';
 import type { DayWindows } from '../look/DayLook.ts';
 
@@ -17,24 +17,24 @@ import type { DayWindows } from '../look/DayLook.ts';
 // the moon, the key, the stars, the grade and the displayed weather, and the clouds' light and shell
 // (`trackClouds`), each a function of the sky. Everything that moves with the clock is continuous
 // here; the bakes (SkyBake.ts) only capture this state. A name in backticks with no file is this
-// file's or Sky.ts's.
+// file's or Sky.ts's; the sky's tables are the sky's (Sky.ts `look`, look/SkyLook.ts).
 
 /** How far the low sun's look has come in at `elevation` (degrees) under a sky of direct
- * visibility `direct`: 0 above LOW_SUN.top and below the horizon, 1 from LOW_SUN.full down to
- * 3 degrees (the island's blue-violet shade). */
-export function lowSun( elevation: number, direct: number ): number {
+ * visibility `direct`: 0 above the tables' `lowSun.top` and below the horizon, 1 from their
+ * `lowSun.full` down to 3 degrees (the island's blue-violet shade). */
+export function lowSun( look: SkyTables, elevation: number, direct: number ): number {
 
 	// (off unless a number is set, with the clear shade)
 	const scale = typeof debugFlags.lowSun === 'number' ? debugFlags.lowSun : debugFlags.lowSun === true ? 1 : 0;
-	return THREE.MathUtils.smoothstep( elevation, 0, 3 ) * ( 1 - THREE.MathUtils.smoothstep( elevation, LOW_SUN.full, LOW_SUN.top ) )
+	return THREE.MathUtils.smoothstep( elevation, 0, 3 ) * ( 1 - THREE.MathUtils.smoothstep( elevation, look.lowSun.full, look.lowSun.top ) )
 		* THREE.MathUtils.smoothstep( direct, 0.3, 0.95 ) * scale;
 
 }
 
-// CLEAR_SHADE's share at `elevation` under a sky of direct visibility `direct`.
-function clearShade( elevation: number, direct: number ): number {
+// The tables' `clearShade` share at `elevation` under a sky of direct visibility `direct`.
+function clearShade( look: SkyTables, elevation: number, direct: number ): number {
 
-	const rows = CLEAR_SHADE;
+	const rows = look.clearShade;
 	let share = rows[ rows.length - 1 ].share;
 	if ( elevation >= rows[ 0 ].at ) share = rows[ 0 ].share;
 	else for ( let i = 1; i < rows.length; i ++ ) if ( elevation >= rows[ i ].at ) {
@@ -52,27 +52,28 @@ function clearShade( elevation: number, direct: number ): number {
 
 const _skyLight = { r: 0, g: 0, b: 0 };
 const _clearSky = { gain: 1 };
-// CLEAR_SKY's gain at `elevation` under a sky of clouded share `cloud`: exactly 1 with the sun at or
-// under the horizon and under a cloudy or overcast sky (`flags=clearSky:false` leaves it 1, for A/Bs)
-function clearSky( elevation: number, rising: boolean, cloud: number ): number {
+// The tables' `clearSky` gain at `elevation` under a sky of clouded share `cloud`: exactly 1 with the
+// sun at or under the horizon and under a cloudy or overcast sky (`flags=clearSky:false` leaves it 1,
+// for A/Bs)
+function clearSky( look: SkyTables, elevation: number, rising: boolean, cloud: number ): number {
 
 	if ( debugFlags.clearSky === false ) return 1;
-	const day = keyed( CLEAR_SKY, elevation, 0, _clearSky, 0, rising ).gain;
+	const day = keyed( look.clearSky, elevation, 0, _clearSky, 0, rising ).gain;
 	return 1 + ( day - 1 ) * ( 1 - cloud );
 
 }
-// The sky's gain on the sun's light it lends: SKY_LIGHT's keys, the weather's day sky `daySky`
+// The sky's gain on the sun's light it lends: the tables' `skyLight` keys, the weather's day sky `daySky`
 // (Weather.ts `daySkyAt`) on the day keys' share alone, so it is exactly the keys' own light where
 // the night key has the sky (DayCycle.ts `skyNight` at 1) or the day sky is 1 (every weather but
-// overcast), and CLEAR_SKY's over both. (`flags=skyGain:false` leaves the sky as the atmosphere
+// overcast), and their `clearSky` over both. (`flags=skyGain:false` leaves the sky as the atmosphere
 // gives it, but for the day sky, `lowKey:false` the key as its transmittance gives it, for A/Bs)
-const skyGain = ( windows: DayWindows, elevation: number, rising: boolean, cloud: number, daySky: number, target: THREE.Color ) => {
+const skyGain = ( look: SkyTables, windows: DayWindows, elevation: number, rising: boolean, cloud: number, daySky: number, target: THREE.Color ) => {
 
 	const night = skyNight( windows, elevation, rising, cloud ), off = debugFlags.skyGain === false;
 	if ( off ) target.setScalar( 1 );
 	else {
 
-		const { r, g, b } = keyed( SKY_LIGHT, elevation, night, _skyLight, cloud, rising );
+		const { r, g, b } = keyed( look.skyLight, elevation, night, _skyLight, cloud, rising );
 		target.setRGB( r, g, b );
 
 	}
@@ -82,7 +83,7 @@ const skyGain = ( windows: DayWindows, elevation: number, rising: boolean, cloud
 		if ( off ) target.addScalar( share );
 		else {
 
-			const { r, g, b } = keyed( SKY_LIGHT, elevation, 0, _skyDay, cloud, rising );
+			const { r, g, b } = keyed( look.skyLight, elevation, 0, _skyDay, cloud, rising );
 			target.r += r * share;
 			target.g += g * share;
 			target.b += b * share;
@@ -90,11 +91,11 @@ const skyGain = ( windows: DayWindows, elevation: number, rising: boolean, cloud
 		}
 
 	}
-	return off ? target : target.multiplyScalar( clearSky( elevation, rising, cloud ) );
+	return off ? target : target.multiplyScalar( clearSky( look, elevation, rising, cloud ) );
 
 };
 const _skyGain = new THREE.Color(), _skyBeam = new THREE.Color(), _skyMoon = new THREE.Color(), _skyDay = { r: 0, g: 0, b: 0 };
-const lowKey = ( elevation: number ) => debugFlags.lowKey === false ? 1 : byElevation( LOW_KEY, elevation, 'gain' );
+const lowKey = ( look: SkyTables, elevation: number ) => debugFlags.lowKey === false ? 1 : byElevation( look.lowKey, elevation, 'gain' );
 
 // The low sun's lift of the clouds' beam and fill (trackClouds), fading as the sky closes.
 const lowSunOf = ( elevation: number, coverage: number ) => THREE.MathUtils.smoothstep( elevation, - 4, 1 )
@@ -159,6 +160,7 @@ const _cloudMoon = new THREE.Color();
 
 export function trackSky( sky: Sky, celestial: DayCycleSnapshot | null, weather: Readonly<WeatherState> | null, coverageOverride: number | null = null, skyMix: readonly number[] | null = null ): void {
 
+	const look = sky.look;
 	if ( celestial ) {
 
 		sky.sunDir.copy( celestial.sunDir );
@@ -181,7 +183,7 @@ export function trackSky( sky: Sky, celestial: DayCycleSnapshot | null, weather:
 	else sky.atmosphere.moonDir.value.copy( sky.sunDir ).negate();
 	// The moon lights the sky as the sun does: its light above the air (`moonAboveAir`) times the
 	// sky's gain the sun's light takes at the moon's height (`skyGain` on the evening's keys, with
-	// the weather's day sky there), at the moonlit sky's own hue (MOON_SKY_HUE) and the moonlit
+	// the weather's day sky there), at the moonlit sky's own hue (`moonSkyHue`) and the moonlit
 	// sky's share (the snapshot's `moonKeyGain`, as the key's: at its magnitude the moon's light
 	// lies under the twilight's, so it takes no window of its own, DayCycle.ts). The key takes the
 	// moon's share of the key and its own gain (`moonKeyGain`).
@@ -194,37 +196,37 @@ export function trackSky( sky: Sky, celestial: DayCycleSnapshot | null, weather:
 	sky.moonSkyShare = moonSkyShare;
 	sky.moonAbove = celestial ? illuminance * moonAboveAir() : 0;
 	// the key: the light above the air through the air toward the moon (its luminance), at the
-	// key's hue (MOON_KEY at unit luminance)
+	// key's hue (`moonKey` at unit luminance)
 	const toMoon = sky.atmosphere.transmittanceToMoon();
 	sky.moonKeyLevel = sky.moonAbove * luminance709( toMoon.r, toMoon.g, toMoon.b );
-	const moonKey = sky.moonKeyLevel * moonGain / MOON_KEY_LUMINANCE;
-	sky.moonKeyColor.setRGB( MOON_KEY[ 0 ] * moonKey, MOON_KEY[ 1 ] * moonKey, MOON_KEY[ 2 ] * moonKey );
+	const moonKey = sky.moonKeyLevel * moonGain / look.moonKeyLuminance;
+	sky.moonKeyColor.setRGB( look.moonKey.colour[ 0 ] * moonKey, look.moonKey.colour[ 1 ] * moonKey, look.moonKey.colour[ 2 ] * moonKey );
 	// the weather's moonlit sky at the moon's height, on its own level (Weather.ts `moonSky`)
 	sky.daySkyMoon = weather ? daySkyAt( weather.moonSky, weather.moonSkyExponent, sky.moonElevation ) : 1;
-	const moonSky = moonSkyShare * sky.moonAbove * luma( skyGain( sky.dayWindows, sky.moonElevation, false, cloud, sky.daySkyMoon, _skyMoon ) );
-	sky.atmosphere.moonIlluminance.value.setRGB( MOON_SKY_HUE[ 0 ] * moonSky, MOON_SKY_HUE[ 1 ] * moonSky, MOON_SKY_HUE[ 2 ] * moonSky );
+	const moonSky = moonSkyShare * sky.moonAbove * luma( skyGain( look, sky.dayWindows, sky.moonElevation, false, cloud, sky.daySkyMoon, _skyMoon ) );
+	sky.atmosphere.moonIlluminance.value.setRGB( look.moonSkyHue[ 0 ] * moonSky, look.moonSkyHue[ 1 ] * moonSky, look.moonSkyHue[ 2 ] * moonSky );
 	// the moon's beam the air scatters, as the sun's (`sunBeamIlluminance`): the sky's gain at a
 	// day sky of 1; the moon's visible share is in its sky's share already
-	const moonBeam = moonSkyShare * sky.moonAbove * luma( skyGain( sky.dayWindows, sky.moonElevation, false, cloud, 1, _skyMoon ) );
-	sky.moonBeamIlluminance.setRGB( MOON_SKY_HUE[ 0 ] * moonBeam, MOON_SKY_HUE[ 1 ] * moonBeam, MOON_SKY_HUE[ 2 ] * moonBeam );
+	const moonBeam = moonSkyShare * sky.moonAbove * luma( skyGain( look, sky.dayWindows, sky.moonElevation, false, cloud, 1, _skyMoon ) );
+	sky.moonBeamIlluminance.setRGB( look.moonSkyHue[ 0 ] * moonBeam, look.moonSkyHue[ 1 ] * moonBeam, look.moonSkyHue[ 2 ] * moonBeam );
 	// the weather's day sky at this sun (Weather.ts `daySkyAt`), on the sun's light the sky takes
 	// (`skyGain`), the clouds' sunlight (`trackClouds`) and the distant sea's (SkyBake.ts `beginBake`)
 	sky.daySky = weather ? daySkyAt( weather.daySky, weather.daySkyExponent, sky.elevation ) : 1;
-	sky.atmosphere.sunIlluminance.value.copy( sky.solarIlluminance ).multiply( skyGain( sky.dayWindows, sky.elevation, sky.rising, cloud, sky.daySky, _skyGain ) );
+	sky.atmosphere.sunIlluminance.value.copy( sky.solarIlluminance ).multiply( skyGain( look, sky.dayWindows, sky.elevation, sky.rising, cloud, sky.daySky, _skyGain ) );
 	// (on overcast's share it fades with the setting disk's visible share, as the land's key does:
 	// see `sunBeamIlluminance`)
 	const beamFade = 1 + ( sky.atmosphere.sunVisibleShareToSun() - 1 ) * ( skyMix ? skyMix[ 3 ] ?? 0 : 0 );
-	sky.sunBeamIlluminance.copy( sky.solarIlluminance ).multiply( skyGain( sky.dayWindows, sky.elevation, sky.rising, cloud, 1, _skyBeam ) ).multiplyScalar( beamFade );
+	sky.sunBeamIlluminance.copy( sky.solarIlluminance ).multiply( skyGain( look, sky.dayWindows, sky.elevation, sky.rising, cloud, 1, _skyBeam ) ).multiplyScalar( beamFade );
 	// the open sky's gain behind the clouds, on each body's share of the sky: the sun's at the
 	// sun's height, the moon's at the moon's, as each body's sky light takes its gain (`skyGain`)
 	const off = debugFlags.skyGain === false;
-	sky.gapGain.sun.value = off ? 1 : clearSky( sky.elevation, sky.rising, 0 ) / clearSky( sky.elevation, sky.rising, cloud );
-	sky.gapGain.moon.value = off ? 1 : clearSky( sky.moonElevation, false, 0 ) / clearSky( sky.moonElevation, false, cloud );
+	sky.gapGain.sun.value = off ? 1 : clearSky( look, sky.elevation, sky.rising, 0 ) / clearSky( look, sky.elevation, sky.rising, cloud );
+	sky.gapGain.moon.value = off ? 1 : clearSky( look, sky.moonElevation, false, 0 ) / clearSky( look, sky.moonElevation, false, cloud );
 	sky.atmosphere.updateSync();
 	// Cap the hue of the air's extinction first, then fade by the disk's visible share, so the
 	// setting disk only dims the key and does not bleach it.
 	const sunVisible = sky.atmosphere.sunVisibleShareToSun();
-	if ( sunVisible > 0 ) sky.sunColor.copy( keyHue( sky.atmosphere.transmittanceToSun(), sky.sunTint, sky.rising ) ).multiplyScalar( sunVisible * illuminance );
+	if ( sunVisible > 0 ) sky.sunColor.copy( keyHue( look, sky.atmosphere.transmittanceToSun(), sky.sunTint, sky.rising ) ).multiplyScalar( sunVisible * illuminance );
 	else sky.sunColor.setRGB( 0, 0, 0 );
 	// The key turns from the sun to the moon over the handoff (DayCycle `keyDir`) and holds there
 	// all night: everything that reads the key's direction (the water's glint, the refracted
@@ -232,14 +234,14 @@ export function trackSky( sky: Sky, celestial: DayCycleSnapshot | null, weather:
 	// (no handoff) the key is the sun's direction itself.
 	sky.keyDir.copy( celestial?.keyDir ?? sky.sunDir );
 	sky.keyIsMoon = moonGain > 0;
-	sky.keyColor.copy( sky.sunColor ).multiplyScalar( lowKey( sky.elevation ) * duskForce( 'sun', 1 ) );
+	sky.keyColor.copy( sky.sunColor ).multiplyScalar( lowKey( look, sky.elevation ) * duskForce( 'sun', 1 ) );
 	const moonColor = sky.night.moonColor.value;
 	if ( celestial ) {
 
 		// The full moon's key, some 19 stops under a high sun's, in the island's own hue: only the
 		// moon's share of the key takes it, so over the handoff
 		// it grows with that share, and by day (no moon) the sun's key is untouched.
-		sky.moonKeyAbove.copy( sky.moonKeyColor ).multiply( moonHue( _moonHue ) );
+		sky.moonKeyAbove.copy( sky.moonKeyColor ).multiply( moonHue( look, _moonHue ) );
 		sky.keyColor.add( sky.moonKeyAbove );
 		sky.night.moonDir.value.copy( celestial.moonDir );
 		sky.night.frame.value.copy( celestial.starFrame );
@@ -253,27 +255,27 @@ export function trackSky( sky: Sky, celestial: DayCycleSnapshot | null, weather:
 		const stars = starNight( sky.dayWindows, celestial.daylight, celestial.elevation, sky.rising, cloud );
 		sky.night.starVisibility.value = duskForce( 'stars', celestial.nightVisibility * stars ) * ( 1 - 0.22 * celestial.moonVisibility );
 		// the night's ambient in the clouds and the distant sea: a uniform sky's radiance that gives
-		// level ground NIGHT_AMBIENT_SHARE of the moon's key on it (the key's light at normal
+		// level ground the tables' `nightAmbientShare` of the moon's key on it (the key's light at normal
 		// incidence, the moon's sine), by its share (DayCycle.ts `nightAmbientShare`)
-		const floor = sky.moonKeyLevel * Math.sin( THREE.MathUtils.degToRad( sky.moonElevation ) ) * NIGHT_AMBIENT_SHARE / Math.PI
+		const floor = sky.moonKeyLevel * Math.sin( THREE.MathUtils.degToRad( sky.moonElevation ) ) * look.nightAmbientShare / Math.PI
 			* duskForce( 'nightAmbient', nightAmbientShare( sky.dayWindows, celestial.elevation, sky.rising, cloud ) );
-		sky.displayNightAmbient.value.setRGB( NIGHT_AMBIENT_HUE[ 0 ] * floor, NIGHT_AMBIENT_HUE[ 1 ] * floor, NIGHT_AMBIENT_HUE[ 2 ] * floor );
+		sky.displayNightAmbient.value.setRGB( look.nightAmbientHue[ 0 ] * floor, look.nightAmbientHue[ 1 ] * floor, look.nightAmbientHue[ 2 ] * floor );
 		sky.grade.exposure = celestial.exposure;
 		sky.grade.daylight = celestial.daylight;
-		sky.islandGain.value = islandSky( celestial.elevation, sky.rising, sky.islandTint.value, cloud );
+		sky.islandGain.value = islandSky( look, celestial.elevation, sky.rising, sky.islandTint.value, cloud );
 		const direct = weather?.directVisibility ?? 1;
-		const shade = clearShade( celestial.elevation, direct ), low = lowSun( celestial.elevation, direct );
+		const shade = clearShade( look, celestial.elevation, direct ), low = lowSun( look, celestial.elevation, direct );
 		const tint = sky.islandTint.value;
 		if ( shade > 0 ) {
 
 			sky.islandGain.value *= 1 + shade;
-			tint.set( CLEAR_SHADE_TINT[ 0 ], CLEAR_SHADE_TINT[ 1 ], CLEAR_SHADE_TINT[ 2 ], CLEAR_SHADE_TINT[ 3 ] * shade );
+			tint.set( look.clearShadeTint[ 0 ], look.clearShadeTint[ 1 ], look.clearShadeTint[ 2 ], look.clearShadeTint[ 3 ] * shade );
 
 		}
-		if ( low > 0 ) tint.set( tint.x + ( LOW_SUN_TINT[ 0 ] - tint.x ) * low, tint.y + ( LOW_SUN_TINT[ 1 ] - tint.y ) * low,
-			tint.z + ( LOW_SUN_TINT[ 2 ] - tint.z ) * low, Math.max( tint.w, LOW_SUN.amount * low ) );
+		if ( low > 0 ) tint.set( tint.x + ( look.lowSunTint[ 0 ] - tint.x ) * low, tint.y + ( look.lowSunTint[ 1 ] - tint.y ) * low,
+			tint.z + ( look.lowSunTint[ 2 ] - tint.z ) * low, Math.max( tint.w, look.lowSun.amount * low ) );
 		const clouded = skyMix ? cloudedHighSun( celestial.elevation, skyMix, 12 ) : 0;
-		if ( clouded > 0 ) tint.set( CLOUD_LIGHT_TINT[ 0 ], CLOUD_LIGHT_TINT[ 1 ], CLOUD_LIGHT_TINT[ 2 ], CLOUD_LIGHT_TINT[ 3 ] * clouded );
+		if ( clouded > 0 ) tint.set( look.cloudLightTint[ 0 ], look.cloudLightTint[ 1 ], look.cloudLightTint[ 2 ], look.cloudLightTint[ 3 ] * clouded );
 
 	} else {
 
@@ -316,12 +318,12 @@ export function trackSky( sky: Sky, celestial: DayCycleSnapshot | null, weather:
 	sky.sunColor.multiplyScalar( directVisibility );
 	sky.keyColor.multiplyScalar( directVisibility );
 	// Under a deck the sun's light is whiter than a clear day's at the same height, part of it
-	// scattered in the cloud: the key keeps its luminance and moves KEY_DECK_WHITE of the way to
+	// scattered in the cloud: the key keeps its luminance and moves `keyDeckWhite` of the way to
 	// white under overcast, where the sun still shines through, and all the way under rain's
 	// closed deck (a rainy evening's light is not a sunset's).
 	const keyLuminance = sky.keyColor.r * 0.2126 + sky.keyColor.g * 0.7152 + sky.keyColor.b * 0.0722;
 	const rain = weather?.rain ?? 0;
-	sky.keyColor.lerp( _white.setScalar( keyLuminance ), overcast * ( KEY_DECK_WHITE + ( 1 - KEY_DECK_WHITE ) * rain ) );
+	sky.keyColor.lerp( _white.setScalar( keyLuminance ), overcast * ( look.keyDeckWhite + ( 1 - look.keyDeckWhite ) * rain ) );
 	sky.solarIlluminance.multiplyScalar( directVisibility );
 	moonColor.multiplyScalar( directVisibility );
 	sky.night.starVisibility.value *= ambientGain;
@@ -330,7 +332,7 @@ export function trackSky( sky: Sky, celestial: DayCycleSnapshot | null, weather:
 	sky.displaySunDir.value.copy( sky.sunDir );
 	sky.displaySolarIlluminance.value.copy( sky.solarIlluminance );
 	sky.displayAmbientGain.value = ambientGain;
-	// the key's floor under cloud (KEY_THROUGH_CLOUD), after the clouds' shell and density are set
+	// the key's floor under cloud (`keyThroughCloud`), after the clouds' shell and density are set
 	const overcastShare = skyMix ? skyMix[ 3 ] ?? 0 : 0;
 	const keyLight = sky.keyColorAboveClouds.r * 0.2126 + sky.keyColorAboveClouds.g * 0.7152 + sky.keyColorAboveClouds.b * 0.0722;
 	const moonLight = sky.moonKeyAbove.r * 0.2126 + sky.moonKeyAbove.g * 0.7152 + sky.moonKeyAbove.b * 0.0722;
@@ -343,7 +345,7 @@ export function trackSky( sky: Sky, celestial: DayCycleSnapshot | null, weather:
 	const floorSun = 1 - overcastShare * sunShare * ( 1 - overcastFloorSun( sky.elevation ) );
 	sky.castShadow.value = weather?.castShadow ?? 1;
 	trackClouds( sky, celestial, weather, coverage, overcast, illuminance, skyMix );
-	const keyFloor = Math.min( KEY_THROUGH_CLOUD() * sky.clouds.layerTransmission(), 1 ) * floorSun;
+	const keyFloor = Math.min( look.keyThroughCloud() * sky.clouds.layerTransmission(), 1 ) * floorSun;
 	sky.keyCloudFloor.value = keyFloor;
 	sky.keyFloorUnderDeck = keyFloor * overcastShare;
 	// (`flags=streaks:<n>` scales the thin layer's amount, 0 turns it off)
@@ -371,16 +373,16 @@ export function trackSky( sky: Sky, celestial: DayCycleSnapshot | null, weather:
 
 function trackClouds( sky: Sky, celestial: DayCycleSnapshot | null, weather: Readonly<WeatherState> | null, coverage: number, overcast: number, illuminance: number, skyMix: readonly number[] | null ): void {
 
-	const clouds = sky.clouds;
+	const look = sky.look, clouds = sky.clouds;
 	clouds.coverage.value = coverage;
 	clouds.density.value = weather?.density ?? 1;
 	// The shadow's share of the deck by the weather's shares of the four skies, or the weather's
 	// own without them: a weather change or a retune rebakes the whole map (`bake`), a front
 	// under way refreshes it row by row.
-	clouds.shadowDensity.value = skyMix ? SHADOW_DENSITY.reduce( ( sum, k, s ) => sum + ( skyMix[ s ] ?? 0 ) * k.shadowDensity, 0 ) : weather?.shadowDensity ?? 1;
+	clouds.shadowDensity.value = skyMix ? look.shadowDensity.reduce( ( sum, k, s ) => sum + ( skyMix[ s ] ?? 0 ) * k.shadowDensity, 0 ) : weather?.shadowDensity ?? 1;
 	// The shell by the same shares (the high one's without them): every reader follows its
 	// uniforms, the march, the shadow, the rain, the haze's shafts and the lightning.
-	const row = ( key: keyof CloudSky ) => skyMix ? CLOUD_SKIES.reduce( ( sum, k, s ) => sum + ( skyMix[ s ] ?? 0 ) * k[ key ], 0 ) : CLOUD_SKIES[ 0 ][ key ];
+	const row = ( key: keyof CloudSky ) => skyMix ? look.cloudSkies.reduce( ( sum, k, s ) => sum + ( skyMix[ s ] ?? 0 ) * k[ key ], 0 ) : look.cloudSkies[ 0 ][ key ];
 	const base = row( 'base' );
 	clouds.setShell( base, row( 'top' ) - base, skyMix ? cloudedShare( skyMix ) : 0 );
 	clouds.cloudType.value = row( 'type' );
@@ -480,10 +482,10 @@ function trackClouds( sky: Sky, celestial: DayCycleSnapshot | null, weather: Rea
 	// The moon lights the clouds as the sun does: its light above the air through the air down to
 	// the same height (`sunlightAt` toward the moon, in its colour), the weather's day sky at the
 	// moon's height and the moon's share of the clouds' light, at the island's moonlight's hue
-	// (MOON_KEY times `moonHue`, at unit luminance) and no other.
+	// (`moonKey` times `moonHue`, at unit luminance) and no other.
 	const moonCloud = _cloudMoon.setRGB( 0, 0, 0 );
-	if ( celestial ) moonCloud.setRGB( MOON_KEY[ 0 ], MOON_KEY[ 1 ], MOON_KEY[ 2 ] ).multiply( moonHue( _moonHue ) )
-		.multiplyScalar( sky.moonAbove * moonGain * sky.daySkyMoon / MOON_KEY_LUMINANCE ).multiply( sky.atmosphere.sunlightAt( celestial.moonDir, sunHeight ) );
+	if ( celestial ) moonCloud.setRGB( look.moonKey.colour[ 0 ], look.moonKey.colour[ 1 ], look.moonKey.colour[ 2 ] ).multiply( moonHue( look, _moonHue ) )
+		.multiplyScalar( sky.moonAbove * moonGain * sky.daySkyMoon / look.moonKeyLuminance ).multiply( sky.atmosphere.sunlightAt( celestial.moonDir, sunHeight ) );
 	const moonY = luma( moonCloud );
 	// The luminance of that light, for the stores' powers of two (PreExposure.ts `storeStops`),
 	// the sun's before the day sky's gain: under a closed deck what a bake holds brightest is the
@@ -491,9 +493,9 @@ function trackClouds( sky: Sky, celestial: DayCycleSnapshot | null, weather: Rea
 	// the moon each store's range follows the weather's clouds (`storeNight`).
 	clouds.storeLight = ( sunUp ? sunY : 0 ) + moonY;
 	const moonPart = clouds.storeLight > 0 ? moonY / clouds.storeLight : 0;
-	clouds.storeStops = storeStops( clouds.storeLight, moonPart, storeNight( 'dome', skyMix ) );
-	sky.layerStops = storeStops( clouds.storeLight, moonPart, storeNight( 'layer', skyMix ) );
-	sky.panoramaStops = storeStops( clouds.storeLight, moonPart, storeNight( 'panorama', skyMix ) );
+	clouds.storeStops = storeStops( clouds.storeLight, moonPart, storeNight( look, 'dome', skyMix ) );
+	sky.layerStops = storeStops( clouds.storeLight, moonPart, storeNight( look, 'layer', skyMix ) );
+	sky.panoramaStops = storeStops( clouds.storeLight, moonPart, storeNight( look, 'panorama', skyMix ) );
 	const light = clouds.lightColor.value;
 	light.add( moonCloud );
 	// (the low sun's lift of the beam, as `directGain`'s)
@@ -502,9 +504,9 @@ function trackClouds( sky: Sky, celestial: DayCycleSnapshot | null, weather: Rea
 	// toward the sun at the sun's elevation there, and loses it as the disc sinks under the
 	// layer's own horizon there (Clouds.ts `streaksAt`), so no one moment ends the whole layer's.
 	clouds.streakSunColour.value.copy( sky.sunTint ).multiplyScalar( illuminance * beam * sky.daySky );
-	const { r: dr, g: dg, b: db } = keyed( STREAK_DIRECT, elevation, moonShare, _streakKey, cloud, rising );
+	const { r: dr, g: dg, b: db } = keyed( look.streakDirect, elevation, moonShare, _streakKey, cloud, rising );
 	clouds.keyDirect.value.setRGB( dr, dg, db );
-	const { r: ar, g: ag, b: ab } = keyed( STREAK_AMBIENT, elevation, moonShare, _streakKey, cloud, rising );
+	const { r: ar, g: ag, b: ab } = keyed( look.streakAmbient, elevation, moonShare, _streakKey, cloud, rising );
 	clouds.keyAmbient.value.setRGB( ar, ag, ab );
 	// (the moon's beam lifted as the sun's is, at the moon's height)
 	clouds.moonLight.value = moonY * ( 1 + 0.7 * lowSunOf( sky.moonElevation, coverage ) );

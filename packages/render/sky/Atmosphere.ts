@@ -186,7 +186,7 @@ const RAYLEIGH = [ 5.802e-3, 13.558e-3, 33.1e-3 ] as const;
 // to 2.6 - 2.85 and the green falls to 1.65 - 1.58; a black body of 6504 K and a temperature of
 // 293 K move them less. The column (OZONE_COLUMN, `ozoneScale`, in units of 300 DU) sets the
 // twilight sky's hue by elevation, here under the twilight's near-neutral warm sky light (Sky.ts
-// SKY_LIGHT, `dusk`): at a column of 0.6 the bare sky with the sun 5.6 under the horizon goes
+// `look.skyLight`, `dusk`): at a column of 0.6 the bare sky with the sun 5.6 under the horizon goes
 // from orange at the glow (Oklab hue 59 at 1 degree) through yellow to near grey from 20 degrees
 // up (chroma under 0.007 to the zenith); at 1 it turned blue from 12 degrees up (chroma 0.031 at
 // 20 degrees), at 0.5 a yellow grey (0.010). The day's sky hardly moves (red over green 0.02 - 0.04

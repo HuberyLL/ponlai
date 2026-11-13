@@ -2,8 +2,9 @@ import type { DayKey } from '../../render/index.ts';
 import type { IslandSkyRow, Rgb, SkyLook } from '../../render/setup.ts';
 
 // The island's sky look (packages/island/look/: the island's numbers for the renderer's look tables,
-// look/Look.ts; look/SkyLook.ts reads these, and its header says what each table is). Upper-case
-// names are look/SkyLook.ts's exports; a name in backticks with no file is sky/Sky.ts's.
+// look/Look.ts; look/SkyLook.ts makes the sky's tables from these, and its header says what each
+// table is). Upper-case names are this file's; a name in backticks with no file is sky/Sky.ts's or
+// a field of the sky's tables (look/SkyLook.ts `SkyTables`).
 
 // Art direction: the island stays readable after sunset. Through the minutes after it the sun's
 // skylight has faded while the moon's key and the night ambient are not yet in, which left the

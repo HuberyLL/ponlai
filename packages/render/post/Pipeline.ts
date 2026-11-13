@@ -369,7 +369,7 @@ export interface PipelineSettings {
 // the exposed luminance, so the night takes it as the day), the contrast round mid grey softens by
 // a tenth and the bloom strengthens by a quarter. It lifts no black: a constant fill in the grade
 // greyed everything below mid grey alike and veiled the frame; the shade's openness comes from the
-// sky light the island takes instead (look/SkyLook.ts CLEAR_SHADE). 0.5 of the full step was chosen over 0
+// sky light the island takes instead (look/SkyLook.ts `clearShade`). 0.5 of the full step was chosen over 0
 // and 1 by eye. Off by default since (docs/explanation/art-direction.md, The look: the light keeps the sun's
 // and the sky's own balance): with the clear shade it took the light's direction out of the
 // meadow. `flags=tone:<t>` sets it at load for A/Bs.

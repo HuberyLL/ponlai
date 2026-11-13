@@ -12,7 +12,7 @@ import type { AmbientColumn, AmbientKnobs, AmbientLook, AmbientRowLook } from '.
 // installed look as a module loads, so two made from two tables hold their own numbers
 // (tools/verify-look-params.mjs) and this module holds none at module level: only the knobs' and
 // the columns' names and the knobs at no grade, which no look changes. The land's floor under
-// cloud is the sky's (look/SkyLook.ts KEY_THROUGH_CLOUD). Each module's header says what its
+// cloud is the sky's (look/SkyLook.ts `keyThroughCloud`). Each module's header says what its
 // numbers do on screen.
 // - The tables register their tunables (debug/Tune.ts) as they are created, under the names they
 //   always had (`lighting.grade.sunBounce`, `lighting.relight.overcastLand`). The tune table is one

@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import type { DayWindows } from '../look/DayLook.ts';
 import { duskForce, duskForced, duskIn, moonKeyShare } from '../sky/DayCycle.ts';
 import { MIX_SKIES, WEATHER_PRESETS, cloudedShare, deckLight, overcastDeckLight } from '../sky/Weather.ts';
-import { cloudBase } from '../look/SkyLook.ts';
+import { cloudBase, type SkyTables } from '../look/SkyLook.ts';
 import { FOG_NOISE } from './FogNoise.ts';
 import { blankKey, type FullKey, type HazeKey, type HazeKeyRows, type HazeTables } from '../look/HazeLook.ts';
 
@@ -52,7 +52,8 @@ const _key = blankKey();
 
 /** The haze's key from the haze's `tables` (look/HazeLook.ts `createHazeTables`) under the day's
  * `windows` (look/DayLook.ts `createDayWindows`: the night key's depth through a clear evening and
- * the moon's key under cloud) at the sun's `elevation` (degrees),
+ * the moon's key under cloud), with the sky's tables `sky` (look/SkyLook.ts `createSkyTables`: the
+ * clouds' base, where a deck ends the aerosol) at the sun's `elevation` (degrees),
  * `rising` or setting, under the weather's
  * blend of the four skies, its wind (m/s), its rain (0 - 1), the sea fog's share (0 - 1,
  * its switch) and the parked fog weather's share of the sky (0 - 1: Weather.ts `origin` and
@@ -65,7 +66,7 @@ const _key = blankKey();
  * overcast's column alone, it is exact at rest and on a front between the fog and the overcast
  * sky, not on one between the fog and a clear, fair or cloudy sky.
  * Writes into `out`. */
-export function hazeKeyAt( tables: HazeTables, windows: DayWindows, elevation: number, rising: boolean, skyMix: readonly number[], wind: number, rain: number, dayFog: number, seaFog: number, fogWeather: number, target: HazeKey ): HazeKey {
+export function hazeKeyAt( tables: HazeTables, windows: DayWindows, sky: SkyTables, elevation: number, rising: boolean, skyMix: readonly number[], wind: number, rain: number, dayFog: number, seaFog: number, fogWeather: number, target: HazeKey ): HazeKey {
 
 	const out = _key;
 	keyAlong( tables, windows, rising ? tables.rising : tables.setting, elevation, out );
@@ -96,7 +97,7 @@ export function hazeKeyAt( tables: HazeTables, windows: DayWindows, elevation: n
 		width += w * tables.skyScale[ s ].widthScale;
 		haze += w * tables.skyScale[ s ].haze / WEATHER_PRESETS[ MIX_SKIES[ s ] ].haze;
 		sunRayleigh += w * tables.sunRayleigh[ s ];
-		if ( tables.decked[ s ] ) inverseTop += w / cloudBase( s );
+		if ( tables.decked[ s ] ) inverseTop += w / cloudBase( sky, s );
 
 	}
 	out.desaturate = 1 - ( 1 - out.desaturate ) * keep;

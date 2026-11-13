@@ -148,7 +148,7 @@ import { createDisplayTables } from '../packages/render/look/DisplayLook.ts';
 import { hasKeys, keyed } from '../packages/render/post/DayKeys.ts';
 import { gradeOf } from '../packages/render/post/GradeLut.ts';
 import { HAZE_KEY_NAMES } from '../packages/render/look/Look.ts';
-import { cloudBase } from '../packages/render/look/SkyLook.ts';
+import { cloudBase, createSkyTables } from '../packages/render/look/SkyLook.ts';
 import { MIX_SKIES, WEATHER_PRESETS } from '../packages/render/sky/Weather.ts';
 import { FOG_NOISE } from '../packages/render/weather/FogNoise.ts';
 import * as THREE from 'three/webgpu';
@@ -559,6 +559,9 @@ assert.ok( [ 0.5, 3, 5.5 ].every( ( e ) => islandAmbient.lift( e ) !== e ), 'the
 
 console.log( `Ambient light: three sets from three tables, each its own (${ islandAmbientBefore.length } readings), the island's unmoved by the others, the changed copy off the island's in every knob, gain and the lift, the neutral set lifting nothing, the lifted key on its own lift (${ liftedKeys } keys): passed.` );
 
+// the island's sky tables, for the haze's key, which reads their clouds' base
+const islandSkyTables = createSkyTables( ISLAND_LOOK.sky );
+
 // ---- the haze's look
 
 // the island's haze table changed: every field of every key moved, every row a degree later, the
@@ -616,8 +619,8 @@ function ownHaze( tables, table, name ) {
 
 const HAZE_WINDOWS = createDayWindows( ISLAND_LOOK.day );
 const CLEAR = [ 1, 0, 0, 0 ];
-const keyAt = ( tables, elevation, rising, sky = CLEAR, wind = 0, rain = 0, dayFog = 1, seaFog = 0, fogWeather = 0 ) =>
-	hazeKeyAt( tables, HAZE_WINDOWS, elevation, rising, sky, wind, rain, dayFog, seaFog, fogWeather, {} );
+const keyAt = ( tables, elevation, rising, sky = CLEAR, wind = 0, rain = 0, dayFog = 1, seaFog = 0, fogWeather = 0, skyTables = islandSkyTables ) =>
+	hazeKeyAt( tables, HAZE_WINDOWS, skyTables, elevation, rising, sky, wind, rain, dayFog, seaFog, fogWeather, {} );
 const nearHaze = ( actual, expected, what ) => near( actual, expected, what, 1e-12 * Math.max( 1, Math.abs( expected ) ) );
 
 // the haze's key reads the tables it is given: a row's key under a clear sky alone, the fog layer
@@ -641,7 +644,7 @@ function hazeKeyReadsOwn( tables, name ) {
 			desaturate: 1 - ( 1 - k.desaturate ) * tables.keep[ 0 ], gain: tables.gain[ 0 ], mist: k.mist,
 			sunRayleigh: 1 - ( 1 - k.sunRayleigh ) * ( 1 - tables.sunRayleigh[ 0 ] ), rayleighWeight: k.rayleighWeight, mieWeight: k.mieWeight, skyDepth: k.skyDepth,
 			aerosolShare: shape.aerosolShare * scale.aerosolScale, aerosolHeight: shape.aerosolHeight * scale.aerosolHeight,
-			aerosolTop: tables.decked[ 0 ] ? cloudBase( 0 ) : Infinity,
+			aerosolTop: tables.decked[ 0 ] ? cloudBase( islandSkyTables, 0 ) : Infinity,
 			top: shape.top * scale.topScale * ( 1 - fog.fogLayer ) + fog.fogTop * fog.fogLayer,
 			width: shape.width * scale.widthScale * ( 1 - fog.fogLayer ) + fog.fogWidth * fog.fogLayer,
 			fogLayer: fog.fogLayer, droplet: fog.fogLayer, neutral: fog.neutral, scatter: fog.scatter, fogTop: fog.fogTop, fogWidth: fog.fogWidth, visibility: fog.visibility,

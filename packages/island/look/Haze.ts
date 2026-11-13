@@ -46,7 +46,7 @@ import type { FullKey, HazeLook } from '../../render/setup.ts';
 //     low sky lit by the haze layer itself. The weather's scales leave it as it is.
 //   - sigma: the medium's spectral extinction, each band's weight on the density (VolumetricHaze's
 //     header), the weather's `haze` the blue's. The day's and the golden hour's were set with
-//     the sky's light (look/SkyLook.ts SKY_LIGHT): by day red : green : blue = 0.36 : 0.53 : 1.02, at the
+//     the sky's light (look/SkyLook.ts `skyLight`): by day red : green : blue = 0.36 : 0.53 : 1.02, at the
 //     golden hour 0.41 : 0.53 : 0.83, the air losing its blue first, and by night 0.46 : 0.53 : 0.69.
 //     The hours between take these by the sun's elevation (`twilight`): the mist at sunrise the
 //     golden hour's (it stands within a degree of the golden key's elevations), the morning the
