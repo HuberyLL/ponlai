@@ -28,7 +28,6 @@ Facts to look up.
   probes, the GPU lock, frame profiling and the docs checks.
 - [Look values](reference/look-values.md): the measured values of the island's look (light and
   shade, exposure, water).
-- [Code map](reference/code-map.md): where each part of the code lives, a line per file.
 - [Architecture rules](reference/architecture-rules.md): the rules across the layers in full, each
   with why it holds, what enforces it and the mistake it came from.
 - [three.js and WebGPU behaviour](reference/three-behaviour.md): what three r186, WebGPU and TSL

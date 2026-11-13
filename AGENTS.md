@@ -16,10 +16,11 @@ Detail lives where it is owned.
   module, and update it with a change to the module's behaviour.
 - `ARCHITECTURE.md` is the structure (layers, what each owns, flows, the rules across them, why):
   read it before a structural change; update it when a change adds a layer, moves what one owns or
-  changes a flow. Files: `docs/reference/code-map.md`. Art decisions go to
-  `docs/explanation/art-direction.md`, measured look values to `docs/reference/look-values.md`, URL
-  options to `docs/reference/url-options.md`, tool manuals to `docs/reference/tools.md`; this file
-  changes with a rule every change follows, the reading index or the folders.
+  changes a flow. The rules' full text: `docs/reference/architecture-rules.md`. Files:
+  `node tools/repo/code-map.mjs`. Art decisions go to `docs/explanation/art-direction.md`, measured
+  look values to `docs/reference/look-values.md`, URL options to `docs/reference/url-options.md`,
+  tool manuals to `docs/reference/tools.md`; this file changes with a rule every change follows, the
+  reading index or the folders.
 - The docs follow Diátaxis (<https://diataxis.fr>), a page one kind, in its folder of `docs/`:
   tutorials (`docs/tutorials/`, none yet) for a first success, how-to guides (`docs/how-to/`) for
   one task's steps, reference (`docs/reference/`, and a module's header beside its code) for facts,
@@ -170,7 +171,7 @@ meets it.
   game UI: `docs/explanation/ui.md`. The look: `docs/explanation/art-direction.md`,
   `docs/reference/look-values.md`.
 - A tool: `docs/how-to/write-a-tool.md`. three.js: `docs/how-to/upgrade-three.md`. A commit:
-  `docs/how-to/check-a-change.md`. A file: `docs/reference/code-map.md`.
+  `docs/how-to/check-a-change.md`. A file: `node tools/repo/code-map.mjs`.
 
 ## Map
 
@@ -186,4 +187,4 @@ meets it.
 - `skills/`: methods as skills (linked from `.claude/skills/`); a skill's facts for this project:
   `docs/bindings/<skill-name>.md`.
 - `docs/`: the documentation by kind (`docs/README.md`). `public/` (git-ignored): the assets. File
-  by file: `docs/reference/code-map.md`.
+  by file: `node tools/repo/code-map.mjs`.
