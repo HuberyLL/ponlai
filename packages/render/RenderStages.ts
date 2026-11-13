@@ -37,6 +37,7 @@ import { settings as params, numberSetting, type SettingsQuery } from './Setting
 import * as THREE from 'three/webgpu';
 import { Sky } from './sky/Sky.ts';
 import { createExposure, type ExposureTables } from './look/ExposureLook.ts';
+import type { Look } from './look/Look.ts';
 import { DAY_PRESETS, type DayPreset, DayCycle, sunRising, duskForce, nightAmbientShare } from './sky/DayCycle.ts';
 import { isParkedWeather, WEATHER_PRESETS, type WeatherName, isWindLevel, type WindLevel, Weather, type TunedField, type WeatherState, deckLight, cloudedShare, type WindChoice } from './sky/Weather.ts';
 import type { QualityProfile, QualityTier } from './Quality.ts';
@@ -745,8 +746,10 @@ export function publishSkyLight( render: RenderParts ) {
 
 }
 
-/** The sea's waves and detail, then the frame's passes with the passes the entry adds. */
-export function createSeaAndPipeline( render: RenderParts, { rainCeiling, extraPasses }: { rainCeiling: number; extraPasses: readonly ExtraPass[] } ) {
+/** The sea's waves and detail, then the frame's passes with the passes the entry adds. `look`: the
+ * look's tables the sea takes, its detail's strengths and its distant swell (look/Look.ts
+ * `SeaLook`). */
+export function createSeaAndPipeline( render: RenderParts, { rainCeiling, extraPasses, look }: { rainCeiling: number; extraPasses: readonly ExtraPass[]; look: Pick<Look, 'sea'> } ) {
 
 	const { profiler, DEBUG, quality, renderer, scene, waterScene, rainScene, afterScene, camera, sky, wind, sun, sunShadow } = render;
 	// tidewater's two wave systems at the prevailing heading (Wind.ts `spectrumWind`) and tidewater's
@@ -755,14 +758,14 @@ export function createSeaAndPipeline( render: RenderParts, { rainCeiling, extraP
 	// wind sea turns with the heading, the swell keeps the prevailing one).
 	const sea = seaState( wind.spectrumWind.windSpeed );
 	const fft = new OceanFFT( renderer, {
-		...wind.spectrumWind, fetch: sea.fetch, choppiness: sea.choppiness, distantSwell: { scale: sea.swell },
+		...wind.spectrumWind, fetch: sea.fetch, choppiness: sea.choppiness, distantSwell: { ...look.sea.swell, scale: sea.swell },
 		anisotropy: quality.water.fftAnisotropy,
 	} );
 	render.fft = fft;
 	const waveMaps = new WaveMaps( renderer, fft );
 	render.waveMaps = waveMaps;
 	// the sea's gusts, slicks and windrows (the water's roughness)
-	render.seaDetail = new SeaDetail( shared );
+	render.seaDetail = new SeaDetail( shared, look.sea.detail );
 	// the veil's shells and the sea's ripple layers are built into the rain's and the water's materials
 	setRainShading( quality.rainShading );
 	render.rain = new Rain( { count: render.runtimeQuality.rainDrops, ceiling: rainCeiling } );

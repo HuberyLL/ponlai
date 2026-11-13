@@ -102,7 +102,7 @@ const rainCeiling = ISLAND_TOP + 4;
 // exists (the test mode leaves them out): their step is a pass the pipeline declares from this list.
 island.fallingLeaves = null as FallingLeaves | null;
 const extraPasses: ExtraPass[] = [ leavesPass( () => island.fallingLeaves ) ];
-createSeaAndPipeline( render, { rainCeiling, extraPasses } );
+createSeaAndPipeline( render, { rainCeiling, extraPasses, look: PAGE_LOOK } );
 island.worldCache = await awaitWorld( render, island, { worldJob } );
 createLand( render, island, { landOptions } );
 const bounceGround = islandBounceGround( island.fields.beds, island.textures.soil );

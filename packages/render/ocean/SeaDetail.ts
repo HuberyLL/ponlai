@@ -10,7 +10,7 @@ import { mulberry32 } from '../util/noise.ts';
 import { REFERENCE_SPEED, gustAt } from '../weather/Wind.ts';
 import type { Bounds } from '../RenderTypes.ts';
 import type { Shared } from '../shared.ts';
-import { SEA_DETAIL } from '../look/SeaLook.ts';
+import type { SeaLook } from '../look/Look.ts';
 
 // Large-scale variation of the sea surface in world space, which never repeats with the FFT's tiles
 // (tidewater's SeaDetail, 4811ba4):
@@ -46,7 +46,9 @@ import { SEA_DETAIL } from '../look/SeaLook.ts';
 // scene clock and a paused frame repeats. The noise is a tileable smooth fbm in four channels, made
 // once on the CPU with fixed seeds (256 texels, half float, bilinear, repeating; low frequency, so
 // no mipmaps).
-// The gusts', slicks' and windrows' strengths: look/SeaLook.ts SEA_DETAIL.
+// The gusts', slicks' and windrows' strengths are the look's (look/Look.ts `SeaLook` `detail`):
+// the constructor takes them, as the renderer's stage hands them over (RenderStages.ts
+// `createSeaAndPipeline`), so two made from two tables hold their own and this module holds none.
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -65,9 +67,9 @@ const ISLAND_FAR = 220;
 export class SeaDetail {
 
 	readonly texture: THREE.DataTexture;
-	readonly gustAmount = uniform( SEA_DETAIL.gust );
-	readonly slickAmount = uniform( SEA_DETAIL.slick );
-	readonly streakAmount = uniform( SEA_DETAIL.streak );
+	readonly gustAmount: THREE.UniformNode<'float', number>;
+	readonly slickAmount: THREE.UniformNode<'float', number>;
+	readonly streakAmount: THREE.UniformNode<'float', number>;
 	/** ( rough, gust, slick, streak ) at a world xz (explicit level: callable in branches), given
 	 * the island's gust there (`islandGust`; read here when left out). Inlined where it is called:
 	 * as a layout function reading this module's uniforms and texture, r186 emitted it with the
@@ -79,11 +81,17 @@ export class SeaDetail {
 	 * displacement and the scene time (the wind probe evaluates it at other steps). */
 	readonly gustOf: ( xz: V2, islandGust: F, displacement: V2, time: F ) => F;
 	// the land's box (setLand): its centre and half extents
-	private landCentre = uniform( new THREE.Vector2() );
-	private landHalf = uniform( new THREE.Vector2() );
+	private landCentre: THREE.UniformNode<'vec2', THREE.Vector2>;
+	private landHalf: THREE.UniformNode<'vec2', THREE.Vector2>;
 
-	constructor( shared: Shared ) {
+	/** `detail`: the look's strengths of the gusts, the slicks and the windrows. */
+	constructor( shared: Shared, detail: SeaLook[ 'detail' ] ) {
 
+		this.gustAmount = uniform( detail.gust );
+		this.slickAmount = uniform( detail.slick );
+		this.streakAmount = uniform( detail.streak );
+		this.landCentre = uniform( new THREE.Vector2() );
+		this.landHalf = uniform( new THREE.Vector2() );
 		this.texture = makeNoiseTexture( NOISE_SIZE );
 		const noise = ( uv: V2 ) => texture( this.texture, uv ).level( float( 0 ) );
 		const wind = shared.wind;

@@ -37,7 +37,7 @@ export type Span = readonly [ number, number ];
 export type Rgb = { r: number; g: number; b: number };
 type Triple = readonly [ number, number, number ];
 
-// ---- the sea (SeaLook.ts)
+// ---- the sea (RenderStages.ts `createSeaAndPipeline`, read by ocean/SeaDetail.ts and ocean/OceanFFT.ts)
 
 export interface SeaLook {
 	/** The strengths of the sea's large-scale detail: the gusts' contrast, the slicks, the windrows. */

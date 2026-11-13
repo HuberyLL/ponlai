@@ -92,7 +92,7 @@ publishSkyLight( render );
 const { ground } = testScene;
 const seaLevel = shared.waterLevel.value;
 // the rain's ceiling: over the tallest thing a scene stands on its ground, or on the sea
-createSeaAndPipeline( render, { rainCeiling: ( ground.kind === 'land' ? ground.height : seaLevel ) + 8, extraPasses: [] } );
+createSeaAndPipeline( render, { rainCeiling: ( ground.kind === 'land' ? ground.height : seaLevel ) + 8, extraPasses: [], look: installedLook() } );
 
 // ------------------------------------------------------------------ the neutral world
 
