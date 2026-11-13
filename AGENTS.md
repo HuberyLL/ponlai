@@ -221,10 +221,12 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   renderer's neutral set, drawn with where nobody installed one (`NeutralLook.ts`), and per system
   the module that reads the installed numbers as it loads, with their tunables and the CPU code
   that reads only them; the shaders and the methods that take them stay in their modules. The
-  sky's (`SkyLook.ts`), the day's windows and exposure keys (`DayLook.ts`), the ambient grade and
-  the low key's lift (`AmbientLook.ts`), the haze's keys (`HazeLook.ts`), the exposure's keys
-  (`ExposureLook.ts`), the display's: contrast, desaturation, white balance, tone curve, base
-  grade, bloom and the rods' colour (`DisplayLook.ts`), the sea's detail and distant swell
+  sky's (`SkyLook.ts`), the day's windows (`DayLook.ts`), the ambient grade and the low key's lift
+  (`AmbientLook.ts`), the haze's keys (`HazeLook.ts`), the exposure (`ExposureLook.ts`: its keys
+  and base exposure, made from the tables the sky stage hands `createExposure` rather than read as
+  it loads; `tools/verify-exposure-look.mjs`), the display's: contrast, desaturation, white
+  balance, tone curve, base grade, bloom and the rods' colour (`DisplayLook.ts`), the sea's detail
+  and distant swell
   (`SeaLook.ts`), the ambient occlusion's floor (`OcclusionLook.ts`), the local lights' gain
   (`LocalLightsLook.ts`), the meadow canopy's media (`MeadowCanopyLook.ts`) and the plants' answer
   to the wind (`WindLook.ts`).
