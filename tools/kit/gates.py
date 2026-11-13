@@ -29,9 +29,8 @@ Options:
     --json <file>         the counts per gate with the failing items
     --title <text>        the report's title; default the label
 
-Gate ids: a verdict's gate is the id of the thresholds rule that judged it, the first found of
-"<clip>@<view>/<crop>/<metric>", "<clip>/<crop>/<metric>", "<clip>@<view>/*/<metric>",
-"<clip>/*/<metric>", "*/<crop>/<metric>", "*/*/<metric>" (`gt` rules for "gt:" verdicts); "?" when
+Gate ids: a verdict's gate is the id of the thresholds rule that judged it, found as clip-metrics
+finds it (tools/kit/threshold_rules.py gives the order; `gt` rules for "gt:" verdicts); "?" when
 none matches. Gates print in the thresholds' `gates` order.
 
 The policy (JSON):
@@ -92,6 +91,8 @@ import os  # noqa: E402
 import subprocess  # noqa: E402
 import sys  # noqa: E402
 
+from threshold_rules import find_rule  # noqa: E402
+
 HERE = os.path.dirname( os.path.abspath( __file__ ) )
 ROOT = os.path.dirname( os.path.dirname( HERE ) )
 # where the project's configuration says the views' and clips' tables are (its `tables`)
@@ -109,10 +110,9 @@ def node_list( table, group ):
 
 def gate_of( rules, clip, view, crop, metric ):
 
-	for c in ( f'{ clip }@{ view }/{ crop }/{ metric }', f'{ clip }/{ crop }/{ metric }', f'{ clip }@{ view }/*/{ metric }', f'{ clip }/*/{ metric }', f'*/{ crop }/{ metric }', f'*/*/{ metric }' ):
-		if c in rules:
-			return rules[ c ].get( 'id' ), rules[ c ]
-	return None, None
+	# the rule clip-metrics judged by, found the same way
+	rule = find_rule( rules, clip, view, crop, metric )
+	return ( rule.get( 'id' ), rule ) if rule is not None else ( None, None )
 
 
 def get( d, k ):

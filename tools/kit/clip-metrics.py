@@ -104,6 +104,7 @@ import multiprocessing  # noqa: E402
 import os  # noqa: E402
 import sys  # noqa: E402
 from concurrent.futures import ProcessPoolExecutor  # noqa: E402
+from threshold_rules import find_rule  # noqa: E402
 
 # The application scheduling policy on macOS (tools/kit/qos.mjs says why): the main process
 # re-executes itself in place under taskpolicy -a; the workers are new processes, which do not
@@ -341,7 +342,7 @@ def meadow_region( gt_rgb, m, away=None ):
 
 
 # the display S-curve's contrast of the default look (Pipeline.ts, neutral-hue by day), undone with
-# the sRGB transfer for the meadow's linear statistics (D4: linear luminance and chroma)
+# the sRGB transfer for the meadow's linear statistics (linear luminance and chroma)
 LOOK_CONTRAST = 0.04
 
 
@@ -1054,15 +1055,6 @@ def check_thresholds( rules, gt=False ):
 			raise SystemExit( f'thresholds: { key } has unknown keys { sorted( unknown ) }' )
 
 
-def find_rule( rules, scopes, crop, name ):
-
-	for scope in [ *scopes, '*' ]:
-		for key in ( f'{ scope }/{ crop }/{ name }', f'{ scope }/*/{ name }' ):
-			if key in rules:
-				return rules[ key ]
-	return rules.get( f'{ crop }/{ name }', rules.get( name ) )
-
-
 def applies( rule, tier, base, key=None ):
 
 	if rule is None:
@@ -1320,7 +1312,6 @@ def main():
 	view = clip_json[ 'test' ].get( 'view' ) or clip_json[ 'msaa' ].get( 'view' )
 	clock = ( clip_json[ 'test' ].get( 'clipDef' ) or {} ).get( 'clock' )
 	cam_path = ( clip_json[ 'test' ].get( 'clipDef' ) or clip_json[ 'msaa' ].get( 'clipDef' ) or {} ).get( 'path' )
-	scopes = [ f'{ clip_name }@{ view }', clip_name ]
 	tier = a.key.split( '/' )[ 0 ] if a.key else None
 	# whole frames only when named (see the docstring); crop boxes are the view's in the JSON file
 	boxes = {}
@@ -1418,13 +1409,13 @@ def main():
 		if rules or gt_rules:
 			v = {}
 			for k, x in ft_.items():
-				r = find_rule( rules, scopes, crop, k )
+				r = find_rule( rules, clip_name, view, crop, k )
 				res = verdict( r, x, base.get( k ), gown.get( k ) ) if applies( r, tier, base, a.key ) else None
 				if res:
 					v[ k ] = res
 					if res == 'FAIL':
 						failed.setdefault( r.get( 'kind', 'gate' ), [] ).append( f'{ crop }/{ k }' )
-				rg = find_rule( gt_rules, scopes, crop, k )
+				rg = find_rule( gt_rules, clip_name, view, crop, k )
 				res = verdict_gt( rg, x ) if applies( rg, tier, base, a.key ) else None
 				if res:
 					v[ f'gt:{ k }' ] = res
