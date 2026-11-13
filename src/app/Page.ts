@@ -3,7 +3,7 @@
 // renderer's (RenderStages.ts) and the island's (IslandStages.ts).
 import type * as THREE from 'three/webgpu';
 import type GUI from 'lil-gui';
-import type { SceneOptions, WeatherName, WindLevel, DynamicResolution, GpuFrameTimer, PassScaling, FramePacer, FrameStats, PipelineSettings } from '../render.ts';
+import type { SceneOptions, WeatherName, WindLevel, DynamicResolution, GpuFrameTimer, PassScaling, FramePacer, FrameStats, PipelineSettings, FrameStages } from '../render.ts';
 import type { QualityTier, SettingsQuery } from '../renderSetup.ts';
 import type { QualityDetector } from '../QualityDetect.ts';
 import type { Game } from '../game/index.ts';
@@ -66,8 +66,8 @@ export interface PageParts {
 	clock: THREE.Timer;
 	frame: number;
 	frameTimes: number[];
-	shadowElapsed: number;
-	holding: boolean;
+	/** the frame's stages of the renderer's, which the tick and `step` call (Frame.ts) */
+	frames: FrameStages;
 	tick: ( time: number ) => void;
 	steeredLast: boolean;
 	diagnostics: ( now?: boolean ) => void;

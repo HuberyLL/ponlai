@@ -11,7 +11,9 @@
 // - A plant kind (src/world/vegetation/Registry.ts): a kind of this tool's, with sites and no art,
 //   registers and is drawn with the default plant (DefaultPlant.ts: two cards a site, on a
 //   material tagged as vegetation), and the registry's lists hold its root. A kind with a growth
-//   that declares it does not depend on the land is refused.
+//   that declares it does not depend on the land is refused. Once the registry is closed (the
+//   stage that places the kinds closes it: src/RenderStages.ts `placeVegetation`), a kind
+//   registered afterwards is refused with the kind's name and the reason given at the close.
 // - A kind of local light (src/lighting/LocalLights.ts): a kind of this tool's registers, a
 //   source given by its position alone takes the default's intensity and range, and `refresh`
 //   reads the kind's sources again. A second light table on one page is refused.
@@ -156,6 +158,11 @@ try {
 	check( 'a plant kind without its declarations is refused', thrown( () => vegetation.add( { ...undeclared, name: 'undeclared plant' } ) ) !== null && vegetation.kinds.length === 1 );
 	check( 'a kind with a growth that declares no dependence on the land is refused', thrown( () => vegetation.add( { ...plant, name: 'growing plant', growth: { prepare: function* () {}, swap: () => null } } ) ) !== null );
 	check( 'a registry without a default plant refuses a kind without art', thrown( () => new Vegetation().add( plant ) ) !== null );
+	vegetation.close( 'this tool has placed the kinds' );
+	const late = thrown( () => vegetation.add( { ...plant, name: 'late plant' } ) );
+	check( 'a kind registered after the registry is closed is refused, by name and with the reason', late !== null && String( late.message ).includes( 'late plant' ) && String( late.message ).includes( 'this tool has placed the kinds' ) && vegetation.kinds.length === 1, late ? late.message : 'accepted' );
+	const placing = /export function placeVegetation\b[\s\S]*?\n}\n/.exec( readFileSync( path.join( ROOT, 'src', 'RenderStages.ts' ), 'utf8' ) );
+	check( 'the stage that places the kinds closes the registry', placing !== null && placing[ 0 ].includes( 'vegetation.close(' ) );
 
 	// a kind of local light
 	const { createLocalLights, DEFAULT_SOURCE } = await load( 'lighting/LocalLights.ts' );

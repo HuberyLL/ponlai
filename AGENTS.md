@@ -98,7 +98,10 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   image, the renderer's stages (`src/RenderStages.ts`: the renderer, the sky, the sun, the sea, the
   frame's passes, then what the island's data builds), the island's (`src/IslandStages.ts`: the
   camera, the land, the world, the vegetation, the growth) and the page's own, and starts the game
-  from the parts they build. Each stage puts what it builds on its layer's one object.
+  from the parts they build. Each stage puts what it builds on its layer's one object. A frame's
+  work is in stages too: the renderer's (`createFrameStages`) and the island's
+  (`createIslandFrame`), which the page's tick (`app/Frame.ts`) calls in turn in a fixed order. The
+  renderer's `placeVegetation` places the registered plant kinds and closes their registry.
 - `src/app/`: the page's own parts (`Page.ts`): the camera's views (`CameraViews.ts`), the GUI
   (`Gui.ts`), the frame loop and the render scale (`Frame.ts`), the scene jump (`Scene.ts`) and the
   diagnostics (`Diagnostics.ts`). `window.__PONLAI__` and `window.__THREE_GAME_DIAGNOSTICS__`

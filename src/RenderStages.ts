@@ -13,10 +13,29 @@
 //   entry's to order.
 // - What the island gives a stage comes as an argument typed by the renderer's own types: this
 //   file names nothing of the island's.
+// - The registered plant kinds are placed by a stage too (`placeVegetation`: the scene, the
+//   wind's motion flag, the two depth prepasses), which closes their registry; the sun's caster box
+//   and the rain's collision bake read the same registry (`vegetationCasters`,
+//   `bakeRainCollision`), each called where the scene's order has it.
+// The frame's stages (`createFrameStages`) are the renderer's work in a frame, cut where the
+// scene's own work goes between: whether the frame is held, the scene clock, the day and the
+// weather, the sky and its light, the local lights, the weather's effects with the sky's bake, the
+// sun's maps and the sea, the relight, the draw and the submit. A page's tick calls them in that
+// order, once each (app/Frame.ts), with the island's between them (IslandStages.ts
+// `createIslandFrame`).
+// - The order of the statements inside a frame stage, and of the stages, is part of the image and
+//   of what a stepped clip repeats: a statement reads what the ones before it wrote in the same
+//   frame (the sky's state, the wind, the scene clock). New per-frame work goes into the stage
+//   whose statements it follows, or into the scene's own between two stages.
+// - What only the page knows comes through `FrameHost`: its switches, the pacer's interval, its
+//   own reasons a still frame is not final, and whether the canvas shows.
+// - The cadences that count wall-clock seconds (the sky's periodic bake, the refracted sun's map)
+//   and the hold of a still scene are the stages' own state; a tool that steps the frames restarts
+//   or holds them through `restartCadences` and `holdStill`.
 import { settings as params, numberSetting, type SettingsQuery } from './Settings.ts';
 import * as THREE from 'three/webgpu';
 import { Sky } from './sky/Sky.ts';
-import { DAY_PRESETS, type DayPreset, DayCycle, sunRising } from './sky/DayCycle.ts';
+import { DAY_PRESETS, type DayPreset, DayCycle, sunRising, duskForce, nightAmbientShare } from './sky/DayCycle.ts';
 import { isParkedWeather, WEATHER_PRESETS, type WeatherName, isWindLevel, type WindLevel, Weather, type TunedField, type WeatherState, deckLight, cloudedShare, type WindChoice } from './sky/Weather.ts';
 import type { QualityProfile, QualityTier } from './Quality.ts';
 import { keyDeckShare } from './lighting/KeyCloud.ts';
@@ -60,13 +79,25 @@ import type { FrameProfiler } from './debug/FrameProfiler.ts';
 import { motionUniforms, MOTION_CLASS, motionCheck } from './post/Motion.ts';
 import { SceneHistory } from './post/SceneHistory.ts';
 import { jitter } from './post/Jitter.ts';
-import { preExposure } from './post/PreExposure.ts';
+import { preExposure, PRE_EXPOSURE_PENDING } from './post/PreExposure.ts';
 import { renderEvent } from './post/SceneEvents.ts';
 import { TemporalAA } from './post/TemporalAA.ts';
 import { watchPipelines } from './post/Settled.ts';
 import { MOON_GLINT_RADIUS, SCENE_RADIANCE_SCALE } from './lighting/Radiometry.ts';
 import { SUN_GLINT_DISC } from './lighting/SunDisc.ts';
 import { debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
+import { ambientGrade } from './lighting/AmbientGrade.ts';
+import { updateLeafLight } from './world/vegetation/LeafLight.ts';
+import { prepassScene, installVegetationPrepass } from './world/VegetationPrepass.ts';
+import { opaquePrepassScene, installOpaquePrepass } from './world/OpaquePrepass.ts';
+import { PeriodicWork } from './post/DynamicResolution.ts';
+import type { TemporalFrame } from './post/TemporalAA.ts';
+import type { SettleFrame } from './post/Settled.ts';
+import type { HazeFrame } from './weather/VolumetricHaze.ts';
+import { installWindMotionFlag } from './world/WindMotion.ts';
+import { GTAO } from './post/GTAO.ts';
+import { SS_SHADOW } from './post/MeadowShade.ts';
+import type { Vegetation } from './world/vegetation/Registry.ts';
 
 /** A scene as the query names it: what a load and a scene jump both establish (`sceneOptions`). */
 export interface SceneOptions {
@@ -166,6 +197,8 @@ export interface RenderParts extends RenderHost {
 	/** the rain, made with the frame's passes (`createSeaAndPipeline`) */
 	rain?: Rain;
 	skyElapsed: number;
+	/** the wall-clock seconds since the refracted sun's map last redrew (`createFrameStages`) */
+	shadowElapsed: number;
 	lastSkyTime: number;
 	lastSkyHour: number;
 	lastWeatherSignature: string;
@@ -864,6 +897,53 @@ export function createAmbient( render: RenderParts, { ambientData, world }: { am
 
 }
 
+/**
+ * Places the registered plant kinds in the frame, in registry order: their roots in the scene, the
+ * wind's motion flag on the scene's materials, the depth prepass of the kinds that take one, and
+ * the opaque scene's prepass over `ground` and the kinds that take none. It closes the registry:
+ * a kind registered afterwards would be in none of them (Registry.ts `close`). The sun's caster
+ * box and the rain's collision bake read the same registry (`vegetationCasters`,
+ * `bakeRainCollision`), which the scene calls where its own order has them.
+ */
+export function placeVegetation<L>( render: RenderParts, vegetation: Vegetation<L>, { ground }: { ground: THREE.Object3D[] } ) {
+
+	const { scene } = render;
+	scene.add( ...vegetation.roots() );
+	installWindMotionFlag( scene );
+	installVegetationPrepass( scene, vegetation.roots( ( kind ) => kind.prepass ) );
+	// the opaque scene's depth for the ambient occlusion (post/GTAO.ts, high's `ao` knob) and the
+	// screen-space shade over the whole scene (post/MeadowShade.ts `SS_SHADOW`): the ground, and the
+	// plants without a prepass of their own
+	if ( GTAO || SS_SHADOW ) installOpaquePrepass( [ ...ground, ...vegetation.roots( ( kind ) => ! kind.prepass ) ] );
+	vegetation.close( 'placeVegetation has placed the kinds in the scene and its prepasses' );
+
+}
+
+/** The box of everything that casts into the sun's map, into `box`: the meshes that cast a shadow
+ * under `ground` and under the roots of the kinds registered as casters. */
+export function vegetationCasters<L>( vegetation: Vegetation<L>, { ground, box }: { ground: THREE.Object3D[]; box: THREE.Box3 } ): THREE.Box3 {
+
+	box.makeEmpty();
+	for ( const root of [ ...ground, ...vegetation.roots( ( kind ) => kind.sunCaster ) ] ) {
+
+		root.updateWorldMatrix( true, true );
+		root.traverse( ( object ) => { if ( ( object as THREE.Mesh ).isMesh && object.castShadow ) box.expandByObject( object ); } );
+
+	}
+	return box;
+
+}
+
+/** Bakes the rain's collision map over `area`: drops stop on the first surface they meet, `ground`
+ * and the kinds registered for the bake. */
+export function bakeRainCollision<L>( render: RenderParts, vegetation: Vegetation<L>, { ground, area }: { ground: THREE.Object3D[]; area: Bounds } ) {
+
+	const { renderer } = render;
+	render.rain!.collision.setArea( area );
+	render.rain!.bakeCollision( renderer, [ ...ground, ...vegetation.roots( ( kind ) => kind.rainBake ) ] );
+
+}
+
 /** The water's surface, over the land's box and what the game holds above it. */
 export function createWater( render: RenderParts, { fields, landBox, islandSea, heldOpaque }: { fields: SceneFields; landBox: Bounds; islandSea: { readonly openSea: { readonly from: number; readonly to: number }; readonly reflectorTop: number }; heldOpaque: THREE.Box3[] } ) {
 
@@ -948,6 +1028,321 @@ export function primeSharedBuilds( render: RenderParts ) {
 
 }
 
+/** What the page gives the frame's stages (`createFrameStages`). Each is read in the frame, at the
+ * stage that names it. */
+export interface FrameHost {
+	/** the page's switches for the rain and the wet surfaces (`advanceWeatherAndSea`) */
+	weatherEffects: { readonly rain: boolean; readonly wetness: boolean };
+	/** whether the exposure follows the sky's grade (`advanceWeatherAndSea`) */
+	environmentLook: { readonly exposure: boolean };
+	/** the paced frame's interval (ms): the temporal resolve's nominal frame time (`draw`) */
+	interval(): number;
+	/** adds the page's own reasons the frame will still change without a change of its key, for the
+	 * settled signal (`draw`; debug pages) */
+	pending( reasons: string[] ): void;
+	/** whether the canvas shows, with nothing of the page's over it (`draw`; debug pages) */
+	shown(): boolean;
+}
+
+/**
+ * A frame's stages, in the order a page calls them, every frame. The scene's own per-frame work
+ * goes between them where its order has it (the island's: IslandStages.ts `createIslandFrame`);
+ * the order inside a stage is the renderer's.
+ */
+export interface FrameStages {
+	/** True while the frame must not be drawn and no clock may move: an explicit bake of the sky is
+	 * in flight (`bakeExplicitly`), or a retune just started one (`retuneSky`). */
+	held(): boolean;
+	/** The scene clock by `dt` (s), unless it is paused. */
+	advanceClock( dt: number ): void;
+	/** The day clock by `clockDt` (s) and the weather with it; `hour`, when given, then sets the
+	 * hour the sky shows (a host whose own clock keeps the hour). */
+	advanceDay( clockDt: number, hour: ( () => number ) | null ): void;
+	/** The sky at the day's and the weather's state, the lighting it publishes and the ambient
+	 * grade; `environmentDt` (s) is the wall clock's step, which the sky's cross-fades follow.
+	 * Returns the night ambient's share. */
+	trackSky( environmentDt: number ): number;
+	/** The local lights at `lights` (their strength, 0..1) and what the leaves pass on of the key. */
+	lightNight( lights: number, nightAmbient: number ): void;
+	/** The haze, the wind, the lightning, the clouds, the rain, the exposure's grade, the sky's
+	 * periodic bake, the sun's maps and the sea. `dt` is the scene clock's step (s) before the pause. */
+	advanceWeatherAndSea( dt: number, environmentDt: number ): void;
+	/** The ground's bounce and the ambient light's relight. */
+	relight(): void;
+	/** Draws the frame. `rawDt` is the wall clock's step (s), `dt` the scene clock's before the pause. */
+	draw( rawDt: number, dt: number ): void;
+	/** The periodic work in the frame just drawn (PeriodicWork bits), for a dynamic render scale:
+	 * asked once a frame, after `draw`. */
+	periodicWork(): number;
+	/** Hands the frame's command buffers to the GPU. */
+	submit(): void;
+	/** Restarts what counts frames or wall-clock seconds since the load, as after a seek: the
+	 * clouds' trace slot, the sky's periodic bake and the refracted sun's map. */
+	restartCadences(): void;
+	/** Holds the scene still for the frames that follow (both clocks paused, a sky transition
+	 * allowed to rest). Returns the release, which puts the clocks and the cadences back as they were. */
+	holdStill(): () => void;
+}
+
+/**
+ * The frame's stages on the built renderer: what advances the scene clock, the day, the weather,
+ * the wind and everything that follows them, then draws. A page's tick calls them in the order
+ * FrameStages lists them, once each a frame.
+ */
+export function createFrameStages( render: RenderParts, host: FrameHost ): FrameStages {
+
+	const { DEBUG, renderer, submitBatch, scene, waterScene, rainScene, afterScene, camera, sky, dayCycle, weather, wind, lighting, applyEnvironmentFill, sun, sunShadow, shadowDirection, prepareHaze, prepareSkyState, publishLighting, retuneSky, fft, waveMaps, pipeline, groundBounce, shoreWaves, ambientRelight, refractedSun, stormSea } = render;
+	const S = pipeline.settings;
+	render.shadowElapsed = 0;
+	// The temporal resolve's per-frame inputs (TemporalAA.ts): what besides the camera, the clock and the
+	// sizes keys a paused scene's rest (a forced strike: a review sets one while paused, and the rest
+	// starts over for it), whether the frame may rest (not while a sky bake is in flight or a sky
+	// transition runs, unless the frame is held still: see `holding`), and its delta.
+	let strikeKey = 'null', strikeVersion = 0;
+	// set while the scene is held still for the rest to converge (nothing advances, a transition included)
+	let holding = false;
+	function strikeSignature(): number {
+
+		const forced = JSON.stringify( ( sky.lightning as unknown as { forced: unknown } ).forced ?? null );
+		if ( forced !== strikeKey ) {
+
+			strikeKey = forced;
+			strikeVersion ++;
+
+		}
+		return strikeVersion;
+
+	}
+	const restStable = () => ! sky.busy && ( ! sky.transitioning || holding );
+	function temporalFrame( dt: number, step: number ): TemporalFrame | undefined {
+
+		if ( ! pipeline.resolver ) return undefined;
+		// (FSR 3's frame time: the scene clock's step, the pacer's nominal interval while paused)
+		// The temporal rest starts once the haze's has ended, so it averages frames of the finished haze.
+		return { signature: [ strikeSignature() ], stable: restStable() && ! pipeline.air.pending, dt, step, interval: host.interval() };
+
+	}
+	// The haze's rest (weather/VolumetricHaze.ts): the temporal rest's signature and the sun maps' redraw
+	// counts (a redraw changes its shadow without changing the key), and whether the frame may rest.
+	function hazeFrame(): HazeFrame {
+
+		return { time: render.simTime, signature: [ strikeSignature(), sunShadow.draws, refractedSun.draws ], stable: restStable() };
+
+	}
+	// The settled signal's inputs (post/Settled.ts; debug builds): the rest's, the sun maps' redraw
+	// counts, and what will still change the frame without changing the key.
+	function settleFrame( bakeDue: boolean ): SettleFrame | undefined {
+
+		if ( ! DEBUG ) return undefined;
+		const pending: string[] = [];
+		if ( bakeDue ) pending.push( 'sky bake due' );
+		if ( sky.readbacks > 0 ) pending.push( 'sky irradiance' );
+		if ( refractedSun.pending ) pending.push( 'refracted sun' );
+		host.pending( pending );
+		if ( sunShadow.pending ) pending.push( 'sun shadow' );
+		if ( pipeline.air.pending ) pending.push( 'haze rest' );
+		if ( pipeline.exposurePending ) pending.push( 'exposure' );
+		if ( preExposure.pending ) pending.push( PRE_EXPOSURE_PENDING );
+		if ( ! ambientRelight.ready ) pending.push( 'ambient relight' );
+		return { signature: [ strikeSignature(), sunShadow.draws, refractedSun.draws ], stable: restStable(), pending, shown: host.shown() };
+
+	}
+	// whether a periodic bake of the sky waits for its interval (`advanceWeatherAndSea` to `draw`)
+	let bakeDue = false;
+	// The periodic work in a frame (PeriodicWork bits): its frames stay out of the dynamic scale's
+	// quantiles. A periodic sky bake runs its slices in the ticks while the sky is busy, from the one
+	// that starts it to the one that publishes it.
+	let skyWasBusy = false;
+	const periodicCounts = { sunShadow: 0, refractedSun: 0 };
+
+	return {
+
+		// a jump's explicit bake in flight: no frame, and the clock holds (`bakeExplicitly`); a retune
+		// starts one (`retuneSky`)
+		held: () => render.jumpsInFlight > 0 || retuneSky(),
+
+		advanceClock( dt ) {
+
+			if ( ! render.paused ) render.simTime += dt;
+
+		},
+
+		advanceDay( clockDt, hour ) {
+
+			dayCycle.advance( clockDt );
+			// the sky shows the host's hour, whatever else moved the day clock
+			if ( hour ) dayCycle.setHour( hour() );
+			weather.update( render.paused ? 0 : clockDt );
+
+		},
+
+		trackSky( environmentDt ) {
+
+			renderer.info.reset();
+			// Sun, moon, key light and grade follow the clock every frame; only the baked reflection,
+			// environment and cloud products cross-fade between bakes.
+			sky.track( render.manualSun ? null : dayCycle.snapshot(), weather.state, render.cloudOverride, weather.skyMix );
+			sky.advance( environmentDt );
+			publishLighting();
+			// the ambient grade by the sun and the weather's blend of the four skies (lighting/AmbientGrade.ts)
+			ambientGrade.update( sky.elevation, weather.skyMix, sky.rising, sky.moonElevation, sky.moonKeyShare );
+			shared.clouded.value = cloudedShare( weather.skyMix );
+			// the leaves' night key and the sward's go by the night ambient's share (sky/DayCycle.ts
+			// `nightAmbientShare`), the local lights by a share of the scene's own (`lightNight`); a debug
+			// page may force each reader's (DayCycle.ts `duskForce`)
+			return nightAmbientShare( sky.elevation, sky.rising, shared.clouded.value );
+
+		},
+
+		lightNight( lights, nightAmbient ) {
+
+			// (lighting/LocalLights.ts: its pass sorts the sources in view)
+			render.localLights.update( duskForce( 'localLights', lights ) );
+			// what the crowns' leaves pass on of the key (world/vegetation/LeafLight.ts)
+			updateLeafLight( sky.elevation, duskForce( 'nightAmbient', nightAmbient ), shared.clouded.value );
+
+		},
+
+		advanceWeatherAndSea( dt, environmentDt ) {
+
+			prepareHaze( weather.state );
+			pipeline.air.keyDir.value.copy( sky.keyDir );
+			pipeline.air.keyColor.value.copy( sky.keyColor ).multiplyScalar( 1 - THREE.MathUtils.smoothstep( sky.clouds.coverage.value, 0.7, 0.97 ) );
+			pipeline.shafts.setSun( sky.sunDir, sky.sunColor );
+			pipeline.shafts.setMoon( sky.moonDir, sky.keyColor, sky.keyIsMoon );
+			wind.update( render.paused ? 0 : dt, weather.state.windSpeed, weather.state.windDirection, weather.state.gustiness );
+			// Lightning follows the scene clock, so a paused frame holds its strike; it lights the clouds'
+			// march below, so it goes first.
+			// (the scene's render size: the canvas is larger while the frame is upscaled)
+			sky.lightning.update( render.simTime, weather.state.storm, camera, pipeline.height, sky.clouds );
+			sky.updateClouds( camera, pipeline.width, pipeline.height, shared.wind.direction.value, render.simTime );
+			shared.rain.value = host.weatherEffects.rain ? sky.weather.rain : 0;
+			shared.storm.value = weather.state.storm;
+			// A strike lights the island for an instant through the sky's fill: the lit cloud deck adds its
+			// radiance to the sky's, so a flash that barely shows by day floods a dark night.
+			const skyLuma = sky.skyIrradiance.r * 0.2126 + sky.skyIrradiance.g * 0.7152 + sky.skyIrradiance.b * 0.0722;
+			const strikeFill = lighting.skyFill * Math.min( 1 + sky.lightning.fill / Math.max( skyLuma, 1e-5 ), 60 );
+			applyEnvironmentFill( strikeFill );
+			shared.skyFill.value = strikeFill;
+			shared.skyIrradiance.value.set( sky.skyIrradiance.r, sky.skyIrradiance.g, sky.skyIrradiance.b ).multiplyScalar( strikeFill );
+			// the page's own wetness, in the game too (soaking and drying on the day clock)
+			shared.wetness.value = host.weatherEffects.wetness ? weather.state.wetness : 0;
+			fft.setWind( wind.speed, wind.heading );
+			render.rain!.uniforms.rain.value = shared.rain.value;
+			render.rain!.uniforms.wind.value.copy( shared.wind.velocity.value );
+			render.rain!.uniforms.waterLevel.value = shared.waterLevel.value;
+			render.rain!.update( renderer, camera, render.simTime, shared.wind.displacement.value, pipeline.height, AFTER_RESOLVE ? pipeline.outputHeight : pipeline.height );
+			if ( ! render.manualSun && host.environmentLook.exposure ) {
+
+				S.exposure = sky.grade.exposure;
+				// the night's grade (Pipeline NIGHT)
+				S.night = sky.grade.night;
+				// the exposure's own night weight (its keys: look/ExposureLook.ts)
+				S.exposureNight = sky.grade.exposureNight;
+
+			}
+			// the weather's stops of the exposure and the clouded day's keys (Pipeline `skyMix`)
+			const skyMix = weather.skyMix;
+			for ( let i = 0; i < skyMix.length; i ++ ) S.skyMix[ i ] = skyMix[ i ];
+			render.skyElapsed += environmentDt;
+			const skyInterval = render.runtimeQuality.skyUpdateInterval;
+			const ws = weather.state;
+			const weatherSignature = `${ render.cloudOverride ?? ws.coverage },${ ws.density },${ ws.directVisibility },${ ws.ambientGain },${ ws.daySky },${ ws.daySkyExponent },${ ws.haze }`;
+			if ( ! sky.busy && ! sky.transitioning && render.skyElapsed >= skyInterval &&
+				( render.simTime !== render.lastSkyTime || weatherSignature !== render.lastWeatherSignature || ( ! render.manualSun && dayCycle.hour !== render.lastSkyHour ) ) ) {
+
+				render.skyElapsed = 0;
+				render.lastSkyTime = render.simTime;
+				render.lastSkyHour = dayCycle.hour;
+				prepareSkyState();
+				void sky.update( skyInterval ).catch( ( error: unknown ) => console.error( error ) );
+
+			}
+			// a periodic bake waits for its interval (the settled signal waits for it too)
+			bakeDue = ! sky.busy && ( render.simTime !== render.lastSkyTime || weatherSignature !== render.lastWeatherSignature || ( ! render.manualSun && dayCycle.hour !== render.lastSkyHour ) );
+			// The sun's map steps with the key light and cross-fades between steps, so its shadows move
+			// smoothly without re-rasterising sub-texel casters every frame; it is drawn along the lifted
+			// key. The underwater map keeps the quality cadence.
+			sunShadow.update( renderer, scene, camera, shadowDirection );
+			render.shadowElapsed += environmentDt;
+			if ( render.shadowElapsed >= render.runtimeQuality.refractedSun.interval && refractedSun.update() ) render.shadowElapsed = 0;
+			shared.time.value = render.simTime;
+			fft.update( render.paused ? 0 : dt, render.simTime );
+			stormSea.update( render.simTime, weather.state.storm, camera );
+			shoreWaves.update( fft, render.simTime );
+			// Whitewater is disabled in this scene; leave its history idle.
+			// (the wave maps and the caustics are drawn by their pass on the frame graph: WaveMaps.ts; the
+			// caustics only while the sun is the key and gives light, and when the sea's time or the key moved)
+			waveMaps.prepare( camera, sky.keyDir, ! sky.keyIsMoon && Math.max( shared.sunColor.value.x, shared.sunColor.value.y, shared.sunColor.value.z ) > 0, render.simTime, fft.spectrumRevision );
+
+		},
+
+		relight() {
+
+			groundBounce.update( sky.seaRadiance );
+			ambientRelight.update();
+
+		},
+
+		draw( rawDt, dt ) {
+
+			// (the ground truth draws the storm's spray with the rain, in the overlay pass; taa and taau draw
+			// it with the streaks after the resolve)
+			const overlay = ! AFTER_RESOLVE && ( render.rain!.mesh.visible || ( TEMPORAL && stormSea.spray.mesh.visible ) );
+			const after = AFTER_RESOLVE && ( render.rain!.mesh.visible || stormSea.spray.mesh.visible );
+			pipeline.render( { scene, prepassScene, opaquePrepassScene, waterScene, rainScene: overlay ? rainScene : undefined, overlay, afterScene: after ? afterScene : undefined, camera, water: render.water!, sun, keyDirection: shadowDirection, time: render.simTime, temporal: temporalFrame( rawDt, render.paused ? 0 : dt ), settle: settleFrame( bakeDue ), haze: hazeFrame() } );
+
+		},
+
+		periodicWork() {
+
+			let heavy = 0;
+			if ( sky.busy || skyWasBusy ) heavy |= PeriodicWork.skyBake;
+			skyWasBusy = sky.busy;
+			if ( sunShadow.draws !== periodicCounts.sunShadow ) heavy |= PeriodicWork.sunShadow;
+			if ( refractedSun.draws !== periodicCounts.refractedSun ) heavy |= PeriodicWork.refractedSun;
+			periodicCounts.sunShadow = sunShadow.draws;
+			periodicCounts.refractedSun = refractedSun.draws;
+			return heavy;
+
+		},
+
+		submit() {
+
+			submitBatch.flush();
+
+		},
+
+		restartCadences() {
+
+			( sky.clouds as unknown as { frame: number } ).frame = 0;
+			render.skyElapsed = 0;
+			render.shadowElapsed = 0;
+
+		},
+
+		holdStill() {
+
+			const was = { paused: render.paused, day: dayCycle.paused, skyElapsed: render.skyElapsed, shadowElapsed: render.shadowElapsed };
+			render.paused = true;
+			dayCycle.paused = true;
+			holding = true;
+			return () => {
+
+				holding = false;
+				render.paused = was.paused;
+				dayCycle.paused = was.day;
+				render.skyElapsed = was.skyElapsed;
+				render.shadowElapsed = was.shadowElapsed;
+
+			};
+
+		},
+
+	};
+
+}
+
 /** Registers what a scene jump clears of the renderer's, ahead of the island's: the wind's
  * integrated state, the storm's strikes and its sea's foam window (post/SceneHistory.ts; the
  * order registered is the order cleared). */
@@ -961,7 +1356,7 @@ export function registerSceneHistories( render: RenderParts ) {
 }
 
 /** Registers what a scene jump clears of the renderer's, after the island's: the fog's bank, the
- * ground's bounce, and after the jump's bake the underwater map, at its constructed size and
+ * ground's bounce, the underwater map's cadence, and after the jump's bake the underwater map, at its constructed size and
  * drawn at once for the jump's light (published by the bake), as the load's `prepare` draws it
  * before the first frame: left to the loop's cadence (wall time), a capture ready within a few
  * frames shot the cleared map, the sea without its refracted sun. */
@@ -976,5 +1371,6 @@ export function registerLightHistories( render: RenderParts ) {
 		refractedSun.update();
 
 	}, 'after bake' );
+	history.onJump( 'shadow cadence', () => { render.shadowElapsed = 0; } );
 
 }
