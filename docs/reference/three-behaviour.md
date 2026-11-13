@@ -39,6 +39,11 @@ then declared in that branch only, and the shader silently draws nothing. Select
 built before the `select()` (`.toVar()`), or blend with weights of exactly 0 or 1
 (`ocean/Water.ts`, its vertex's previous position).
 
+**r186.** A `.toVar()` made inside an `Fn` is emitted where it is made: it joins the function's
+stack. One made outside an `Fn` has no stack to join, so its assignment is emitted where it is
+first used, once per shader stage, and that can be inside a branch. Make the `.toVar()` inside the
+`Fn` that builds the `select()` (`nodes/core/VarNode.js` `Var`, `nodes/tsl/TSLCore.js` `Stack`).
+
 Check: none; judgement.
 
 ### Uniform control flow
