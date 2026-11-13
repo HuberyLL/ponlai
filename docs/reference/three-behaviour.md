@@ -214,6 +214,12 @@ shade about 1 % of their pixels a level or two apart: multisampled fragments and
 form within a draw. Byte comparisons hold between equal splits only
 (`packages/island/world/World.ts`).
 
+Derivative quads do not repeat either: the same draw with the same inputs can take `dFdx` /
+`dFdy` a last bit apart from one run to the next while the GPU is busy with other work. A pass drawn
+every frame overwrites such a difference on the next frame; a result drawn once and kept (a bake
+on the first frame, the busiest) takes no screen derivatives where their last bit shows
+(`packages/render/ocean/WaveMaps.ts`, the caustics' splats).
+
 Check: none; judgement.
 
 ## Compiling and pipelines
