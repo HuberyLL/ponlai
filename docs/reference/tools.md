@@ -1247,7 +1247,9 @@ fixtures are left out of `npm run lint`.
 its rules in `.markdownlint-cli2.jsonc`: prose wrapped at 100 columns, fenced code with a language)
 and their links offline with lychee (local files and `#anchors`; config in `lychee.toml`).
 `tools/verify-doc-paths.mjs`, also in it, checks that every `docs/…/*.md` path written anywhere else
-(code comments, prose) names a file that exists.
+(code comments, prose) names a file that exists, that every file `AGENTS.md` and
+`docs/reference/code-map.md` name in backticks is tracked, and that `AGENTS.md` stays within its
+limit of 20,000 characters.
 `npm run lint:links` checks the web links too; sites that refuse automated clients (403, 405, 429)
 count as present. lychee is a separate binary: `brew install lychee`, or `cargo install lychee`.
 
