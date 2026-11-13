@@ -33,12 +33,14 @@
 // 3. The app (`?debug`), in its default mode and under taa: the cache-key patches installed on its
 //    renderer, the warm-up done (FrameGraph.warmStats), and no pipeline created in the 60 frames
 //    after its first 60.
-// 4. The app's own materials (the taa page): a vegetation mesh with its depth copy, under a
-//    shadow-casting sun (whose pass builds their nodes without an MRT), and the storm's spray, each
+// 4. The app's own materials (the taa page): a vegetation mesh with its depth copy (the meadow's
+//    near draw, a plain mesh whose blades its compute pass generates in the probe's renderer for
+//    the probe's camera and draws from indirect arguments), under a shadow-casting sun (whose pass
+//    builds their nodes without an MRT), and the storm's spray, each
 //    drawn by a fresh patched renderer into a plain target and into its pass's layout and MRT (the
 //    scene MRT; the spray's after-resolve MRT), in both orders, drawn and warmed (`compileInto`
 //    first). Each draw needs its own pipeline (a warmed one none), a fragment shader with one output
-//    per attachment, and the vegetation's velocity its motion class.
+//    per attachment, and the vegetation's velocity its motion class over a tenth of the target.
 // Shared GPU lock (no timing), headless (CHROME_PATH or Playwright's Chromium).
 
 import { chromium } from 'playwright';
@@ -519,10 +521,12 @@ async function probeReal() {
 	const SIZE = 64;
 	const cases = [];
 
-	// the subjects: a vegetation mesh with its depth copy (the meadow's: no vegetation kind casts into
-	// the sun's map today, so its copy is made to cast, see `stage`), and the spray
+	// the subjects: a vegetation mesh with its depth copy, and the spray. The vegetation is the
+	// meadow's near draw (Grass.ts): a plain mesh whose blades a compute pass generates for the view
+	// it draws in, drawn from indirect arguments (`grassCulled`); no vegetation kind casts into the
+	// sun's map today, so its copy is made to cast, see `stage`.
 	let vegetation = null;
-	s.scene.traverse( ( o ) => { if ( ! vegetation && o.isInstancedMesh && o.material?.userData?.vegetation === true && o.children.length > 0 && o.count > 0 ) vegetation = o; } );
+	s.scene.traverse( ( o ) => { if ( ! vegetation && o.isMesh && ! o.isInstancedMesh && o.userData.grassCulled === true && o.material?.userData?.vegetation === true && o.children.length > 0 ) vegetation = o; } );
 	const spray = s.stormSea?.spray?.mesh ?? null;
 
 	async function setup() {
@@ -583,11 +587,33 @@ async function probeReal() {
 	}
 
 	// a scene drawing a copy of `mesh` (its children too: the vegetation's depth copy) under a
-	// shadow-casting sun, over a ground that receives its shadow, and a camera on its first instance
+	// shadow-casting sun, over a ground that receives its shadow, and a camera on its first instance,
+	// or for the meadow on a turf anchor near the middle of its box
 	function stage( mesh ) {
 
 		const scene = new THREE.Scene();
 		const copy = mesh.clone();
+		// (a clone leaves out the draw's handlers, which for the meadow generate its blades for the
+		// camera in the renderer that draws and set the indirect arguments; its depth copy's call the
+		// mesh's)
+		const sources = [], copies = [];
+		mesh.traverse( ( o ) => sources.push( o ) );
+		copy.traverse( ( o ) => copies.push( o ) );
+		sources.forEach( ( o, i ) => {
+
+			copies[ i ].onBeforeRender = o.onBeforeRender;
+			// The meadow casts here only (the page's never does). Its draw is the first receiver's,
+			// so three renders the sun's map between its handler and its draw (`updateBefore`), and
+			// the map's draw of the meadow would end by clearing the indirect arguments the view's
+			// draw is about to read: only the view's draw clears them, and `run` after each render.
+			const after = o.onAfterRender;
+			copies[ i ].onAfterRender = o.userData.grassCulled ? function ( renderer, scene, camera, ...rest ) {
+
+				if ( camera.isPerspectiveCamera ) after.call( this, renderer, scene, camera, ...rest );
+
+			} : after;
+
+		} );
 		// (a vegetation subject casts here whether or not its kind does on the page, so the shadow
 		// pass builds its nodes)
 		if ( mesh.material?.userData?.vegetation === true ) copy.castShadow = true;
@@ -601,6 +627,24 @@ async function probeReal() {
 		const m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), k = new THREE.Vector3();
 		if ( mesh.isInstancedMesh ) mesh.getMatrixAt( 0, m );
 		m.premultiply( mesh.matrixWorld ).decompose( p, q, k );
+		const plan = mesh.parent?.userData?.plan;
+		if ( plan ) {
+
+			const middle = plan.box.getCenter( new THREE.Vector3() );
+			let best = Infinity;
+			for ( const { origin } of plan.crowns ) {
+
+				const d = ( origin.x - middle.x ) ** 2 + ( origin.z - middle.z ) ** 2;
+				if ( d < best ) {
+
+					best = d;
+					p.copy( origin );
+
+				}
+
+			}
+
+		}
 		const r = Math.max( k.x, k.y, k.z, 0.5 );
 		scene.add( copy );
 		const ground = new THREE.Mesh( new THREE.PlaneGeometry( 16 * r, 16 * r ).rotateX( - Math.PI / 2 ), new THREE.MeshStandardNodeMaterial() );
@@ -632,6 +676,9 @@ async function probeReal() {
 
 		const env = await setup();
 		const { scene, camera, copy, sun } = stage( subject.mesh );
+		// (the meadow skips its generation for a view it generated last, in whichever renderer: this
+		// fresh one must generate its own)
+		subject.mesh.parent?.userData?.blades?.key?.fill( NaN );
 		const plainRt = target( [ 'output' ] ), passRt = target( subject.layout );
 		const results = [];
 		for ( const step of order ) {
@@ -651,6 +698,8 @@ async function probeReal() {
 			env.renderer.render( scene, camera );
 			env.renderer.setRenderTarget( null );
 			env.renderer.setMRT( null );
+			// (other draws of the meadow's geometry draw every record: see `stage`)
+			copy.traverse( ( o ) => { if ( o.userData.grassCulled ) o.geometry.indirect = null; } );
 			await env.renderer.backend.device.queue.onSubmittedWorkDone();
 			const result = { step, pipelinesAtDraw: env.pipelines.slice( p0 ).filter( ( label ) => label.includes( subject.name ) ).length, shadowPipelines: env.pipelines.slice( p0 ).filter( ( label ) => label.includes( 'ShadowMaterial' ) ).length };
 			if ( step !== 'shadow' ) {
@@ -678,7 +727,7 @@ async function probeReal() {
 		await env.renderer.backend.device.queue.onSubmittedWorkDone();
 		const drawn = results.filter( ( r ) => r.want !== undefined );
 		const ok = env.errors.length === 0
-			&& drawn.every( ( r ) => r.outputs.length > 0 && r.outputs.every( ( n ) => n === r.want ) && ( r.velocityPixels ?? 1 ) > 0 )
+			&& drawn.every( ( r ) => r.outputs.length > 0 && r.outputs.every( ( n ) => n === r.want ) && ( r.velocityPixels ?? Infinity ) >= ( subject.minPixels ?? 1 ) )
 			// warmed: no draw builds a pipeline of the subject's; drawn: its first draw into each
 			// layout builds one
 			&& ( warm ? drawn.every( ( r ) => r.pipelinesAtDraw === 0 ) : drawn.filter( ( r, i ) => drawn.findIndex( ( x ) => x.want === r.want ) === i ).every( ( r ) => r.pipelinesAtDraw > 0 ) )
@@ -698,9 +747,12 @@ async function probeReal() {
 	// the temporal modes it draws only in its pass (its velocity is its own MRT output). The spray:
 	// plain and in its pass, both ways round.
 	const subjects = [];
-	if ( vegetation ) subjects.push( { name: 'probeVegetation', what: `vegetation (${ vegetation.name })`, mesh: vegetation, layout: [ 'sceneColor', 'velocity' ], mrt: sceneMRT, velocityClass: MOTION_CLASS.vegetation,
+	if ( vegetation ) subjects.push( { name: 'probeVegetation', what: `vegetation (${ vegetation.name }, drawn indirectly)`, mesh: vegetation, layout: [ 'sceneColor', 'velocity' ], mrt: sceneMRT, velocityClass: MOTION_CLASS.vegetation,
+		// (the camera stands in the meadow, whose blades cover about 40 % of the target: a draw with
+		// no blades generated for it leaves a few pixels at most)
+		minPixels: SIZE * SIZE / 10,
 		orders: { 'shadow-first': [ 'shadow', 'pass' ], 'pass-first': [ 'pass-noShadow', 'shadow', 'pass' ] } } );
-	else cases.push( { name: 'vegetation', pass: false, detail: 'no vegetation mesh with a depth copy in the scene' } );
+	else cases.push( { name: 'vegetation', pass: false, detail: 'no meadow draw (a plain vegetation mesh drawn indirectly) with a depth copy in the scene' } );
 	if ( spray ) subjects.push( { name: 'probeSpray', what: 'spray (after-resolve MRT)', mesh: spray, layout: [ RAIN_OVERLAY ], mrt: afterMRT,
 		orders: { 'plain-first': [ 'plain', 'pass' ], 'pass-first': [ 'pass', 'plain' ] } } );
 	else cases.push( { name: 'spray', pass: false, detail: 'no spray mesh' } );

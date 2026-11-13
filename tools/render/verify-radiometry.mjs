@@ -1,13 +1,23 @@
 // Integrate the rendered HDR solar disk, rather than testing its brightness coefficient.
 // Usage: node tools/render/verify-radiometry.mjs http://127.0.0.1:5190
+// The disk's integral, less the sky behind it, is the displayed share of the key's irradiance
+// (lighting/SunDisc.ts SUN_DISC_RADIANCE, read from the page's tunable) in luminance, within 2 %,
+// with the sun at 32, 60 and 70 degrees. Only the luminance: the disk takes the air's own colour
+// (Atmosphere.ts discTransmittance) and the haze laid over the dome, while the key's hue is a white
+// of its own (look/SkyLook.ts `keyHue`), so the disk's blue reads 10 - 25 % under the key's. Below
+// 30 degrees it is measured and printed but not checked: the disk's transmittance leaves the ozone
+// out and the key's takes it in (about 9 % more light at 10 degrees, 2 - 3 % from 32 up), and with
+// the 2 - 4 % the dome takes off at every height the disk stands about 4 % over the key's share at 10.
 import { chromium } from 'playwright';
 import { acquireGpuLock } from '../kit/gpu-lock.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { SCENE_RADIANCE_SCALE, SUN_PROJECTED_SOLID_ANGLE } from '../../packages/render/lighting/Radiometry.ts';
+import { SCENE_RADIANCE_SCALE, SUN_DISPLAY_RADIUS, SUN_PROJECTED_SOLID_ANGLE } from '../../packages/render/lighting/Radiometry.ts';
 
 assert.ok( SUN_PROJECTED_SOLID_ANGLE > 0 );
 const errors = [];
+// the sun's elevation (degrees) below which the luminance is printed, not checked
+const LOW_SUN = 30;
 // shared with other probes (their pixels do not depend on the GPU load), never during a timing
 // run (tools/kit/gpu-lock.mjs; released when the process exits)
 await acquireGpuLock( 'verify-radiometry', { shared: true } );
@@ -23,7 +33,7 @@ try {
 	page.on( 'requestfailed', r => errors.push( r.url() ) );
 	await page.goto( `${ process.argv[ 2 ] || 'http://127.0.0.1:5190' }/?debug&paused&t=12&dpr=1` );
 	await page.waitForFunction( () => window.__PONLAI__?.applySun && window.__THREE_GAME_DIAGNOSTICS__?.frame > 30, null, { timeout: 90000 } );
-	const measurements = await page.evaluate( async () => {
+	const measurements = await page.evaluate( async ( displayRadius ) => {
 
 		const s = window.__PONLAI__, r = s.renderer, sky = s.sky;
 		const animation = r.getAnimationLoop(), previous = r.getRenderTarget();
@@ -32,9 +42,16 @@ try {
 		await s.setWeather( 'clear', 0 );
 		await r.setAnimationLoop( null );
 		const scene = new s.scene.constructor(), dome = sky.dome.clone();
+		// The dome's material writes the exposure's metering light as its MRT, which takes the place
+		// of its colour in a target without one (post/Motion.ts `meterOutput`): draw its colour alone.
+		dome.material = sky.dome.material.clone();
+		dome.material.mrtNode = null;
 		dome.onBeforeRender = ( _renderer, _scene, camera ) => { dome.position.copy( camera.position ); dome.updateMatrixWorld(); };
 		scene.add( dome );
-		const camera = s.camera.clone(), size = 512, fov = 1.2;
+		const share = s.tune.get( 'lighting.sun.discRadiance' ), radius = displayRadius * s.tune.get( 'lighting.sun.discScale' );
+		// a field half again as wide as the disk, its edge well inside; the sky round the disk, past
+		// 1.05 of its radius, gives the sky's radiance behind it
+		const camera = s.camera.clone(), size = 512, fov = 3 * radius * 180 / Math.PI, rim = Math.cos( 1.05 * radius );
 		camera.fov = fov; camera.aspect = 1; camera.updateProjectionMatrix();
 		const rt = new sky.small.constructor( size, size, { type: sky.small.texture.type, depthBuffer: false } );
 		const output = [];
@@ -50,47 +67,57 @@ try {
 				camera.lookAt( camera.position.clone().addScaledVector( sky.sunDir, 100 ) ); camera.updateMatrixWorld();
 				r.setRenderTarget( rt ); r.render( scene, camera ); r.setRenderTarget( previous );
 				const px = await r.readRenderTargetPixelsAsync( rt, 0, 0, size, size );
-				const irradiance = [ 0, 0, 0 ], tangent = Math.tan( fov * Math.PI / 360 ), delta = 2 * tangent / size;
-				let maximum = 0, nonfinite = 0;
+				const field = [ 0, 0, 0 ], around = [ 0, 0, 0 ], tangent = Math.tan( fov * Math.PI / 360 ), delta = 2 * tangent / size;
+				let maximum = 0, nonfinite = 0, fieldAngle = 0, aroundAngle = 0;
 				for ( let y = 0; y < size; y ++ ) for ( let x = 0; x < size; x ++ ) {
 
 					const a = ( ( x + 0.5 ) * 2 / size - 1 ) * tangent, b = ( ( y + 0.5 ) * 2 / size - 1 ) * tangent;
-					const weight = delta * delta / ( 1 + a * a + b * b ) ** 2;
+					// the pixel's solid angle times its cosine to the sun: its share of the irradiance
+					const weight = delta * delta / ( 1 + a * a + b * b ) ** 2, outside = 1 / Math.sqrt( 1 + a * a + b * b ) < rim;
+					fieldAngle += weight;
+					if ( outside ) aroundAngle += weight;
 					for ( let c = 0; c < 3; c ++ ) {
 
 						const v = px[ ( y * size + x ) * 4 + c ];
 						if ( ! Number.isFinite( v ) ) nonfinite ++;
-						maximum = Math.max( maximum, v ); irradiance[ c ] += v * weight;
+						maximum = Math.max( maximum, v ); field[ c ] += v * weight;
+						if ( outside ) around[ c ] += v * weight;
 
 					}
 
 				}
-				output.push( { elevation, illuminance, irradiance, direct: sky.sunColor.toArray(), maximum, nonfinite } );
+				const irradiance = field.map( ( v, c ) => v - around[ c ] / aroundAngle * fieldAngle );
+				output.push( { elevation, illuminance, share, irradiance, sky: around.map( ( v ) => v / aroundAngle ), direct: sky.sunColor.toArray(), maximum, nonfinite } );
 
 			}
 
 		} finally {
 
-			rt.dispose(); r.setRenderTarget( previous );
+			rt.dispose(); dome.material.dispose(); r.setRenderTarget( previous );
 			sky.elevation = original.elevation; sky.sunIlluminance = original.illuminance; await s.setWeather( original.weather, 0 ); await s.applySun();
 			await r.setAnimationLoop( animation );
 
 		}
 		return output;
 
-	} );
+	}, SUN_DISPLAY_RADIUS );
+	const luminance = ( c ) => 0.2126 * c[ 0 ] + 0.7152 * c[ 1 ] + 0.0722 * c[ 2 ];
 	for ( const state of measurements ) {
 
 		assert.equal( state.nonfinite, 0 );
 		assert.ok( state.maximum < 65504, 'solar radiance exceeds fp16 range' );
-		for ( let c = 0; c < 3; c ++ ) assert.ok( Math.abs( state.irradiance[ c ] / state.direct[ c ] - 1 ) < 0.02,
-			`disk and directional irradiance disagree at ${ state.elevation } degrees, channel ${ c }` );
+		assert.ok( state.share > 0, 'the page lists no lighting.sun.discRadiance' );
+		state.ratio = luminance( state.irradiance ) / ( state.share * luminance( state.direct ) );
+		if ( state.elevation < LOW_SUN ) continue;
+		assert.ok( Math.abs( state.ratio - 1 ) < 0.02,
+			`the disk's luminance is ${ state.ratio.toFixed( 4 ) } of the displayed share of the key's at ${ state.elevation } degrees` );
 
 	}
 	assert.deepEqual( errors, [] );
 	await mkdir( 'artifacts/verification', { recursive: true } );
 	await writeFile( 'artifacts/verification/radiometry.json', JSON.stringify( { SCENE_RADIANCE_SCALE, measurements, errors }, null, 2 ) );
 	console.log( JSON.stringify( { measurements, errors } ) );
+	console.log( `Radiometry: the disk's luminance over the share of the key's ${ measurements.map( ( m ) => `${ m.elevation } degrees ${ m.ratio.toFixed( 4 ) }` ).join( ', ' ) }; checked from ${ LOW_SUN } degrees up.` );
 
 } finally {
 	await browser.close();

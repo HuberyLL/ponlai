@@ -1,8 +1,9 @@
 // Checks the island's growth (packages/island/world/IslandGrowth.ts) over many seeds, CPU only (plain node):
 // the coast's shape at every checked step (traced by marching squares at 0.5 m over the land's
 // signed distance), that a grown land equals the same steps taken one at a time through a saved
-// land, that old land is never lost and that the land stays 16 m inside the lattice at the growth
-// horizon. Writes a sheet of the first eight seeds to artifacts/growth/shape-sheet-<label>.png.
+// land, that old land is never lost and that the land stays the shelf's reach (Bathymetry.ts
+// SHELF_REACH) inside the lattice at the growth horizon: the land and the ring of shallows the
+// shelf shapes round it, which the island view frames with it, lie on the lattice. Writes a sheet of the first eight seeds to artifacts/growth/shape-sheet-<label>.png.
 //
 // node tools/island/verify-growth-shape.mjs [--label name] [--seeds 32]
 
@@ -10,6 +11,7 @@ import { assert, assertions } from '../kit/assert-count.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { GROWTH, LandLattice, growLand, nextPiece } from '../../packages/island/world/IslandGrowth.ts';
+import { SHELF_REACH } from '../../packages/island/world/Bathymetry.ts';
 
 const args = process.argv.slice( 2 );
 const arg = ( name, fallback ) => {
@@ -31,7 +33,7 @@ const CELL = GROWTH.cell, N = Math.round( 2 * GROWTH.half / CELL ), X0 = - GROWT
 // The bands hold the sketch's look (pieces that follow the relief into headlands and bays): a
 // tighter band only passes by evening the pieces into a ring of like lobes.
 const LIMITS = { fromStep: 4, solidity: [ 0.69, 0.92 ], smallUntil: 8, smallSolidity: 0.96, elong: 2.0, axisShare: 0.30 };
-const MARGIN = 16; // m inside the lattice at the horizon
+const MARGIN = SHELF_REACH; // m inside the lattice at the horizon
 
 // ------------------------------------------------------------------ coast metrics
 
