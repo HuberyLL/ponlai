@@ -1,70 +1,96 @@
-// Side-by-side look reviews of the growing island: captures a set of views of a base and a
-// candidate page at given seeds and growth steps, and writes a page that sets them next to each
-// other with region statistics and pixel differences per pair.
+// Captures a base and a candidate page of the growing island side by side, with statistics per pair.
 //
+// It answers how a change looks on grown islands: the same six views of a base page and a candidate
+// page, at the seeds and growth steps given, set next to each other on one HTML page with each pair's
+// region statistics and pixel difference. Shapes differ between steps and builds, so judge the look
+// by eye and the statistics; the pixel difference matters where the two sides should draw the same.
+// For a byte comparison of a grown page against a fresh load use tools/island/verify-growth-swap.mjs;
+// for fixed parity views, tools/kit/parity/capture-set.mjs.
+//
+// Usage:
 //   node tools/island/capture-growth.mjs --base url [--cand url] [--seeds 1] [--grow 0,12] [--views v1,v3]
 //     [--label name] [--q "extra&query"] [--jobs 2] [--base-ref sha] [--recheck 1]
 //     [--recheck-px 64] [--recheck-level 2] [--retries 1] [--timeout 240000] [--page-per-view]
+//   node tools/island/capture-growth.mjs --base http://127.0.0.1:5191/ --cand http://127.0.0.1:5192/ --seeds 1,2 --grow 0,4,12
 //
-// Views: v1 overview (at noon and in golden hour), v2 top-down (polar 8 degrees), v3 cliff close,
-// v4 meadow close, v5 rim close, v6 sea floor; the close views at noon. Every shot is headless,
-// paused, 1672 x 941, with `debug` added to the query (a production build exposes `__PONLAI__`
-// only with it). A URL's own query parameters, and then `--q`, pass through to every shot of it
-// and override the tool's own (debug, paused, t, dpr, preset, weather, seed, grow).
+// Options:
+//   --base url         the base page (default http://127.0.0.1:5190/, the dev server)
+//   --cand url         the candidate page; without it the base alone is shot
+//   --seeds a,b        the islands' seeds (1)
+//   --grow a,b         the growth steps (0,12)
+//   --views v1,v3      the views, of v1-v6 (all six)
+//   --label name       the output folder's name (the start time to the second and the pid); a used one is refused
+//   --q query          extra query options for every shot, after the URL's own
+//   --jobs n           pages at once, one group each (2)
+//   --base-ref sha     keeps and reuses the base side's shots as references of that commit
+//   --recheck 0|1      shoots a pair with a tiny difference again on both sides (1)
+//   --recheck-px n     a tiny difference: at most n pixels (64)
+//   --recheck-level n  and at most n levels (2)
+//   --retries n        a failed view or a lost page is shot again n times on a fresh page (1)
+//   --timeout ms       capture.mjs's waits for the page (240000)
+//   --page-per-view    a fresh page for every view instead of the scene jump
 //
-// Pages. Generating a grown world cold takes seconds to a minute, and a page per shot generated it
-// for every shot (two thirds of a 42-shot run's wall time). So the shots are grouped by side and by
-// what a page reads once at load (every query option outside the scene's own, SCENE_OPTIONS below
-// as app/Scene.ts lists them: seed and grow choose the world; quality, aa, dpr, the debug switches),
-// and each group is one `tools/kit/capture.mjs --worker` page driven over its IPC channel, as
-// tools/kit/parity/capture-set.mjs drives it: the group's first view is a fresh load, every later one
-// is reached by the exact scene jump (`__PONLAI__.establishScene`), so a group's world is built
-// once. --jobs pages run at once (default 2), one group each. The worker takes the GPU lock itself,
-// shared: a load only once its world is generated (capture.mjs, "The slot after the world"), then
-// leased from view to view; the page's frame loop is stopped before each shot, so this tool holds
-// no lock across the world's CPU work and no frame renders without one; between views a page
-// stands stopped.
-// - A view that fails, or a page that dies or goes silent (no answer within 3 x --timeout + 2 min
-//   of the view taking its GPU slot: killed), is shot again once (--retries) on a fresh page, and
-//   the group's remaining views go on that page. A view whose PNG was written but whose page
-//   logged errors counts as shot (its messages listed, as before); its page ends all the same.
-// - A build without the exact scene jump (`__PONLAI__.sceneJump`) gets a page per view, as does
-//   --page-per-view.
-// - A view must not depend on the view before it: placeCamera starts from the page's load state
-//   (see there). The worker's JSON keeps how each view was reached (`page`: load or jump, from).
+// Views: v1 overview (the page's own island view, at noon and in golden hour), v2 top-down (polar 8
+// degrees), v3 cliff close, v4 meadow close, v5 rim close, v6 sea floor; the close views at noon.
+// They are framed on the land in the page (`__PONLAI__.land`; without it, the first island's
+// framing) and the close views walk the camera's ground (`controls.ground`), never the drawn
+// meshes' vertices. Every shot is headless, paused at t=12, clear, 1672 x 941 at DPR 1, with `debug`
+// added to the query (a production build exposes `__PONLAI__` only with it), and loads high (no
+// `quality` in its query). A URL's own query and then `--q` pass through to every shot of it and
+// override the tool's own options (debug, paused, t, dpr, preset, weather, seed, grow).
 //
-// The world cache (packages/island/world/WorldCache.ts) lives in the browser profile and keeps the two most
-// recently loaded land versions per origin, and capture.mjs takes the lowest free profile slot, so
-// a group would land in whichever slot was free and evict another group's world there. Each group
-// therefore runs in a profile root of its own (PONLAI_CAPTURE_PROFILES =
-// `<main checkout>/artifacts/.capture-profiles/growth/<side>-s<seed>-g<grow>`, under the
-// variable's own root when it is set): a repeat of a run finds every group's world in its cache.
-// The first run in a new root also compiles the shaders cold.
+// Pages. The shots are grouped by side and by what a page reads once at load (every query option
+// outside the scene's own: seed and grow choose the world; quality, aa, dpr, the debug switches).
+// Each group is one `tools/kit/capture.mjs --worker` page: its first view is a fresh load, every
+// later one is reached by the exact scene jump (`__PONLAI__.establishScene`), so a group's world is
+// built once. A view that fails, or a page that dies or goes silent (no answer within 3 x --timeout +
+// 2 min of the view taking its GPU slot: killed), is shot again on a fresh page, and the group's
+// remaining views go on that page. A view whose PNG was written but whose page logged errors counts
+// as shot, its messages listed. A build without the exact scene jump (`__PONLAI__.sceneJump`) gets a
+// page per view, as `--page-per-view` does. The worker's JSON keeps how each view was reached
+// (`page`: load or jump, from).
 //
-// --base-ref <sha> keeps the base side's shots as references of that commit, one entry per shot
-// under `<main checkout>/artifacts/captures/growth-ref/<sha>/<shot key>-<hash>/` (shot.png,
-// shot.json; the store's manifest, tools/kit/reference.mjs, written last). The hash covers what
-// changes the pixels: the size, the full query, placeCamera's code, the capture tools
-// (capture.mjs, capture-browser.mjs) and the browser build. An entry already there is reused
-// instead of captured; one that another live process is capturing is waited for. The base URL must
-// serve that commit: the page does not tell its commit, so the tool asks which worktree serves the
-// port (reference.mjs `checkServed`) and refuses another commit or uncommitted changes, and trusts
-// the URL when it cannot tell.
+// Profiles. Each group runs in a browser profile root of its own
+// (`artifacts/.capture-profiles/growth/<side>-s<seed>-g<grow>` of the main checkout, under
+// `PONLAI_CAPTURE_PROFILES` when it is set), so a repeat run finds every group's world in its world
+// cache. The first run in a new root also compiles the shaders cold.
 //
-// Writes artifacts/captures/growth/<label>/index.html (a label already used is refused; the default
-// is the start time to the second and the pid) (and stats.json, the shots and each view's
-// log). Each pair's crops (the whole frame, its centre and its upper and lower bands) are measured
-// with compare-captures.py's `metrics` (`uv run --with pillow --with numpy`) plus the mean
-// saturation; deltas beyond 10 % are flagged. Each pair also gets its pixel difference: the pixels
-// that differ at all and the largest channel difference, on the decoded PNGs (their bytes depend on
-// the encoder). A pair whose difference is tiny (at most --recheck-px pixels, at most
-// --recheck-level levels; not zero) may be the page's own frame noise, so with --recheck 1 (the
-// default; 0 turns it off) both sides are shot again on fresh pages (the group's rechecks in reverse
-// order, so each is reached from another view) and the pair is reported with both measurements as
-// identical (the second pair is the same pixels: the first difference was noise), repeatable (each
-// side shot its first image again: a real difference) or not repeatable. Shapes differ between
-// steps and builds, so judge the look by eye and the statistics; the pixel difference matters where
-// the two sides should draw the same.
+// References. `--base-ref <sha>` keeps the base side's shots as references of that commit, one entry
+// per shot under `artifacts/captures/growth-ref/<sha>/<shot key>-<hash>/` of the main checkout
+// (shot.png, shot.json; the manifest of tools/kit/reference.mjs written last). The hash covers what
+// changes the pixels: the size, the full query, placeCamera's code, the capture tools (capture.mjs,
+// capture-browser.mjs) and the browser build. An entry already there is reused; one that another
+// live process is capturing is waited for. The base URL must serve that commit: the tool asks which
+// worktree serves the port (reference.mjs `checkServed`), refuses another commit or uncommitted
+// changes, and trusts the URL when it cannot tell.
+//
+// Statistics. Each pair's crops (the whole frame, its centre, its upper and lower bands) are measured
+// with tools/kit/compare-captures.py's metrics (tools/kit/pixels.py, run through `uv`) plus the mean
+// saturation; a delta beyond 10 % is flagged. Each pair's pixel difference counts the pixels that
+// differ at all and the largest channel difference, on decoded pixels. A pair whose difference is
+// tiny (within --recheck-px and --recheck-level, not zero) may be the page's own frame noise: both
+// sides are shot again on fresh pages (a group's rechecks in reverse order, so each is reached from
+// another view) and the pair is reported as identical (the first difference was noise), repeatable
+// (a real difference) or not repeatable.
+//
+// Output: in `artifacts/captures/growth/<label>/`, index.html (the pairs, flagged ones marked),
+// stats.json, the shots and each view's log; stdout has the progress and a summary line (views,
+// flagged, failed, the worlds taken from the cache).
+//
+// GPU lock and browser: each worker page takes the GPU lock itself, shared
+// (docs/reference/gpu-lock.md): a load only once its world is generated, then leased from view to
+// view; the frame loop is stopped before each shot, so no lock is held across the world's CPU work.
+// Headless capture browsers, `--jobs` at once; no server (it shoots the URLs given).
+//
+// Cost: a page load per group, then a scene jump per view; a grown world generated cold takes seconds
+// to a minute, from the cache much less.
+//
+// Exit codes: 0 the page was written (failed shots are listed in it and in the summary); 1 a label
+// already used, an unknown view or an unexpected error; 2 a `--base-ref` that is not a commit or that
+// the base URL does not serve.
+//
+// A view must not depend on the view before it: placeCamera starts from the page's load state.
+import '../kit/help.mjs';
 import { execFileSync, spawn } from 'node:child_process';
 import { copyFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';

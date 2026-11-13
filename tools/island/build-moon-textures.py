@@ -1,13 +1,20 @@
-"""Build the moon's web textures from NASA's CGI Moon Kit (public domain).
+"""Builds the moon's web textures (colour and heights) from NASA's CGI Moon Kit (public domain).
 
-Usage: uv run --with pillow --with numpy tools/island/build-moon-textures.py [source-dir]
+It answers "how were public/sky/moon/ made": run it again only to rebuild them from the kit.
 
-source-dir (default artifacts/third-party/nasa-moon) holds two files from
-https://svs.gsfc.nasa.gov/4720/ (NASA's Scientific Visualization Studio):
+Usage:
+  uv run --with pillow --with numpy tools/island/build-moon-textures.py [source-dir]
+
+Options:
+  source-dir   the folder holding the kit's two files (artifacts/third-party/nasa-moon)
+
+source-dir holds two files from https://svs.gsfc.nasa.gov/4720/ (NASA's Scientific Visualization
+Studio):
   lroc_color_2k.jpg  colour, 2048 x 1024, sRGB, centred on 0 degrees longitude
   ldem_4_uint.tif    LOLA heights, 1440 x 720, unsigned 16-bit half-metres offset by
                      +10 km from the 1737.4 km reference sphere
-Writes public/sky/moon/:
+
+Output: public/sky/moon/:
   moon_color.jpg     1024 x 512 sRGB colour, a 2 x 2 box average taken in linear light
   moon_height.png    512 x 256 heights, an area average of the LOLA grid, kept in the
                      kit's units (half-metres + 20000) and split into two 8-bit channels:
@@ -15,14 +22,28 @@ Writes public/sky/moon/:
                      GPU's bilinear and mipmap filters of the two channels recombine into
                      the filtered 16-bit height (red * 65280 + green * 255) / 65535 without
                      an 8-bit height's terracing in the shading near the terminator.
+stdout: the near side's mean linear luminance (area-weighted on the disc), the height range in
+metres and each file's size.
+
 The moon is about a degree wide on screen, a few dozen pixels in the usual views; these sizes
 stay sharp in a narrow-lens close-up while keeping the download small.
+
+GPU lock and browser: neither (docs/reference/gpu-lock.md).
+
+Cost: a few image decodes and encodes.
+
+Exit codes: 0 written; 1 a missing file or one of another size (an uncaught error).
 """
 import sys
 from pathlib import Path
 
-import numpy as np
-from PIL import Image
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "kit"))
+from help import answer_help  # noqa: E402
+
+answer_help(__file__)
+
+import numpy as np  # noqa: E402
+from PIL import Image  # noqa: E402
 
 source = Path(sys.argv[1] if len(sys.argv) > 1 else "artifacts/third-party/nasa-moon")
 out = Path("public/sky/moon")

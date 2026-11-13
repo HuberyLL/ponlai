@@ -1,8 +1,31 @@
-// Real browser regression checks for the visual sample; no synthetic gameplay hooks required.
-// Run against a production preview: node tools/island/verify-scene.mjs http://127.0.0.1:5191
-// The island camera: a left drag and W pan it (the hand moves it by default), the wheel never zooms
-// the island view in past its start but zooms out from a nearer start (`dist=50`) to the farthest
-// zoom, and `cameraInput=off` holds it; each input step waits for the page's rendered frames.
+// Runs real-browser regression checks of the visual sample on a production preview, with no synthetic gameplay hooks.
+//
+// It answers "does the built page load, draw, move, pause and take its keys as it should, without
+// errors", in a real browser, on `?debug&paused&t=12&dpr=1`. The island camera: a left drag and W
+// pan it (the hand moves it by default), the wheel never zooms the island view in past its start
+// but zooms out from a nearer start (`dist=50`) to the farthest zoom, and `cameraInput=off` holds
+// it; each input step waits for the page's rendered frames.
+//
+// Usage:
+//   node tools/island/verify-scene.mjs [url] [--production]
+//
+// Options:
+//   url            the server (http://127.0.0.1:5190); the intended target is a production preview
+//                  (http://127.0.0.1:5191, `npm run preview`)
+//   --production   also checks that the page without `debug` exposes no scene handles (assumed when
+//                  the url holds 5191)
+//
+// Output: in artifacts/verification/, overview.png, motion-a.png, motion-b.png, close.png and
+// report.json (the checks, the page's inspection, errors and failed requests); stdout, the checks as
+// JSON.
+//
+// GPU lock and browser: it takes the GPU lock itself, shared (docs/reference/gpu-lock.md), and drives
+// one headless Chromium page at 1672 x 941 through Playwright; no server (it needs one running).
+//
+// Cost: a few page loads and the checks' frames.
+//
+// Exit codes: 0 every check passed; 1 a check failed or the run broke.
+import '../kit/help.mjs';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from '../kit/gpu-lock.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';

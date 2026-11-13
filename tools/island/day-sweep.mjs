@@ -1,8 +1,15 @@
-// Day sweep: the island view through the whole day under every kept weather, as contact sheets
-// and curves a person reads at a glance, with the steps flagged. The systems that are tuned by the
-// sun's elevation and the weather (exposure, skylight, haze, white balance, the grade) go wrong
-// at one hour under one sky, which the few frames a tuning session looks at miss.
+// Sweeps the island view through the day under each kept weather, as sheets and curves with the steps flagged.
 //
+// The systems tuned by the sun's elevation and the weather (exposure, skylight, haze, white balance,
+// the grade) go wrong at one hour under one sky, which the few frames a tuning session looks at miss.
+// Run it before handing back a change to anything keyed by the sun's elevation or the weather, and
+// again with `--compare` on the run from before. It only combines tools that exist:
+// tools/island/colour-rows.mjs shoots the frames (shoot --warm: one warm page, a scene jump per frame)
+// and reads them (rows --own), `tools/kit/img.py sheet` and `thumb` lay them out and shrink them, and
+// tools/island/day-sweep-plot.py draws the curves. `report` runs the second half again on the frames
+// already in <outDir> (new thresholds, a comparison, a sheet that failed).
+//
+// Usage:
 //   node tools/kit/job.mjs start -- node tools/island/day-sweep.mjs <url> <outDir> [--scope routine|full]
 //       [--views name,...] [--view name:query]... [--times all|hourly|midday|dense|key|HH:MM,...]
 //       [--weathers name,...] [--compare <earlier outDir>] [--transitions] [--keep-frames]
@@ -11,148 +18,94 @@
 //   node tools/island/day-sweep.mjs report <outDir> [--compare <dir>] [--thin] [--thr-stops s] [--thr-de d]
 //       [--turn-deg d] [--sky-mask-deg d]
 //
-// A routine run is hundreds of scene jumps and takes as long as several parity sets: start it
-// through tools/kit/job.mjs and wait on it there, never in a shell of its own. <outDir> must be new
-// (or empty): a run into an old one would read the old run's numbers.
+// Options:
+//   --scope s          routine: default, key and low all day; full: also back at the key moments (routine)
+//   --views a,b        the cameras, of default, key, low, back (the scope's)
+//   --view name:query  adds a camera of its own (its query: dist, polar, az, ...), all day; repeatable
+//   --times spec       HH:MM tokens and the words below, mixed (`hourly,05:20`) (all)
+//   --weathers a,b     the weathers (the kept ones, every weather not in Weather.ts PARKED_WEATHER)
+//   --compare <dir>    compares with an earlier run of the same cameras, size and sort
+//   --transitions      also shoots each adjacent pair of weathers half way through a front
+//   --keep-frames      keeps every frame at full size
+//   --thr-stops s      a step in log2 luminance worth a line (1/3)
+//   --thr-de d         a step in the Oklab (a, b) distance worth a line (0.03)
+//   --turn-deg d       a pair the camera turned more than d degrees over is not scanned (15)
+//   --sky-mask-deg d   leaves the sky within d degrees of the sun or the moon out of the sky's row (5)
+//   --size WxH@dpr     the frames' size (2560x1440@1)
+//   --jobs n           colour-rows's page count (1)
+//   --q query          extra query options for every frame
+//   --thin             report: thins a run already made to thumbnails (as a shoot does)
 //
-// It only combines the tools that exist: tools/island/colour-rows.mjs shoots the frames (tools/kit/parity/
-// capture-set.mjs on one warm page, the scene jump from frame to frame, under the shared GPU lock)
-// and reads the sky, the sea and the land of each; tools/kit/img.py sheet and thumb lay them out and
-// shrink them; tools/island/day-sweep-plot.py draws the curves. `report` runs the second half again on
-// the frames already in <outDir> (new thresholds, a comparison, a sheet that failed).
+// A routine run is hundreds of scene jumps: start it through tools/kit/job.mjs and wait on it there,
+// never in a shell of its own. <outDir> must be new or empty: a run into an old one would read the
+// old run's numbers.
 //
-// The cameras (--views names them; the default is the scope's; every frame of a camera from the
-// same pose)
+// The cameras (every frame of a camera from the same pose; their reasons are beside CAMERAS):
 //   default  the game's island view at its own heading (az 180), as views.mjs's island views
-//   key      the default view's distance and tilt, about the page's default pivot, turned at each
-//            frame to look toward the light: the sun while it stands above -12 degrees, the moon
-//            after it (DayCycle's `sunDir` and `moonDir`). The key light itself turns from the sun
-//            to the moon between -2.5 and -0.7 degrees, which swung a camera that followed it 70
-//            degrees in 10 minutes at sunrise and sunset; at -12 the light changes slowly, and
-//            the camera's one big turn is there (`--turn-deg` below)
-//   low      as key, at the lowest pitch the game's camera allows (the island camera's
-//            `maxPolarAngle`, 82 degrees from straight down: 8 over the horizon, read from the
-//            page), so the horizon and the low sky stand in the frame: the only camera with sky.
-//            The sky there is a band about 5 degrees high above the horizon, and the sun stands in
-//            it while it is under about 5 degrees (--sky-mask-deg below)
+//   key      the default view's distance and tilt about the page's default pivot, turned at each frame
+//            to look toward the light: the sun while it stands above -12 degrees, the moon after it
+//   low      as key, at the lowest pitch the game's camera allows (8 degrees over the horizon, read
+//            from the page): the only camera with sky, a band about 5 degrees high over the horizon
 //   back     as key, from the light's side, looking away from it
-//   `--view name:query` adds a camera of its own (its query: dist, polar, az, ...), all day.
-// The turned cameras are shot at the default view's distance read from the page (a short probe),
-// because the framing's own distance changes with the heading (85 m at az 180, 108 m at 200) and a
-// turned camera would otherwise also change its height.
-// --scope routine (the default): default, key and low, all day, every weather. --scope full: also
-// back, at the key moments only (12 frames a weather; no scan for it; a camera `--views` names is
-// scanned all day, back too). There is no near or far camera: the game camera's farthest zoom, 70 m,
-// is under the 85 m of the default framing, so it has no range to zoom in.
+// The island camera looks 50 degrees down, so default, key and back hold no sky.
 //
-// The times (--times; "HH:MM" tokens and the words below, mixed: `hourly,05:20`)
+// The times:
 //   hourly  every whole hour, 0 to 23
 //   midday  every half hour from 08:00 to 16:00
 //   dense   every 10 game minutes from 70 minutes before sunrise to 90 after it, and from 90 before
-//           sunset to 70 after it (the sun crossing the horizon, DayCycle.ts's `morningHour( 0 )`
-//           and `eveningHour( 0 )`: 06:00 and 18:00, the path being an equinox's)
-//   key     twelve moments by the sun's elevation, each rounded to 10 minutes: midnight, pre-dawn
-//           (-12 deg, morning), dawn (-6), sunrise (0), 09:00, noon, 14:00, the golden hour
-//           (DAY_PRESETS), sunset (0), dusk (-6), late dusk (-12) and 22:00
-//   all     hourly, midday, dense and key together: the default, 61 frames a weather
-// Each frame is `weather=<w>&hour=<h>` on the camera's pose; the elevation in its label is the
-// page's own (`__PONLAI__.sky.elevation`, which colour-rows reads).
+//           sunset to 70 after it (DayCycle.ts `morningHour( 0 )`, `eveningHour( 0 )`: 06:00 and 18:00)
+//   key     twelve moments by the sun's elevation, each rounded to 10 minutes: midnight, pre-dawn (-12
+//           degrees), dawn (-6), sunrise (0), 09:00, noon, 14:00, the golden hour (DAY_PRESETS), sunset,
+//           dusk (-6), late dusk (-12) and 22:00
+//   all     hourly, midday, dense and key together: the default, 61 frames a camera and weather
+// Each frame is `weather=<w>&hour=<h>` on the camera's pose; its label's elevation is the page's own.
 //
-// The output in <outDir>
-//   frames/<camera>/<weather>-<HHMM>.png   the frames a line of jumps.txt names (hard links into
-//                                          colour/normal)
-//   frames/<camera>/<weather>-<HHMM>.jpg   every other frame, 360 px on its short side (Storage)
-//   sheet-<camera>-<weather>.png           the day by time, 8 columns of 320 px tiles, "05:20 · -4.1°"
-//   overview-<camera>.png                  rows the weathers, columns the key moments
-//   rows.json                              per camera, weather and frame: elevation, EV and the
-//                                          regions' Oklab L, C, h and log2 luminance
-//   curves-<camera>-<weather>.png          those and the sun's elevation and EV over the day, the
-//                                          steps circled in their region's colour
-//   jumps-<camera>.txt, jumps.txt          the flagged steps (below), by size
-//   compare/, compare.txt, compare.json    with --compare (below)
-//   transitions.txt, sheet-transitions.png with --transitions (below)
-//   colour/                                colour-rows's own shoot and rows (the frames as views
-//                                          `<camera>--<weather>-<HHMM>`), views-*.json, rows.json
-//                                          (all views' rows)
-//   plan.json, timing.json, gaps.txt       the run's plan and costs; frames with a region of too
-//                                          few cells (fewer than 8)
-//
-// The regions, read by colour-rows (rows --own) per frame, each frame sorted by its own depth read:
-//   sky, sea  the cells more than 0.99 sky or sea; the sky's without the cells within
-//             --sky-mask-deg (5) degrees of the sun or the moon (by angle, from the page's own read
-//             of the lights and the camera), so the disc and its glare do not make the sky's curve
-//   land      the cells with no sky and no sea texel at all
-//   floor     the darkest 5 % of the land's cells by luminance, whichever cells those are in the frame
-// Each frame is sorted on its own because the turned cameras share no cells from one frame to the
-// next: a sort fixed on one frame read sea where the island had stood, and a sort of the sunlit and
-// the shaded land fixed at noon read noon's shadow at every hour (a jump of three stops there). The
-// land is taken whole and its dark end by rank, so the shade that moves with the sun moves no
-// curve. A row is the final pixel's mean linear colour over its cells: its luminance as log2, and
-// its Oklab L, C, h. The island camera looks 50 degrees down, so default, key and back hold no sky;
-// a region a camera holds no cells of is "not read" there, in no frame.
+// The regions, read per frame by colour-rows rows --own, each frame sorted by its own depth read:
+// `sky` and `sea` (cells more than 0.99 sky or sea; the sky without the cells within --sky-mask-deg of
+// the sun or the moon), `land` (no sky and no sea at all) and `floor` (the land's darkest 5 % by
+// luminance). A row is the final pixel's mean linear colour over its cells, as log2 luminance and
+// Oklab L, C, h. A region a camera holds no cells of is "not read"; one with too few cells (under 8)
+// in a frame is a gap in its curve and a line in gaps.txt, not a failure.
 //
 // The steps. For each camera that has the whole day, each weather and region, each pair of
-// neighbouring frames (the day a circle: 23:00 and 00:00 are neighbours; with times that do not
-// close, the first and last pair of the list are not scanned, and nor is a pair over 180 minutes
-// wide). A pair's step is what its change holds beyond what the slope of its neighbours predicts: the
-// change between the two frames, less the time between them times the slope of the pair on either side
-// (the one of the smaller size, so a single odd frame shows as two steps of its own size). A step in
-// the light is flagged at its whole size, wherever the frames lie close or far apart, and a smooth
-// curve shows only its bend. Two measures, each a line in jumps-<camera>.txt in units of its
-// threshold: log2 luminance beyond --thr-stops (1/3 stop), and the distance in the Oklab (a, b)
-// plane, the colour without its lightness, beyond --thr-de (.03); a change of light that moves both
-// is two lines. A third of a stop and .03 are about the least differences one sees in a whole frame;
-// both are options. A region read from 8-bit pixels in the dark is only as fine as its levels.
-// A pair whose camera turned more than --turn-deg (15 degrees; the sun at noon turns it 12 in half
-// an hour, the sun and moon switch at -12 degrees about 100) is not scanned: jumps-<camera>.txt
-// lists it as "camera turned" instead, a change of the picture and not of the light, and a pair
-// beside it uses the slope of its other side only.
+// neighbouring frames is scanned for what its change holds beyond the slope of its neighbours: a
+// step in log2 luminance beyond --thr-stops, and in the Oklab (a, b) distance beyond --thr-de, each a
+// line in jumps-<camera>.txt in units of its threshold. A third of a stop and .03 are about the least
+// differences one sees in a whole frame. A pair the camera turned more than --turn-deg over is listed
+// as "camera turned" instead. The rules are beside `stepsOf`.
 //
-// Storage. A frame is a 2560 x 1440 PNG of several MB, and a routine run has 732 of them (about
-// 6 GB). Once the steps are found the frames no line of jumps.txt names (nor compare.txt) are kept
-// as thumbnails only (img.py thumb, 360 px short side, JPEG); in a routine run about a third of
-// the frames are named, and the flagged ones, the sheets and the curves keep their size, so the
-// run comes to under half of its size. --keep-frames leaves them all; `report --thin` thins a run
-// already made. A thinned run cannot read its pixels again: `report` on it redoes the numbers from
-// colour/rows.json (jumps, curves, compare.txt and compare.json, transitions.txt) and leaves the
-// pictures as they are, so a step found only under a new threshold has no full-size frame; the
-// sheets, overviews and sheet-transitions.png need the whole frames. The compare/ pictures do not
-// (below).
+// --compare <earlier outDir> gives a before, after and difference sheet per camera and weather and
+// compare.txt, the frames whose regions changed beyond the thresholds, read from both runs' rows, so
+// either run may be thinned. A run of another sort, size or with no camera in common is refused
+// before anything is shot; a sky masked otherwise is marked not compared. Frames are subtracted only
+// where both runs hold the same query; the rest are listed. --transitions freezes each adjacent pair
+// of weathers half way through a front (views.mjs's `weather-change` recipe) at sunrise, noon, the
+// golden hour and sunset (the first camera, a page each) and reports how far the middle frame lies
+// from its endpoints.
 //
-// --compare <earlier outDir>: the same cameras, weathers and times of an earlier run, one sheet a
-// camera and weather (compare/<camera>-<weather>.png: before, after and their difference x8; the
-// frames that changed and the key moments) and compare.txt, the frames whose regions changed beyond
-// the thresholds (log2 luminance, and the Oklab (a, b) distance). The readings come from the two
-// runs' colour/rows.json, never from the pixels, so either run may be thinned. The sheet takes each
-// side's full-size frame where both runs kept them all; otherwise every full-size frame of it is
-// shrunk to the thinned run's thumbnail size first and the difference is between thumbnails (JPEG,
-// so a few levels of it are the compression's), which compare.txt says per sheet ("sheet's
-// difference from 360 px thumbnails"). It compares like with like or not at all: an earlier run
-// read by another sort (colour-rows --sort), at another size or with no camera in common is refused,
-// and checked before anything is shot or read (exit 2: a mismatch found at the report would have
-// cost the whole shoot). A sky masked by another --sky-mask-deg (a run made before the mask has
-// none: 0) is not refused but left out: its rows can be read again only from full-size frames, so
-// compare.txt and compare.json (`notCompared`) mark the sky not compared and the other regions are.
-// A frame is subtracted only where both runs hold it with the same query (the same pose, hour and
-// weather); the rest are listed as only in one run or as posed differently.
+// Output: in <outDir>, frames/<camera>/<weather>-<HHMM>.png (hard links into colour/normal for the
+// frames a line of jumps.txt or compare.txt names; every other frame as a .jpg of 360 px on its short
+// side, unless --keep-frames), sheet-<camera>-<weather>.png (the day by time, 8 columns of 320 px
+// tiles labelled with the time and the sun's elevation),
+// overview-<camera>.png (the weathers by the key moments), rows.json, curves-<camera>-<weather>.png
+// (the regions' readings, the sun's elevation and the EV over the day, the steps circled),
+// jumps-<camera>.txt and jumps.txt, compare/, compare.txt and compare.json (with --compare),
+// transitions.txt and sheet-transitions.png (with --transitions), colour/ (colour-rows's own shoot and
+// rows), plan.json, timing.json (wall, lock-wait and busy time per part) and gaps.txt. A thinned run's
+// `report` redoes the numbers only; the sheets need the whole frames.
 //
-// --transitions: the weather between two kept weathers, each adjacent pair at the sunrise, noon,
-// the golden hour and sunset, frozen half way through a front's six seconds (views.mjs's
-// `weather-change` recipe: setWeather, update( 3 ), refreshEnvironment), beside the pair's two
-// endpoints at that time (the first camera). Each takes a page of its own. transitions.txt gives,
-// per region, how far the half-way frame lies from the line between the endpoints (log2 luminance
-// outside their span, Oklab (a, b) distance from their segment), and sheet-transitions.png the
-// triples.
+// GPU lock and browser: colour-rows takes the GPU lock shared (docs/reference/gpu-lock.md) in the
+// capture tools' headless browser; a short probe reads the default view's pose first. `report`: neither.
 //
-// Cost. A frame is a scene jump on a warm page (colour-rows shoot --warm), which costs a fraction of
-// a page load; a routine run is 732 jumps and, with --transitions, 12 page loads more. timing.json
-// holds, per part, its wall time, the time its views waited for the GPU lock and the time they
-// were busy (from the views' own records), so a run beside other pages is told from an idle one.
-// A SIGTERM (job.mjs stop) goes on to the tools below it. Exit 0; 1 when a shoot, a picture or a
-// thumbnail failed, or a frame has no row; 2 on bad usage, an earlier run that cannot be compared,
-// or a packages/render/sky/Weather.ts without the exports the weathers' names are read from (WEATHER_PRESETS,
-// PARKED_WEATHER). A frame whose region has too few cells
-// is a gap in its curve and a line in gaps.txt, not a failure.
+// Cost: a scene jump per frame on a warm page, a fraction of a page load each; a routine run of the
+// kept weathers is 366 frames of several MB each before thinning (about a third are kept full size);
+// --transitions adds a page load per pair and moment. A SIGTERM (job.mjs stop) goes on to the tools
+// below it.
+//
+// Exit codes: 0 done; 1 a failed shoot, picture or thumbnail, a frame with no row, or an unexpected
+// error; 2 bad usage, an output directory that is not empty, an earlier run that cannot be compared,
+// or a packages/render/sky/Weather.ts without WEATHER_PRESETS or with every weather parked.
+import '../kit/help.mjs';
 import '../kit/qos.mjs'; // first: the PNG work and the helpers run with the application policy
 import { spawn, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, linkSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -179,6 +132,18 @@ const REGIONS = [ 'sky', 'sea', 'land', 'floor' ];
 const THR_STOPS = 1 / 3, THR_DE = 0.03, TURN_DEG = 15, SKY_MASK_DEG = 5;
 // the sun leads a camera down to here, the moon after (the light changes slowly there)
 const HANDOFF_ELEVATION = - 12;
+// The cameras. key and low turn at each frame to look toward the light, the sun down to -12 degrees
+// and the moon after it (DayCycle's `sunDir` and `moonDir`). The key light itself turns from the sun
+// to the moon between -2.5 and -0.7 degrees, which swung a camera that followed it 70 degrees in 10
+// minutes at sunrise and sunset; at -12 the light changes slowly, and the camera's one big turn is
+// there (--turn-deg). low stands at the island camera's `maxPolarAngle`, 82 degrees from straight
+// down, so the horizon and the low sky stand in the frame; the sun stands in that sky band while it
+// is under about 5 degrees (--sky-mask-deg). The turned cameras are shot at the default view's
+// distance read from the page (a short probe), because the framing's own distance changes with the
+// heading (85 m at az 180, 108 m at 200) and a turned camera would otherwise also change its
+// height. There is no near or far camera: the game camera's farthest zoom, 70 m, is under the 85 m
+// of the default framing, so it has no range to zoom in. In the full scope back takes the key
+// moments only (12 frames a weather, no scan); a camera that --views names is scanned all day.
 const CAMERAS = [ 'default', 'key', 'low', 'back' ];
 // back takes the key moments only (the scope's cost), the others the whole day
 const KEY_ONLY = new Set( [ 'back' ] );
@@ -523,7 +488,13 @@ async function shoot( plan, out, options ) {
 const lum = ( [ r, g, b ] ) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
 const degrees = ( x ) => x.toFixed( 1 ).replace( /^-0\.0$/, '0.0' );
 
-// a region's numbers from a colour-rows row, or null when it holds none
+// a region's numbers from a colour-rows row, or null when it holds none. Each frame is sorted on its
+// own (colour-rows rows --own) because the turned cameras share no cells from one frame to the next:
+// a sort fixed on one frame read sea where the island had stood, and a sort of the sunlit and the
+// shaded land fixed at noon read noon's shadow at every hour (a jump of three stops there). The land
+// is taken whole and its dark end by rank, so the shade that moves with the sun moves no curve. The
+// sky's mask works by angle, from the page's own read of the lights and the camera, so the disc and
+// its glare do not make the sky's curve.
 function regionOf( row ) {
 
 	if ( ! row || row.L === null || ! row.rgb ) return null;
@@ -552,6 +523,16 @@ const chromaDistance = ( p, q ) => Math.hypot( p.a - q.a, p.b - q.b );
 // The steps between neighbouring frames of one camera and weather (the header's The steps).
 // `points` by time; returns { steps, turned }: a step is { from, to, region, quantity, size, ratio,
 // a, b } and a turned pair { from, to, turn }.
+// The day is a circle: 23:00 and 00:00 are neighbours; with times that do not close, the first and
+// last pair of the list are not scanned, nor is a pair over MAX_PAIR minutes wide. A pair's step is
+// the change between its two frames less the time between them times the slope of the pair on
+// either side (the one of the smaller size, so a single odd frame shows as two steps of its own
+// size). A step in the light is flagged at its whole size, wherever the frames lie close or far
+// apart, and a smooth curve shows only its bend. A change of light that moves both measures is two
+// lines. A region read from 8-bit pixels in the dark is only as fine as its levels. The camera turn
+// that a pair may hold (--turn-deg, 15): the sun at noon turns it 12 degrees in half an hour, the
+// sun and moon switch at -12 degrees about 100. A turned pair is a change of the picture, not of the
+// light; a pair beside it uses the slope of its other side only.
 function stepsOf( points, thr, turnDeg ) {
 
 	const n = points.length, steps = [], turned = [];
@@ -641,6 +622,13 @@ const framePng = ( out, f ) => path.join( out, 'frames', f.camera, `${ f.weather
 // flagged ones' PNGs, the PNGs of the rest (and their colour/normal files, the same file) then gone.
 // All thumbnails first, the record of the thinning next, the deletions last: a failure leaves every
 // frame whole. Returns whether it thinned.
+// A frame is a PNG of several MB at the default size; in a routine run about a third of the frames
+// are named, and the flagged ones, the sheets and the curves keep their size, so the run comes to
+// under half of its size. A thinned run cannot read its pixels again: `report` on it redoes the
+// numbers from colour/rows.json (jumps, curves, compare.txt and compare.json, transitions.txt) and
+// leaves the pictures as they are, so a step found only under a new threshold has no full-size
+// frame; the sheets, overviews and sheet-transitions.png need the whole frames, the compare/
+// pictures do not.
 function thin( plan, out, keep ) {
 
 	const bytes = ( dir ) => Number( spawnSync( 'du', [ '-sk', dir ], { encoding: 'utf8' } ).stdout.split( '\t' )[ 0 ] ) * 1024;
@@ -835,6 +823,11 @@ function report( out, options, thinNow ) {
 
 // ------------------------------------------------------------------ transitions
 
+// --transitions: each adjacent pair of weathers frozen half way through a front's six seconds
+// (views.mjs's `weather-change` recipe: setWeather, update( 3 ), refreshEnvironment), beside the
+// pair's two endpoints at that time. transitions.txt gives, per region, how far the half-way frame
+// lies from the line between the endpoints (log2 luminance outside their span, Oklab (a, b) distance
+// from their segment), and sheet-transitions.png the triples.
 function transitions( plan, views, cameras, out, thr, pictures ) {
 
 	const lines = [ `# the weather half way between two kept weathers against the line between their endpoints at that time (${ plan.cameras[ 0 ].name }); outside: log2 luminance beyond the endpoints' span, Oklab (a, b) distance from their segment` ];
@@ -897,6 +890,13 @@ function earlierRun( dir, size, skyMaskDeg, cameraNames ) {
 
 }
 
+// The comparison's sheets (compare/<camera>-<weather>.png): before, after and their difference x8,
+// the frames that changed and the key moments. The sheet takes each side's full-size frame where both
+// runs kept them all; otherwise every full-size frame is shrunk to the thinned run's thumbnail size
+// first and the difference is between thumbnails (JPEG, so a few levels of it are the
+// compression's), which compare.txt says per sheet. A frame is subtracted only where both runs hold
+// it with the same query (the same pose, hour and weather); the rest are listed as only in one run
+// or as posed differently. The readings come from the runs' colour/rows.json, never the pixels.
 function compare( plan, doc, cameras, out, earlier, thr, keep ) {
 
 	const { before, plan: oldPlan, doc: oldDoc, skyComparable, skyNote, thumbShortSide } = earlier;

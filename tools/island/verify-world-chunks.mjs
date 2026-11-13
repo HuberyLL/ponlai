@@ -1,98 +1,69 @@
-// Chunk checks for the world generator (plain node, CPU only):
+// Checks the world generator's chunks: determinism, the dirty set, seams and locality, over grown lands.
+//
+// It answers "is every chunk a function of its window alone, the same however and wherever it is
+// built, with seams that meet bit for bit" (packages/island/world/Chunks.ts, whose header has the
+// rules). Run it before captures after any change to the world's generator. The world is generated
+// per chunk: S = 16 m squares on the world grid, each from its window (the chunk grown by R = 32 m)
+// of the land field alone.
+//
+// Usage:
 //   node tools/island/verify-world-chunks.mjs [--seeds 1,2] [--steps 12] [--threads n] [--long] [--bench]
-//                                      [--sheets dir]
-// Run it before captures after any change to the world's generator.
+//       [--sheets dir] [--force]
 //
-// The world is generated per chunk (packages/island/world/Chunks.ts): S = 16 m squares on the world grid, each
-// from its window (the chunk grown by R = 32 m) of the land field alone. For every seed the runner
-// grows the land step by step (0 .. --steps), builds every chunk of every step on a pool of worker
-// threads (`buildChunk`, each job handed its window as the page's workers will be), and runs the
-// checks below on the hashes and, at the S steps, on what the chunks hold. A check prints `ok` /
-// `FAIL` lines and returns whether it passed; any failure sets the exit code. The default run builds
-// 1219 chunks (seeds 1 - 2, steps 0 - 12; about half a second each on one thread, a coastal chunk up
-// to two); `--long` adds what the default leaves out (marked below). docs/reference/tools.md has the times.
+// Options:
+//   --seeds a,b     the seeds grown (1,2)
+//   --steps n       the last growth step; every step from 0 is built (12)
+//   --threads n     the main pool's worker threads (min( 8, cores - 4 ), at least 1)
+//   --long          D1 at every step, D2 on all chunks of both seeds, the S checks at every fourth step,
+//                   and the `columns` check
+//   --bench         D4 and the per-piece costs only (below); never skipped nor recorded
+//   --sheets dir    where the chunk sheets go (artifacts/captures/world-chunks/)
+//   --force         runs even when these inputs passed before
 //
-//   D1  incremental equals scratch: step n's chunks built incrementally (every chunk of step 0,
-//       then at each step only `dirtyChunks` from the step before, the others kept) hash as step n
-//       built from scratch in a fresh process, one chunk after another in reverse key order. The
-//       default builds the last step from scratch, --long every step.
-//   D2  thread counts: the last step's chunks built on pools of 1 and of 4 workers hash as on the
-//       main pool (the default the first seed's 15 costliest chunks by the main pool's time, the
-//       coastal ones, --long all, both seeds).
-//   D3  the land does not depend on the order its pieces are applied: a piece is the cells a growth
-//       step adds, immutable once placed (IslandGrowth.ts). Which piece comes next depends on the
-//       land before it, so the growth itself has one order; "piece order" here is the order a land
-//       is assembled from its pieces (a save loaded, a worker handed the pieces): the union of the
-//       cells. The last step's pieces applied in reverse, shuffled, and with the starting island
-//       last give the same cells, chunk keys and land field as the grown land, bit for bit (the
-//       recent headings a land also keeps do follow the order: no chunk reads them).
-//   D4  the dirty set: between consecutive steps every chunk whose hash changed (or that is new)
-//       is in `dirtyChunks`, and none outside it changed. Prints the chunks, how many are dirty,
-//       how many changed, and how far the farthest changed chunk lies from the changed land; it
-//       warns (no failure) when that is more than 30 m, close to the rule's 34 m.
-//   D5  beyond the dirty bound: at the last step, for each coastal chunk and each axis direction,
-//       a 2 m disc of land on the coast and a 2.5 m disc 6 - 16 m offshore, placed so its nearest
-//       cell lies 34.6 - 44 m from the chunk: the chunk is not in `dirtyChunks`, and rebuilt from
-//       the new land field it hashes as before. Prints the discs, how many changed the chunk's
-//       window (the far reads had something to see) and how many changed the chunk.
-//   R1  the shoal (packages/island/world/SeabedRise.ts): between consecutive steps, the shown tiles the next
-//       version moves (SeabedTile.ts `pendingFloors`), risen at R = 0, 0.25, 0.5, 0.75 and 1
-//       (`riseTile`): at R = 0 every point is the shown tile's bit for bit; at R = 1 every point is
-//       the next version's tile (or the floor under the new land) within 1e-5 in height, normal and
-//       bed, but for the sides along cells the next version adds, straightened between the far
-//       floor's nodes (counted, with their largest step at the swap); at every R those side points
-//       lie on the far floor's edge between its risen nodes within 1e-5 (no crack), no point off the
-//       next land rises above -1.6 m, and none off the shown land breaks the surface (0 m). Prints
-//       the tiles, the far floor's nodes that rise, how far an added cell's tile lies from its
-//       nodes' triangles, the largest rise and the shoal: the R = 1 heights over the land the piece
-//       adds (p10 / p50 / p90, the highest).
-//   At the S steps (0 and the last; --long every fourth):
-//   S1  the welded union of the chunks' island and stone meshes is closed: no boundary edge, and
-//       at most 1.3 non-manifold edges per 1000 triangles (the ambiguous cells of surface nets).
-//       The page's single island mesh has 0.65 - 0.88 per 1000 on seeds 1 - 2 at steps 0 and 12
-//       once its bottom face is left out: x 1.5. The chunks leave the bottom face out by design
-//       (SurfaceNets.ts: never seen below the sea floor), so the walls end open at the lattice's
-//       bottom row: a boundary edge with both ends in that row (y < -5.1 + one voxel) is counted
-//       as the open foot instead.
-//   S2  island seams. Every island vertex two chunks share (the same position bits) carries the
-//       same bits in every attribute in both, contact shade included; and the 2 x 2 block of chunks
-//       holding the most triangles, meshed in one call from its own window on the same lattice
-//       (`chunkIsland`), has exactly the vertices (all attributes) and triangles of its four chunks.
-//   S3  floor seams: the lattice points two (or four) neighbouring floor tiles both compute (their
-//       common border rows, corners) are bit-identical in height, normal, ao and bed. Every floor
-//       point off the land (land distance > 0) lies at or below -1.6 m, and every tile side with no
-//       chunk beyond it, where the far floor meets the tile, is the open sea's lattice bit for bit
-//       (openSeaHeight, the far floor's normals, openSeaBeds, ao 1).
-//   S4  lip seams: every piece of the rim's lip that ends on a chunk border meets exactly one
-//       piece that starts there in a neighbouring chunk, with the same crossing sample (root
-//       points, coast data) to 1e-5 (the count of bit-identical ones is printed); no piece
-//       ends inside its chunk.
-//   S5  shared-out content: the 2 x 2 block with the most coast (lip samples), made in one
-//       pass from its own window (`chunkBlock`) and shared out by chunk, equals its four chunks bit
-//       for bit in the rim ground, shore and walk texels and the anchors.
-//   S6  stones: every stone is owned once, by the chunk its centre lies in; and every stone a chunk
-//       places round itself for the contact shade (`contactStones`) whose centre lies in another
-//       chunk is that chunk's own stone, bit for bit, so two chunks shade with the same stone.
-//   S7  rim tiles: a chunk without island carries no rim ground tile (Chunks.ts; ChunkMerge.ts
-//       fills its square with the open sea's constant), no lip and no anchors, and no island
-//       vertex or anchor of any chunk lies within 0.5 m of its square: the merged field's readers
-//       (the cliff material's linear lookups on the island, the meadow's tufts at the anchors)
-//       never reach those texels. Prints the nearest such point.
-//   I1  no buried wall inland: where the land distance is below -3.5 m (inland, the island mesh's
-//       column range: no wall, only the meadow's top) the window's island SDF is solid from the
-//       lattice's bottom to 0.35 m below the meadow's top and clear 0.6 m above it, sampled every
-//       0.5 m across and 0.25 m down; and no inland island vertex lies below that. A wall left
-//       standing inside land that grew over the old coast would show as an open sample.
-//   columns  (--long) every chunk with inland columns meshed with the inland column range
-//       (WorldShapes.islandColumnRange) is byte-identical to the chunk meshed with whole columns.
+// For every seed it grows the land step by step (0 .. --steps), builds every chunk of every step on a
+// pool of worker threads (`buildChunk`, each job handed its window as the page's workers will be),
+// and runs the checks on the hashes and, at the S steps (0 and the last; --long every fourth), on
+// what the chunks hold. Each check prints `ok` / `FAIL` lines; the definitions are beside `main`:
+//   D1  incremental equals scratch: chunks built incrementally hash as a scratch build in a fresh
+//       process, in reverse key order (the last step; --long every step)
+//   D2  thread counts: pools of 1 and 4 workers hash as the main pool (the first seed's 15 costliest
+//       chunks; --long all, both seeds)
+//   D3  the land does not depend on the order its pieces are applied
+//   D4  the dirty set: only chunks in `dirtyChunks` change between steps (a warning past 30 m from the
+//       changed land, close to the rule's 34 m)
+//   D5  beyond the dirty bound: land placed 34.6 - 44 m from a coastal chunk changes nothing
+//   R1  the shoal (packages/island/world/SeabedRise.ts): the tiles the next version moves, risen from
+//       the shown tile to the next one, without a crack and under the surface
+//   S1  the welded island and stone meshes are closed
+//   S2  island seams: shared vertices bit for bit, and a 2 x 2 block meshed whole equals its chunks
+//   S3  floor seams, the floor off the land at or below -1.6 m, open sides on the open sea's lattice
+//   S4  the rim's lip's border crossings meet
+//   S5  a 2 x 2 block's share-out (rim ground, shore, walk texels, anchors) equals its four chunks
+//   S6  every stone owned once, and the contact shade's copies are their owners' stones
+//   S7  no island vertex or anchor near a chunk that carries no rim ground tile
+//   I1  no buried wall inland
+//   columns  (--long) the inland column range meshes byte-identical to whole columns
+// --bench skips everything but D4, and prints per growth piece the land field's time, the chunks
+// `dirtyChunks` rebuilds, how many come out changed, their CPU time (summed over the jobs, on a loaded
+// pool more than alone) and their bytes.
 //
-// `--bench` skips D1 - D3 and the S checks and prints per growth piece the land field's time, the
-// chunks `dirtyChunks` rebuilds, how many come out changed, their CPU time (summed over the jobs,
-// on a loaded pool more than alone) and their bytes. Every run writes the chunk sheet, one PNG per
-// seed (`sheet`), to --sheets (default artifacts/captures/world-chunks/).
-// A pass is recorded (tools/island/verify-cache.mjs): a later run with the same arguments, node and source
-// files (the script's whole import graph) prints that it was skipped and exits 0; --force runs it.
-// --bench is never skipped nor recorded, and a skipped run writes no sheet.
+// A pass is recorded (tools/island/verify-cache.mjs, whose header has the key): a later run with the
+// same arguments, node version and source files (the script's whole import graph, a comment
+// included) prints `skipped, these inputs passed at <commit> on <time>` and exits 0. Failures and
+// interrupted runs record nothing. The records live in the main checkout's artifacts/verify-cache/,
+// shared by every worktree; delete the folder to forget them.
+//
+// Output: stdout, the checks' lines; a chunk sheet per seed (each step's land, new piece, 16 m grid,
+// dirty chunks outlined, changed chunks tinted) in --sheets, not written by a skipped run.
+//
+// GPU lock and browser: neither (docs/reference/gpu-lock.md); plain node, CPU only.
+//
+// Cost: the default builds 1219 chunks (seeds 1 - 2, steps 0 - 12; a coastal chunk takes up to four
+// times an inland one's CPU), which dominate the run; --long takes a
+// little over twice as long, --bench about two thirds of it; a recorded pass only hashes the sources.
+//
+// Exit codes: 0 every check passed, or the run was skipped; 1 a check failed.
+import '../kit/help.mjs';
 import { Worker, isMainThread, parentPort } from 'node:worker_threads';
 import { spawn } from 'node:child_process';
 import { availableParallelism } from 'node:os';
@@ -275,6 +246,83 @@ if ( isMainThread && process.argv.includes( '--scratch' ) ) {
 
 // ------------------------------------------------------------------ the run
 
+// The checks, in full. A check prints `ok` / `FAIL` lines and returns whether it passed; any failure
+// sets the exit code.
+//
+//   D1  incremental equals scratch: step n's chunks built incrementally (every chunk of step 0,
+//       then at each step only `dirtyChunks` from the step before, the others kept) hash as step n
+//       built from scratch in a fresh process, one chunk after another in reverse key order. The
+//       default builds the last step from scratch, --long every step.
+//   D2  thread counts: the last step's chunks built on pools of 1 and of 4 workers hash as on the
+//       main pool (the default the first seed's 15 costliest chunks by the main pool's time, the
+//       coastal ones, --long all, both seeds).
+//   D3  the land does not depend on the order its pieces are applied: a piece is the cells a growth
+//       step adds, immutable once placed (IslandGrowth.ts). Which piece comes next depends on the
+//       land before it, so the growth itself has one order; "piece order" here is the order a land
+//       is assembled from its pieces (a save loaded, a worker handed the pieces): the union of the
+//       cells. The last step's pieces applied in reverse, shuffled, and with the starting island
+//       last give the same cells, chunk keys and land field as the grown land, bit for bit (the
+//       recent headings a land also keeps do follow the order: no chunk reads them).
+//   D4  the dirty set: between consecutive steps every chunk whose hash changed (or that is new)
+//       is in `dirtyChunks`, and none outside it changed. Prints the chunks, how many are dirty,
+//       how many changed, and how far the farthest changed chunk lies from the changed land; it
+//       warns (no failure) when that is more than 30 m, close to the rule's 34 m.
+//   D5  beyond the dirty bound: at the last step, for each coastal chunk and each axis direction,
+//       a 2 m disc of land on the coast and a 2.5 m disc 6 - 16 m offshore, placed so its nearest
+//       cell lies 34.6 - 44 m from the chunk: the chunk is not in `dirtyChunks`, and rebuilt from
+//       the new land field it hashes as before. Prints the discs, how many changed the chunk's
+//       window (the far reads had something to see) and how many changed the chunk.
+//   R1  the shoal (packages/island/world/SeabedRise.ts): between consecutive steps, the shown tiles the next
+//       version moves (SeabedTile.ts `pendingFloors`), risen at R = 0, 0.25, 0.5, 0.75 and 1
+//       (`riseTile`): at R = 0 every point is the shown tile's bit for bit; at R = 1 every point is
+//       the next version's tile (or the floor under the new land) within 1e-5 in height, normal and
+//       bed, but for the sides along cells the next version adds, straightened between the far
+//       floor's nodes (counted, with their largest step at the swap); at every R those side points
+//       lie on the far floor's edge between its risen nodes within 1e-5 (no crack), no point off the
+//       next land rises above -1.6 m, and none off the shown land breaks the surface (0 m). Prints
+//       the tiles, the far floor's nodes that rise, how far an added cell's tile lies from its
+//       nodes' triangles, the largest rise and the shoal: the R = 1 heights over the land the piece
+//       adds (p10 / p50 / p90, the highest).
+//   At the S steps (0 and the last; --long every fourth):
+//   S1  the welded union of the chunks' island and stone meshes is closed: no boundary edge, and
+//       at most 1.3 non-manifold edges per 1000 triangles (the ambiguous cells of surface nets).
+//       The page's single island mesh has 0.65 - 0.88 per 1000 on seeds 1 - 2 at steps 0 and 12
+//       once its bottom face is left out: x 1.5. The chunks leave the bottom face out by design
+//       (SurfaceNets.ts: never seen below the sea floor), so the walls end open at the lattice's
+//       bottom row: a boundary edge with both ends in that row (y < -5.1 + one voxel) is counted
+//       as the open foot instead.
+//   S2  island seams. Every island vertex two chunks share (the same position bits) carries the
+//       same bits in every attribute in both, contact shade included; and the 2 x 2 block of chunks
+//       holding the most triangles, meshed in one call from its own window on the same lattice
+//       (`chunkIsland`), has exactly the vertices (all attributes) and triangles of its four chunks.
+//   S3  floor seams: the lattice points two (or four) neighbouring floor tiles both compute (their
+//       common border rows, corners) are bit-identical in height, normal, ao and bed. Every floor
+//       point off the land (land distance > 0) lies at or below -1.6 m, and every tile side with no
+//       chunk beyond it, where the far floor meets the tile, is the open sea's lattice bit for bit
+//       (openSeaHeight, the far floor's normals, openSeaBeds, ao 1).
+//   S4  lip seams: every piece of the rim's lip that ends on a chunk border meets exactly one
+//       piece that starts there in a neighbouring chunk, with the same crossing sample (root
+//       points, coast data) to 1e-5 (the count of bit-identical ones is printed); no piece
+//       ends inside its chunk.
+//   S5  shared-out content: the 2 x 2 block with the most coast (lip samples), made in one
+//       pass from its own window (`chunkBlock`) and shared out by chunk, equals its four chunks bit
+//       for bit in the rim ground, shore and walk texels and the anchors.
+//   S6  stones: every stone is owned once, by the chunk its centre lies in; and every stone a chunk
+//       places round itself for the contact shade (`contactStones`) whose centre lies in another
+//       chunk is that chunk's own stone, bit for bit, so two chunks shade with the same stone.
+//   S7  rim tiles: a chunk without island carries no rim ground tile (Chunks.ts; ChunkMerge.ts
+//       fills its square with the open sea's constant), no lip and no anchors, and no island
+//       vertex or anchor of any chunk lies within 0.5 m of its square: the merged field's readers
+//       (the cliff material's linear lookups on the island, the meadow's tufts at the anchors)
+//       never reach those texels. Prints the nearest such point.
+//   I1  no buried wall inland: where the land distance is below -3.5 m (inland, the island mesh's
+//       column range: no wall, only the meadow's top) the window's island SDF is solid from the
+//       lattice's bottom to 0.35 m below the meadow's top and clear 0.6 m above it, sampled every
+//       0.5 m across and 0.25 m down; and no inland island vertex lies below that. A wall left
+//       standing inside land that grew over the old coast would show as an open sample.
+//   columns  (--long) every chunk with inland columns meshed with the inland column range
+//       (WorldShapes.islandColumnRange) is byte-identical to the chunk meshed with whole columns.
+//
 async function main() {
 
 	const start = performance.now();

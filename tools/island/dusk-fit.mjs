@@ -1,10 +1,17 @@
-// Dusk fit: the endpoints of each night share's slope through the dusk and the dawn, solved from a
-// dusk-grid run with --split (tools/island/dusk-grid.mjs), so that a lower sun never makes a judged
-// quantity brighter. dusk-grid --fit runs it on its own points; on its own it reads a run's output:
+// Solves where each night share's slope through the dusk and the dawn may start and end, from a dusk-grid run.
 //
+// It answers "where may each of the dusk's night shares fade in so that a lower sun never makes a
+// judged quantity brighter", from the split states of a tools/island/dusk-grid.mjs run with --split.
+// dusk-grid --fit runs it on its own points; on its own it reads a run's output again. It is also a
+// module: dusk-grid imports `fitDusk` and `readRun`.
+//
+// Usage:
 //   node tools/island/dusk-fit.mjs <dusk-grid out dir> [--judge 0.02] [--views island]
 //
-// It writes fit.txt in that directory and prints its path. No page, no GPU.
+// Options:
+//   <dir>          a dusk-grid output directory whose <weather>-<side>.json files hold --split states
+//   --judge x      the rules' margin; the step condition takes half of it (0.02)
+//   --views a,b    the views whose Mfar is judged (the run's own views, else island)
 //
 // The form (each share's): w( e ) = 1 - smoothstep( e_full, e_top, e ), whole at and below e_full
 // and none at and above e_top. DayCycle.ts writes the clouded weathers' shares in this form; the
@@ -27,22 +34,32 @@
 //     other terms, which no placement of this share mends) are listed and not judged.
 //   - Not fitted: moonKey and moonSky (they follow the moon's visibility, no dusk window), the
 //     yunpeng and the local lights (lamps, on a form of their own).
-//   - The slope's width: the twilight's fall k (stops per degree) is the mean over the slope of
-//     -log2 slope of T (the run's cumulative T, every night share at 0) over the slope and the grid
-//     points either side of it, for each judged quantity
-//     the share moves by over a thousandth of q, taking the slowest; the width must be at least
-//     1.5 / ( k ln 2 ), where a smoothstep's steepest slope (1.5 / width) meets the twilight's fall
-//     (an addition q = T + w N with T >= N at the slope's foot). A slope where T does not fall
-//     (k <= 0), or that the grid cannot measure it over, is refused.
+//   - The slope's width: the twilight's fall k (stops per degree) is the fall of log2 T (the run's
+//     cumulative T, every night share at 0) between the ends of the slope grown to the grid points
+//     either side of it, over their span in degrees, for each judged quantity the share moves by over
+//     a thousandth of q, taking the slowest; the width must be at least 1.5 / ( k ln 2 ), where a smoothstep's steepest slope
+//     (1.5 / width) meets the twilight's fall (an addition q = T + w N with T >= N at the slope's
+//     foot). A slope where T does not fall (k <= 0), or that the grid cannot measure it over, is
+//     refused.
 //   - The solution (or, where none holds, the placement that breaks the fewest pairs, listed with
-//     them): the highest e_top on a 0.25 degree lattice from +2.5 (the day above it is
-//     dusk-grid's unchanged window) down to -18, with the
-//     narrowest width (1, 1.5, 2, 3, 4, 5, 6, 8 degrees) that holds both; then the condition's
-//     margin at every pair, and the overall condition (q( e' ) <= ( 1 + judge ) q( e ) for every
-//     e' < e, midnight included) on the share's own series.
+//     them): the highest e_top on a 0.25 degree lattice from +2.5 (the day above it is dusk-grid's
+//     unchanged window) down to -18, with the narrowest width (1, 1.5, 2, 3, 4, 5, 6, 8 degrees)
+//     that holds both; then the condition's margin at every pair, and the overall condition
+//     (q( e' ) <= ( 1 + judge ) q( e ) for every e' < e, midnight included) on the share's own series.
 //   - All shares placed at once (each at its solved endpoints, the others' changes added: exact
 //     where the shares act on separate terms, the residual otherwise): the step and overall
 //     conditions over the whole grid, as dusk-grid judges them.
+//
+// Output: <dir>/fit.txt, per weather and side each share's solved endpoints, the width's k, the
+// margin and the overall condition, then every share placed at once; stdout: its path.
+//
+// GPU lock and browser: neither (docs/reference/gpu-lock.md); it reads JSON files only.
+//
+// Cost: a fraction of a second of CPU per run.
+//
+// Exit codes: 0 fit.txt written (whether or not a share found a placement); 2 no directory given or
+// it does not exist.
+import '../kit/help.mjs';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

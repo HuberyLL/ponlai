@@ -1,8 +1,13 @@
-"""Reduce NASA SVS's Deep Star Maps 2020 Milky Way to the mask the night sky shapes its band with.
+"""Reduces NASA SVS's Deep Star Maps 2020 Milky Way to the mask the night sky shapes its band with.
+
+It answers "how was public/sky/milkyway.png made": run it again only to rebuild it from the map.
 
 Usage:
-    uv run --with numpy --with pillow --with openexr --with scipy \\
-        python tools/island/build-milky-way.py milkyway_2020_4k.exr [public/sky/milkyway.png]
+  uv run --with numpy --with pillow --with openexr --with scipy python tools/island/build-milky-way.py milkyway_2020_4k.exr [public/sky/milkyway.png]
+
+Options:
+  source.exr   the map (required)
+  target.png   the output (public/sky/milkyway.png)
 
 Source: https://svs.gsfc.nasa.gov/4851 (Deep Star Maps 2020), the 4k celestial-coordinate Milky
 Way background `milkyway_2020_4k.exr`. Credit: NASA/Goddard Space Flight Center Scientific
@@ -14,14 +19,26 @@ root of the luminance divided by the brightest star clouds (the 99.95th percenti
 the faint outer band and the dark lanes. The night sky draws its own stars and grain; the mask
 only carries the band's broad light and dust, so the few point sources left in the background
 are removed with a median filter first. Rows toward the poles are blurred along right ascension
-to the equator's angular resolution.
+to the equator's angular resolution. stdout: the size and the median against the percentile.
+
+GPU lock and browser: neither (docs/reference/gpu-lock.md).
+
+Cost: one decode of the 4k map and a few filters over it.
+
+Exit codes: 0 written; 1 no source given or an unreadable one (an uncaught error).
 """
 import sys
+from pathlib import Path
 
-import numpy as np
-import OpenEXR
-from PIL import Image
-from scipy.ndimage import gaussian_filter1d, median_filter
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "kit"))
+from help import answer_help  # noqa: E402
+
+answer_help(__file__)
+
+import numpy as np  # noqa: E402
+import OpenEXR  # noqa: E402
+from PIL import Image  # noqa: E402
+from scipy.ndimage import gaussian_filter1d, median_filter  # noqa: E402
 
 WIDTH, HEIGHT = 1024, 512
 LUMINANCE = np.array([0.2126, 0.7152, 0.0722], np.float32)

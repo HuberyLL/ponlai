@@ -1,31 +1,57 @@
-// The chunks' derived products against today's main-thread builders (plain node, CPU only):
-//   node tools/island/verify-chunk-derived.mjs [--seed 1] [--steps 0,8] [--threads n]
+// Checks the chunks' derived products (shadow casters, refracted-sun subsets, camera ground) against the builders.
+//
+// It answers "do the products the page takes from the chunks equal what the main-thread builders
+// make from the merged meshes" (packages/island/world/ChunkDerived.ts). Run it after a change to
+// ChunkDerived.ts or to the builders it stands in for; `npm run check -- --full` runs it.
+//
+// Usage:
+//   node tools/island/verify-chunk-derived.mjs [--seed 1] [--steps 0,8] [--threads n] [--force]
+//
+// Options:
+//   --seed n       the seed (1)
+//   --steps a,b    the growth steps checked (0,8)
+//   --threads n    the worker threads (min( 8, cores - 4 ), at least 1)
+//   --force        runs even when these inputs passed before
 //
 // Every chunk of the grown land is built on a pool of worker threads (Chunks.ts `buildChunk`), and
 // its meshes are merged as one island, one stones mesh and one floor (the tiles, lattice order of
-// the keys) for the builders the page runs today. Per step:
-// The chunks take their caster columns and ground grid from the island as meshed, before it is
-// simplified (Chunks.ts, IslandSimplify.ts): the workers mesh it again unsimplified
-// (`chunkIsland( ..., { simplify: false } )`), and the columns' and the ground's walks below run over
-// that, the subsets over the drawn (simplified) mesh.
-//   columns   SunShadow's caster-depth columns: today's walk over the merged island mesh against
-//             the chunks' `casterColumns` folded in (`setCasters( box, columns )`, the chunks'
-//             meshes given without vertices, so nothing but the columns can fill them). Every
-//             column of the walk is inside the folded one, and every folded column inside the
-//             walk's columns of its 3 x 3 cells (within one cell); prints how many differ and by
-//             how much.
+// the keys) for the builders the page runs today; the builders (three's WebGPU build, SunShadow,
+// RefractedSun, IslandGround) load through Vite's SSR loader on the main thread. The chunks take
+// their caster columns and ground grid from the island as meshed, before it is simplified (Chunks.ts,
+// IslandSimplify.ts): the workers mesh it again unsimplified (`chunkIsland( ..., { simplify: false }
+// )`), and the columns' and the ground's walks below run over that, the subsets over the drawn
+// (simplified) mesh. Per step:
+//   columns   SunShadow's caster-depth columns: today's walk over the merged island mesh against the
+//             chunks' `casterColumns` folded in (`setCasters( box, columns )`, the chunks' meshes given
+//             without vertices, so nothing but the columns can fill them). Every column of the walk is
+//             inside the folded one, and every folded column inside the walk's columns of its 3 x 3
+//             cells (within one cell); prints how many differ and by how much.
 //   subsets   RefractedSun's triangle subsets at the sea level: today's cut of the merged island,
 //             stones and floor against the chunks' `refracted` subsets, offset and joined in the
 //             merge's order: the same triangles, exactly. And `setCasters( root, subsets )` on the
 //             chunks' own meshes draws each chunk's subset as given.
 //   ground    IslandGround: `build` over the merged island mesh against `fromGrids` of the chunks'
-//             `ground` grids: the same bounds and top, and every cell's height within one cell
-//             (at each grid's cell centres, a height of one is at most the other's highest over
-//             the 3 x 3 cells round it); prints the largest difference at a point.
-// It also prints the time today's builders take on these meshes and what the merge takes instead.
-// Exit code 1 on any failure.
-// A pass is recorded (tools/island/verify-cache.mjs): a later run with the same arguments, node and source
-// files (the script's whole import graph) prints that it was skipped and exits 0; --force runs it.
+//             `ground` grids: the same bounds and top, and every cell's height within one cell (at
+//             each grid's cell centres, a height of one is at most the other's highest over the 3 x 3
+//             cells round it); prints the largest difference at a point.
+//
+// A pass is recorded (tools/island/verify-cache.mjs, whose header has the key): a later run with the
+// same arguments, node version and source files (the script's whole import graph, a comment
+// included) prints `skipped, these inputs passed at <commit> on <time>` and exits 0. Failures and
+// interrupted runs record nothing. The records live in the main checkout's artifacts/verify-cache/,
+// shared by every worktree; delete the folder to forget them.
+//
+// Output: stdout, each check's lines, and the time today's builders take on these meshes against what
+// the merge takes instead.
+//
+// GPU lock and browser: neither (docs/reference/gpu-lock.md); plain node, CPU only (three's WebGPU
+// build is imported, never run on a GPU).
+//
+// Cost: a build of every chunk of the land at each step on the worker pool, and the builders' walks
+// on the merged meshes; a recorded pass only hashes the sources.
+//
+// Exit codes: 0 every check passed, or the run was skipped; 1 a check failed.
+import '../kit/help.mjs';
 import { Worker, isMainThread, parentPort } from 'node:worker_threads';
 import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';

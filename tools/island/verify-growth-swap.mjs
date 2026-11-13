@@ -1,90 +1,89 @@
-// Regression probe for the island's growth in place (packages/island/world/Growth.ts): a page grown by N steps
-// must draw what a page freshly loaded on that land draws, bit for bit, in the test mode (paused,
-// MSAA: docs/reference/tools.md, Test mode; the rules in Growth.ts's header), and no swap may build a
-// pipeline.
+// Checks the island's growth in place: a page grown N steps draws what a fresh load of that land draws, bit for bit.
 //
+// It answers "does a Grow swap leave the page exactly as a fresh load of the grown land, and build no
+// pipeline" (packages/island/world/Growth.ts, whose header has the rules), in the test mode (paused,
+// MSAA: docs/reference/test-mode.md). Run it after a change to the growth, to anything that joins the
+// swap, or to what depends on the land's shape.
+//
+// Usage:
 //   node tools/island/verify-growth-swap.mjs <base url> [--steps 6] [--views island,cliffs,meadow]
-//     [--q "extra&query"] [--fresh-grow M] [--out dir] [--timeout 240000]
+//       [--q "extra&query"] [--fresh-grow M] [--out dir] [--timeout 240000]
 //
-// Two pages, one after the other, in one capture browser (tools/kit/capture-browser.mjs, a warm profile
-// slot), headless, 1600 x 900 at dpr 1, on the query
-// `debug&paused&t=12&dpr=1&quality=high&weather=fair&preset=noon&seed=1` (then --q, then the first
-// view's own query):
-// - G, the grown page: loaded with `grow=0`, then grown N times by `__PONLAI__.growth.grow()`.
-//   Before each grow the page prepares the next piece (`growth.start()`, until `growth.state.phase`
-//   is ready) with its loop stopped and the GPU lock released; the grow and the frames after it
-//   (the swap's own frames, then 10 more) run with the loop going under the lock. Per step it
-//   records the pipelines before and after, the swap's time (`state.last.ms.swap`), the wall time
-//   of the grow, renderer.info.memory (geometries, textures, uniformBuffers, renderTargets,
-//   attributes and their sizes) and the world fields' bytes.
-// - F, the fresh page: loaded with `grow=N` (or `grow=M` with --fresh-grow, which exists only to
-//   prove the check can fail: run it with M != N and every item below that depends on the land
-//   must come out different).
+// Options:
+//   <base url>       the server to load (a preview or the dev server)
+//   --steps N        how many times the grown page grows (6)
+//   --views a,b      parity view names (tools/island/parity/views.mjs) or the aliases island =
+//                    island-fair-noon, cliffs = water-skim-cliffs, meadow = meadow-close (island,cliffs,meadow)
+//   --q query        extra query options for both pages (none)
+//   --fresh-grow M   loads the fresh page at grow=M instead of N, only to see the check fail (N)
+//   --out dir        the output folder (artifacts/captures/growth-swap/<time>-<pid>/)
+//   --timeout ms     each wait in the page (240000)
+//
+// The pages, one after the other in one headless capture browser (tools/kit/capture-browser.mjs, a
+// warm profile slot), 1600 x 900 at dpr 1, on the query
+// `debug&paused&t=12&dpr=1&quality=high&weather=fair&preset=noon&seed=1`, then --q, then the first
+// view's own query:
+//   G  the grown page: loaded with `grow=0`, then grown N times by `__PONLAI__.growth.grow()`. Before
+//      each grow the page prepares the next piece (`growth.start()`, until `growth.state.phase` is
+//      ready) with its loop stopped and the GPU lock released; the grow and the frames after it (the
+//      swap's own frames, then 10 more) run with the loop going under the lock. Per step it records
+//      the pipelines before and after, the swap's time (`state.last.ms.swap`), the grow's wall time,
+//      renderer.info.memory and the world fields' bytes.
+//   F  the fresh page: loaded with `grow=N` (or `grow=M`: with M != N every item below that depends
+//      on the land must come out different).
 // Then on both pages alike: the pending piece prepared (so neither page has idle-time work running
-// while it is measured; the page keeps one piece ahead after a grow), 30 frames, and then the chunk
-// hashes (`growth.chunkHashes()`), the world fields' bytes, the ambient light's probes
-// (`ambientVolume.hash()` and `ambientVolume.info()`: lighting/AmbientVolume.ts) and their
-// relit irradiance (`ambientRelight.hash()`, lighting/AmbientRelight.ts: its readback builds one
-// compute pipeline on each page alike),
-// renderer.info.memory, the pipeline count, the camera's ground grid (`controls.ground`: its
-// lattice and heights) and the rain's collision map (`rain.collision.target`, read back with
-// readRenderTargetPixelsAsync, its size and placement `xform`). The ground's heights and the rain
-// map's texels are shipped to node and compared there (no store in the page). Then each view is
-// shot: the first on the page as it loaded (or grew: no scene jump, so state a grow leaves behind
-// is not cleared before it is seen), each later one reached by the exact scene jump
+// while it is measured), 30 frames, and the readings: the chunk hashes (`growth.chunkHashes()`), the
+// world fields' bytes, the ambient light's probes (`ambientVolume.hash()` and `.info()`) and their
+// relit irradiance (`ambientRelight.hash()`: its readback builds one compute pipeline on each page
+// alike), renderer.info.memory, the pipeline count, the camera's ground grid (`controls.ground`) and
+// the rain's collision map (`rain.collision.target`, read back, with its size and `xform`). The
+// ground's heights and the rain map's texels are compared in node.
+//
+// The views. The first is shot on the page as it loaded or grew (no scene jump, so state a grow
+// leaves behind is not cleared before it is seen); each later one is reached by the exact scene jump
 // (`establishScene`, the page's step standing for `grow`) on both pages alike. Before its own eval
-// every view puts the camera on the island view's pose (`setCameraMode( 'orbit' )`, `setCameraView(
-// 'island' )`): a grow leaves the player's camera where it was by design, while the pose follows
-// the land, so without it the first view of the grown page is framed on the land it loaded with. A
-// view is ready once the diagnostics' `settled` signal holds and the image stops changing
-// (capture-browser's waitForStable); it is shot, two more frames are drawn and it is shot again
-// (`stable`: whether both are the same pixels, and how many differ). A paused page still leaves its
-// settled image for single frames now and then (capture-browser's header: from a few pixels up), so
-// a view passes when its first shots on G and F, or its second shots, are the same pixels: a real
-// difference shows in both pairs, the frame noise in one at most (the 12-step check saw 1 and 2
-// pixels change between the shots of two views of G, and G's first shots equal F's).
+// every view puts the camera on the island view's pose: a grow leaves the player's camera where it was
+// by design, while the pose follows the land. A view is ready once `settled` holds and the image stops
+// changing (capture-browser's waitForStable); it is shot, two more frames are drawn and it is shot
+// again. A paused page leaves its settled image for single frames now and then (capture-browser's
+// header), so a view passes when its first shots on G and F, or its second shots, are the same
+// pixels: a real difference shows in both pairs, the frame noise in one at most. Views whose
+// load-time options differ cannot share a page (establishScene refuses them).
 //
-// Views: parity view names (tools/island/parity/views.mjs; their query joins the common one), with the
-// aliases island = island-fair-noon, cliffs = water-skim-cliffs, meadow = meadow-close. Views
-// whose load-time options differ cannot share a page (establishScene refuses them).
+// The verdicts (report.json `verdicts`, each pass or fail):
+//   views      each view's first shots on G and F the same pixels, or its second shots (decoded)
+//   hashes     the same chunks with the same hashes
+//   rain       the rain map's size and xform equal and 0 texels differing (all four half-float channels)
+//   ground     the ground grid's lattice equal and every height equal, cell by cell over the union of
+//              both grids as the camera reads them (the sea, 0, outside a grid)
+//   fields     the world fields' bytes equal
+//   ambient    the probe lattice equal (its SHA-256 and its description), and the relight's output
+//   pipelines  the count the same before and after every grow on G, at every step, and on G and F
+//              both when measured and after the views
+//   memory     uniformBuffers and textures on G at most MEMORY_TOLERANCE (2) above F's
+//   console    no console error and no page error on either page (warnings listed, not judged)
+// On memory: a leak shows as G above F (one leak added 23-37 uniform buffers per swap); counts a
+// growth path leaves one or two apart are not one (a clean growth saw 254 / 255 uniform buffers and
+// 130 / 130 textures after four steps). G below F is reported, not judged: the grown page holds fewer
+// uniform buffers than a fresh load (293 / 297 after 12 steps, the gap growing with the steps), and
+// anything missing from the drawing shows in the views. The other columns are recorded only.
 //
-// Verdicts (report.json `verdicts`, each pass or fail):
-// - views: each view's first shots on G and F the same pixels, or its second shots (decoded; PNG
-//   bytes depend on the encoder);
-// - hashes: the same chunks with the same hashes;
-// - rain: the rain map's size and xform equal and 0 texels differing (all four half-float channels);
-// - ground: the ground grid's lattice equal and every height equal (compared cell by cell over the
-//   union of both grids, as the camera reads them: the sea, 0, outside a grid);
-// - fields: the world fields' bytes equal;
-// - ambient: the ambient light's probe lattice equal (its SHA-256 and its description), and the
-//   relight's output (its SHA-256);
-// - pipelines: the count the same before and after every grow on G, the same at every step, and
-//   equal on G and F both when measured and after the views;
-// - memory: renderer.info.memory's uniformBuffers and textures on G at most MEMORY_TOLERANCE (2)
-//   above F's. A leak shows as G above F (one leak added 23-37 uniform buffers per swap); counts
-//   that a growth path leaves one or two apart are not one (a clean growth saw 254 / 255 uniform
-//   buffers and 130 / 130 textures after four steps). G below F is reported, not judged: the grown
-//   page holds fewer uniform buffers than a fresh load (293 / 297 after 12 steps, the gap growing
-//   with the steps), which is not a leak, and anything missing from the drawing shows in the views.
-//   The other columns are recorded, not judged.
-// - console: no console error and no page error on either page (warnings are listed, not judged).
-// Exit codes (docs/how-to/write-a-tool.md): 0 every verdict passed, 1 one failed (or the run
-// broke), 2 a usage error. The shots are paused frames under a shared GPU slot: other load on the
-// GPU does not change their pixels, so nothing here is contended and 3 is never returned.
+// Output: in --out, report.json (the query, the options, per page its record, `compare` and
+// `verdicts`), the shots (G-<view>.png, G-<view>-b.png, F-...); stdout: progress lines with the time
+// of day (for tools/kit/job.mjs wait) and a summary. The rain maps and ground grids are not kept
+// (megabytes per page); their comparison is in the report.
 //
-// GPU lock (tools/kit/gpu-lock.mjs): shared, and held only while the page renders: each page's load
-// takes it once the page has its world (the same gate as tools/kit/capture.mjs, "The slot after the
-// world": the page's `requestDevice` waits until the slot is taken), the grows, the measurement and
-// the views lease it (leaseGpuLock, a 20 s budget, as capture.mjs's views); while a page prepares
-// its next piece (worker generation and idle-time preparation, seconds to minutes of CPU) its loop
-// is stopped and the lock released, so the page draws no frame without the lock and holds no slot
-// while the GPU idles.
+// GPU lock and browser: shared (docs/reference/gpu-lock.md), held only while a page renders: each
+// page's load takes it once the page has its world (capture.mjs's gate, "The slot after the world"),
+// the grows, the measurement and the views lease it (a 20 s budget); while a page prepares its next
+// piece its loop is stopped and the lock released. One headless capture browser page; no server.
 //
-// Outputs: --out (default `artifacts/captures/growth-swap/<time>-<pid>/`, one folder per run):
-// `report.json` (the query, the options, per page its record, `compare` and `verdicts`), the shots
-// (`G-<view>.png`, `G-<view>-b.png`, `F-...`), and a summary on stdout; progress lines with the
-// time of day as the run goes, for `node tools/kit/job.mjs wait`. The rain maps and ground grids are
-// not kept (megabytes per page); their comparison is in the report.
+// Cost: two page loads, N grows, each preceded by seconds to minutes of CPU preparing the piece, and
+// a few views a page.
+//
+// Exit codes: 0 every verdict passed; 1 one failed or the run broke; 2 bad usage. The shots are
+// paused frames under a shared slot, which other GPU load does not change, so 3 is never returned.
+import '../kit/help.mjs';
 import '../kit/qos.mjs'; // first: the PNG decodes and the map comparisons run here
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -287,6 +286,7 @@ async function measure( page ) {
 			step: s.growth.state.step,
 			hashes: s.growth.chunkHashes(),
 			fields: s.growth.fieldBytes(),
+			// (the probes: packages/render/lighting/AmbientVolume.ts; their relit irradiance: AmbientRelight.ts)
 			ambient: { hash: await s.ambientVolume.hash(), ...s.ambientVolume.info(), irradiance: await s.ambientRelight.hash() },
 			memory: { ...s.renderer.info.memory },
 			pipelines: s.pipelines.total,
@@ -325,6 +325,8 @@ async function shoot( page, side, view, jump ) {
 	const shooter = await pngShooter( page, { timeout } );
 	try {
 
+		// two shots two frames apart: the 12-step check saw 1 and 2 pixels change between the shots of
+		// two views of G, and G's first shots equal F's, so the pair that agrees is the verdict
 		const a = await shooter.shoot();
 		await startLoop( page );
 		await frames( page, 2 );

@@ -1,31 +1,60 @@
-// The parity views: name -> { q, eval, crops, group, special }. Every view is a paused frame at a fixed t;
-// `q` is added to the common query (capture-set.mjs), `eval` runs in the page once
-// window.__PONLAI__ exists (before capture.mjs's settling wait). Placements derive from the
-// island's bounds and height grid as the camera's ground holds them (`controls.ground`,
-// IslandGround: made from the chunks' meshes in the workers, so the page's meshes and their
-// vertices are never read and a build that simplifies the drawn meshes frames alike), the meadow's
-// flowering plants and its tufts at the cliff's edge, the islander and the sun and moon, so they follow any land, as tools/render/profile-frame.mjs places its
-// scenes.
+// The parity views (camera, weather, time and crop anchors), as a module and as a command that prints them.
 //
-// Groups: `parity` (the views every parity check runs; the default) and `taa` (6 close views for
-// the temporal anti-aliasing work: thin and moving detail); `all` is both. `special` holds the
-// parked weathers' views (`special: true`: the cloudy and overcast skies, the rain, the storm, the
-// fog and the weather front into rain; packages/render/sky/Weather.ts PARKED_WEATHER): no other group lists them, so every default set is the
-// normal weathers' and a parked view is reached by name or by `special` (`all,special` is every
-// view). `normal` is `all`, kept as a name. tools/kit/gates.py --normal leaves special entries
-// unjudged. A clip belongs to the group of its view (clips.mjs).
+// It answers "what does the view <name> load and run, and which views does a group hold": every
+// capture, comparison and probe that takes `--views` reads its views from here. Each view is a paused
+// frame at a fixed t: `q` is added to the common query (tools/kit/parity/capture-set.mjs), `eval` runs
+// in the page once window.__PONLAI__ exists, before capture.mjs's settling wait. What each view and
+// anchor shows is beside VIEWS and ANCHORS below.
 //
-// Crop anchors: each view names the subjects worth a 1:1 look (`crops`). The page projects a world
-// point for each into a 384 px box of the captured image (device pixels) and exposes them as
-// `window.__PONLAI_CROPS__`, a getter evaluated when read, so it follows the camera the capture
-// shows; capture.mjs writes it into the capture's JSON (`crops`) and diff-set.py --crops-from cuts
-// those boxes. An anchor that is off screen or hidden behind the island is reported with
-// `missing` instead of a box. Reading the anchors does not change the scene.
+// Usage:
+//   node tools/island/parity/views.mjs list [parity|taa|all|normal|special]
+//   node tools/island/parity/views.mjs query <view>
+//   node tools/island/parity/views.mjs eval <view>
+//   node tools/island/parity/views.mjs crops <view>
 //
-//   node views.mjs list [parity|taa|all|normal|special]   -> view names, one per line
-//   node views.mjs query <name>            -> the view's extra query
-//   node views.mjs eval <name>             -> the view's eval js (the crop anchors' setup included)
-//   node views.mjs crops <name>            -> the view's anchor names, comma-separated
+// Options: none. The commands:
+//   list [group]   the group's view names, one per line (parity)
+//   query <view>   the view's extra query
+//   eval <view>    the view's eval js, the crop anchors' setup included
+//   crops <view>   the view's anchor names, comma-separated
+//
+// Placements derive from the island's bounds and height grid as the camera's ground holds them
+// (`controls.ground`, packages/island/camera/IslandGround.ts: made from the chunks' meshes in the
+// workers, so the page's meshes and their vertices are never read and a build that simplifies the
+// drawn meshes frames alike), the meadow's flowering plants and its tufts at the cliff's edge, the
+// islander and the sun and moon, so they follow any land, as tools/render/profile-frame.mjs places
+// its scenes.
+//
+// Groups: `parity` (10 views, the default: the profiler's six non-parked scenes, paused, and four
+// more) and `taa` (6 close views for the temporal anti-aliasing work: thin and moving detail); `all`
+// is both (16 views), and `normal` is `all`, kept as a name. `special` holds the parked weathers' 10
+// views (`special: true`: the cloudy and overcast skies, the rain, the storm, the fog and the weather
+// front into rain; packages/render/sky/Weather.ts PARKED_WEATHER): no other group lists them, so
+// every default set (`parity`, `all`, verify-scene-jump's, baseline.mjs's plan without --views or
+// --clips) is the kept weathers' alone. A parked view is reached by name or by `special`
+// (`all,special` is every view). Every tool that takes --views takes names and groups mixed
+// (`normal,flowers-close`: `expandViews`). tools/kit/gates.py --normal leaves special entries
+// unjudged. A clip belongs to the group of its view (tools/island/parity/clips.mjs).
+//
+// Crop anchors: each view names the subjects worth a 1:1 look (`crops`). When the page reads
+// `window.__PONLAI_CROPS__` (a getter the view's eval installs; reading it changes nothing in the
+// scene) each anchor's world point is projected into a 384 px box of the captured image, in device
+// pixels, following the camera the capture shows. capture.mjs stores the result in the capture's
+// JSON as `crops`: { name: { x, y, w, h, anchor, world, distance } }, or { name: { missing } } when
+// the subject is off screen or hidden behind the island; diff-set.py --crops-from cuts those boxes.
+//
+// Exported: VIEWS, VIEW_GROUPS, viewNames( group ), expandViews( spec ), viewEval( name, crops ),
+// ANCHOR_NAMES.
+//
+// Output: stdout only.
+//
+// GPU lock and browser: neither (docs/reference/gpu-lock.md); the eval it prints runs in the page of
+// whichever tool loads it.
+//
+// Cost: a fraction of a second.
+//
+// Exit codes: 0 printed; 1 an unknown view or group (an uncaught error); 2 an unknown command.
+import '../../kit/help.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { eveningHour, morningHour } from '../../../packages/render/sky/DayCycle.ts';
@@ -147,11 +176,16 @@ const bone = ( name ) => { const b = s.characters.walker.group.getObjectByName( 
 const keyDir = () => s.sky.sunDir.y > 0.02 ? s.sky.sunDir : s.sky.moonDir;
 const horizonPoint = ( dx, dz ) => { const c = s.camera.position; return V( c.x + dx * 5000, 0, c.z + dz * 5000 ); };
 const sky = ( dir ) => dir.y > 0.03 && skyBehind( s.camera.position.clone().addScaledVector( dir, 0.5 ) );
+// Each anchor gives a world point or null. Visibility is judged against the height grid above;
+// anchors with a choice of points (the meadow, the lip, the coast, the flowers) take the nearest
+// visible one whose box fits the frame and keeps clear of the boxes placed before it.
 const ANCHORS = {
+	// meadow ground about 5, 40 and 70 m from the camera (the lawn's blade bands)
 	'meadow-near': () => meadowAt( 5, 2.5, 20 ),
 	'meadow-band-40m': () => meadowAt( 40, 34, 46 ),
 	'meadow-band-70m': () => meadowAt( 70, 62, 80 ),
-	// the nearest 2 m cell of the meadow with a few flowering plants in it
+	// the nearest 2 m cell of the meadow with a few flowering plants in it (the meadow has none now,
+	// Grass.ts flowerHeads: the anchor is missing and its crop skipped)
 	'flowers': () => pick( flowerBeds().filter( ( b ) => b.n >= 4 && dist( b.p ) < 90 ).map( ( b ) => ( { p: b.p, score: dist( b.p ) - b.n * 0.05 } ) ), clearView ),
 	// the nearest stretch of the lip (with the meadow draped over it) facing the camera
 	'rim-lip': () => pick( lips().map( ( c ) => ( { p: c.p, score: dist( c.p ) } ) ).filter( ( c ) => c.score > 4 ) ),
@@ -170,6 +204,7 @@ const ANCHORS = {
 				if ( ( h - c.y ) / t > ang ) { ang = ( h - c.y ) / t; best = V( x, h, z ); } }
 			if ( best ) cands.push( { p: best, score: dist( best ) } ); }
 		return pick( cands ); },
+	// the islander's head and wrist bones
 	'islander-head': () => { const p = bone( 'Head' ); if ( p ) p.y += 0.12; return p && inner( project( p ) ) && visible( p, 0.3 ) ? p : null; },
 	'islander-hands': () => { for ( const n of [ 'WristR', 'WristL' ] ) { const p = bone( n ); if ( p && inner( project( p ) ) && visible( p, 0.3 ) ) return p; } return null; },
 	// the sea where it mirrors the key light (sun, else moon) toward the camera; when that point lies
@@ -191,7 +226,7 @@ const ANCHORS = {
 		const d = V( x, y, 0.5 ).unproject( s.camera ).sub( s.camera.position ).normalize(); if ( sky( d ) ) return s.camera.position.clone().addScaledVector( d, 5000 ); } return null; },
 	// open sky just above the sea horizon, where the stars scintillate (NightSky.ts: below about
 	// 11 degrees, most below 3): beside the camera's heading and clear of the moon, the box's
-	// lower edge above the horizon and sky along it
+	// lower edge above the horizon and sky along it (the night-still clip's crop)
 	'stars-horizon': () => { if ( s.sky.sunDir.y > - 0.1 ) return null; const f = V( 0, 0, - 1 ).applyQuaternion( s.camera.quaternion ), a0 = Math.atan2( f.z, f.x );
 		const am = Math.atan2( s.sky.moonDir.z, s.sky.moonDir.x ), sc = screen(), c = s.camera.position;
 		const ray = ( x, y ) => V( x / sc.w * 2 - 1, 1 - y / sc.h * 2, 0.5 ).unproject( s.camera ).sub( c ).normalize();
@@ -236,8 +271,13 @@ const wrap = ( body, crops ) => `(async () => { ${ PRE }\n${ body ?? '' }\n{${ C
 // the islander's centre (hips) once the first frame has placed it
 const ISLANDER = 'while ( ! s.characters.centre.lengthSq() ) await new Promise( ( r ) => setTimeout( r, 50 ) ); const c = s.characters.centre;';
 
+// The views. A view's group is `parity` unless it says otherwise; `special: true` marks a parked
+// weather's view. A view's hour, where it gives one, is the one at which its sun stands at its
+// elevation (packages/render/sky/DayCycle.ts `morningHour`, `eveningHour`), written into the query to
+// four decimals.
 export const VIEWS = {
-	// the profiler's scenes (tools/render/profile-frame.mjs SCENES), paused
+	// the profiler's scenes (tools/render/profile-frame.mjs SCENES), paused; the island views use the
+	// island orbit camera at its default pose, the horizon and sky views the page's own views
 	'island-fair-noon': { q: 'weather=fair&preset=noon', crops: [ 'meadow-band-70m', 'flowers', 'rim-lip', 'cliff-edge-sea', 'islander-head' ] },
 	// orbit to the island's far side from the sun: the view looks into the low sun (profiler's faceSun)
 	'island-clear-golden': { q: 'weather=clear&preset=golden-hour', eval: 'orbitAround( - s.sky.sunDir.x, - s.sky.sunDir.z );', crops: [ 'rim-lip', 'cliff-edge-sea' ] },
@@ -258,11 +298,22 @@ export const VIEWS = {
 	'weather-change': { special: true, q: 'weather=fair&preset=noon', eval: `await s.setWeather( 'rain', 6 ); s.weather.update( 3 ); await s.refreshEnvironment();`, crops: [ 'rain-streaks', 'meadow-band-70m', 'rim-lip', 'cliff-edge-sea' ] },
 
 	// extra views
-	// the low suns whose clouds' shadow is cast over the sun's disc: 4.8 degrees, the air reading the
+	// the low suns whose clouds' shadow is cast over the sun's disc (the byte checks' reach into it,
+	// packages/render/sky/SkyTrack.ts SHADOW_DISC, SHADOW_AIR_NARROW): 4.8 degrees, the air reading the
 	// whole disc; 5.3, halfway through the air's fade to the centre rays; 9.3, the disc fading to one
 	// ray. Their elevations are chosen by what they reach, which depends on where the clouds sit at
-	// t=12: pinning `shadowRays` to 1, or `shadowAirNarrow` to its other end, must move each of them
-	// (tools/kit/parity/README.md), and a view that stays byte identical under that does not belong here.
+	// t=12 and where the sun stands along its path (the 52 degree path, DayCycle.ts NOON_ELEVATION).
+	// The share of the frame's pixels moved over one level when a uniform of `s.sky.clouds` is pinned
+	// and the map redrawn (`invalidate()`):
+	//   view                       shadowRays 1           shadowAirNarrow 0      shadowAirNarrow 1
+	//   island-cloudy-low-sun      0.043 % (3290 px)      0 (the air's share 0)  0.009 % (690 px)
+	//   island-cloudy-sun-rising   78 %                   0.006 % (430 px)       0.004 % (340 px)
+	//   island-cloudy-disc-fade    0.13 % (9700 px)       0.002 % (150 px)       0 (the air's share 1)
+	// So on this path they barely guard two of the pins: `shadowAirNarrow` moves at most 690 pixels in
+	// any of them, next to no byte guard, and `shadowRays` is guarded by island-cloudy-sun-rising
+	// alone. Elevations at which each pin moves about 1 % of the frame are still to be chosen. A change
+	// of these elevations, or of the sun's path, pins the uniforms again: a view that stays byte
+	// identical under the pins reaches nothing and does not belong here.
 	'island-cloudy-low-sun': { special: true, q: `weather=cloudy&hour=${ morning( 4.8 ) }`, crops: [ 'meadow-band-70m', 'rim-lip' ] },
 	'island-cloudy-sun-rising': { special: true, q: `weather=cloudy&hour=${ morning( 5.3 ) }`, crops: [ 'meadow-band-70m', 'rim-lip' ] },
 	'island-cloudy-disc-fade': { special: true, q: `weather=cloudy&hour=${ morning( 9.3 ) }`, crops: [ 'meadow-band-70m', 'rim-lip' ] },
@@ -295,8 +346,8 @@ export const VIEWS = {
 		s.controls.minDistance = 2; s.controls.target.copy( c ); s.camera.position.set( c.x + 3.2, c.y + 2.4, c.z + 3.6 ); s.camera.lookAt( c ); ( s.controls.settle ?? s.controls.update ).call( s.controls );`,
 	crops: [ 'islander-head', 'islander-hands', 'meadow-near' ] },
 	// 1.2 m over the densest flowers (3 m cells of the meadow's flowering plants), looking 35 degrees down
-	// and away from the island's centre; the flowers are off by default (`--q flowers` plants them, a
-	// load-time option a jump cannot change), so without them it looks at the island's centre
+	// and away from the island's centre; the meadow has no flowering plants now (Grass.ts
+	// flowerHeads is empty), so it looks at the island's centre
 	'flowers-close': { group: 'taa', q: 'weather=fair&preset=noon', eval: `const b = isl(), bins = new Map();
 		for ( const [ x, y, z ] of s.grass.userData.flowerHeads() ) {
 				const key = Math.floor( x / 3 ) + ',' + Math.floor( z / 3 ); const e = bins.get( key ) ?? { n: 0, x: 0, y: 0, z: 0, key };
