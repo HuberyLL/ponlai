@@ -1,9 +1,10 @@
 # Check a change
 
 This guide gives the steps for checking a change before it is committed: the checks every commit
-passes, a visual change, a performance change, a new history-dependent effect and a change that
-depends on the land's shape. The tools named here are described in `docs/reference/tools.md`; the
-rules they check are in `AGENTS.md`, Rules for every change.
+passes, a change to the renderer on its small scenes, a visual change, a performance change, a new
+history-dependent effect and a change that depends on the land's shape. The tools named here are
+described in `docs/reference/tools.md`; the rules they check are in `AGENTS.md`, Rules for every
+change.
 
 ## Run the checks every commit passes
 
@@ -20,6 +21,27 @@ rules they check are in `AGENTS.md`, Rules for every change.
 
 `npm run check` renders nothing, so it runs while another session holds the GPU lock. The checks
 that render (captures, parity, the GPU verify tools) are run by hand, as the sections below say.
+
+## Run the small scenes first
+
+The renderer's test scenes (`scenes.html`) hold a few objects on level ground under the sky. They
+load in seconds, so they answer first whether a change to the renderer moved anything, before the
+island's captures, which take minutes.
+
+1. Run them first after a change to the renderer's own code: the light, the sky, the day cycle,
+   the exposure and the display chain, the frame's passes, the shadows, the ambient light. Skip
+   them for a change to the island's generator, materials or plants, the sea or the game, which
+   they do not show.
+2. Before the change, write the references on a server of the commit the change starts from:
+   `node tools/scenes.mjs <baseUrl> <outDir> --verify --write-ref`.
+3. After the change, run `node tools/scenes.mjs <baseUrl> <outDir> --verify --check`. A refactor
+   passes with every shot equal to its reference. A change that is meant to move the picture
+   fails the check: read `readings.tsv` of the two runs side by side, look at the shots that
+   differ, and write the references again once the differences are the intended ones.
+4. Go on to the island's checks below whatever the scenes say: they show no sea, terrain, plants or
+   game, and the island's look is not the one they are shot with.
+
+The tool and its options: `docs/reference/tools.md`, Test scenes.
 
 ## Check a visual change
 

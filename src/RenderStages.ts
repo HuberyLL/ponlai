@@ -908,7 +908,9 @@ export function createAmbient( render: RenderParts, { ambientData, world }: { am
 export function placeVegetation<L>( render: RenderParts, vegetation: Vegetation<L>, { ground }: { ground: THREE.Object3D[] } ) {
 
 	const { scene } = render;
-	scene.add( ...vegetation.roots() );
+	// (a registry without kinds, a scene with no plants, has no roots to add)
+	const roots = vegetation.roots();
+	if ( roots.length ) scene.add( ...roots );
 	installWindMotionFlag( scene );
 	installVegetationPrepass( scene, vegetation.roots( ( kind ) => kind.prepass ) );
 	// the opaque scene's depth for the ambient occlusion (post/GTAO.ts, high's `ao` knob) and the

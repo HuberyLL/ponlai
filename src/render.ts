@@ -8,6 +8,7 @@
 // here: they are lazy exits (tools/layers.json), imported dynamically or for their types only.
 export { awaitWarmUp, bakeWithHaze, checkMotion, createAmbient, createBounceAndShore, createEnvironment, createFrameStages, createKey, createLight, createRenderer, createScenes, createSeaAndPipeline, createSky, createWater, placeVegetation, vegetationCasters, bakeRainCollision, primeSharedBuilds, publishSkyLight, registerLightHistories, registerSceneHistories, sceneOptions, setUpRenderer, startWaveMaps } from './RenderStages.ts';
 export type { FrameStages, RenderParts, SceneOptions } from './RenderStages.ts';
+export { neutralBounceGround, neutralFields, neutralLattice } from './NeutralInputs.ts';
 export { classifyBy } from './debug/Classes.ts';
 export type { ClassRule } from './debug/Classes.ts';
 export { debugFlags, setDebugFlag } from './debug/DebugFlags.ts';

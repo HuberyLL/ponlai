@@ -355,7 +355,30 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   exposure key all day, nothing done for the night), the look it draws with where nobody installed
   one (`src/look/Look.ts`). The tunables then start from the neutral numbers. It shows what the
   renderer does without the island's numbers; it is no picture to judge. Off a debug page the
-  island's look loads whatever the option says.
+  island's look loads whatever the option says. The test scenes' page draws with the neutral look by
+  itself, and takes the island's with `renderLook=ponlai` (The test scenes).
+
+## The test scenes
+
+`scenes.html` is a second page: the renderer's small test scenes, built from the renderer alone
+(`src/app/scenes/`), with no island, no sea and no game. It takes the renderer's options of this
+page (the sky and weather, `paused`, `t`, `quality`, `aa`, `flags`, `tune.*`, `debug`, `profile`)
+and none of the island's or the game's.
+
+- `scene` names the scene: `ball` (rows of balls by roughness and by albedo, a grey and a white
+  card and a post on level grey ground: how a surface takes the key, the sky and the ground's
+  bounce) or `empty` (level grey ground under the sky: what the sky and the key give through a
+  day). A page without it, or with a name no scene has, shows a message that lists the scenes.
+- `renderLook=ponlai` (debug pages only) loads the scenes with the island's look in place of the
+  renderer's neutral one, for a scene read beside the island's own numbers
+  (`docs/reference/look-values.md`).
+- The page mounts the same handles as the island's, on the same pages: `window.__PONLAI__` (the
+  renderer's parts, `establishScene( query )`, `loop`, `radiance`, `tune`) and
+  `window.__THREE_GAME_DIAGNOSTICS__` with its `settled`. `__PONLAI__.scenePage` holds the scene's
+  own: its `views`, `times` (each a name and the query that reaches it) and `readings`,
+  `setView( name )`, and `read()`, which gives every reading the frame holds (the scene's linear
+  radiance over its box, the exposure, the key and the sky's irradiance). `tools/scenes.mjs` shoots
+  and reads them (`docs/reference/tools.md`, Test scenes).
 
 ## Ambient light, occlusion and other views
 
@@ -622,7 +645,8 @@ without the warning. This table is written from the declarations (`node tools/ve
 | `chunkBorders` | named (its value unread) | off | island | shows the world's chunks as lines |
 | `ambientProbes` | `off`, `sky`, `bounce`, `irradiance` | off | render | shows the ambient light's probes (debug pages only) |
 | `windView` | named bare, `arrows`, `plants` | off | render | makes the vegetation's wind visible (debug pages only) |
-| `renderLook` | `neutral` | the island's | app | `neutral`: the renderer's neutral look in place of the island's (debug pages only) |
+| `renderLook` | `neutral`, `ponlai` | the page's own | app | the look the renderer draws with, over the page's own: `neutral` (the renderer's) on the island's page, `ponlai` (the island's) on the test scenes' (debug pages only) |
+| `scene` | `ball`, `empty` | none | app | the test scene `scenes.html` shows |
 | `look` | `kit` | Hanming | island | `kit`: the islanders' earlier kit look |
 | `islander` | `stock`, `subtle`, `medium`, `strong`, `real` | the look's own | island | the islanders' proportions |
 | `body` | text | M30 | island | the scene's walker's sex and age |
