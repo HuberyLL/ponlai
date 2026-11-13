@@ -1,7 +1,7 @@
 // GPU checks and fixed evidence for moon phases, stable stars, and the daylight fade.
 // Run after the stage-three Sky hooks are installed; keep other GPU tabs closed:
 //   node tools/verify-night-sky.mjs http://127.0.0.1:5190
-// Its steps wait for the page's rendered frames (tools/page-eval.mjs, "Rendered frames"); the paired
+// Its steps wait for the page's rendered frames (tools/kit/page-eval.mjs, "Rendered frames"); the paired
 // screenshots wait for the page's settled signal (capture-browser.mjs `waitForSettled`), so a pair
 // that differs is the page's nondeterminism, not a frame shot before a bake or compile had landed.
 // The full moon's offscreen render of the dome guards three things, in scene-linear values and
@@ -16,11 +16,11 @@
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
-import { acquireGpuLock } from './gpu-lock.mjs';
+import { acquireGpuLock } from './kit/gpu-lock.mjs';
 import { eveningHour } from '../packages/render/sky/DayCycle.ts';
 import { MOON_ANGULAR_RADIUS } from '../packages/render/sky/NightSky.ts';
-import { renderedFrames } from './page-eval.mjs';
-import { waitForSettled } from './capture-browser.mjs';
+import { renderedFrames } from './kit/page-eval.mjs';
+import { waitForSettled } from './kit/capture-browser.mjs';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const out = 'artifacts/verification/night-sky';
@@ -37,7 +37,7 @@ const phases = [
 const report = { base, phases: [], checks: [], errors: [], failures: [] };
 await mkdir( out, { recursive: true } );
 // shared with other probes (their pixels do not depend on the GPU load), never during a timing
-// run (tools/gpu-lock.mjs; released when the process exits)
+// run (tools/kit/gpu-lock.mjs; released when the process exits)
 await acquireGpuLock( 'verify-night-sky', { shared: true } );
 const browser = await chromium.launch( {
 	headless: true,
@@ -69,7 +69,7 @@ try {
 		// The narrow moon evidence tests actual geometry, without a defocused camera lens.
 		s.pipeline.settings.dof = 0;
 	} );
-	// two of the page's rendered frames (tools/page-eval.mjs, "Rendered frames")
+	// two of the page's rendered frames (tools/kit/page-eval.mjs, "Rendered frames")
 	const frames = () => renderedFrames( page, 2 );
 	const setState = ( phase, hour ) => page.evaluate( async ( { phase, hour } ) => {
 		const s = window.__PONLAI__;

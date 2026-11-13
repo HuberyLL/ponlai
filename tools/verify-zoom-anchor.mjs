@@ -5,7 +5,7 @@
 //   node tools/verify-zoom-anchor.mjs [url] [--runs 24] [--q "extra&query"] [--out file.json] [--timeout 600000]
 //
 // url: the server (default http://127.0.0.1:5190/, the dev server); a production preview needs
-// `debug` in --q for `window.__PONLAI__`. One page (tools/probe.mjs, the GPU lock shared, 1600x900)
+// `debug` in --q for `window.__PONLAI__`. One page (tools/kit/probe.mjs, the GPU lock shared, 1600x900)
 // runs the cases, each from a scene jump to its start view, with synthetic input dispatched on the
 // canvas between rendered frames:
 //   wheel-sea    a macOS wheel notch out (deltaY +4.000244140625) every 3 frames from 40 m to the
@@ -59,7 +59,7 @@ const cases = [
 	{ name: 'drag', start: 'paused&dist=22&polar=60&az=300', at: [ 0.4, 0.55 ], input: 'drag', frames: 30, runs: 1 },
 ];
 
-// Runs in the page (tools/page-eval.mjs scope: P, frames).
+// Runs in the page (tools/kit/page-eval.mjs scope: P, frames).
 async function pageCheck( cases ) {
 
 	const c = P.controls, cam = P.camera, el = P.renderer.domElement;
@@ -147,7 +147,7 @@ async function pageCheck( cases ) {
 
 }
 
-const probe = fileURLToPath( new URL( './probe.mjs', import.meta.url ) );
+const probe = fileURLToPath( new URL( './kit/probe.mjs', import.meta.url ) );
 const evalJs = `async () => ( ${ pageCheck.toString() } )( ${ JSON.stringify( cases ) } )`;
 const child = spawn( process.execPath, [ probe, url, '--q', query, '--w', '1600', '--h', '900', '--timeout', options.timeout ?? '600000', '--eval', evalJs ], { stdio: [ 'ignore', 'pipe', 'inherit' ] } );
 let stdout = '';

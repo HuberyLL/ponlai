@@ -1,6 +1,6 @@
 // Ad-hoc views for capture-set.mjs (and its --quick mode): views given on the command line or in a
 // JSON file instead of views.mjs, captured through the same path (one page per set, the scene jump,
-// readiness, --jobs, the reference store). They replace the scripts that looped tools/capture.mjs
+// readiness, --jobs, the reference store). They replace the scripts that looped tools/kit/capture.mjs
 // over a list of their own, one cold page per view.
 //
 //   --view "name:query[::js]"   one view: its query, and optionally an eval (js run in the page as a

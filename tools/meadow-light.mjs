@@ -134,9 +134,9 @@
 // The GPU lock is held shared (the readings do not depend on what else renders) and offered back
 // between pages (leaseGpuLock), never across the CPU work of the measures, which runs after the
 // browser is closed.
-import './qos.mjs'; // first: the measures run here, over every pixel of seven frames per view
-import { acquireGpuLock, leaseGpuLock, releaseGpuLock } from './gpu-lock.mjs';
-import { launchCapture, waitForScene, pngShooter, stopLoop, startLoop, decodePng } from './capture-browser.mjs';
+import './kit/qos.mjs'; // first: the measures run here, over every pixel of seven frames per view
+import { acquireGpuLock, leaseGpuLock, releaseGpuLock } from './kit/gpu-lock.mjs';
+import { launchCapture, waitForScene, pngShooter, stopLoop, startLoop, decodePng } from './kit/capture-browser.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';

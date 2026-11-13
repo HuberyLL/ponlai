@@ -24,12 +24,12 @@
 // minute; a slower one goes under `--full`. The checks that render (captures, parity, the GPU
 // verify tools) are run by hand (docs/how-to/check-a-change.md).
 //
-// Each check starts with the application scheduling policy (tools/qos.mjs `appPolicy`).
+// Each check starts with the application scheduling policy (tools/kit/qos.mjs `appPolicy`).
 // Exit 0 when every check passed, 1 when one failed or an option is unknown.
 import { spawnSync, execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { appPolicy } from './qos.mjs';
+import { appPolicy } from './kit/qos.mjs';
 
 const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 

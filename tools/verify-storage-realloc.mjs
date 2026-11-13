@@ -13,7 +13,7 @@
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { fileURLToPath } from 'node:url';
-import { acquireGpuLock } from './gpu-lock.mjs';
+import { acquireGpuLock } from './kit/gpu-lock.mjs';
 
 const argument = ( name, fallback ) => {
 

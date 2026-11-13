@@ -12,7 +12,7 @@
 // parked weathers' views (`special: true`: the cloudy and overcast skies, the rain, the storm, the
 // fog and the weather front into rain; packages/render/sky/Weather.ts PARKED_WEATHER): no other group lists them, so every default set is the
 // normal weathers' and a parked view is reached by name or by `special` (`all,special` is every
-// view). `normal` is `all`, kept as a name. tools/parity/gates.py --normal leaves special entries
+// view). `normal` is `all`, kept as a name. tools/kit/gates.py --normal leaves special entries
 // unjudged. A clip belongs to the group of its view (clips.mjs).
 //
 // Crop anchors: each view names the subjects worth a 1:1 look (`crops`). The page projects a world

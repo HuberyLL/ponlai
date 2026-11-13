@@ -16,14 +16,14 @@
 // inherit it: each process has to be started with it. So:
 //   - importing this module re-executes the current node process under `taskpolicy -a` in place
 //     (process.execve: same pid, same stdio and arguments) unless it already runs so.
-//     tools/gpu-lock.mjs and tools/capture-browser.mjs import it, so every tool that renders or
+//     tools/kit/gpu-lock.mjs and tools/kit/capture-browser.mjs import it, so every tool that renders or
 //     reads captures raises itself before it does anything;
 //   - `appPolicy( cmd, args )` gives the command line that starts a child with the policy, for a
 //     child that cannot re-execute itself (one with an IPC channel, which an exec closes:
 //     capture-set's capture.mjs workers; `gpu-lock run`'s command);
 //   - the Python tools (clip-metrics.py, diff-set.py, compare-captures.py, compare-sky-captures.py)
 //     re-execute themselves the same way with os.execv;
-//   - `node tools/qos.mjs <command> [args]` runs any command with it (the npm build and typecheck
+//   - `node tools/kit/qos.mjs <command> [args]` runs any command with it (the npm build and typecheck
 //     scripts start tsc and vite through it).
 // PONLAI_QOS holds the pid of the process that runs with the policy, so a process knows it already
 // does and its children (another pid) still raise themselves. PONLAI_QOS=off keeps the policy a
@@ -54,7 +54,7 @@ if ( cli ) {
 	const [ cmd, ...args ] = process.argv.slice( 2 );
 	if ( ! cmd ) {
 
-		console.error( 'usage: node tools/qos.mjs <command> [args ...]' );
+		console.error( 'usage: node tools/kit/qos.mjs <command> [args ...]' );
 		process.exit( 2 );
 
 	}

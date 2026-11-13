@@ -18,7 +18,7 @@ Writes <outDir>/curves-<camera>-<weather>.png.
 import os
 import sys
 
-# The application scheduling policy on macOS (tools/qos.mjs says why), as in img.py: the process
+# The application scheduling policy on macOS (tools/kit/qos.mjs says why), as in img.py: the process
 # re-executes itself in place under taskpolicy -a.
 if sys.platform == "darwin" and os.environ.get("PONLAI_QOS") != "off" and os.environ.get("PONLAI_QOS") != str(os.getpid()):
     os.environ["PONLAI_QOS"] = str(os.getpid())

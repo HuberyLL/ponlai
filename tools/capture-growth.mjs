@@ -16,7 +16,7 @@
 // for every shot (two thirds of a 42-shot run's wall time). So the shots are grouped by side and by
 // what a page reads once at load (every query option outside the scene's own, SCENE_OPTIONS below
 // as app/Scene.ts lists them: seed and grow choose the world; quality, aa, dpr, the debug switches),
-// and each group is one `tools/capture.mjs --worker` page driven over its IPC channel, as
+// and each group is one `tools/kit/capture.mjs --worker` page driven over its IPC channel, as
 // tools/parity/capture-set.mjs drives it: the group's first view is a fresh load, every later one
 // is reached by the exact scene jump (`__PONLAI__.establishScene`), so a group's world is built
 // once. --jobs pages run at once (default 2), one group each. The worker takes the GPU lock itself,
@@ -43,7 +43,7 @@
 //
 // --base-ref <sha> keeps the base side's shots as references of that commit, one entry per shot
 // under `<main checkout>/artifacts/captures/growth-ref/<sha>/<shot key>-<hash>/` (shot.png,
-// shot.json; the store's manifest, tools/parity/reference.mjs, written last). The hash covers what
+// shot.json; the store's manifest, tools/kit/reference.mjs, written last). The hash covers what
 // changes the pixels: the size, the full query, placeCamera's code, the capture tools
 // (capture.mjs, capture-browser.mjs) and the browser build. An entry already there is reused
 // instead of captured; one that another live process is capturing is waited for. The base URL must
@@ -71,8 +71,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { compareFrames, decodePng } from './capture-browser.mjs';
-import { browserBuild, checkServed, ensureReference, stable } from './parity/reference.mjs';
+import { compareFrames, decodePng } from './kit/capture-browser.mjs';
+import { browserBuild, checkServed, ensureReference, stable } from './kit/reference.mjs';
 
 const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 const args = process.argv.slice( 2 );
@@ -206,7 +206,7 @@ const evalFor = ( view ) => `(${ placeCamera.toString() })( window.__PONLAI__, $
 // what a reference's pixels depend on besides its query and size: the camera code, the capture
 // tools' readiness and shot, the browser
 const CAMERA = hash( evalFor( 'VIEW' ) );
-const TOOL_FILES = Object.fromEntries( [ 'capture.mjs', 'capture-browser.mjs' ].map( ( f ) => [ f, hash( readFileSync( path.join( ROOT, 'tools', f ) ) ) ] ) );
+const TOOL_FILES = Object.fromEntries( [ 'capture.mjs', 'capture-browser.mjs' ].map( ( f ) => [ f, hash( readFileSync( path.join( ROOT, 'tools', 'kit', f ) ) ) ] ) );
 
 // the page reads the first value of a key: the URL's query and `--q` replace the tool's
 function queryFor( url, seed, grow, preset ) {
@@ -286,7 +286,7 @@ function runPage( queue ) {
 	const { page, world } = queue[ 0 ].shot;
 	return new Promise( ( resolve ) => {
 
-		const child = spawn( process.execPath, [ 'tools/capture.mjs', '--worker', '--url', page, '--w', String( W ), '--h', String( H ),
+		const child = spawn( process.execPath, [ 'tools/kit/capture.mjs', '--worker', '--url', page, '--w', String( W ), '--h', String( H ),
 			'--timeout', String( timeout ), ...( pagePerView ? [ '--page-per-view' ] : [] ) ],
 		{ cwd: ROOT, stdio: [ 'ignore', 'pipe', 'pipe', 'ipc' ], env: { ...process.env, PONLAI_CAPTURE_PROFILES: path.join( PROFILES, world ) } } );
 		let output = [], current = null, served = 0, timer = null, killer = null, writing = Promise.resolve();
@@ -536,7 +536,7 @@ if ( recheckPairs.length ) {
 }
 const pixelsByKey = Object.fromEntries( pairs.map( ( p ) => [ p.key, { ...p.pixels, ...( p.recheck ? { recheck: p.recheck } : {} ) } ] ) );
 
-// region statistics, by compare-captures.py's `metrics` (tools/parity/pixels.py, which it imports)
+// region statistics, by compare-captures.py's `metrics` (tools/kit/pixels.py, which it imports)
 // plus the mean HSV saturation
 const PY = `
 import json, sys
@@ -570,7 +570,7 @@ const stats = await new Promise( ( resolve, reject ) => {
 	let output = '';
 	child.stdout.on( 'data', ( b ) => output += b );
 	child.on( 'close', ( code ) => code === 0 ? resolve( JSON.parse( output ) ) : reject( new Error( `region statistics failed (${ code })` ) ) );
-	child.stdin.end( JSON.stringify( { pixels: path.join( ROOT, 'tools/parity' ), images, regions: REGIONS } ) );
+	child.stdin.end( JSON.stringify( { pixels: path.join( ROOT, 'tools', 'kit' ), images, regions: REGIONS } ) );
 
 } );
 for ( const s of shots ) s.stats = stats[ path.join( outDir, s.file + '.png' ) ] ?? null;

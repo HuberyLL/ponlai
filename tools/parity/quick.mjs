@@ -21,7 +21,7 @@
 // size, the S3 switches, anything read once as materials and the frame graph are built) need a
 // load, i.e. another quick run with `--q`.
 //
-// Ready (the same sequence as capture.mjs, see tools/capture-browser.mjs): the floor's frames and
+// Ready (the same sequence as capture.mjs, see tools/kit/capture-browser.mjs): the floor's frames and
 // the loading screen gone (waitForScene), then on a temporal page (taa, taau, fsr3, gt) the rest started
 // over and converged under the new epoch, then waitForStable: an MSAA page by stability (the image
 // stopped changing), a temporal one on its held rest; the loop is left stopped. A variant's image
@@ -61,12 +61,12 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, rm, writeFile, appendFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { acquireGpuLock, releaseGpuLock, gpuUtilisation } from '../gpu-lock.mjs';
-import { launchCapture, waitForScene, waitForStable, stableOptions, startLoop } from '../capture-browser.mjs';
+import { acquireGpuLock, releaseGpuLock, gpuUtilisation } from '../kit/gpu-lock.mjs';
+import { launchCapture, waitForScene, waitForStable, stableOptions, startLoop } from '../kit/capture-browser.mjs';
 import { VIEWS, viewEval } from './views.mjs';
 import { selectViews, viewQuery } from './adhoc.mjs';
 import { CLIPS } from './clips.mjs';
-import { resolveRefDir } from './reference.mjs';
+import { resolveRefDir } from '../kit/reference.mjs';
 
 const HERE = path.dirname( fileURLToPath( import.meta.url ) );
 const TOOLS = path.resolve( HERE, '..' );
@@ -302,7 +302,7 @@ export async function main( argv ) {
 
 	// metrics: every variant's crops against the references, in a few processes at once
 	const m0 = Date.now();
-	const python = [ 'run', '--with', 'numpy', '--with', 'pillow', '--with', 'scipy', '--with', 'flip-evaluator', 'python', '-I', path.join( TOOLS, 'clip-metrics.py' ) ];
+	const python = [ 'run', '--with', 'numpy', '--with', 'pillow', '--with', 'scipy', '--with', 'flip-evaluator', 'python', '-I', path.join( TOOLS, 'kit', 'clip-metrics.py' ) ];
 	const jobs = [];
 	for ( const view of views ) for ( const variant of variants ) {
 

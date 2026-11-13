@@ -3,16 +3,16 @@
 //   node tools/verify-weather.mjs http://127.0.0.1:5190 [--coupling]
 // Its rain preset and the rain parts are parked with the rain (packages/render/sky/Weather.ts PARKED_WEATHER):
 // out of the default checks until the parked weathers are revived; it still runs on a debug build.
-// Its steps wait for the page's rendered frames (tools/page-eval.mjs, "Rendered frames").
+// Its steps wait for the page's rendered frames (tools/kit/page-eval.mjs, "Rendered frames").
 // Overcast's direct light is checked on the key's floor under its closed deck (packages/render/sky/Sky.ts
 // `deckKeyFloor`), only for holding back a share of the clear day's key: the floor's level is a
 // tune (look/SkyLook.ts `keyThroughCloud`), so the bound stays clear of it.
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
-import { acquireGpuLock } from './gpu-lock.mjs';
+import { acquireGpuLock } from './kit/gpu-lock.mjs';
 import { DAY_PRESETS } from '../packages/render/sky/DayCycle.ts';
-import { renderedFrames } from './page-eval.mjs';
+import { renderedFrames } from './kit/page-eval.mjs';
 
 const base = process.argv.slice( 2 ).find( ( arg ) => ! arg.startsWith( '--' ) ) || 'http://127.0.0.1:5190';
 const coupling = process.argv.includes( '--coupling' );
@@ -24,7 +24,7 @@ const luma = ( rgb ) => rgb[ 0 ] * 0.2126 + rgb[ 1 ] * 0.7152 + rgb[ 2 ] * 0.072
 const same = ( a, b, label ) => a.forEach( ( value, i ) => near( value, b[ i ], 1e-6, `${ label }[${ i }]` ) );
 await mkdir( out, { recursive: true } );
 // shared with other probes (their pixels do not depend on the GPU load), never during a timing
-// run (tools/gpu-lock.mjs; released when the process exits)
+// run (tools/kit/gpu-lock.mjs; released when the process exits)
 await acquireGpuLock( 'verify-weather', { shared: true } );
 const browser = await chromium.launch( {
 	headless: true,
@@ -56,7 +56,7 @@ try {
 		s.controls.enableDamping = false;
 		await s.setPreset( 'golden-hour' );
 	} );
-	// two of the page's rendered frames (tools/page-eval.mjs, "Rendered frames")
+	// two of the page's rendered frames (tools/kit/page-eval.mjs, "Rendered frames")
 	const frames = () => renderedFrames( page, 2 );
 	const camera = async ( view ) => {
 		await page.evaluate( ( view ) => {

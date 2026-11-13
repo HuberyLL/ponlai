@@ -1,6 +1,6 @@
 // Disk space: what the tools and agents leave behind, removed by age and held under a cap.
 //
-// usage: node tools/storage.mjs [report|clean] [--days 2] [--cap 50] [--floor 12] [--auto]
+// usage: node tools/kit/storage.mjs [report|clean] [--days 2] [--cap 50] [--floor 12] [--auto]
 // - `report` (the default) prints what each kind holds and what `clean` would remove; nothing is
 //   deleted. `clean` removes it. `clean --auto` does so only if the last clean is 6 h old: job.mjs
 //   starts it that way in the background (`autoClean`), so cleaning needs nobody to remember it.
@@ -17,7 +17,7 @@
 //   folders are never read. artifacts/captures, where one-off screenshots land (some of them shown
 //   or posted), keeps its images 7 days and stays outside the cap.
 // - references: a commit's folder in a reference store (a folder named by a full sha under those
-//   folders or artifacts/parity; tools/parity/reference.mjs). Kept while its commit is live: the
+//   folders or artifacts/parity; tools/kit/reference.mjs). Kept while its commit is live: the
 //   HEAD of a worktree or the tip of a local branch committed to in the last 7 days, or the commit
 //   such a branch shares with main (it compares against it). Otherwise removed once nothing in it
 //   changed for --days. `.replaced/` and `.verify/` inside a live store go after a day (safe to
@@ -47,8 +47,8 @@ import { execFileSync, spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ROOT } from './root.mjs';
 
-const TOOLS = path.dirname( fileURLToPath( import.meta.url ) );
 const HOUR = 3600e3;
 const DAY = 24 * HOUR;
 const GB = 1024 ** 3;
@@ -73,11 +73,11 @@ function mainCheckout() {
 
 	try {
 
-		const common = execFileSync( 'git', [ 'rev-parse', '--path-format=absolute', '--git-common-dir' ], { cwd: TOOLS, encoding: 'utf8', timeout: 5000 } ).trim();
+		const common = execFileSync( 'git', [ 'rev-parse', '--path-format=absolute', '--git-common-dir' ], { cwd: ROOT, encoding: 'utf8', timeout: 5000 } ).trim();
 		if ( path.basename( common ) === '.git' ) return path.dirname( common );
 
 	} catch { /* not a git checkout: this one */ }
-	return path.resolve( TOOLS, '..' );
+	return ROOT;
 
 }
 
@@ -409,7 +409,7 @@ const size = ( bytes ) => bytes >= GB ? `${ ( bytes / GB ).toFixed( 1 ) } GB` : 
 
 function report( { main, items, linked }, o ) {
 
-	console.log( `rules: --days ${ o.days }, --cap ${ o.cap } GB, --floor ${ o.floor } h (tools/storage.mjs header)` );
+	console.log( `rules: --days ${ o.days }, --cap ${ o.cap } GB, --floor ${ o.floor } h (tools/kit/storage.mjs header)` );
 	console.log( 'kind         held       remove                     keep' );
 	let held = 0, removed = 0;
 	for ( const kind of [ 'bulk', 'references', 'profiles', 'temp', 'sessions' ] ) {

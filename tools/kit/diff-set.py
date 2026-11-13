@@ -1,6 +1,6 @@
 """Compare a parity capture set (tools/parity/capture-set.mjs) against a reference set, view by view.
 
-  uv run --with numpy --with pillow tools/parity/diff-set.py <refDir> <testDir>
+  uv run --with numpy --with pillow tools/kit/diff-set.py <refDir> <testDir>
       [--views a,b] [--out dir] [--max-px1 200] [--crops 3] [--crop 256]
       [--aa-floor | --temporal [--flip]] [--md file.md] [--crops-from ref|test|<dir>|<file.json>]
       [--jobs 4]
@@ -58,7 +58,7 @@ world generation share the CPU (--jobs 1 runs them one after the other). Each vi
 its PNGs once and keeps them as uint8; the output is the same as one view at a time, printed in view
 order. Window sums are exact integer sums on a coarse integral image (tolerance.window_sums), and
 every mean is an exact integer sum divided once, so no number depends on the order of summation.
-On macOS the process and its threads run with the application scheduling policy (tools/qos.mjs
+On macOS the process and its threads run with the application scheduling policy (tools/kit/qos.mjs
 says why; see QOS below).
 """
 import argparse
@@ -67,7 +67,7 @@ import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
-# The application scheduling policy on macOS (tools/qos.mjs says why): this process re-executes
+# The application scheduling policy on macOS (tools/kit/qos.mjs says why): this process re-executes
 # itself in place under taskpolicy -a, and its pool threads ask for the user-initiated QoS, which
 # such a process is granted (threads do not inherit the main thread's).
 QOS = sys.platform == "darwin" and os.environ.get("PONLAI_QOS") != "off"

@@ -5,15 +5,15 @@
 """One image tool for captures: differences, crops, side-by-side sheets, statistics and profiles
 around a point.
 
-  uv run tools/img.py diff  A B            [region] [--thr 1,2,8,32] [--bbox-thr 0] [--heat P] [--gain 8] [--json]
-  uv run tools/img.py crop  IMG|DIR...     region [--zoom N] --out DIR
-  uv run tools/img.py sheet IMG|DIR...     [region] [--labels a,b] [--cols N] [--diff] [--zoom N | --scale F | --width W] --out FILE
-  uv run tools/img.py thumb IMG|DIR...     [--short 360] [--quality 88] --out DIR
-  uv run tools/img.py stats IMG|DIR...     [region] [--pct 1,5,50,95,99] [--oklab] [--split] [--cover] [--mask M] [--json]
-  uv run tools/img.py stats IMG|DIR... --deck [--deck-boxes auto|h|sun|none] [region] [--deck-rows [--horizon x0,x1,y]]
+  uv run tools/kit/img.py diff  A B            [region] [--thr 1,2,8,32] [--bbox-thr 0] [--heat P] [--gain 8] [--json]
+  uv run tools/kit/img.py crop  IMG|DIR...     region [--zoom N] --out DIR
+  uv run tools/kit/img.py sheet IMG|DIR...     [region] [--labels a,b] [--cols N] [--diff] [--zoom N | --scale F | --width W] --out FILE
+  uv run tools/kit/img.py thumb IMG|DIR...     [--short 360] [--quality 88] --out DIR
+  uv run tools/kit/img.py stats IMG|DIR...     [region] [--pct 1,5,50,95,99] [--oklab] [--split] [--cover] [--mask M] [--json]
+  uv run tools/kit/img.py stats IMG|DIR... --deck [--deck-boxes auto|h|sun|none] [region] [--deck-rows [--horizon x0,x1,y]]
                                          [--trend 15] [--px-per-deg 24] [--json]
-  uv run tools/img.py flicker CLIP|DIR...  [region] [--frames a-b] [--spike 20,40] [--odd 2.5] [--drop-odd] [--map P] [--gain 8] [--json] [--save]
-  uv run tools/img.py radial IMG|DIR...    --centre x,y | --centre-key KEY  [--rings 0,2,4,8,15,30,50] [--fov F] [--half up] [--json]
+  uv run tools/kit/img.py flicker CLIP|DIR...  [region] [--frames a-b] [--spike 20,40] [--odd 2.5] [--drop-odd] [--map P] [--gain 8] [--json] [--save]
+  uv run tools/kit/img.py radial IMG|DIR...    --centre x,y | --centre-key KEY  [--rings 0,2,4,8,15,30,50] [--fov F] [--half up] [--json]
 
   region: --box [name=]x,y,w,h (repeatable) and/or --anchor name[,name] | all  [--anchors FILE.json]
 
@@ -26,7 +26,7 @@ diff: per pair (two images, or the PNGs two directories share) and per region, `
 --thr level (a pixel counts when its largest channel difference exceeds the level), the mean signed
 difference B - A per channel (`bias`), the luma mean's change (`dL`, Rec. 709 on code values) and
 the bounding box [x, y, w, h] of the pixels over --bbox-thr. The numbers are diff-set.py's (the
-same helpers, tools/parity/pixels.py): max, mean and counts over 1, 2, 8 and 32 equal its report.
+same helpers, tools/kit/pixels.py): max, mean and counts over 1, 2, 8 and 32 equal its report.
 --heat writes the per-pixel max channel difference times --gain (clipped; x8 as diff-set's
 <view>.diff.png): a file for one pair, else a directory of <name>[.<region>].diff.png.
 
@@ -154,7 +154,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-# The application scheduling policy on macOS (tools/qos.mjs says why), as in diff-set.py: the
+# The application scheduling policy on macOS (tools/kit/qos.mjs says why), as in diff-set.py: the
 # process re-executes itself in place under taskpolicy -a, and its pool threads ask for the
 # user-initiated QoS.
 QOS = sys.platform == "darwin" and os.environ.get("PONLAI_QOS") != "off"
@@ -172,7 +172,7 @@ def raise_thread():
 import numpy as np
 from PIL import Image, ImageDraw
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pixels import LEVELS, LUMA, Files, bbox, bias, decode, metrics, stats  # noqa: E402
 
 FULL_MAX = 1280

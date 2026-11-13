@@ -2,7 +2,7 @@
 // JSON, so a question about the running page (a diagnostic, a timing, a uniform, the pipelines an
 // action creates) needs no Playwright script of its own.
 //
-//   node tools/probe.mjs [url] [--q "paused&t=12&dpr=1"] [--query q2]... [--init js|@file]...
+//   node tools/kit/probe.mjs [url] [--q "paused&t=12&dpr=1"] [--query q2]... [--init js|@file]...
 //       [--eval js|@file] [--until js|@file] [--frames n] [--sleep ms] ...  (steps, in order)
 //       [--w 1600 --h 900 --scale 1] [--timeout 60000] [--exclusive] [--fresh] [--load] [--console [prefix]]
 //
@@ -18,7 +18,7 @@
 //   frames; read live counters from `P`), `frames( n )`, `sleep( ms )`, `until( fn, timeoutMs )`,
 //   `pipelines` (`mark()`, `since( mark )`: which pipelines an action built, tools/pipeline-trace.mjs).
 //   The value is serialised in the page (cycles, functions, typed arrays, three's vectors). The
-//   forms, the scope and the serialiser are tools/page-eval.mjs, which tools/capture.mjs's
+//   forms, the scope and the serialiser are tools/kit/page-eval.mjs, which tools/kit/capture.mjs's
 //   `--eval` shares: its header has the details.
 // - `--until js`: waits until the expression (same forms and scope) is truthy, checked every
 //   rendered frame (every 100 ms while the loop is stopped), up to --timeout; records the wait in ms
@@ -27,7 +27,7 @@
 // - `--frames n`: waits for n rendered frames; `--sleep ms` waits that long.
 // Before the steps, every query waits until the page is up (each wait, the navigation included, up
 // to --timeout): `__PONLAI__` and the diagnostics exist, one frame rendered, and the loading screen
-// gone (its fade finished, tools/capture-browser.mjs `waitForScene`). The page is not stopped or
+// gone (its fade finished, tools/kit/capture-browser.mjs `waitForScene`). The page is not stopped or
 // settled further: add an `--until` for that.
 // `--init js` runs before any of the page's scripts on every load (Playwright's addInitScript), for
 // hooks that must see the start, such as wrapping `GPUDevice.prototype.createRenderPipeline`.
@@ -48,7 +48,7 @@
 // (or those starting with the prefix) as `console`. Exits 1 when an eval failed, an `--until`
 // timed out or the page threw.
 //
-// The browser is the capture tools' (tools/capture-browser.mjs): headless, in a persistent profile
+// The browser is the capture tools' (tools/kit/capture-browser.mjs): headless, in a persistent profile
 // slot, so the world cache and the shader cache are warm from the second probe on. `--fresh` runs in
 // a new empty profile instead (a cold load: the island generated, every shader compiled), deleted
 // afterwards. The GPU lock is held from before the load to the end of the last query: shared,
@@ -56,7 +56,7 @@
 // frame times (`D.frameMs`) or GPU timings that others' work would disturb.
 // A long eval that waits on CPU work (worker generation, a grown page) stops the loop
 // (`await P.loop.stop()`) and waits with `until` (or `sleep`): while the loop stands, those helpers
-// offer the shared slot back (tools/page-eval.mjs), and the probe gives it up when a request ranked
+// offer the shared slot back (tools/kit/page-eval.mjs), and the probe gives it up when a request ranked
 // before its next one waits (leaseGpuLock with no budget: the rule capture's views lease by), then
 // queues again by rank and resolves the helper only once it holds the slot again, so the eval never
 // renders without it. Each give-up is logged on stderr with its duration, and the step's
@@ -69,12 +69,17 @@ import { evalSource as source, runInPage } from './page-eval.mjs';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import PROJECT from '../project.mjs';
 
-const usage = 'usage: node tools/probe.mjs [url] [--q query] [--query q]... [--init js|@file]... [--eval js|@file] [--until js] [--frames n] [--sleep ms] ... [--w --h --scale] [--timeout ms] [--exclusive] [--fresh] [--load] [--console [prefix]] (see the file header)';
+// the page's globals and its loading screen, as the project's configuration names them, for the
+// page code below (passed in: a closure run in the page sees nothing of node's scope)
+const PAGE = PROJECT.page;
+
+const usage = 'usage: node tools/kit/probe.mjs [url] [--q query] [--query q]... [--init js|@file]... [--eval js|@file] [--until js] [--frames n] [--sleep ms] ... [--w --h --scale] [--timeout ms] [--exclusive] [--fresh] [--load] [--console [prefix]] (see the file header)';
 const argv = process.argv.slice( 2 );
 const options = { w: '1600', h: '900', scale: '1', timeout: '60000' };
 const queries = [], inits = [], steps = [];
-let url = 'http://127.0.0.1:5190/', consoleFilter = null;
+let url = PROJECT.url, consoleFilter = null;
 for ( let i = 0; i < argv.length; i ++ ) {
 
 	const a = argv[ i ];
@@ -93,22 +98,22 @@ for ( let i = 0; i < argv.length; i ++ ) {
 	else { console.error( `unknown option --${ k }\n${ usage }` ); process.exit( 2 ); }
 
 }
-if ( queries.length === 0 ) queries.push( 'paused&t=12&dpr=1' );
+if ( queries.length === 0 ) queries.push( PROJECT.query );
 // a server's root gets its slash; a page of it (scenes.html) is loaded as named
 if ( ! url.endsWith( '/' ) && ! url.includes( '?' ) && ! /\.html$/.test( url ) ) url += '/';
 const timeout = Number( options.timeout );
 
 // the page's own frame counter (rendered frames)
-const renderedFrame = ( page ) => page.evaluate( () => window.__PONLAI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 );
+const renderedFrame = ( page ) => page.evaluate( ( n ) => window[ n.handle ]?.renderer.info.frame ?? window[ n.diagnostics ]?.frame ?? 0, PAGE );
 
 async function load( page, query ) {
 
 	// the navigation takes --timeout too: Playwright's own 30 s runs out on a contended GPU
 	await page.goto( `${ url }?${ query }`, { timeout } );
-	await page.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__, null, { timeout } ).catch( async ( error ) => {
+	await page.waitForFunction( ( n ) => window[ n.handle ] && window[ n.diagnostics ], PAGE, { timeout } ).catch( async ( error ) => {
 
 		// where the load stood: the loading screen's status line
-		const status = await page.evaluate( () => document.querySelector( '#loading span' )?.textContent ?? null ).catch( () => null );
+		const status = await page.evaluate( ( n ) => document.querySelector( `#${ n.loading } span` )?.textContent ?? null, PAGE ).catch( () => null );
 		throw new Error( `page not up within ${ timeout } ms (loading screen: ${ JSON.stringify( status ) }; a production build needs debug in the query): ${ error.message.split( '\n' )[ 0 ] }` );
 
 	} );
@@ -118,9 +123,9 @@ async function load( page, query ) {
 // the exact scene jump (as capture.mjs's worker makes it); false when the page refuses the query
 async function jump( page, query ) {
 
-	const jumped = await page.evaluate( async ( q ) => {
+	const jumped = await page.evaluate( async ( { q, handle } ) => {
 
-		const s = window.__PONLAI__;
+		const s = window[ handle ];
 		if ( s.sceneJump !== 1 ) return - 1;
 		try { await s.establishScene( q ); } catch ( error ) {
 
@@ -131,9 +136,9 @@ async function jump( page, query ) {
 		s.loop.start();
 		return s.renderer.info.frame;
 
-	}, query );
+	}, { q: query, handle: PAGE.handle } );
 	if ( jumped < 0 ) return false;
-	await page.waitForFunction( ( f ) => window.__PONLAI__.renderer.info.frame > f, jumped, { timeout, polling: 'raf' } );
+	await page.waitForFunction( ( { f, handle } ) => window[ handle ].renderer.info.frame > f, { f: jumped, handle: PAGE.handle }, { timeout, polling: 'raf' } );
 	return true;
 
 }
@@ -220,7 +225,7 @@ try {
 				} else if ( step.frames !== undefined ) {
 
 					const from = await renderedFrame( page );
-					await page.waitForFunction( ( f ) => ( window.__PONLAI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 ) >= f, from + step.frames, { timeout, polling: 'raf' } );
+					await page.waitForFunction( ( { f, n } ) => ( window[ n.handle ]?.renderer.info.frame ?? window[ n.diagnostics ]?.frame ?? 0 ) >= f, { f: from + step.frames, n: PAGE }, { timeout, polling: 'raf' } );
 					record.steps.push( { frames: step.frames } );
 
 				} else {

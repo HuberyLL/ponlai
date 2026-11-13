@@ -13,7 +13,7 @@
 // query>]` (`aa=off` adds `msaa=1`; `aa` reaches builds that read it, others ignore it; `testMode=0`
 // leaves the test mode's switch out, so what it turns off moves in the clips: packages/render/debug/TestMode.ts) in a
 // persistent profile slot, runs the view's eval (the crop anchors' setup included), waits for the
-// scene as capture.mjs does (tools/capture-browser.mjs: the image stopped changing, with the same
+// scene as capture.mjs does (tools/kit/capture-browser.mjs: the image stopped changing, with the same
 // --stable-* options, or under taa / taau / gt the rest converged, or --ready-frames' fixed count;
 // --wait / --settle ms of fixed delay around the floor when given; the readiness record goes into clip.json as `ready`; the loop is left stopped,
 // as the stepper wants it), runs the clip's eval, reads the crop anchors once at the base pose and then steps the clip. After each frame
@@ -25,7 +25,7 @@
 // could pick others: pass the test run's to frame the same subjects).
 //
 // The crops and full frames are the compositor's image PNG-encoded for speed
-// (tools/capture-browser.mjs, "The shot": Playwright's screenshot's pixels, not its bytes; compare
+// (tools/kit/capture-browser.mjs, "The shot": Playwright's screenshot's pixels, not its bytes; compare
 // them decoded). The shots drop the page's device metrics until the clip has been stepped: the
 // page reads its ratio only on a resize, and none fires, so the frames are the same.
 //
@@ -111,10 +111,10 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
-import { acquireGpuLock, releaseGpuLock, gpuUtilisation } from './gpu-lock.mjs';
+import { acquireGpuLock, releaseGpuLock, gpuUtilisation } from './kit/gpu-lock.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
 import { CLIPS, clipEval } from './parity/clips.mjs';
-import { launchCapture, waitForScene, waitForStable, stableOptions, decodePng, compareFrames, pngShooter } from './capture-browser.mjs';
+import { launchCapture, waitForScene, waitForStable, stableOptions, decodePng, compareFrames, pngShooter } from './kit/capture-browser.mjs';
 
 const REPO = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 const args = process.argv.slice( 2 );
@@ -295,7 +295,7 @@ try {
 	if ( full.size ) await mkdir( path.join( outDir, 'full' ), { recursive: true } );
 
 	const boxes = [];
-	// the compositor's image, PNG encoded for speed (tools/capture-browser.mjs, "The shot"); the
+	// the compositor's image, PNG encoded for speed (tools/kit/capture-browser.mjs, "The shot"); the
 	// device metrics come back once the clip is stepped (nothing reads the ratio while stepping)
 	const shooter = await pngShooter( page, { timeout } );
 	const shoot = async ( clipRect ) => {

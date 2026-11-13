@@ -7,7 +7,7 @@
 // gauge) keeps its ink to its exit.
 // Pure CPU; Node 22.18+ strips the imported TypeScript.
 // Run: node tools/game/verify-ink.mjs
-import { assert, assertions } from '../assert-count.mjs';
+import { assert, assertions } from '../kit/assert-count.mjs';
 import { inkShares } from '../../packages/game/ui/Ink.ts';
 
 const UNIT = 1.2 * 2;

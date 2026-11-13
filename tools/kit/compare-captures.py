@@ -1,7 +1,7 @@
 """Measure matched overview captures and save unretouched comparison crops.
 
-Usage: uv run --with numpy --with pillow tools/compare-captures.py before.png after.png
-The metrics are pixels.metrics (tools/parity/pixels.py), which `tools/img.py stats` reports too.
+Usage: uv run --with numpy --with pillow tools/kit/compare-captures.py before.png after.png
+The metrics are pixels.metrics (tools/kit/pixels.py), which `tools/kit/img.py stats` reports too.
 """
 import json
 import sys
@@ -9,7 +9,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pixels import metrics  # noqa: E402
 
 

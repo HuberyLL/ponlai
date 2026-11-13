@@ -1,4 +1,4 @@
-// The page-side evaluation that tools/probe.mjs and tools/capture.mjs share, so an `--eval` means
+// The page-side evaluation that tools/kit/probe.mjs and tools/kit/capture.mjs share, so an `--eval` means
 // the same in both: the same forms, the same scope, the same value in the JSON. capture's `--eval`
 // used to be Playwright's own string evaluation: inline js only (agents passed `$(cat file)`), no
 // `until`, so eval scripts carried polling loops of their own, and its value was dropped.
@@ -38,7 +38,14 @@
 // the state the next tick applies; a still, converged image is waited for by `settled` (capture-
 // browser's `waitForSettled`), never by a count of frames of either kind.
 import { readFileSync } from 'node:fs';
-import { installScript } from './pipeline-trace.mjs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import PROJECT from '../project.mjs';
+import { ROOT } from './root.mjs';
+
+// the page's globals (the project's configuration names them) and the module that gives `pipelines`
+const { handle: HANDLE, diagnostics: DIAGNOSTICS } = PROJECT.page;
+const { installScript } = await import( pathToFileURL( path.join( ROOT, PROJECT.pipelines ) ).href );
 
 // (installed in the page on first use only: a probe that never asks pays nothing)
 const TRACE = installScript();
@@ -53,7 +60,7 @@ export const evalSource = ( text ) => text.startsWith( '@' ) ? readFileSync( tex
  * `renderedFrames` from node, `installWaitFrames` as `window.__waitFrames` inside a page's own
  * evaluate, and a tool whose page code is a string splices it in (`( ${ WAIT_FRAMES } )( n, ms )`). */
 export const WAIT_FRAMES = `( n, timeout = 60000 ) => new Promise( ( resolve, reject ) => {
-	const s = window.__PONLAI__, count = () => s.renderer.info.frame;
+	const s = window.${ HANDLE }, count = () => s.renderer.info.frame;
 	const end = count() + n, deadline = performance.now() + timeout;
 	const tick = () => {
 		if ( count() >= end ) resolve();
@@ -87,9 +94,9 @@ export async function installWaitFrames( page ) {
  * when the js throws or an `until` times out (`timeout` ms). */
 export function runInPage( page, js, { mode = 'eval', timeout = 60000, slotBinding = null } = {} ) {
 
-	return page.evaluate( async ( { js, mode, timeout, trace, slotBinding } ) => {
+	return page.evaluate( async ( { js, mode, timeout, trace, slotBinding, handle, diagnostics } ) => {
 
-		const frameNow = () => window.__PONLAI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0;
+		const frameNow = () => window[ handle ]?.renderer.info.frame ?? window[ diagnostics ]?.frame ?? 0;
 		const pause = ( ms ) => new Promise( ( resolve ) => setTimeout( resolve, ms ) );
 		// a frame, or 100 ms when the loop stands (rAF still fires, but no frame is rendered)
 		const tick = () => new Promise( ( resolve ) => { const t = setTimeout( resolve, 100 ); requestAnimationFrame( () => { clearTimeout( t ); resolve(); } ); } );
@@ -100,7 +107,7 @@ export function runInPage( page, js, { mode = 'eval', timeout = 60000, slotBindi
 		let offered = - Infinity;
 		const offer = async () => {
 
-			if ( ! giveUp || window.__PONLAI__?.loop?.running !== false || performance.now() - offered < 1000 ) return 0;
+			if ( ! giveUp || window[ handle ]?.loop?.running !== false || performance.now() - offered < 1000 ) return 0;
 			const ms = await giveUp();
 			offered = performance.now();
 			return ms;
@@ -144,7 +151,7 @@ export function runInPage( page, js, { mode = 'eval', timeout = 60000, slotBindi
 		const fn = new AsyncFunction( 'P', 'D', 'frames', 'sleep', 'until', 'pipelines', body );
 		const value = async () => {
 
-			const v = await fn( window.__PONLAI__, window.__THREE_GAME_DIAGNOSTICS__, frames, sleep, until, pipelines );
+			const v = await fn( window[ handle ], window[ diagnostics ], frames, sleep, until, pipelines );
 			return typeof v === 'function' ? await v() : v;
 
 		};
@@ -174,6 +181,6 @@ export function runInPage( page, js, { mode = 'eval', timeout = 60000, slotBindi
 		await until( value );
 		return JSON.stringify( { ms: Math.round( performance.now() - start ), frames: frameNow() - from } );
 
-	}, { js, mode, timeout, trace: TRACE, slotBinding } ).then( ( text ) => text === undefined ? undefined : JSON.parse( text ) );
+	}, { js, mode, timeout, trace: TRACE, slotBinding, handle: HANDLE, diagnostics: DIAGNOSTICS } ).then( ( text ) => text === undefined ? undefined : JSON.parse( text ) );
 
 }

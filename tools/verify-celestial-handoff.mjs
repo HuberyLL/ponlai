@@ -3,13 +3,13 @@
 // key turns from one body to the other, and every frame must show the clock's own state: by day
 // the key is the sun's direction, by night it holds where the moon stands (DayCycle.ts MOON), and
 // over the handoff it turns from the one to the other (DayCycle `keyDir`, which Sky.ts takes).
-// Each sample is read after a rendered frame of its clock (tools/page-eval.mjs, "Rendered frames").
+// Each sample is read after a rendered frame of its clock (tools/kit/page-eval.mjs, "Rendered frames").
 // Run against the dev server:
 // node tools/verify-celestial-handoff.mjs http://127.0.0.1:5190
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { acquireGpuLock } from './gpu-lock.mjs';
-import { installWaitFrames } from './page-eval.mjs';
+import { acquireGpuLock } from './kit/gpu-lock.mjs';
+import { installWaitFrames } from './kit/page-eval.mjs';
 import { createDayWindows } from '../packages/render/look/DayLook.ts';
 import { ISLAND_LOOK } from '../packages/island/look/IslandLook.ts';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -20,7 +20,7 @@ const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const errors = [];
 const report = { base, errors, runs: [] };
 // shared with other probes (their pixels do not depend on the GPU load), never during a timing
-// run (tools/gpu-lock.mjs; released when the process exits)
+// run (tools/kit/gpu-lock.mjs; released when the process exits)
 await acquireGpuLock( 'verify-celestial-handoff', { shared: true } );
 const browser = await chromium.launch( {
 	headless: true,
@@ -44,7 +44,7 @@ try {
 		s.dayCycle.paused = true;
 		s.dayCycle.moonPhase = 0.5;
 		await s.setWeather( 'clear', 0 );
-		// the page's next rendered frame (tools/page-eval.mjs WAIT_FRAMES)
+		// the page's next rendered frame (tools/kit/page-eval.mjs WAIT_FRAMES)
 		const frame = () => window.__waitFrames( 1 );
 		// the key's direction at this clock, as Sky.ts takes it from the same snapshot
 		const clockKey = ( clock ) => clock.keyDir;

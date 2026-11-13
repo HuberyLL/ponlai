@@ -158,7 +158,7 @@
 // and build the display chain from them (post/PipelineDisplay.ts), are not made: they need a
 // renderer and build their graph as they are made; the stage hands them the tables
 // (RenderStages.ts `createSeaAndPipeline`), whose numbers the plain node part checks.
-import { assert, assertions } from '../assert-count.mjs';
+import { assert, assertions } from '../kit/assert-count.mjs';
 import { createExposure } from '../../packages/render/look/ExposureLook.ts';
 import { DayCycle, cloudMoonShare, displayNight, eveningHour, exposureNight, morningHour, moonKeyShare, nightAmbientAt, nightAmbientShare, rampIn, skyNight, starNight, yunpengNightShare } from '../../packages/render/sky/DayCycle.ts';
 import { createDayWindows } from '../../packages/render/look/DayLook.ts';

@@ -44,8 +44,8 @@ import { execFileSync, spawn } from 'node:child_process';
 import { constants, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BUILD_INPUTS, describeKeyChange, keyMatches, setKey, stable, toolVersion, browserBuild, checkServed } from './reference.mjs';
-import { decodePng, compareFrames } from '../capture-browser.mjs';
+import { BUILD_INPUTS, describeKeyChange, keyMatches, setKey, stable, toolVersion, browserBuild, checkServed } from '../kit/reference.mjs';
+import { decodePng, compareFrames } from '../kit/capture-browser.mjs';
 import { viewNames } from './views.mjs';
 
 const HERE = path.dirname( fileURLToPath( import.meta.url ) );
@@ -262,7 +262,7 @@ export async function planCarry( options ) {
 		const repeats = views.every( ( view ) => ma.coverage.views[ view ]?.repeat && mb2.coverage.views[ view ]?.repeat );
 		const mode = repeats ? [ '--aa-floor' ] : [ '--max-px1', '0' ];
 		const out = path.join( work, `${ set.replace( /\//g, '-' ) }-diff` );
-		const r = await run( 'uv', [ 'run', '--with', 'numpy', '--with', 'pillow', 'python', path.join( TOOLS, 'parity/diff-set.py' ), a, b, '--views', views.join( ',' ), '--out', out, ...mode ], path.join( out, 'diff.txt' ) );
+		const r = await run( 'uv', [ 'run', '--with', 'numpy', '--with', 'pillow', 'python', path.join( TOOLS, 'kit', 'diff-set.py' ), a, b, '--views', views.join( ',' ), '--out', out, ...mode ], path.join( out, 'diff.txt' ) );
 		const differ = r.out.split( '\n' ).filter( ( l ) => /\bFAIL\b|MISSING/i.test( l ) ).map( ( l ) => l.trim().split( /\s+/ )[ 0 ] );
 		const extra = { set, views, mode: mode.join( ' ' ), diff: path.relative( dirB, path.join( out, 'diff.txt' ) ) };
 		return r.code === 0 ? pass( name, `${ set } matches on ${ views.length } views (diff-set ${ mode.join( ' ' ) })`, extra )

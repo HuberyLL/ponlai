@@ -6,7 +6,7 @@
 //
 // node tools/island/verify-growth-shape.mjs [--label name] [--seeds 32]
 
-import { assert, assertions } from '../assert-count.mjs';
+import { assert, assertions } from '../kit/assert-count.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { GROWTH, LandLattice, growLand, nextPiece } from '../../packages/island/world/IslandGrowth.ts';

@@ -807,7 +807,7 @@ comment where it is used.
   [*FrameGraph: Extensible Rendering Architecture in
   Frostbite*](https://www.gdcvault.com/play/1024612/FrameGraph-Extensible-Rendering-Architecture-in)
   (GDC 2017), used as a technique only.
-- The tolerance that compares temporal AA captures (`tools/parity/tolerance.py`): a per-pixel
+- The tolerance that compares temporal AA captures (`tools/kit/tolerance.py`): a per-pixel
   level with the share of pixels over it bounded on the frame and in local blocks, and a mean
   error, after Unity's Graphics Test Framework (`ImageComparisonSettings`) and Unreal Engine's
   automation screenshot comparison (`FAutomationScreenshotTolerance`); NVIDIA FLIP (Andersson et

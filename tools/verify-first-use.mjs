@@ -36,7 +36,7 @@
 // CHROME_PATH, else Playwright's Chromium), under the GPU lock shared with paused captures and
 // probes (no timing is measured).
 //
-// The browser runs in a profile slot of the captures (tools/capture-browser.mjs, launchCapture),
+// The browser runs in a profile slot of the captures (tools/kit/capture-browser.mjs, launchCapture),
 // with this tool's own switches (vsync on), so the island loads from the world cache instead of
 // being generated again (task FU: the loaded page 5-7 s after launch instead of 11-14 s under light
 // sharing; the world's generation takes a minute under a busy CPU). The cache is per slot and per
@@ -55,10 +55,10 @@
 import { chromium } from 'playwright';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { acquireGpuLock } from './gpu-lock.mjs';
-import { launchCapture } from './capture-browser.mjs';
+import { acquireGpuLock } from './kit/gpu-lock.mjs';
+import { launchCapture } from './kit/capture-browser.mjs';
 import { installScript } from './pipeline-trace.mjs';
-import { installWaitFrames } from './page-eval.mjs';
+import { installWaitFrames } from './kit/page-eval.mjs';
 
 const args = process.argv.slice( 2 );
 const opt = ( name, fallback = null ) => {
@@ -344,7 +344,7 @@ async function apply( page, step, notes ) {
 			const done = await page.evaluate( async () => {
 
 				const s = window.__PONLAI__, p = s.pipeline, S = p.settings;
-				// n of the page's rendered frames (tools/page-eval.mjs WAIT_FRAMES)
+				// n of the page's rendered frames (tools/kit/page-eval.mjs WAIT_FRAMES)
 				const wait = ( n ) => window.__waitFrames( n );
 				const offset = S.exposureOffset;
 				S.exposureOffset = offset + 1; await wait( 3 ); S.exposureOffset = offset;

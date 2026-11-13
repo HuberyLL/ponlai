@@ -13,7 +13,7 @@
 //       [--frames] [--walk] [--q "grow=36"] [--src dir] [--out dir] [--timeout ms] [--lock-timeout s]
 //
 // base: the page's server (default http://127.0.0.1:5190/), a dev server: the reads import the
-// page's own modules by path (a production preview has none). `node tools/serve.mjs dev --sha <rev>
+// page's own modules by path (a production preview has none). `node tools/kit/serve.mjs dev --sha <rev>
 // --port N` serves another commit; give its checkout as --src.
 //
 // The points
@@ -41,7 +41,7 @@
 // A state (the point as it is, or with some shares forced) is taken as: the forces set through the
 // page's Tune handle (`sky.dusk.force.<name>`: DayCycle.ts DUSK_FORCES), an explicit bake of the
 // environment (sky/SkyRetune.ts, read back as `sky.bakeVersion` rising), then per view the page's
-// settled signal (tools/capture-browser.mjs `waitForSettled`, after a few frames of the view's pose
+// settled signal (tools/kit/capture-browser.mjs `waitForSettled`, after a few frames of the view's pose
 // when the camera moved: the signal and the uniforms are the last rendered frame's) and the reads.
 // The frame loop is stopped between points, when the lock may be given up.
 //
@@ -172,11 +172,11 @@
 //
 // The tool takes the GPU lock itself (run it unwrapped): shared, since the reads do not depend on
 // what else renders, and leased per point (leaseGpuLock), the loop stopped while it may be given up. A run of the four weathers, both sides,
-// +2 to -14 and midnight with --split takes hours: run it through tools/job.mjs.
-import './qos.mjs'; // first: the summary's CPU work runs with the application policy
-import { acquireGpuLock, leaseGpuLock, releaseGpuLock } from './gpu-lock.mjs';
-import { launchCapture, pngShooter, stopLoop, waitForScene, waitForSettled } from './capture-browser.mjs';
-import { WAIT_FRAMES, runInPage } from './page-eval.mjs';
+// +2 to -14 and midnight with --split takes hours: run it through tools/kit/job.mjs.
+import './kit/qos.mjs'; // first: the summary's CPU work runs with the application policy
+import { acquireGpuLock, leaseGpuLock, releaseGpuLock } from './kit/gpu-lock.mjs';
+import { launchCapture, pngShooter, stopLoop, waitForScene, waitForSettled } from './kit/capture-browser.mjs';
+import { WAIT_FRAMES, runInPage } from './kit/page-eval.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
 import { fitDusk } from './island/dusk-fit.mjs';
 import { execFileSync } from 'node:child_process';
@@ -719,7 +719,7 @@ async function load( query ) {
 
 }
 
-// the exact scene jump (tools/probe.mjs); false when the page refuses the query
+// the exact scene jump (tools/kit/probe.mjs); false when the page refuses the query
 async function jump( query ) {
 
 	const jumped = await page.evaluate( async ( q ) => {

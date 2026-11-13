@@ -1,4 +1,4 @@
-// Paused parity captures of a fixed set of views (views.mjs), through tools/capture.mjs's worker:
+// Paused parity captures of a fixed set of views (views.mjs), through tools/kit/capture.mjs's worker:
 // one page per set (one per worker with --jobs), the views reached in place by the exact scene jump.
 //
 //   node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|normal|special|a,b,c] [--view "name:query[::js]"]...
@@ -71,7 +71,7 @@
 //   mode's view (aa=taa|taau|fsr3, and the ground truth aa=gt: 64 jitters at the canvas's resolution) is
 //   captured once its paused rest has converged (capture.mjs waits for `diag.taa.converged`). Keep a
 //   ground-truth set per merge-base, shared by every task on it: `<parity root>/<sha>/gt/`.
-// --jobs runs that many pages at once, each in its own profile slot (tools/capture-browser.mjs).
+// --jobs runs that many pages at once, each in its own profile slot (tools/kit/capture-browser.mjs).
 //   Captures are GPU-bound: 2 at once give about 1.75 times one page's throughput, 3 about 2 times
 //   with the slowest views taking twice as long as at 2, 4 hardly more; and every extra page costs
 //   a load (5-8 s, a jump 2-4 s), which a small set does not earn back. So the default is one page
@@ -103,8 +103,8 @@
 // Production builds need `?debug` (added here) and the islanders' assets linked into the build's
 // output; see tools/parity/README.md.
 // The set and its capture.mjs workers run with the application scheduling policy on macOS
-// (tools/qos.mjs); a worker is started with it, since re-executing would close its IPC channel.
-import { appPolicy } from '../qos.mjs'; // first: the set and its workers run with the application policy
+// (tools/kit/qos.mjs); a worker is started with it, since re-executing would close its IPC channel.
+import { appPolicy } from '../kit/qos.mjs'; // first: the set and its workers run with the application policy
 import { spawn } from 'node:child_process';
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -112,9 +112,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { viewEval } from './views.mjs';
 import { selectViews, viewQuery, loadSignature, viewDefs, describeViews, jumpClean } from './adhoc.mjs';
-import { gpuUtilisation } from '../gpu-lock.mjs';
-import { samePixels } from '../capture-browser.mjs';
-import { ensureReference, setKey, resolveRefDir, checkServed } from './reference.mjs';
+import { gpuUtilisation } from '../kit/gpu-lock.mjs';
+import { samePixels } from '../kit/capture-browser.mjs';
+import { ensureReference, setKey, resolveRefDir, checkServed } from '../kit/reference.mjs';
 
 const REPO = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '../..' );
 // --quick: knob variants on a few views, against the stored references (quick.mjs)
@@ -237,8 +237,8 @@ async function captureGroup( url, dir, list ) {
 	// a page: one capture.mjs worker, serving items of one kind (first or repeat) until none is left
 	const runPage = ( repeat ) => new Promise( ( resolve ) => {
 
-		// started with the application policy: an exec would close its IPC channel (tools/qos.mjs)
-		const child = spawn( ...appPolicy( process.execPath, [ 'tools/capture.mjs', '--worker', '--url', url, '--w', W, '--h', H, '--scale', scale,
+		// started with the application policy: an exec would close its IPC channel (tools/kit/qos.mjs)
+		const child = spawn( ...appPolicy( process.execPath, [ 'tools/kit/capture.mjs', '--worker', '--url', url, '--w', W, '--h', H, '--scale', scale,
 			'--timeout', String( timeout ), ...( options[ 'page-per-view' ] ? [ '--page-per-view' ] : [] ), ...passThrough ] ),
 		{ cwd: REPO, stdio: [ 'ignore', 'pipe', 'pipe', 'ipc' ] } );
 		let output = [], current = null, timer = null, killer = null, writing = Promise.resolve(), asked = false;
@@ -502,7 +502,7 @@ if ( mode === 'plain' ) {
 		const temporal = [ 'taa', 'taau', 'fsr3', 'gt' ].includes( options.aa );
 		const diffArgs = options.diff ? options.diff.split( /\s+/ ).filter( Boolean ) : temporal ? [ '--temporal' ] : options.repeat ? [ '--aa-floor' ] : [ '--max-px1', '0' ];
 		// (not `python -I`: diff-set.py imports tolerance.py from its own directory)
-		const { code, out } = await run( 'uv', [ 'run', '--with', 'numpy', '--with', 'pillow', 'python', path.join( REPO, 'tools/parity/diff-set.py' ),
+		const { code, out } = await run( 'uv', [ 'run', '--with', 'numpy', '--with', 'pillow', 'python', path.join( REPO, 'tools/kit/diff-set.py' ),
 			ref.dir, outDir, '--views', views.join( ',' ), '--out', path.join( outDir, 'diff' ), ...diffArgs ], path.join( outDir, 'diff.txt' ) );
 		process.stdout.write( out );
 		console.log( `check ${ code === 0 ? 'PASS' : 'FAIL' } against ${ ref.dir } (diff-set ${ diffArgs.join( ' ' ) }), ${ ( ( Date.now() - started ) / 60000 ).toFixed( 1 ) } min${ test.failed ? `; ${ test.failed } test captures failed` : '' }` );

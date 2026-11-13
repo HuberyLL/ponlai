@@ -6,7 +6,7 @@
 //   node tools/verify-growth-swap.mjs <base url> [--steps 6] [--views island,cliffs,meadow]
 //     [--q "extra&query"] [--fresh-grow M] [--out dir] [--timeout 240000]
 //
-// Two pages, one after the other, in one capture browser (tools/capture-browser.mjs, a warm profile
+// Two pages, one after the other, in one capture browser (tools/kit/capture-browser.mjs, a warm profile
 // slot), headless, 1600 x 900 at dpr 1, on the query
 // `debug&paused&t=12&dpr=1&quality=high&weather=fair&preset=noon&seed=1` (then --q, then the first
 // view's own query):
@@ -72,8 +72,8 @@
 // broke), 2 a usage error. The shots are paused frames under a shared GPU slot: other load on the
 // GPU does not change their pixels, so nothing here is contended and 3 is never returned.
 //
-// GPU lock (tools/gpu-lock.mjs): shared, and held only while the page renders: each page's load
-// takes it once the page has its world (the same gate as tools/capture.mjs, "The slot after the
+// GPU lock (tools/kit/gpu-lock.mjs): shared, and held only while the page renders: each page's load
+// takes it once the page has its world (the same gate as tools/kit/capture.mjs, "The slot after the
 // world": the page's `requestDevice` waits until the slot is taken), the grows, the measurement and
 // the views lease it (leaseGpuLock, a 20 s budget, as capture.mjs's views); while a page prepares
 // its next piece (worker generation and idle-time preparation, seconds to minutes of CPU) its loop
@@ -83,14 +83,14 @@
 // Outputs: --out (default `artifacts/captures/growth-swap/<time>-<pid>/`, one folder per run):
 // `report.json` (the query, the options, per page its record, `compare` and `verdicts`), the shots
 // (`G-<view>.png`, `G-<view>-b.png`, `F-...`), and a summary on stdout; progress lines with the
-// time of day as the run goes, for `node tools/job.mjs wait`. The rain maps and ground grids are
+// time of day as the run goes, for `node tools/kit/job.mjs wait`. The rain maps and ground grids are
 // not kept (megabytes per page); their comparison is in the report.
-import './qos.mjs'; // first: the PNG decodes and the map comparisons run here
+import './kit/qos.mjs'; // first: the PNG decodes and the map comparisons run here
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { launchCapture, waitForStable, pngShooter, stopLoop, startLoop, decodePng, compareFrames, samePixels } from './capture-browser.mjs';
-import { leaseGpuLock, releaseGpuLock } from './gpu-lock.mjs';
+import { launchCapture, waitForStable, pngShooter, stopLoop, startLoop, decodePng, compareFrames, samePixels } from './kit/capture-browser.mjs';
+import { leaseGpuLock, releaseGpuLock } from './kit/gpu-lock.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
 
 const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );

@@ -1756,7 +1756,7 @@ export class VolumetricHaze {
 
 	}
 
-	/** Readings of the medium as the last `update` set it, for the probes (tools/probe.mjs): green's
+	/** Readings of the medium as the last `update` set it, for the probes (tools/kit/probe.mjs): green's
 	 * extinction at `height` (1/m) and each band's sigma; a horizontal view's transmittance at that height
 	 * over 1 km and 3 km (RGB) and the distance at which its luminance falls to half (m); and, given
 	 * two points, the RGB and luminance transmittance between them (an eye and the island's centre).

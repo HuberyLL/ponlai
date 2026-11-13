@@ -70,7 +70,7 @@
 // holds it) and, with --thoughts, thoughts.jsonl (a line per thought: who, when it was asked and
 // answered, the perception and the calls). On stdout a short summary. Exit 0 when the run played
 // through, 1 when it failed (a brain that kept failing, an error), 2 for a bad option. A long run
-// (many days, a language-model brain) goes through tools/job.mjs.
+// (many days, a language-model brain) goes through tools/kit/job.mjs.
 //
 // Generic: no need, item, option, building or kind of record entry is named here. The needs are
 // the body's own keys, the activities the calls under way, an item's flows what each call's
@@ -78,7 +78,7 @@
 // kinds' rows (a kind without one, the record's default row), and an event of a kind that neither
 // the record notes nor this tool has a line for a line of its own (`[event]`, its kind and what it
 // holds): a new rule shows in the outputs without a change to the tool.
-import '../qos.mjs';
+import '../kit/qos.mjs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';

@@ -4,17 +4,17 @@
 // status calls, and some conditions never came true (one waited a day for an `^exit` line that
 // its log never got). Every job started here writes the same start and end lines, and `wait`
 // knows when a job has ended even if it was killed before it could say so.
-// Every command also starts the disk clean in the background when one is due (tools/storage.mjs,
+// Every command also starts the disk clean in the background when one is due (tools/kit/storage.mjs,
 // every 6 h): every session waits through here, so the clean needs no schedule of its own.
 //
-//   node tools/job.mjs run [--log <file>] -- <command ...>      runs it in the foreground
-//   node tools/job.mjs start [--log <file>] -- <command ...>    runs it detached and returns at once
-//   node tools/job.mjs start --wait [--lines 20] [--role r] [--max s] [--log <file>] -- <command ...>
-//   node tools/job.mjs wait <file>... [--role agent|main] [--max s] [--lines 5]
-//   node tools/job.mjs wait [--role agent|main] [--max s] [condition] [--tail <file> [n]]
-//   node tools/job.mjs status <file>... [--lines 5]                 (wait --max 0)
-//   node tools/job.mjs list [--cwd <dir> | --all] [--lines 5]
-//   node tools/job.mjs stop <file>... | --cwd <dir> | --all [--grace 10]
+//   node tools/kit/job.mjs run [--log <file>] -- <command ...>      runs it in the foreground
+//   node tools/kit/job.mjs start [--log <file>] -- <command ...>    runs it detached and returns at once
+//   node tools/kit/job.mjs start --wait [--lines 20] [--role r] [--max s] [--log <file>] -- <command ...>
+//   node tools/kit/job.mjs wait <file>... [--role agent|main] [--max s] [--lines 5]
+//   node tools/kit/job.mjs wait [--role agent|main] [--max s] [condition] [--tail <file> [n]]
+//   node tools/kit/job.mjs status <file>... [--lines 5]                 (wait --max 0)
+//   node tools/kit/job.mjs list [--cwd <dir> | --all] [--lines 5]
+//   node tools/kit/job.mjs stop <file>... | --cwd <dir> | --all [--grace 10]
 //
 // Jobs. A single argument after `--` runs through `sh -c` (pipes, redirections, `&&`); several are
 // run as they are; a single argument with an `&` inside an unquoted word (a query) is refused with
@@ -224,7 +224,7 @@ async function run( log, cmd ) {
 	writeFileSync( log, `[job] start ${ new Date( start ).toISOString() } pid ${ process.pid }: ${ cmd.join( ' ' ) }\n` );
 	const fd = openSync( log, 'a' );
 	const shell = cmd.length === 1;
-	// the command runs at the application policy too: children do not inherit it (tools/qos.mjs)
+	// the command runs at the application policy too: children do not inherit it (tools/kit/qos.mjs)
 	const child = spawn( ...appPolicy( shell ? '/bin/sh' : cmd[ 0 ], shell ? [ '-c', cmd[ 0 ] ] : cmd.slice( 1 ) ), { stdio: [ 'ignore', fd, fd ] } );
 	// a signal to the runner is how `stop` (or a Ctrl-C) ends a job: the end line says so
 	let stopped = false;
@@ -260,7 +260,7 @@ async function startDetached( log, cmd, quiet ) {
 	const runner = spawn( process.execPath, [ fileURLToPath( import.meta.url ), 'run', '--log', log, '--', ...cmd ], { detached: true, stdio: 'ignore' } );
 	runner.unref();
 	for ( let i = 0; i < 100 && readJob( log )?.pid !== runner.pid; i ++ ) await sleep( 50 );
-	console.log( `[job] started ${ log } (runner pid ${ runner.pid })${ quiet ? '' : `; wait with: node tools/job.mjs wait ${ log }` }` );
+	console.log( `[job] started ${ log } (runner pid ${ runner.pid })${ quiet ? '' : `; wait with: node tools/kit/job.mjs wait ${ log }` }` );
 	return log;
 
 }
@@ -428,7 +428,7 @@ async function pollJobs( logs, budget ) {
 		const missing = logs.filter( ( log, i ) => ! jobs[ i ] );
 		if ( missing.length ) {
 
-			console.error( `not a job log (no start line): ${ missing.join( ', ' ) }; start jobs with node tools/job.mjs run|start -- <command>` );
+			console.error( `not a job log (no start line): ${ missing.join( ', ' ) }; start jobs with node tools/kit/job.mjs run|start -- <command>` );
 			return null;
 
 		}
@@ -564,7 +564,7 @@ async function startAndWait( log, cmd, budget, lines ) {
 	if ( ! job.ended ) {
 
 		report( [ log ], [ job ], 5 );
-		console.log( `still running: node tools/job.mjs wait ${ log }` );
+		console.log( `still running: node tools/kit/job.mjs wait ${ log }` );
 		return STILL_RUNNING;
 
 	}
@@ -689,7 +689,7 @@ async function stop( files, options ) {
 
 // --- command line ----------------------------------------------------------------------------
 
-const USAGE = `usage: node tools/job.mjs
+const USAGE = `usage: node tools/kit/job.mjs
   run|start [--log file] -- command...
   start --wait [--lines n] [--role agent|main] [--max s] [--log file] -- command...
   wait file... [--role agent|main] [--max s] [--lines n]
@@ -799,7 +799,7 @@ function splitAmpersand( line ) {
 
 async function main( argv ) {
 
-	// every session's waits come through here: the disk clean rides on them (tools/storage.mjs)
+	// every session's waits come through here: the disk clean rides on them (tools/kit/storage.mjs)
 	autoClean();
 	const [ command, ...rest ] = argv;
 	const split = rest.indexOf( '--' );

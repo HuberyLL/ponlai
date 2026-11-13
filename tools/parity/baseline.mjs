@@ -79,8 +79,8 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { VIEWS, viewNames, expandViews } from './views.mjs';
 import { CLIPS, CLIP_GROUPS, clipNames, gtSampling } from './clips.mjs';
-import { sampleGpuUtilisation } from '../gpu-lock.mjs';
-import { ensureReference, clipKey, anchorsHash, checkServed } from './reference.mjs';
+import { sampleGpuUtilisation } from '../kit/gpu-lock.mjs';
+import { ensureReference, clipKey, anchorsHash, checkServed } from '../kit/reference.mjs';
 import { planCarry } from './carry.mjs';
 
 const HERE = path.dirname( fileURLToPath( import.meta.url ) );
@@ -372,7 +372,7 @@ async function capture( o, list, root ) {
 async function metrics( o, list, root ) {
 
 	const label = o.label, out = { sha: o.sha, label, aa: o.aa, created: new Date().toISOString(), entries: {}, failures: [] };
-	const python = [ 'run', '--with', 'numpy', '--with', 'pillow', '--with', 'scipy', '--with', 'flip-evaluator', 'python', '-I', path.join( TOOLS, 'clip-metrics.py' ) ];
+	const python = [ 'run', '--with', 'numpy', '--with', 'pillow', '--with', 'scipy', '--with', 'flip-evaluator', 'python', '-I', path.join( TOOLS, 'kit', 'clip-metrics.py' ) ];
 	const baselineFile = path.join( root, 'baseline', 'metrics.json' );
 	await pool( list, Math.min( Number( o.jobs ?? 2 ) * 2, Math.max( 1, os.cpus().length >> 1 ) ), async ( e ) => {
 

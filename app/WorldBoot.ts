@@ -6,7 +6,7 @@
 // Debug pages (main.ts's DEBUG: the dev server, ?debug, ?profile) say when the world is in, as
 // `window.__PONLAI_WORLD__` (`ready`, and `ms`, the page's clock then), set as the world starts: the
 // capture tool loads a page with its GPU use held back and without a GPU slot, and takes the slot
-// only once the world is generated (tools/capture.mjs, "The slot after the world").
+// only once the world is generated (tools/kit/capture.mjs, "The slot after the world").
 import { startWorld } from '../packages/island/index.ts';
 import { readSlot, resumesSave, savedPieces } from '../packages/game/sim/index.ts';
 import { settings } from '../packages/render/setup.ts';

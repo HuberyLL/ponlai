@@ -1,18 +1,18 @@
 // GPU regression: air blockers bend at the water surface and submerged blockers occlude
 // the separate refracted leg; horizontal-floor irradiance preserves transmitted power.
-// Needs the Vite dev server: it imports the source modules into the page (tools/dev-server.mjs).
-// The paused seek's map is read on the page's rendered frames (tools/page-eval.mjs, "Rendered frames").
+// Needs the Vite dev server: it imports the source modules into the page (tools/kit/dev-server.mjs).
+// The paused seek's map is read on the page's rendered frames (tools/kit/page-eval.mjs, "Rendered frames").
 // Usage: node tools/verify-refracted-sun.mjs http://127.0.0.1:5190
 import { chromium } from 'playwright';
-import { acquireGpuLock } from './gpu-lock.mjs';
-import { requireDevServer } from './dev-server.mjs';
-import { installWaitFrames } from './page-eval.mjs';
+import { acquireGpuLock } from './kit/gpu-lock.mjs';
+import { requireDevServer } from './kit/dev-server.mjs';
+import { installWaitFrames } from './kit/page-eval.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 
 const errors = [];
 // shared with other probes (their pixels do not depend on the GPU load), never during a timing
-// run (tools/gpu-lock.mjs; released when the process exits)
+// run (tools/kit/gpu-lock.mjs; released when the process exits)
 await requireDevServer( process.argv[ 2 ] || 'http://127.0.0.1:5190', 'verify-refracted-sun' );
 await acquireGpuLock( 'verify-refracted-sun', { shared: true } );
 const browser = await chromium.launch( {
@@ -49,7 +49,7 @@ try {
 		const before = map.lastSun.clone();
 		await s.setHour( s.dayCycle.hour + 0.001 );
 		const sun = s.shared.sunDir.value;
-		// polled on the page's rendered frames (tools/page-eval.mjs WAIT_FRAMES) until the map is
+		// polled on the page's rendered frames (tools/kit/page-eval.mjs WAIT_FRAMES) until the map is
 		// drawn at the light, or 10 s: it redraws on its interval's update, a number of frames that
 		// depends on their pace
 		const from = s.renderer.info.frame, deadline = performance.now() + 10000;

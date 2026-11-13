@@ -7,33 +7,35 @@ MSAA sets are captured in the test mode (`docs/reference/tools.md`, Test mode), 
 rules hold.
 
 - `views.mjs`: the views (camera, weather, time) and their crop anchors.
-- `capture-set.mjs`: captures a set through `tools/capture.mjs`.
+- `capture-set.mjs`: captures a set through `tools/kit/capture.mjs`.
 - `adhoc.mjs`: ad-hoc views for capture-set (command line, JSON file, sweeps).
-- `diff-set.py`: compares two sets; its pixel helpers (`pixels.py`) are shared with
-  `../img.py` (ad-hoc diffs, crops, sheets and statistics of any captures).
+- `../kit/diff-set.py`: compares two sets; its pixel helpers (`../kit/pixels.py`) are shared with
+  `../kit/img.py` (ad-hoc diffs, crops, sheets and statistics of any captures).
 - `../verify-scene-jump.mjs`: the views reached by scene jumps in one page, against fresh loads
   (see One page, many views below).
-- `clips.mjs`, `../capture-clip.mjs`, `../clip-metrics.py`: stepped clips (a view set in motion),
-  their capture and their metrics against MSAA and a ground truth (see Clips below).
-- `gates.py`: a baseline.mjs label's gate verdicts per gate id, a task's decisions applied from a
-  policy file (its header has the format; `docs/reference/tools.md`, Captures).
-- `table.py`: several labels' metrics.json (baseline.mjs or clip-metrics) side by side, crop x
-  metric, with each column's ratio to a base column (MSAA by default).
+- `clips.mjs`, `../capture-clip.mjs`, `../kit/clip-metrics.py`: stepped clips (a view set in
+  motion), their capture and their metrics against MSAA and a ground truth (see Clips below).
+- `../kit/gates.py`: a baseline.mjs label's gate verdicts per gate id, a task's decisions applied
+  from a policy file (its header has the format; `docs/reference/tools.md`, Captures).
+- `../kit/table.py`: several labels' metrics.json (baseline.mjs or clip-metrics) side by side,
+  crop x metric, with each column's ratio to a base column (MSAA by default).
+- `../kit/reference.mjs`: the store of reference sets and clip entries (see Reference store
+  below).
 
 ## Serving a build for captures
 
-Capture a production build, each branch from its own worktree on its own port: `node tools/serve.mjs
+Capture a production build, each branch from its own worktree on its own port: `node tools/kit/serve.mjs
 preview` builds it and serves it on a free port (`docs/reference/tools.md`, Page). The URL needs
 `?debug` (capture-set.mjs adds it): `window.__PONLAI__` and the diagnostics exist only on the dev
 server or with it. The assets need no setup: the build pulls what `public/` lacks from the release
 `assets.lock.json` names (`tools/repo/vite-assets.mjs`; `docs/reference/tools.md`, Assets).
 
-Paused captures take the GPU lock shared (`tools/gpu-lock.mjs`): their pixels do not depend on what
+Paused captures take the GPU lock shared (`tools/kit/gpu-lock.mjs`): their pixels do not depend on what
 else renders, so they run beside other paused captures and probes, and wait for timing runs. Each
 page holds one of the lock's shared slots (default 3, queued first in, first out) while it
 captures, so `--jobs` above the free slots only queues.
 
-## Fast mode (tools/capture-browser.mjs)
+## Fast mode (tools/kit/capture-browser.mjs)
 
 capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
 
@@ -42,7 +44,7 @@ capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
   pid; stale once that process is gone), so `--jobs 4` uses slots 0-3. A capture that names its
   page takes the slots that page (its origin and build) ran in last first, from `affinity.json`
   beside the slots, so another job holding a warm slot does not move it to a cold one for good
-  (`tools/capture-browser.mjs`). The world cache
+  (`tools/kit/capture-browser.mjs`). The world cache
   (IndexedDB, keyed on the generator's sources and the browser; one entry per preview port) and
   the GPU shader cache then hit from the second load: the island is not generated again (3 s
   alone, about a minute under a busy CPU). A hit is byte-identical to a miss. localStorage and
@@ -327,7 +329,7 @@ node tools/parity/capture-set.mjs <url> <outDir> --quick --views a,b [--crops x,
 ## diff-set.py
 
 ```sh
-uv run --with numpy --with pillow tools/parity/diff-set.py <refDir> <testDir> [--views a,b]
+uv run --with numpy --with pillow tools/kit/diff-set.py <refDir> <testDir> [--views a,b]
     [--max-px1 200] [--crops 3] [--crop 256] [--out dir] [--aa-floor | --temporal [--flip]]
     [--md table.md] [--crops-from ref|test|<dir>|<file.json>] [--jobs 4]
 ```
@@ -422,7 +424,8 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
   "format": 1, "kind": "set" | "clip", "sha": "<40 hex>", "path": "S1",
   "key": { "kind": "set", "tool": "<16 hex>", "browser": { "executable": "playwright chromium", "version": "153.0.8010.12" },
            "quality": "high", "aa": null, "q": null, "size": "1728x1117@2", "capture": [], "pages": "jump" },
-  "toolFiles": { "capture.mjs": "<12 hex>", "capture-browser.mjs": "...", "parity/capture-set.mjs": "...", "parity/views.mjs": "...", "parity/adhoc.mjs": "..." },
+  "toolFiles": { "tools/kit/capture.mjs": "<12 hex>", "tools/kit/capture-browser.mjs": "...", "tools/parity/capture-set.mjs": "...",
+                 "tools/parity/views.mjs": "...", "tools/parity/adhoc.mjs": "..." },
   "coverage": { "views": { "meadow-close": { "captured": true, "repeat": true, "identical": true },
                            "my-adhoc": { "captured": true, "def": "<16 hex>" } } },
   "url": "<the preview it was captured from>",
@@ -434,12 +437,13 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
 ```
 
 - `key`: what the pixels depend on. `tool` hashes the capture tools' sources: for sets
-  `capture.mjs`, `capture-browser.mjs`, `parity/capture-set.mjs`, `parity/views.mjs`,
-  `parity/adhoc.mjs`; for clip entries `capture-clip.mjs`, `capture-browser.mjs`,
-  `parity/views.mjs`, `parity/clips.mjs` (`TOOL_FILES` in reference.mjs: every file of that kind's
-  capture path, the shared browser, readiness and grab included; a change to the clip tools leaves
-  sets valid and the other way round); `toolFiles` keeps each
-  file's hash so a forced recapture names the files that changed. `browser`: CHROME_PATH or
+  `tools/kit/capture.mjs`, `tools/kit/capture-browser.mjs`, `tools/parity/capture-set.mjs`,
+  `tools/parity/views.mjs`, `tools/parity/adhoc.mjs`; for clip entries `tools/capture-clip.mjs`,
+  `tools/kit/capture-browser.mjs`, `tools/parity/views.mjs`, `tools/parity/clips.mjs` (the
+  configuration's `reference.toolFiles` in `tools/project.mjs`: every file of that kind's capture
+  path, the shared browser, readiness and grab included; a change to the clip tools leaves sets
+  valid and the other way round); `toolFiles` keeps each file's hash, by its path from the
+  repository's root, so a forced recapture names the files that changed. `browser`: CHROME_PATH or
   Playwright's Chromium, and its version. Then the options: a set's tier, aa, size, extra query
   and capture.mjs options, and `pages`, how its views were reached: `"jump"` (a page per worker,
   most views by the scene jump; a manifest without it counts as this) or `"view"` (a fresh page
@@ -495,7 +499,7 @@ server whose commit differs from the reference's in what the build reads (`packa
 `index.html`, `assets.lock.json`, `vite.config.ts`,
 `package.json`, `package-lock.json`, `tsconfig.json`; a branch that changed only tools or docs
 serves the same build) or that has uncommitted changes there, and warns when `dist/` is older than
-the last commit of those inputs. `node tools/parity/reference.mjs status <root>/<sha>` lists every
+the last commit of those inputs. `node tools/kit/reference.mjs status <root>/<sha>` lists every
 manifest and claim under a commit, and whether its tool hash is current.
 
 A recapture of a reference is forced when the capture tools change (one reference round after a
@@ -609,7 +613,7 @@ node tools/verify-scene-jump.mjs <baseUrl> <ref> --fresh                     # f
 node tools/verify-scene-jump.mjs <baseUrl> <ref> --fresh --suffix .repeat    # their A/A
 node tools/verify-scene-jump.mjs <baseUrl> <test>                            # one page, list order
 node tools/verify-scene-jump.mjs <baseUrl> <test> --order reverse --suffix .repeat
-uv run --with numpy --with pillow tools/parity/diff-set.py <ref> <test> --aa-floor
+uv run --with numpy --with pillow tools/kit/diff-set.py <ref> <test> --aa-floor
 ```
 
 or, in one command, against the reference store:
@@ -650,7 +654,7 @@ steps it measures). `node tools/parity/clips.mjs list [all|normal|special] | sho
 node tools/capture-clip.mjs <name> --url <preview> --clip <clip> [--aa msaa|off|taa|taau|gt|gt-hi]
     [--view v] [--frames n] [--every k] [--crops a,b] [--full 0,30] [--q "extra"] [--gt-jitters n]
     [--anchors-from clip.json] [--out dir] [--runs runs.csv]
-uv run --with numpy --with pillow --with scipy [--with flip-evaluator] tools/clip-metrics.py \
+uv run --with numpy --with pillow --with scipy [--with flip-evaluator] tools/kit/clip-metrics.py \
     --test DIR --msaa DIR [--gt DIR] [--crops a,b | boxes.json] [--split-redraws] [--thresholds t.json]
     [--baseline metrics.json] [--workers N]
 ```

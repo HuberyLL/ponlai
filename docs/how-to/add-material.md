@@ -71,7 +71,7 @@ If the mesh can reach under the sea or stands high, tell the water (`Water.ts`, 
 Capture the island view before and after the change (`tools/parity/capture-set.mjs`;
 `docs/reference/tools.md`, Captures): first on the clear day at noon, then under the other kept
 weather (fair) at the usual hours. Judge the whole frame first; crops and
-region statistics (`uv run tools/img.py`) find causes, they do not judge. What colour each surface
+region statistics (`uv run tools/kit/img.py`) find causes, they do not judge. What colour each surface
 shows on screen by kind and by light: `tools/colour-rows.mjs`.
 
 ## 5. When it looks wrong, look upstream first

@@ -1307,7 +1307,7 @@ const translucencyMask = /*@__PURE__*/ tuneUniform( 'grass.translucency.mask', T
  * gloss lowered: 14:33, where it leans toward the clump's normal.) */
 const SURFACE = { round: 0.3, roughness: 0.4, farGloss: 0.75, flatten: 0.6, f0: 0.01 };
 /** `flags=grassMask` (at load) paints the blades red, with no light through them, over the green
- * ground, so a capture's red pixels are the blades' cover (tools/img.py `stats --cover`).
+ * ground, so a capture's red pixels are the blades' cover (tools/kit/img.py `stats --cover`).
  * `flags=grassMask:exact` draws them unlit in pure red of MASK_EXACT instead, far above any lit
  * radiance: in the resolved opaque colour a pixel's red over MASK_EXACT is the share of it the blades
  * cover, and a pixel with neither green nor blue is covered whole (tools/meadow-light.mjs).

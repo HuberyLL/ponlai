@@ -3,11 +3,11 @@
 # ///
 """Image and temporal metrics of a stepped clip against MSAA and a ground truth.
 
-    uv run [--with flip-evaluator] tools/clip-metrics.py \
+    uv run [--with flip-evaluator] tools/kit/clip-metrics.py \
         --test DIR --msaa DIR [--gt DIR] [--crops a,b | --crops boxes.json] [--split-redraws] \
         [--thresholds thresholds.json] [--baseline metrics.json [--key tier/kind/name]] [--out DIR] \
         [--no-flip] [--no-gt-gates] [--workers N]
-    uv run ... tools/clip-metrics.py --calibrate masks.json [--size 288] DIR [DIR ...] [--overlays DIR]
+    uv run ... tools/kit/clip-metrics.py --calibrate masks.json [--size 288] DIR [DIR ...] [--overlays DIR]
 
 Each DIR is a tools/capture-clip.mjs output folder (clip.json and <crop>/<i>.png) of the same clip:
 the mode under test, MSAA (today's image) and the ground truth (`--aa gt`, at the canvas's
@@ -174,7 +174,7 @@ in one loop, so the output does not depend on the worker count (byte-identical m
 Workers: --workers N, else the environment's CLIP_METRICS_WORKERS, else a quarter of the CPUs
 within 1 to 4 (the CPU is shared with captures, and baseline.mjs runs several metric runs at once);
 1 measures in the main process. On macOS the main process and the workers run with the application
-scheduling policy (tools/qos.mjs says why; see QOS below).
+scheduling policy (tools/kit/qos.mjs says why; see QOS below).
 
 Outputs: <out>/metrics.json (per crop: test, msaa, ratio, per-frame series and verdicts, a box
 crop's box, with --split-redraws each side's redraw frames; `gates`: the failed count by kind) and <out>/metrics.md (a table), out defaulting to <test>/metrics.
@@ -187,7 +187,7 @@ import os
 import sys
 from concurrent.futures import ProcessPoolExecutor
 
-# The application scheduling policy on macOS (tools/qos.mjs says why): the main process
+# The application scheduling policy on macOS (tools/kit/qos.mjs says why): the main process
 # re-executes itself in place under taskpolicy -a; the workers are new processes, which do not
 # inherit it, so they start through a shim that does the same (pool_context).
 QOS = sys.platform == 'darwin' and os.environ.get( 'PONLAI_QOS' ) != 'off'

@@ -1,6 +1,6 @@
 // Pure CPU checks; Node 22.18+ strips the imported TypeScript without a build or browser.
 // Run: node tools/render/verify-day-cycle.mjs
-import { assert, assertions } from '../assert-count.mjs';
+import { assert, assertions } from '../kit/assert-count.mjs';
 import { DayCycle, DAY_PRESETS, NOON_ELEVATION, MOON, cloudMoonShare, displayNight, exposureNight, moonDirection, moonKeyShare, nightAmbientAt, nightAmbientShare, skyNight, starNight, sunElevationAt, morningHour, eveningHour, yunpengNightShare } from '../../packages/render/sky/DayCycle.ts';
 import { createDayWindows } from '../../packages/render/look/DayLook.ts';
 import { createExposure } from '../../packages/render/look/ExposureLook.ts';

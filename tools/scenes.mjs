@@ -19,7 +19,7 @@
 //
 // Guarantees:
 // - A shot is a paused page in the test mode (`debug&paused&t=12&quality=high`), taken once the
-//   page's settled signal holds and its image has stopped changing (tools/capture-browser.mjs,
+//   page's settled signal holds and its image has stopped changing (tools/kit/capture-browser.mjs,
 //   "Readiness by stability"), with the loop stopped. A shot still changing at the cap fails the run.
 // - Images are compared by their decoded pixels, exactly: no tolerance anywhere.
 // - `--verify`: the scene's own checks. Every shot is taken three ways, which must agree to the
@@ -53,9 +53,9 @@
 import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { leaseGpuLock, releaseGpuLock } from './gpu-lock.mjs';
-import { launchCapture, waitForScene, waitForSettled, waitForStable, decodePng, compareFrames, samePixels } from './capture-browser.mjs';
-import { renderedFrames } from './page-eval.mjs';
+import { leaseGpuLock, releaseGpuLock } from './kit/gpu-lock.mjs';
+import { launchCapture, waitForScene, waitForSettled, waitForStable, decodePng, compareFrames, samePixels } from './kit/capture-browser.mjs';
+import { renderedFrames } from './kit/page-eval.mjs';
 
 const argv = process.argv.slice( 2 );
 const flags = new Set( [ 'verify', 'write-ref', 'check' ] );

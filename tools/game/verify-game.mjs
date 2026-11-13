@@ -35,7 +35,7 @@
 // Math's.
 // Pure CPU; Node 22.18+ strips the imported TypeScript.
 // Run: node tools/game/verify-game.mjs
-import { assert, assertions } from '../assert-count.mjs';
+import { assert, assertions } from '../kit/assert-count.mjs';
 import { ROOT } from '../kit/root.mjs';
 import { newGame, loadGame } from '../../packages/game/sim/Sim.ts';
 import { findPath, goalAt, lineClear } from '../../packages/game/sim/path.ts';

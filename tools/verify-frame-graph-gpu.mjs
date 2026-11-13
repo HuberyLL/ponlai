@@ -44,8 +44,8 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { acquireGpuLock } from './gpu-lock.mjs';
-import { requireDevServer } from './dev-server.mjs';
+import { acquireGpuLock } from './kit/gpu-lock.mjs';
+import { requireDevServer } from './kit/dev-server.mjs';
 
 const base = ( process.argv[ 2 ] || 'http://127.0.0.1:5190' ).replace( /\/$/, '' );
 await requireDevServer( process.argv[ 2 ] || 'http://127.0.0.1:5190', 'verify-frame-graph-gpu' );

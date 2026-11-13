@@ -240,11 +240,11 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { withGpuLock, leaseGpuLock, waitForIdleGpu, gpuClients, sampleGpuUtilisation } from './gpu-lock.mjs';
-import { announceHeadedRun, requireDisplayAllowed } from './display-gate.mjs';
+import { withGpuLock, leaseGpuLock, waitForIdleGpu, gpuClients, sampleGpuUtilisation } from './kit/gpu-lock.mjs';
+import { announceHeadedRun, requireDisplayAllowed } from './kit/display-gate.mjs';
 import { QUALITY as QUALITY_TABLE } from '../packages/render/Quality.ts';
 import { dynamicRange, OUTPUT_PIXEL_RATIO_CAP } from '../packages/render/post/RenderScale.ts';
-import { startLoadTimeline, markSlices, windowLoad } from './load-timeline.mjs';
+import { startLoadTimeline, markSlices, windowLoad } from './kit/load-timeline.mjs';
 
 // ------------------------------------------------------------------ options
 
@@ -406,7 +406,7 @@ const LABEL = opt( 'label', COMPARE ? `compare-${ stamp }` : TOGGLE ? `toggle-${
 if ( COMPARE && TOGGLE ) throw new Error( '--toggle A/Bs inside one page: give one url, not --compare' );
 if ( TOGGLE && MODE === 'reload' ) throw new Error( '--toggle needs --mode page' );
 if ( DISPLAY && ( TOGGLE || ACCEPT || SCALES.length || MODE === 'reload' ) ) throw new Error( '--display is for profile runs and --compare in page mode (no --toggle, --accept, --scales or --mode reload)' );
-// a headed window takes over the user's screen: only while they allow it (tools/display-gate.mjs)
+// a headed window takes over the user's screen: only while they allow it (tools/kit/display-gate.mjs)
 if ( DISPLAY ) requireDisplayAllowed( 'profile-frame --display' );
 if ( ( ACCEPT || SCALES.length ) && ( COMPARE || TOGGLE ) ) throw new Error( '--accept and --scales are for profile runs, not --compare or --toggle' );
 // the page reads the first of a repeated option, so a dpr in the url or --q would win over --scales

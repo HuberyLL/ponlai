@@ -92,7 +92,7 @@
 // stdout one line per shader and the totals. Exit 0 when every shader built within the limits,
 // 1 when one failed to build or exceeds a limit, 2 for a usage error.
 
-import '../qos.mjs';
+import '../kit/qos.mjs';
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, extname, join, relative, resolve } from 'node:path';
 import * as THREE from 'three/webgpu';

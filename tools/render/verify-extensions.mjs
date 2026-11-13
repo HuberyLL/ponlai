@@ -35,7 +35,7 @@
 //
 // Output: a line per check, then the failures. It takes no options. Exit 0 when everything
 // passes, 1 otherwise or when a module does not load.
-import '../qos.mjs';
+import '../kit/qos.mjs';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';

@@ -19,7 +19,7 @@
 //
 // Output: a line per rule, then the failures. It takes no options. Exit 0 when every fixture
 // passes, 1 otherwise.
-import '../qos.mjs';
+import '../kit/qos.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { ESLint } from 'eslint';

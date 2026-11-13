@@ -9,7 +9,7 @@ details. Each tool's own file says the rest.
 - `npm run dev` (port 5190), `npm run build` (type-checks, then bundles), `npm run typecheck`,
   `npm run preview` (port 5191, the production build). Build and typecheck run tsc and vite with
   the application policy on macOS (Process priority, below).
-- `node tools/serve.mjs dev|preview [--port N] [--no-build]` starts a worktree's server without
+- `node tools/kit/serve.mjs dev|preview [--port N] [--no-build]` starts a worktree's server without
   colliding with another's: it takes the first free port in 6400-6499 (or checks `--port N` and
   names the pid and cwd holding it), builds first for `preview` unless `--no-build`, runs vite
   through `job.mjs` with its log at `artifacts/jobs/serve-<mode>-<port>.log`, waits until it
@@ -20,14 +20,14 @@ details. Each tool's own file says the rest.
   it exits 1 naming the holder). It serves the checkout
   the cwd is in, whichever copy of serve.mjs runs (outside the repository it exits 1), and its
   first line names that checkout's path, HEAD and branch.
-- `node tools/serve.mjs dev|preview --sha <rev>` serves another commit: a detached worktree at
+- `node tools/kit/serve.mjs dev|preview --sha <rev>` serves another commit: a detached worktree at
   the main checkout's `.claude/worktrees/sha-<12 hex>`, made once and reused. Its node_modules
   links the main checkout's entries (vite's caches left out) when the commit's package-lock.json
   is the same, else `npm ci` runs there; `preview` builds once per worktree (`dist/.serve-sha`).
   The log is `artifacts/jobs/serve-<mode>-sha-<12 hex>-<port>.log` in the calling checkout.
   A commit from before the assets left git (no `assets.lock.json`) gets the files it lacks from
   the calling checkout's `public/`, in their current versions.
-  `node tools/serve.mjs clean` removes every sha-* worktree; one with a live job is skipped and
+  `node tools/kit/serve.mjs clean` removes every sha-* worktree; one with a live job is skipped and
   named (stop its job first).
 - The game's assets (textures, models, fonts, baked data) are not in git: the dev server and the
   build fill the git-ignored `public/` from the release `assets.lock.json` names (Assets, below),
@@ -185,12 +185,12 @@ within a tolerance; the test mode keeps the byte-for-byte checks valid.
 
 ## Captures
 
-`node tools/capture.mjs <name> [--w 1672 --h 941] [--q "paused&t=12&dpr=1"] [--eval js|@file]...
+`node tools/kit/capture.mjs <name> [--w 1672 --h 941] [--q "paused&t=12&dpr=1"] [--eval js|@file]...
 [--eval-ready js|@file]... [--verbose]` takes a screenshot of the running dev server into
 `artifacts/captures/` (git-ignored) and prints frame diagnostics. It needs Playwright's Chromium
 once (`npx playwright install chromium`), or `CHROME_PATH` set to a WebGPU-capable Chrome.
 
-`--eval` takes the same forms and scope as the probe's (`tools/page-eval.mjs`, shared by both: an
+`--eval` takes the same forms and scope as the probe's (`tools/kit/page-eval.mjs`, shared by both: an
 expression, a function or statements with a `return`, `await`, `@file`; `P`, `D`, `frames( n )`,
 `sleep( ms )`, `until( fn, timeoutMs )`): wait in an eval with `await until( () => D.settled )`,
 not a polling loop. Each eval's value lands in the capture's JSON as `evals: [ { eval, value } |
@@ -201,7 +201,7 @@ read lit until it has), so it sets the view up; a reading of the frame that is s
 `readyEvals`). capture-set passes both through after its `--`, and then takes a page per view (a
 scene jump does not undo what they change).
 
-Captures and clips run in "fast mode" (`tools/capture-browser.mjs`): the browser runs in a
+Captures and clips run in "fast mode" (`tools/kit/capture-browser.mjs`): the browser runs in a
 persistent profile slot, `artifacts/.capture-profiles/<browser build>/<n>` of the main checkout
 (one browser per slot, each with its own lock; `PONLAI_CAPTURE_PROFILES` moves them; safe to
 delete), so the world cache and the GPU shader cache hit from the second capture on. A capture
@@ -217,16 +217,16 @@ capture waits for the loading screen's fade-out to finish (its computed opacity 
 `done` class: a shot during the fade has the screen blended over the whole frame.
 Replayed over per-frame traces of the 24 parity views, these defaults shot no load early and every
 one on its settled frame. The capture's JSON records it as `ready` (`--stable-*` options in
-`tools/capture.mjs`, the rule and its evidence in `tools/capture-browser.mjs`). `--ready-frames n`
-waits for a fixed count instead, as a running capture does (60); `--wait` / `--settle` ms add fixed
-delays. The frame loop is stopped and the GPU queue drained before the shot. The shot is the
-compositor's image through CDP with Chrome's fast PNG encoder (about a fifth of Playwright's time):
-the pixels of Playwright's screenshot, not its bytes, so the tools compare captures by decoded
-pixels. A paused capture takes about 5-7 s alone.
+`tools/kit/capture.mjs`, the rule and its evidence in `tools/kit/capture-browser.mjs`).
+`--ready-frames n` waits for a fixed count instead, as a running capture does (60); `--wait` /
+`--settle` ms add fixed delays. The frame loop is stopped and the GPU queue drained before the shot.
+The shot is the compositor's image through CDP with Chrome's fast PNG encoder (about a fifth of
+Playwright's time): the pixels of Playwright's screenshot, not its bytes, so the tools compare
+captures by decoded pixels. A paused capture takes about 5-7 s alone.
 
 How to check a visual change: `docs/how-to/check-a-change.md`, Check a visual change.
-`tools/img.py` does the image work around
-captures (`uv run tools/img.py <cmd>`: its dependencies are inline, no system Pillow or NumPy
+`tools/kit/img.py` does the image work around
+captures (`uv run tools/kit/img.py <cmd>`: its dependencies are inline, no system Pillow or NumPy
 needed): `diff` (two images or two directories: max, mean, pixels over levels, signed bias, luma
 change, bounding box, `--heat` map), `crop` (boxes or a capture's named anchors, `--zoom`),
 `sheet` (a labelled grid of images, directories or crops, `--diff` for A | B | diff) and `stats`
@@ -251,7 +251,7 @@ difference, temporal high-pass, one-frame flashes and a `--map` of where they fa
 `--eval-ready` step returned: `--centre-key`; rings in percent of the frame's height, or degrees
 with `--fov`; `--half up` keeps the sky over a low sun without the sea under it); regions are `--box
 [name=]x,y,w,h` or `--anchor name|all` from the capture's JSON. Its numbers are diff-set.py's and
-compare-captures.py's (shared helpers in `tools/parity/pixels.py`). `tools/compare-captures.py`
+compare-captures.py's (shared helpers in `tools/kit/pixels.py`). `tools/kit/compare-captures.py`
 measures two overview captures (`uv run --with numpy --with pillow`).
 
 ```bash
@@ -287,7 +287,7 @@ for views that share no camera, such as a camera turned at each frame; it needs 
 page, and `--sky-mask-deg N` leaves the cells within N degrees of the sun or the moon out of the sky
 (by angle, from the page's read of the lights and the camera).
 
-`node tools/job.mjs start -- node tools/day-sweep.mjs <url> <outDir> [--scope routine|full]
+`node tools/kit/job.mjs start -- node tools/day-sweep.mjs <url> <outDir> [--scope routine|full]
 [--views name,...] [--times ...] [--weathers ...] [--compare <dir>] [--transitions]
 [--keep-frames]` sweeps the island view through the day under the kept weathers: a frame every
 hour, every half hour from 08:00 to 16:00 and every 10 minutes round sunrise and sunset, in three
@@ -366,7 +366,7 @@ reference's own repeatability (`diff-set.py --aa-floor`; see its README). Tempor
 taau) do not repeat pixel for pixel and are judged by a tolerance instead (`diff-set.py --temporal`:
 shares of pixels over a level on the frame, in local windows and on the crops, a bound on coherent
 sub-level shifts, and one recapture before a failure counts; thresholds in
-`tools/parity/tolerance.py`).
+`tools/kit/tolerance.py`).
 capture-set opens one page per set (one per `--jobs` worker) and reaches every view after the
 first by the exact scene jump (`__PONLAI__.establishScene( <the view's query> )`, then the view's
 eval and the usual readiness): only load-time options (quality, aa, size and dpr, debug switches)
@@ -389,7 +389,7 @@ fail, the run ends with exit 1, naming the page's exit code and the last lines o
 reverse order.
 `tools/capture-clip.mjs` captures a named clip (`tools/parity/clips.mjs`: a parity view set in
 motion, its camera path a function of the frame index) frame by frame with the page's stepper, as
-crops that follow their subjects, and `tools/clip-metrics.py` measures a clip against MSAA and a
+crops that follow their subjects, and `tools/kit/clip-metrics.py` measures a clip against MSAA and a
 ground truth (`--aa gt-hi`: MSAA at twice the former nominal ratio 1.5, downsampled) with gates from
 a thresholds file (`uv run --with numpy --with pillow`, clip-metrics.py also `--with scipy`; both
 described in the README). clip-metrics.py measures the
@@ -399,7 +399,7 @@ Without `--gt` it takes each side's own metrics only; `--crops boxes.json` cuts 
 frames (`{ view: { crop: [ x0, y0, x1, y1 ] } }`), and `--split-redraws` also reports each crop's
 Fhp near the shadow map redraws the clip's notes mark and between them (the shadow-shimmer study:
 use it instead of a script of one's own).
-References are stored per commit and shared (`tools/parity/reference.mjs`): `capture-set.mjs
+References are stored per commit and shared (`tools/kit/reference.mjs`): `capture-set.mjs
 --reference <root>/<sha>/<set>` and the baseline's and ground truth's entries of
 `tools/parity/baseline.mjs` reuse a stored reference whose manifest (`complete.json`, written
 last) matches the capture tools' version, the browser build and the options, wait for another live
@@ -426,7 +426,7 @@ again and compared); an entry that may not carry is captured and the log says wh
 `node tools/parity/carry.mjs check --from A --to B [--url U] [--all]` prints the verdict alone.
 Rules and proof: the README's Carry-over.
 
-`uv run tools/parity/gates.py <root>/<sha>/<label>/metrics.json --thresholds T [--policy P]
+`uv run tools/kit/gates.py <root>/<sha>/<label>/metrics.json --thresholds T [--policy P]
 [--normal] [--md f] [--json f] [--title t]` turns a label's metrics (baseline.mjs with
 --thresholds) into gate verdicts per gate id: PASS and FAIL counts and every failing item, exit 0
 only when every judged gate passes. A task's decisions on top of clip-metrics' verdicts (a gate
@@ -493,7 +493,7 @@ carry.mjs's `--tiers`, capture-set, quick, capture-clip and verify-scene-jump's 
 the pages capture.mjs, probe.mjs and capture-growth.mjs load without a `quality` in their query.
 `?quality=medium|low`, `--quality medium` or `--tiers high,medium,low` reach them.
 
-`uv run tools/parity/table.py <metrics.json | label dir>... [--names a,b] [--base col]
+`uv run tools/kit/table.py <metrics.json | label dir>... [--names a,b] [--base col]
 [--refs msaa,gt] [--entries glob] [--metrics m1,m2] [--crops c1,c2] [--csv f]` tables several
 labels' metrics (baseline.mjs labels or clip-metrics outputs) side by side: rows crop x metric,
 a column per input's test values and per reference (MSAA, ground truth), and each column's ratio to
@@ -501,7 +501,7 @@ a column per input's test values and per reference (MSAA, ground truth), and eac
 
 ## Probes
 
-`node tools/probe.mjs [url] [--q query] [--query q]... --eval js [--until js] [--frames n]`
+`node tools/kit/probe.mjs [url] [--q query] [--query q]... --eval js [--until js] [--frames n]`
 answers a question about the running page without a Playwright script of one's own: it loads the
 scene in the capture tools' browser (headless, a warm profile slot; `--fresh` for a cold load),
 holds a shared GPU slot from the load to the end (`--exclusive` for frame times), runs the steps in
@@ -509,7 +509,7 @@ the order given and prints JSON (per query: load or jump, the time until up, eac
 console errors and failed requests). Each `--query` after the first is reached in the same page by
 the scene jump. Evals see `P` (`__PONLAI__`), `D` (the diagnostics), `frames( n )`, `sleep( ms )`,
 `until( fn )` and `pipelines` (`mark()`, `since( mark )`: which pipelines an action built), with the
-same forms and scope as capture's `--eval` (`tools/page-eval.mjs`) (`D` is rebuilt every 30 frames:
+same forms and scope as capture's `--eval` (`tools/kit/page-eval.mjs`) (`D` is rebuilt every 30 frames:
 live counters such as `P.pipelines.total` come
 from `P`); `--init js` hooks the page before its scripts run. The url is the server's root or a
 page of it by its file (`<server>/scenes.html`, the test scenes). A production preview needs
@@ -670,7 +670,7 @@ and the limits), while a module's or a pipeline's creation is still proven on th
 ## GPU lock
 
 Everything that renders the scene in a browser (captures, profiles, GPU probes) takes the
-machine-wide GPU lock in `tools/gpu-lock.mjs`: timing runs (profiles, benchmarks, running captures)
+machine-wide GPU lock in `tools/kit/gpu-lock.mjs`: timing runs (profiles, benchmarks, running captures)
 hold it alone; paused captures and the verify probes share it with each other, since their pixels
 do not depend on the load. Shared holders take one of `PONLAI_GPU_SLOTS` slots (default 2) and the
 rest queue: captures are GPU-bound, so two pages at once give about 1.75 times one page's
@@ -712,10 +712,10 @@ To start sooner than that, raise it. Scheduling is done by the user or a main se
 scheduling table, never by a session itself:
 
 ```text
-node tools/gpu-lock.mjs prio                                   # the table, every holder's and ticket's level and where it comes from
-node tools/gpu-lock.mjs prio set art-tune high --for 90m --note "timing round"
-node tools/gpu-lock.mjs prio clear art-tune
-node tools/gpu-lock.mjs prio bump <pid|#ticket> urgent         # one request (kept for that process's later requests)
+node tools/kit/gpu-lock.mjs prio                                   # the table, every holder's and ticket's level and where it comes from
+node tools/kit/gpu-lock.mjs prio set art-tune high --for 90m --note "timing round"
+node tools/kit/gpu-lock.mjs prio clear art-tune
+node tools/kit/gpu-lock.mjs prio bump <pid|#ticket> urgent         # one request (kept for that process's later requests)
 ```
 
 An entry's match is a substring of one of a request's session names or of its label. The session
@@ -751,17 +751,21 @@ cost is a delay, not a deadlock:
   promotes its low requests then); sessions leave the variable unset.
 A copy from before the tickets announces its exclusive request in a waiter file, which holds back
 every shared request while it waits. A killed holder's slot frees itself at the next look, and a
-killed request leaves the queue. One implementation runs on the machine: `tools/gpu-lock.mjs` is an
-entry that loads the lock from `tools/gpu-lock-impl.mjs`, either its own worktree's or the main
+killed request leaves the queue. One implementation runs on the machine: `tools/kit/gpu-lock.mjs` is
+an entry that loads the lock from `tools/kit/gpu-lock-impl.mjs`, either its own worktree's or the main
 checkout's, whichever declares the higher `LOCK_VERSION` (the main checkout's on a tie; a main
 checkout from before the entry counts as
-version 0). So a branch runs every later lock upgrade as soon as main has it, without merging main,
+version 0). A main checkout from before the tools were grouped keeps it at `tools/gpu-lock-impl.mjs`,
+which the entry reads when the kit's file is absent; after then, that file is a stand-in that
+re-exports the kit's and declares the same `LOCK_VERSION`, so older checkouts' entries run the same
+lock. So a branch runs every later lock upgrade as soon as main has it, without merging main,
 and once every worktree has the entry, copies with different rules no longer share the lock. If the
 main checkout's file does not load (a conflict mid-merge, a syntax error), the worktree's runs and
-stderr says so. A change to the lock goes in `gpu-lock-impl.mjs`, bumps `LOCK_VERSION` and keeps its
+stderr says so. A change to the lock goes in `gpu-lock-impl.mjs`, bumps `LOCK_VERSION` there and in
+the stand-in, and keeps its
 exports and CLI additive; test it with `PONLAI_GPU_LOCK_IMPL=local`, which forces the worktree's
 copy. `status` ends with the file that runs and why (`impl` in its JSON).
-`node tools/gpu-lock.mjs run [--shared] [--label x] -- <command ...>` wraps any other script,
+`node tools/kit/gpu-lock.mjs run [--shared] [--label x] -- <command ...>` wraps any other script,
 `status` names the holders (shared: their slots; each with its level and source), the queue in turn
 (each with its estimated start, below) and the exclusive requests in turn (`waiting`), and `gpu`
 shows the GPU's utilisation and the processes using it. A request that waits prints a timestamped
@@ -770,7 +774,7 @@ or the shared slots' labels) and why it waits (an exclusive request ahead, reque
 level), and, when it starts waiting and whenever the figure moves by more than a minute or a
 quarter, its estimated start: `estimated start in ~12 min (range 7 min-25 min, estimate)`.
 The estimate is also in `status` (`eta: { startIn, range: [ lo, hi ], basis }` on every queued
-request, in seconds from now) and in `node tools/gpu-lock.mjs eta [--shared|--exclusive] [--level
+request, in seconds from now) and in `node tools/kit/gpu-lock.mjs eta [--shared|--exclusive] [--level
 l] [--json]` for a request made now (at this shell's level unless `--level` says otherwise) (`--pid
 p` for a waiting one). It is an estimate, not
 a schedule: the queue is run forward under the lock's rules 200 times, each hold lasting a duration
@@ -787,24 +791,24 @@ ticket, a request's parent pid and working directory (`ppid`, `cwd`: who asked),
 and why a hold ended when its holder did not end it (a
 child took the slot over, a yielded slot, a killed holder reclaimed as stale, a lease given up for
 a waiter; a leased hold's release counts the views it served).
-`node tools/gpu-lock.mjs log [--since 2h] [--by class|label] [--top 5] [--json]` summarises it:
+`node tools/kit/gpu-lock.mjs log [--since 2h] [--by class|label] [--top 5] [--json]` summarises it:
 requests, waits and holds per group (median, p95, total; uses of leased holds, lease yields,
 take-overs, timeouts, abandoned and stale counted apart) and the longest waits with the holds that
 overlapped them, so a report can say how
 long a run queued and behind whom. The profiler also checks that the GPU is idle before it
 measures and marks its results contended otherwise. Keep other pages that render the scene closed.
 
-## Long jobs and waiting: `tools/job.mjs`
+## Long jobs and waiting: `tools/kit/job.mjs`
 
-Every wait goes through `tools/job.mjs`: a command that may run longer than a few minutes (a
+Every wait goes through `tools/kit/job.mjs`: a command that may run longer than a few minutes (a
 capture set, a profile, a build of the references) runs as a job, and whoever waits for it, or for
 anything else, waits with `job.mjs` rather than a loop of their own. Its header is the full manual.
 
 ```text
-node tools/job.mjs start --wait -- npm run build                        (inline when it is short)
-node tools/job.mjs start --log <log> -- node tools/parity/capture-set.mjs ...
-node tools/job.mjs wait <log>          (repeat until it exits 0 or with the job's code)
-node tools/job.mjs stop <log>          (before handing back with it still running)
+node tools/kit/job.mjs start --wait -- npm run build                        (inline when it is short)
+node tools/kit/job.mjs start --log <log> -- node tools/parity/capture-set.mjs ...
+node tools/kit/job.mjs wait <log>          (repeat until it exits 0 or with the job's code)
+node tools/kit/job.mjs stop <log>          (before handing back with it still running)
 ```
 
 Forms:
@@ -849,15 +853,15 @@ one wait per message. `--role main` waits at most 3300 s, under a main session's
 main session keeps `wait --role main` running in the background while it waits on agents or jobs,
 and re-arms it each time it fires. `--max s` only lowers the budget.
 
-## Disk space: `tools/storage.mjs`
+## Disk space: `tools/kit/storage.mjs`
 
 Captures, clip frames and references are removed by age and held under a cap, so the disk does not
 fill with frames read once (in a week they reached hundreds of GB). `job.mjs` starts
 `storage.mjs clean --auto` in the background every 6 hours; nobody runs it by hand.
 
 ```text
-node tools/storage.mjs                 what each kind holds and what a clean would remove
-node tools/storage.mjs clean           remove it now ([--days 2] [--cap 50] [--floor 12])
+node tools/kit/storage.mjs                 what each kind holds and what a clean would remove
+node tools/kit/storage.mjs clean           remove it now ([--days 2] [--cap 50] [--floor 12])
 ```
 
 - Images and videos of 256 KB or more under `artifacts/{plans,archive,perf,verification,crops}` go
@@ -879,7 +883,7 @@ node tools/storage.mjs clean           remove it now ([--days 2] [--cap 50] [--f
 Processes an agent starts are not applications to macOS: their threads run at the legacy QoS
 whatever they ask for, and on a busy machine that work is kept on the efficiency cores while the
 performance cores idle, so it runs several times longer (3-14x measured while other agents captured
-and built; alike on a quiet machine). `tools/qos.mjs` starts the tools with the application policy
+and built; alike on a quiet machine). `tools/kit/qos.mjs` starts the tools with the application policy
 (`taskpolicy -a`) instead, which children do not inherit, so each process gets it on its own:
 
 - every tool that imports `gpu-lock.mjs` or `capture-browser.mjs` (the captures, capture-set and its
@@ -887,18 +891,18 @@ and built; alike on a quiet machine). `tools/qos.mjs` starts the tools with the 
   in place as it starts, and `gpu-lock.mjs run` and `job.mjs` start their commands with it;
 - `clip-metrics.py` (and its worker processes), `diff-set.py` and `img.py` (and their threads) raise
   themselves;
-- `npm run build` and `npm run typecheck` start tsc and vite through `node tools/qos.mjs <command>`,
-  which runs any command so (a one-off script: `node tools/qos.mjs python3 my-script.py`).
+- `npm run build` and `npm run typecheck` start tsc and vite through `node tools/kit/qos.mjs <command>`,
+  which runs any command so (a one-off script: `node tools/kit/qos.mjs python3 my-script.py`).
 Chrome's own helper processes (GPU, renderers, workers) set their QoS themselves and were never held
 back. `PONLAI_QOS=off` keeps a process at the policy it was given (for an A/B); nothing changes on
-other systems. A new CPU-heavy tool imports `tools/qos.mjs` first (node) or copies the few lines of
-`diff-set.py` (Python).
+other systems. A new CPU-heavy tool imports `tools/kit/qos.mjs` first (node) or copies the few lines
+of `diff-set.py` (Python).
 
 ## Display gate
 
 Headed browser runs (`profile-frame --display`, any script that opens a visible Chrome window)
 take over the screen of whoever is using the machine, so they run only while the user allows them:
-`node tools/display-gate.mjs allow [hours]` (and `deny`, `status`) keeps the permission in a file
+`node tools/kit/display-gate.mjs allow [hours]` (and `deny`, `status`) keeps the permission in a file
 under the user's home, `profile-frame --display` refuses without it, and scripts that open a headed
 window call `requireDisplayAllowed` from the same module. Everything else runs headless; a headed
 run that is not allowed now is recorded as pending and run later in one batch. Before the window
@@ -980,8 +984,8 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   later page load that finds the GPU busy still marks its results contended. Every summary.md
   marks such a scene `(contended)` in its table, a compare's as a single profile's.
 - The idle checks see a few seconds before a load or a scene; the load timeline sees the whole
-  run (macOS; `tools/load-timeline.mjs`). From the exclusive lock's hold to the end of the run, one
-  streaming `top` and a loop of one-second GPU client samples write `<out>/load.jsonl`, a line a
+  run (macOS; `tools/kit/load-timeline.mjs`). From the exclusive lock's hold to the end of the run,
+  one streaming `top` and a loop of one-second GPU client samples write `<out>/load.jsonl`, a line a
   second: `{ t, cpu, gpu }`, each by group (`run`: this run's Chrome and its descendants,
   `windowServer`, `app`: the desktop app, `otherChrome`, `kernel`: CPU only, `rest`), t in ms since
   the epoch (a page's frame time plus its `performance.timeOrigin`). Each measured slice (a
@@ -1147,7 +1151,7 @@ change to such a system is checked with `tools/day-sweep.mjs` (Captures), before
 `--compare`, not by the few frames a tuning session looks at.
 
 How much structure a cloud deck shows on screen (its contrast, masses, the edges' hardness, the
-low band and the far sea's fall at the horizon): `uv run tools/img.py stats --deck` on the horizon
+low band and the far sea's fall at the horizon): `uv run tools/kit/img.py stats --deck` on the horizon
 views' captures, not a script of one's own.
 
 Whether a grown page draws what a fresh load of its land draws (views, chunk hashes, the rain
@@ -1259,7 +1263,7 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   file names the server it expects); they take the GPU lock (shared).
   `verify-optical-interface`, `verify-frame-graph-gpu`, `verify-refracted-sun` and
   `verify-solar-shadows` import the source modules and need the dev server: on any other server they
-  exit 1 at once (`tools/dev-server.mjs`).
+  exit 1 at once (`tools/kit/dev-server.mjs`).
   `tools/verify-scene.mjs` checks a production preview. `tools/verify-scene-jump.mjs` captures the
   parity views reached by scene jumps in one page and as fresh loads, for `diff-set.py`, each shot
   ready as capture.mjs's paused shots are (the page's settled signal, then the stability rule:
@@ -1324,7 +1328,7 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   (90: three real seconds at the default day clock), the run waiting for an answer that takes
   longer, so the timing never depends on the wall clock. With the stand-in the same options write
   the same files byte for byte. Five game days of the stand-in take about two seconds; a run with a
-  language-model brain goes through `tools/job.mjs`. The options and guarantees are in its header.
+  language-model brain goes through `tools/kit/job.mjs`. The options and guarantees are in its header.
 - `tools/game/verify-i18n.mjs [--strict] [--list]` (plain `node`) checks the game interface's words:
   it fails on Chinese written in `packages/` or `app/` outside the catalogues
   (`packages/game/ui/i18n/`; the content it allows, the islanders' names and the debug panel's

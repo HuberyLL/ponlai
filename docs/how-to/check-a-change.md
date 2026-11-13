@@ -54,11 +54,11 @@ The tool and its options: `docs/reference/tools.md`, Test scenes.
 
 ## Check a visual change
 
-1. Capture the views the change touches before and after it (`tools/capture.mjs` for one view,
+1. Capture the views the change touches before and after it (`tools/kit/capture.mjs` for one view,
    `tools/parity/capture-set.mjs` for a list of views on one warm page;
    `docs/reference/tools.md`, Captures).
 2. Compare each capture against the previous one, and compare crops, not only the whole frame
-   (`uv run tools/img.py diff|crop|sheet|stats`).
+   (`uv run tools/kit/img.py diff|crop|sheet|stats`).
 3. Report the measured differences.
 
 Where shapes differ (growth steps, seeds, a regenerated island), judge the look by eye and region
@@ -77,7 +77,7 @@ profiler. A change is judged at high's standard (`AGENTS.md`, Rules for every ch
 3. Judge whether high holds 60 fps with `--accept` (under vsync), not from uncapped intervals, at
    the tier's own settings (its dynamic scale measured at its settle point with
    `--scale-settle 5`), and check how the change plays on a fast display with `--display`.
-4. Check `node tools/gpu-lock.mjs gpu` before each run (and during it when other windows stay on
+4. Check `node tools/kit/gpu-lock.mjs gpu` before each run (and during it when other windows stay on
    screen), report contended runs as such, and check the change in a normal window too, not only
    `--kiosk`.
 
@@ -101,7 +101,7 @@ keeps the test mode's byte comparisons valid this way (`docs/reference/tools.md`
 5. Add its module to `WATCH.motion` in `tools/parity/carry.mjs` when its paths are not already
    there: with it frozen or off, the paused set no longer shows it, only the clips do.
 6. Compare its frames outside the test mode (live, clips) within a tolerance, as the temporal
-   modes' are (`tools/parity/tolerance.py`), unless they repeat pixel for pixel.
+   modes' are (`tools/kit/tolerance.py`), unless they repeat pixel for pixel.
 
 ## Add something that depends on the land's shape
 

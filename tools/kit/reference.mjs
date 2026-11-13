@@ -39,7 +39,7 @@
 // capturing it; a new build recaptures them.
 //
 //   import { ensureReference, setKey, clipKey } from './reference.mjs';
-//   node tools/parity/reference.mjs status <dir>     (every manifest and claim under a directory)
+//   node tools/kit/reference.mjs status <dir>     (every manifest and claim under a directory)
 //
 // capture-set.mjs (`--reference`, `--check`) and baseline.mjs (the `baseline` and ground-truth
 // entries) use it; the layout and the manifest are documented in tools/parity/README.md.
@@ -51,24 +51,23 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, r
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { yieldAncestorSlot } from '../gpu-lock.mjs';
+import { yieldAncestorSlot } from './gpu-lock.mjs';
+import { ROOT as REPO } from './root.mjs';
+import PROJECT from '../project.mjs';
 
-const TOOLS = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
-const REPO = path.resolve( TOOLS, '..' );
+const HERE = path.dirname( fileURLToPath( import.meta.url ) );
 
-// the sources whose change can change a reference's pixels, per kind of reference: every file of
-// the capture's own code path (capture-browser.mjs holds the launch, the profile slots, the
-// readiness and the grab for both). A set never runs the clip tools nor a clip the set tools, so
-// a change to one kind's files leaves the other kind's references valid. Add a file here when a
+// the sources whose change can change a reference's pixels, per kind of reference, from the
+// repository's root: every file of the capture's own code path (capture-browser.mjs holds the
+// launch, the profile slots, the readiness and the grab for both). A set never runs the clip tools
+// nor a clip the set tools, so a change to one kind's files leaves the other kind's references
+// valid. The project's configuration lists them (`reference.toolFiles`): add a file there when a
 // capture starts reading it; the lock (gpu-lock.mjs) and this store decide no pixels.
-export const TOOL_FILES = {
-	set: [ 'capture.mjs', 'capture-browser.mjs', 'parity/capture-set.mjs', 'parity/views.mjs', 'parity/adhoc.mjs' ],
-	clip: [ 'capture-clip.mjs', 'capture-browser.mjs', 'parity/views.mjs', 'parity/clips.mjs' ],
-};
+export const TOOL_FILES = PROJECT.reference.toolFiles;
 
 // what a build reads: a server whose worktree differs from the reference's commit only elsewhere
-// serves the reference's build
-export const BUILD_INPUTS = [ 'packages', 'app', 'index.html', 'assets.lock.json', 'vite.config.ts', 'package.json', 'package-lock.json', 'tsconfig.json' ];
+// serves the reference's build (the configuration's `reference.buildInputs`)
+export const BUILD_INPUTS = PROJECT.reference.buildInputs;
 const POLL_MS = 5000, ANNOUNCE_MS = 60000, MUTEX_STALE_MS = 30000;
 const FORMAT = 1;
 
@@ -131,7 +130,7 @@ const git = ( args, cwd = REPO ) => execFileSync( 'git', args, { cwd, encoding: 
 /** Each tool file's hash for a kind of reference, and their combined hash (the tool version). */
 export function toolVersion( kind ) {
 
-	const files = Object.fromEntries( TOOL_FILES[ kind ].map( ( f ) => [ f, hash( readFileSync( path.join( TOOLS, f ) ), 12 ) ] ) );
+	const files = Object.fromEntries( TOOL_FILES[ kind ].map( ( f ) => [ f, hash( readFileSync( path.join( REPO, f ) ), 12 ) ] ) );
 	return { tool: hash( stable( files ) ), files };
 
 }
@@ -460,7 +459,7 @@ function runDiff( args, out ) {
 	return new Promise( ( resolve ) => {
 
 		// (not `python -I`: diff-set.py imports tolerance.py from its own directory)
-		const child = spawn( 'uv', [ 'run', '--with', 'numpy', '--with', 'pillow', 'python', path.join( TOOLS, 'parity/diff-set.py' ), ...args ], { cwd: REPO, stdio: [ 'ignore', 'pipe', 'pipe' ] } );
+		const child = spawn( 'uv', [ 'run', '--with', 'numpy', '--with', 'pillow', 'python', path.join( HERE, 'diff-set.py' ), ...args ], { cwd: REPO, stdio: [ 'ignore', 'pipe', 'pipe' ] } );
 		const chunks = [];
 		child.stdout.on( 'data', ( d ) => chunks.push( d ) );
 		child.stderr.on( 'data', ( d ) => chunks.push( d ) );
@@ -503,7 +502,7 @@ async function verifySamples( spec, m, dir, scratch ) {
 
 	} else {
 
-		const { decodePng, compareFrames } = await import( '../capture-browser.mjs' );
+		const { decodePng, compareFrames } = await import( './capture-browser.mjs' );
 		for ( const v of views ) {
 
 			const a = readFileSync( path.join( dir, `${ v }.png` ) ), b = readFileSync( path.join( scratch, `${ v }.png` ) );

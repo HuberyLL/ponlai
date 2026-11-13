@@ -4,15 +4,15 @@
 // port (or names who holds the one asked for), starts vite detached with its log under
 // artifacts/jobs/, waits until its own server answers and prints the URL and how to stop it.
 //
-//   node tools/serve.mjs dev|preview [--port N] [--no-build] [--sha <rev>]
-//   node tools/serve.mjs clean
+//   node tools/kit/serve.mjs dev|preview [--port N] [--no-build] [--sha <rev>]
+//   node tools/kit/serve.mjs clean
 //
 // Ports: 6400-6499 by default, the first free one. `--port N` uses N or fails naming the process
 // that listens on it (pid, cwd). The URL is printed only when the server answering is this run's
 // job: the job still runs and its log holds vite's ready line for that port. When another
 // session's server takes the port between the check and vite's bind, vite exits "already in use"
 // and the next free port is tried (with `--port N`, exit 1 naming the holder). `preview` runs `npm run build` first unless given `--no-build`.
-// Prints `<url>  log <path>  (stop: node tools/job.mjs stop <path>)`.
+// Prints `<url>  log <path>  (stop: node tools/kit/job.mjs stop <path>)`.
 // The served checkout is the one containing the cwd, not the one holding this file: agents call
 // the tool by the main checkout's absolute path from their worktrees, and it used to serve (and
 // rebuild) main's dist silently. A cwd outside this repository exits 1. The first line printed
@@ -47,11 +47,12 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { constants, copyFileSync, existsSync, readFileSync, readdirSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ROOT } from './root.mjs';
 
-// The tool's own files (job.mjs); the checkout it serves is `caller`, below.
-const here = join( dirname( fileURLToPath( import.meta.url ) ), '..' );
-const jobTool = join( here, 'tools', 'job.mjs' );
-const usage = 'usage: node tools/serve.mjs dev|preview [--port N] [--no-build] [--sha <rev>] | clean';
+// This checkout's root and the job tool beside this file; the checkout it serves is `caller`, below.
+const here = ROOT;
+const jobTool = join( dirname( fileURLToPath( import.meta.url ) ), 'job.mjs' );
+const usage = 'usage: node tools/kit/serve.mjs dev|preview [--port N] [--no-build] [--sha <rev>] | clean';
 
 function fail( msg ) {
 
@@ -126,7 +127,7 @@ if ( mode === 'clean' ) {
 		const live = spawnSync( 'node', [ jobTool, 'list', '--cwd', t, '--lines', '0' ], { encoding: 'utf8' } ).stdout;
 		if ( ! live.startsWith( 'no running jobs' ) ) {
 
-			console.log( `skipped ${ t }: a job runs there (node tools/job.mjs list --cwd ${ t })` );
+			console.log( `skipped ${ t }: a job runs there (node tools/kit/job.mjs list --cwd ${ t })` );
 			continue;
 
 		}
@@ -162,7 +163,7 @@ if ( rev !== null ) {
 	if ( existsSync( repo ) ) {
 
 		const head = git( [ 'rev-parse', 'HEAD' ], repo );
-		if ( head !== sha ) fail( `${ repo } is at ${ head }, not ${ sha }; run node tools/serve.mjs clean` );
+		if ( head !== sha ) fail( `${ repo } is at ${ head }, not ${ sha }; run node tools/kit/serve.mjs clean` );
 		console.log( `reusing ${ repo }` );
 
 	} else {
@@ -390,7 +391,7 @@ for ( ;; ) {
 	const result = await serve( port, log );
 	if ( result === 'ready' ) {
 
-		console.log( `${ url }  log ${ log }  (stop: node tools/job.mjs stop ${ log })` );
+		console.log( `${ url }  log ${ log }  (stop: node tools/kit/job.mjs stop ${ log })` );
 		break;
 
 	}

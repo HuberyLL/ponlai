@@ -1,5 +1,5 @@
-// The machine-wide GPU lock's entry: every tool imports this file (and `node tools/gpu-lock.mjs
-// <command>` runs it), and it loads the lock itself from tools/gpu-lock-impl.mjs (the rules, the
+// The machine-wide GPU lock's entry: every tool imports this file (and `node tools/kit/gpu-lock.mjs
+// <command>` runs it), and it loads the lock itself from tools/kit/gpu-lock-impl.mjs (the rules, the
 // files and the CLI are described there). Every worktree carries its own copy of the lock, and
 // copies that disagree on the rules share one lock: a rule a newer copy adds (shared first, the
 // levels) does not hold while sessions run older copies. So this entry loads whichever
@@ -9,6 +9,10 @@
 // - The version is read from the file's text (`export const LOCK_VERSION = n;`), so the copy not
 //   chosen is never loaded. A main checkout without gpu-lock-impl.mjs (its lock from before this
 //   entry, one file without a version) counts as version 0.
+// - The main checkout's implementation is tools/kit/gpu-lock-impl.mjs, or tools/gpu-lock-impl.mjs
+//   on a main checkout from before the tools were grouped (the first of the two that exists). On a
+//   main checkout after then, tools/gpu-lock-impl.mjs is a stand-in that re-exports the kit's, for
+//   the entries of older checkouts that look there.
 // - If the main checkout's implementation does not load (a conflict mid-merge, a syntax error, no
 //   readable version), this worktree's runs instead, said once on stderr.
 // - PONLAI_GPU_LOCK_IMPL=local forces this worktree's copy (to test a change to the lock);
@@ -18,13 +22,16 @@
 // header), so whatever this entry loads provides every name it re-exports.
 import './qos.mjs'; // first, as the implementation does: it re-executes the process before the choice below
 import { execFileSync } from 'node:child_process';
-import { readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const NAME = 'gpu-lock-impl.mjs';
 const here = path.dirname( fileURLToPath( import.meta.url ) );
 const local = path.join( here, NAME );
+// where a main checkout keeps the implementation: in the kit, or at the top of tools/ before the
+// tools were grouped
+const MAIN_PLACES = [ [ 'tools', 'kit', NAME ], [ 'tools', NAME ] ];
 
 // the main checkout's root: the directory holding the repository's common .git
 function mainRoot() {
@@ -79,7 +86,7 @@ const same = ( a, b ) => {
 const localVersion = versionOf( local );
 let file = local, why;
 const root = process.env.PONLAI_GPU_LOCK_IMPL === 'local' ? null : mainRoot();
-const remote = root && path.join( root, 'tools', NAME );
+const remote = root && ( MAIN_PLACES.map( ( p ) => path.join( root, ...p ) ).find( ( f ) => existsSync( f ) ) ?? path.join( root, ...MAIN_PLACES[ 0 ] ) );
 if ( process.env.PONLAI_GPU_LOCK_IMPL === 'local' ) why = 'PONLAI_GPU_LOCK_IMPL=local';
 else if ( ! remote ) why = 'no main checkout found';
 else if ( same( remote, local ) ) why = 'this is the main checkout';

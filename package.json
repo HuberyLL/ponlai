@@ -6,11 +6,11 @@
   "license": "MIT",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5190",
-    "build": "node tools/qos.mjs tsc && node tools/qos.mjs vite build",
+    "build": "node tools/kit/qos.mjs tsc && node tools/kit/qos.mjs vite build",
     "preview": "vite preview --host 127.0.0.1 --port 5191",
-    "typecheck": "node tools/qos.mjs tsc",
+    "typecheck": "node tools/kit/qos.mjs tsc",
     "check": "node tools/check.mjs",
-    "lint": "node tools/qos.mjs eslint packages app",
+    "lint": "node tools/kit/qos.mjs eslint packages app",
     "lint:docs": "markdownlint-cli2 && node tools/repo/verify-doc-paths.mjs && lychee --offline --no-progress AGENTS.md ARCHITECTURE.md CREDITS.md \"docs/**/*.md\" \"tools/**/*.md\" \"skills/**/*.md\"",
     "lint:links": "lychee --no-progress AGENTS.md ARCHITECTURE.md CREDITS.md \"docs/**/*.md\" \"tools/**/*.md\" \"skills/**/*.md\""
   },

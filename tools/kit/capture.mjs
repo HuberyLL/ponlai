@@ -1,12 +1,12 @@
 // Full-resolution captures of the running dev server (or a preview build) for visual review.
-//   node tools/capture.mjs [name] [--w 1600 --h 900] [--q "query"] [--eval js|@file]... [--eval-ready js|@file]... [--verbose] [--exclusive]
+//   node tools/kit/capture.mjs [name] [--w 1600 --h 900] [--q "query"] [--eval js|@file]... [--eval-ready js|@file]... [--verbose] [--exclusive]
 //                          [--wait-for "js expression"] [--frames n --every k] [--timeout 60000]
 //                          [--stable-min 1] [--stable-every 2] [--stable-repeats 1] [--stable-tolerance 0:5000|exact]
 //                          [--stable-patience 40] [--stable-cap 120] [--stable-trace] [--ready-frames n] [--wait ms] [--settle ms]
-//   node tools/capture.mjs --worker --url <base> [--w --h --scale --timeout, the options above] [--page-per-view] [--ready-reads] [--lease 20]
+//   node tools/kit/capture.mjs --worker --url <base> [--w --h --scale --timeout, the options above] [--page-per-view] [--ready-reads] [--lease 20]
 // Writes artifacts/captures/<name>.png and prints the page's console errors and diagnostics.
 // The browser runs in a persistent profile slot and a paused capture (MSAA or off) is taken once its
-// image has stopped changing (tools/capture-browser.mjs, "readiness by stability"): after the evals, the
+// image has stopped changing (tools/kit/capture-browser.mjs, "readiness by stability"): after the evals, the
 // floor's frames (--stable-min) and the loading screen gone, the page's settled signal is waited for
 // with the loop running (up to --timeout; past it the JSON's `ready.settled` keeps the signal's
 // `settle` block and stdout prints "unsettled"), then the image is grabbed every
@@ -19,7 +19,7 @@
 // n rendered frames instead, as a running (not paused) capture does (60). --wait and --settle (ms)
 // add fixed delays before and after the floor. The frame loop is stopped (the GPU queue drained)
 // for the shot, which is the compositor's image PNG-encoded for speed (the pixels of Playwright's
-// screenshot, not its bytes: compare captures by decoded pixels; tools/capture-browser.mjs).
+// screenshot, not its bytes: compare captures by decoded pixels; tools/kit/capture-browser.mjs).
 // --wait-for polls the expression in the page (up to 60 s) once it is up (before the stability wait) and captures once it
 // is truthy (e.g. a temporal resolve's convergence flag). --frames n captures n frames, k rendered
 // frames apart (default 1): <name>.png, then <name>.f1.png ... <name>.f<n-1>.png; the loop runs
@@ -30,7 +30,7 @@
 // --eval js|@file may be given more than once: each runs in the page in order, awaited, once
 // `__PONLAI__` and the diagnostics exist (before the floor's frames and the readiness wait: on a
 // fresh load that is before the sun's map has drawn, so an eval that measures the frame belongs in
-// --eval-ready), with probe's forms and scope (tools/page-eval.mjs:
+// --eval-ready), with probe's forms and scope (tools/kit/page-eval.mjs:
 // an expression, a function or statements with a `return`, `await` in all three; `P`, `D`,
 // `frames( n )`, `sleep( ms )`, `until( fn, timeoutMs )`, so an eval waits with `await until( ...
 // )` instead of a polling loop of its own). The JSON records each as `evals: [ { eval, value } |
@@ -117,6 +117,7 @@ import { acquireGpuLock, leaseGpuLock, releaseGpuLock } from './gpu-lock.mjs';
 import { launchCapture, waitForScene, waitForSettled, waitForStable, stableOptions, stopLoop, startLoop, pngShooter, READY_FRAMES } from './capture-browser.mjs';
 import { evalSource, runInPage } from './page-eval.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
+import PROJECT from '../project.mjs';
 
 /** The scene jump contract's version this tool drives (`__PONLAI__.sceneJump`, app/Scene.ts). */
 const SCENE_JUMP = 1;
@@ -135,7 +136,10 @@ const argEvals = evalsOf( '--eval' );
 const readyEvals = evalsOf( '--eval-ready' );
 const wait = Number( opt( 'wait', 0 ) ), settle = Number( opt( 'settle', 0 ) );
 const stable = stableOptions( ( k ) => k === 'stable-trace' ? ( args.includes( '--stable-trace' ) ? '' : undefined ) : opt( k ) );
-const baseUrl = opt( 'url', 'http://127.0.0.1:5190/' );
+const baseUrl = opt( 'url', PROJECT.url );
+// the page's globals, as the project's configuration names them, for the page code below (passed
+// in: a closure run in the page sees nothing of node's scope)
+const PAGE = PROJECT.page;
 const sampleCount = Number( opt( 'samples', 1 ) );
 const waitFor = opt( 'wait-for', '' );
 const timeout = Number( opt( 'timeout', 60000 ) );
@@ -147,7 +151,7 @@ const verbose = args.includes( '--verbose' );
 const paused = ( query ) => new URLSearchParams( query ).has( 'paused' );
 // the fixed frame count instead of stability: --ready-frames n, or a running scene (it never stands still)
 const readyFramesFor = ( query ) => args.includes( '--ready-frames' ) ? Number( opt( 'ready-frames' ) ) : paused( query ) ? null : READY_FRAMES;
-// tools/gpu-lock.mjs: shared for a paused scene, exclusive otherwise
+// tools/kit/gpu-lock.mjs: shared for a paused scene, exclusive otherwise
 const sharedFor = ( query ) => paused( query ) && ! args.includes( '--exclusive' );
 
 // a promise that rejects after `ms` (a page that stopped answering)
@@ -174,12 +178,12 @@ async function openPage( viewport ) {
 	page.on( 'requestfailed', ( r ) => current.failures.push( `${ r.failure()?.errorText } ${ r.url() }` ) );
 	// the GPU gate (see the header, "The slot after the world"): a load gets its GPU device, and so
 	// does any GPU work, only once the gate is opened (`asked`: the page has asked for it)
-	await page.addInitScript( () => {
+	await page.addInitScript( ( gpuGate ) => {
 
 		if ( ! window.GPUAdapter || window !== window.top ) return;
 		let open;
 		const gate = new Promise( ( resolve ) => { open = resolve; } );
-		const state = window.__PONLAI_GPU_GATE__ = { open: () => open(), asked: false };
+		const state = window[ gpuGate ] = { open: () => open(), asked: false };
 		const proto = GPUAdapter.prototype, requestDevice = proto.requestDevice;
 		proto.requestDevice = async function ( ...a ) {
 
@@ -189,7 +193,7 @@ async function openPage( viewport ) {
 
 		};
 
-	} );
+	}, PAGE.gpuGate );
 	return { capture, page, begin: () => ( current = { errors: [], failures: [] } ), record: () => current };
 
 }
@@ -203,16 +207,16 @@ async function loadToWorld( page, url ) {
 	await page.goto( url, { waitUntil: 'domcontentloaded', timeout: worldTimeout } );
 	// the world in, or the device asked for (the renderer's start, after the world's module has run)
 	// on a page without the marker
-	await page.waitForFunction( () => window.__PONLAI_WORLD__?.ready || ( ! window.__PONLAI_WORLD__ && window.__PONLAI_GPU_GATE__?.asked ),
-		null, { timeout: worldTimeout, polling: 100 } );
-	return await page.evaluate( () => window.__PONLAI_WORLD__ !== undefined ) ? Date.now() - started : null;
+	await page.waitForFunction( ( n ) => window[ n.world ]?.ready || ( ! window[ n.world ] && window[ n.gpuGate ]?.asked ),
+		PAGE, { timeout: worldTimeout, polling: 100 } );
+	return await page.evaluate( ( n ) => window[ n.world ] !== undefined, PAGE ) ? Date.now() - started : null;
 
 }
 
 const failed = ( record ) => record.evalFailed || record.errors.some( ( e ) => e.startsWith( 'pageerror:' ) || e.startsWith( 'error:' ) ) || record.failures.length > 0;
 
 // the renderer's frame counter (three's animation loop: rendered frames only)
-const renderedFrame = ( page ) => page.evaluate( () => window.__PONLAI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 );
+const renderedFrame = ( page ) => page.evaluate( ( n ) => window[ n.handle ]?.renderer.info.frame ?? window[ n.diagnostics ]?.frame ?? 0, PAGE );
 
 /** Brings the page to the view (`load`: the fresh load of `url` loadToWorld started, its GPU gate
  * opened; `jump`: the scene jump to `query`), runs the view's `evals` (js; a throw fails the view)
@@ -227,22 +231,22 @@ async function captureView( session, { url, query, evals, steps, readySteps = []
 	const record = session.record();
 	if ( mode === 'load' ) {
 
-		await page.evaluate( () => window.__PONLAI_GPU_GATE__?.open() );
-		await page.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__, null, { timeout } );
+		await page.evaluate( ( n ) => window[ n.gpuGate ]?.open(), PAGE );
+		await page.waitForFunction( ( n ) => window[ n.handle ] && window[ n.diagnostics ], PAGE, { timeout } );
 
 	} else {
 
 		// the scene jump (app/Scene.ts `establishScene`), then a frame at the jump's camera before the
 		// evals move it, as a fresh load's first frames are
-		const jumped = await within( page.evaluate( async ( q ) => {
+		const jumped = await within( page.evaluate( async ( { q, handle } ) => {
 
-			const s = window.__PONLAI__;
+			const s = window[ handle ];
 			await s.establishScene( q );
 			s.loop.start();
 			return s.renderer.info.frame;
 
-		}, query ), timeout, 'establishScene' );
-		await page.waitForFunction( ( f ) => window.__PONLAI__.renderer.info.frame > f, jumped, { timeout, polling: 'raf' } );
+		}, { q: query, handle: PAGE.handle } ), timeout, 'establishScene' );
+		await page.waitForFunction( ( { f, handle } ) => window[ handle ].renderer.info.frame > f, { f: jumped, handle: PAGE.handle }, { timeout, polling: 'raf' } );
 
 	}
 	// the --eval and --eval-ready steps, recorded (a throw fails the shot)
@@ -262,7 +266,7 @@ async function captureView( session, { url, query, evals, steps, readySteps = []
 		return records;
 
 	};
-	// the view's evals, then the --eval steps, with probe's forms and scope (tools/page-eval.mjs)
+	// the view's evals, then the --eval steps, with probe's forms and scope (tools/kit/page-eval.mjs)
 	for ( const js of evals ) await runInPage( page, js, { timeout } );
 	const evalRecords = await runSteps( steps );
 	const readyFrames = readyFramesFor( query );
@@ -271,17 +275,17 @@ async function captureView( session, { url, query, evals, steps, readySteps = []
 	// a paused temporal page: its rest, started over after the evals, converged
 	if ( paused( query ) ) {
 
-		await page.evaluate( () => window.__PONLAI__?.taa?.epoch.bump( 'capture' ) );
-		await page.waitForFunction( () => {
+		await page.evaluate( ( n ) => window[ n.handle ]?.taa?.epoch.bump( 'capture' ), PAGE );
+		await page.waitForFunction( ( n ) => {
 
-			const t = window.__THREE_GAME_DIAGNOSTICS__?.taa;
-			return ! t || t.restTarget === 0 || ( t.converged && t.restEpoch === window.__PONLAI__.taa.epoch.value );
+			const t = window[ n.diagnostics ]?.taa;
+			return ! t || t.restTarget === 0 || ( t.converged && t.restEpoch === window[ n.handle ].taa.epoch.value );
 
-		}, null, { timeout, polling: 100 } );
+		}, PAGE, { timeout, polling: 100 } );
 
 	}
 	if ( waitFor ) await page.waitForFunction( waitFor, null, { timeout: 60000, polling: 100 } );
-	// a paused page's settled signal, with the loop running (tools/capture-browser.mjs)
+	// a paused page's settled signal, with the loop running (tools/kit/capture-browser.mjs)
 	const settled = readyFrames === null && paused( query ) ? await waitForSettled( page, { timeout } ) : null;
 	// ready: the image stopped changing, or a temporal page's rest converged (or the fixed count
 	// above); the loop is stopped
@@ -294,22 +298,22 @@ async function captureView( session, { url, query, evals, steps, readySteps = []
 	for ( let i = 0; i < sampleCount; i ++ ) {
 
 		if ( i > 0 ) await page.waitForTimeout( 1000 );
-		samples.push( await page.evaluate( () => ( { ...window.__THREE_GAME_DIAGNOSTICS__ } ) ) );
+		samples.push( await page.evaluate( ( n ) => ( { ...window[ n.diagnostics ] } ), PAGE ) );
 
 	}
 	const frames = [];
-	// the shot: the compositor's image, PNG encoded for speed (tools/capture-browser.mjs, "The shot")
+	// the shot: the compositor's image, PNG encoded for speed (tools/kit/capture-browser.mjs, "The shot")
 	const shooter = await pngShooter( page, { timeout } );
 	for ( let i = 0; i < frameCount; i ++ ) {
 
 		if ( i > 0 ) {
 
 			await startLoop( page );
-			await page.waitForFunction( ( f ) => ( window.__PONLAI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 ) >= f,
-				frames[ i - 1 ].frame + frameEvery, { timeout, polling: 'raf' } );
+			await page.waitForFunction( ( { f, n } ) => ( window[ n.handle ]?.renderer.info.frame ?? window[ n.diagnostics ]?.frame ?? 0 ) >= f,
+				{ f: frames[ i - 1 ].frame + frameEvery, n: PAGE }, { timeout, polling: 'raf' } );
 
 		}
-		// no frames queued behind the shot (tools/capture-browser.mjs)
+		// no frames queued behind the shot (tools/kit/capture-browser.mjs)
 		await stopLoop( page );
 		const frame = await renderedFrame( page );
 		const file = i === 0 ? `${ out }.png` : `${ out }.f${ i }.png`;
@@ -319,8 +323,8 @@ async function captureView( session, { url, query, evals, steps, readySteps = []
 	}
 	// (the device metrics back before the crop anchors read the page's ratio)
 	await shooter.close();
-	const diag = await page.evaluate( () => ( { ...window.__THREE_GAME_DIAGNOSTICS__ } ) );
-	const crops = await page.evaluate( () => window.__PONLAI_CROPS__ ?? null );
+	const diag = await page.evaluate( ( n ) => ( { ...window[ n.diagnostics ] } ), PAGE );
+	const crops = await page.evaluate( ( n ) => window[ n.crops ] ?? null, PAGE );
 	session.gpu ??= await page.evaluate( async () => {
 
 		const adapter = await navigator.gpu.requestAdapter();
@@ -366,12 +370,12 @@ async function pageMemory( page ) {
 		const { metrics } = await cdp.send( 'Performance.getMetrics' );
 		await cdp.send( 'Performance.disable' );
 		const m = Object.fromEntries( metrics.map( ( x ) => [ x.name, x.value ] ) );
-		const info = await page.evaluate( () => {
+		const info = await page.evaluate( ( handle ) => {
 
-			const r = window.__PONLAI__.renderer;
+			const r = window[ handle ].renderer;
 			return { geometries: r.info.memory.geometries, textures: r.info.memory.textures, frame: r.info.frame };
 
-		} );
+		}, PAGE.handle );
 		return { jsHeapUsed: m.JSHeapUsedSize, jsHeapTotal: m.JSHeapTotalSize, nodes: m.Nodes, listeners: m.JSEventListeners, ...info };
 
 	} finally {
@@ -384,7 +388,7 @@ async function pageMemory( page ) {
 
 if ( ! worker ) {
 
-	const query = opt( 'q', 'paused&t=12&dpr=1' );
+	const query = opt( 'q', PROJECT.query );
 	const url = `${ baseUrl }?${ query }`;
 	await mkdir( 'artifacts/captures', { recursive: true } );
 	const session = await openPage( { viewport: { width: W, height: H }, deviceScaleFactor: Number( opt( 'scale', 1 ) ) } );
@@ -475,7 +479,7 @@ if ( ! worker ) {
 			}
 			if ( index === 0 && result.ok ) {
 
-				const marker = await session.page.evaluate( () => window.__PONLAI__?.sceneJump ?? null ).catch( () => null );
+				const marker = await session.page.evaluate( ( handle ) => window[ handle ]?.sceneJump ?? null, PAGE.handle ).catch( () => null );
 				jump = marker === SCENE_JUMP;
 				await send( { type: 'page', jump, marker } );
 

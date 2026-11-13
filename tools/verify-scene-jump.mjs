@@ -1,6 +1,6 @@
 // Regression probe for the exact scene jump (app/Scene.ts `establishScene`): a parity view reached by
 // a jump within one page must be the frame a fresh load of its query draws. It captures the views
-// both ways, in the layout of tools/parity/capture-set.mjs, so tools/parity/diff-set.py judges them:
+// both ways, in the layout of tools/parity/capture-set.mjs, so tools/kit/diff-set.py judges them:
 //
 //   node tools/verify-scene-jump.mjs <baseUrl> <outDir> [--fresh | --legacy] [--retune] [--views parity|taa|all|normal|special|a,b,c]
 //       [--view "name:query[::js]"]...
@@ -23,7 +23,7 @@
 // --check runs the whole check in one command: the fresh side, the jump side in both orders into
 // <outDir>, then diff-set.py (`--aa-floor`, `--temporal` for aa=taa|taau|fsr3|gt; its table also in
 // <outDir>/diff.txt; its exit code is the check's). The fresh side is the reference store's set of
-// the commit (tools/parity/reference.mjs, through capture-set.mjs `--reference --repeat
+// the commit (tools/kit/reference.mjs, through capture-set.mjs `--reference --repeat
 // --page-per-view` with the same views and options, so it is keyed like every capture-set set): a
 // fresh page per view, so the jump is compared with fresh loads, never with itself (the key's
 // `pages: 'view'`; a set reached by jumps is refused). A stored set of the commit is reused, else
@@ -51,7 +51,7 @@
 // load's frame: every explicit bake starts from the state before a page's first (Sky.ts `reset`).
 // After each round trip the sky's irradiance must be the page's own bit for bit, and the switch must
 // change it (else the run fails, the readings in the shot's JSON as `ready.retune`).
-// Readiness is capture.mjs's by default (tools/capture-browser.mjs, "Readiness by stability"):
+// Readiness is capture.mjs's by default (tools/kit/capture-browser.mjs, "Readiness by stability"):
 // after the evals the floor's frames and the loading screen gone (waitForScene), a temporal page's
 // rest restarted and converged, then the image grabbed with the loop stopped until two grabs agree
 // (waitForStable, the `--stable-*` options as capture.mjs's; a temporal page is shot on its held
@@ -76,8 +76,8 @@ import { spawn } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { leaseGpuLock, releaseGpuLock } from './gpu-lock.mjs';
-import { waitForScene, waitForSettled, waitForStable, stableOptions, stopLoop } from './capture-browser.mjs';
+import { leaseGpuLock, releaseGpuLock } from './kit/gpu-lock.mjs';
+import { waitForScene, waitForSettled, waitForStable, stableOptions, stopLoop } from './kit/capture-browser.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
 import { selectViews, viewQuery } from './parity/adhoc.mjs';
 
@@ -168,7 +168,7 @@ async function open( q ) {
 
 }
 
-// the view's evals run, then readiness as capture.mjs's by default (tools/capture-browser.mjs): the
+// the view's evals run, then readiness as capture.mjs's by default (tools/kit/capture-browser.mjs): the
 // floor's frames and the loading screen gone, a temporal page's rest restarted and converged, the
 // page's settled signal (the fresh side's capture.mjs waits for it too: stability alone can shoot a
 // jump before the page's last change, such as a pre-exposure read back late), then the image stable
@@ -415,7 +415,7 @@ async function check() {
 	const diffArgs = temporal ? [ '--temporal' ] : [ '--aa-floor' ];
 	const diff = await new Promise( ( resolve ) => {
 
-		const child = spawn( 'uv', [ 'run', '--with', 'numpy', '--with', 'pillow', 'python', path.join( repo, 'tools/parity/diff-set.py' ),
+		const child = spawn( 'uv', [ 'run', '--with', 'numpy', '--with', 'pillow', 'python', path.join( repo, 'tools/kit/diff-set.py' ),
 			refDir, outDir, '--views', listed.join( ',' ), '--out', path.join( outDir, 'diff' ), ...diffArgs ], { cwd: repo, stdio: [ 'ignore', 'pipe', 'pipe' ] } );
 		const chunks = [];
 		child.stdout.on( 'data', ( d ) => chunks.push( d ) );

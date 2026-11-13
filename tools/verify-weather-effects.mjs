@@ -3,13 +3,13 @@
 //   node tools/verify-weather-effects.mjs http://127.0.0.1:5190
 // Parked with the rain (packages/render/sky/Weather.ts PARKED_WEATHER): out of the default checks until the
 // parked weathers are revived; it still runs against a debug build (the dev server or ?debug).
-// Its steps wait for the page's rendered frames (tools/page-eval.mjs, "Rendered frames").
+// Its steps wait for the page's rendered frames (tools/kit/page-eval.mjs, "Rendered frames").
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
-import { acquireGpuLock } from './gpu-lock.mjs';
+import { acquireGpuLock } from './kit/gpu-lock.mjs';
 import { DAY_PRESETS } from '../packages/render/sky/DayCycle.ts';
-import { renderedFrames } from './page-eval.mjs';
+import { renderedFrames } from './kit/page-eval.mjs';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const out = 'artifacts/verification/weather-effects';
@@ -33,7 +33,7 @@ const scenarios = [
 ];
 await mkdir( out, { recursive: true } );
 // shared with other probes (their pixels do not depend on the GPU load), never during a timing
-// run (tools/gpu-lock.mjs; released when the process exits)
+// run (tools/kit/gpu-lock.mjs; released when the process exits)
 await acquireGpuLock( 'verify-weather-effects', { shared: true } );
 const browser = await chromium.launch( {
 	headless: true,
@@ -51,7 +51,7 @@ try {
 	} );
 	page.on( 'response', ( response ) => { if ( response.status() >= 400 ) report.failures.push( `${ response.status() } ${ response.url() }` ); } );
 	page.on( 'requestfailed', ( request ) => report.failures.push( `${ request.failure()?.errorText } ${ request.url() }` ) );
-	// two of the page's rendered frames (tools/page-eval.mjs, "Rendered frames")
+	// two of the page's rendered frames (tools/kit/page-eval.mjs, "Rendered frames")
 	const frames = () => renderedFrames( page, 2 );
 	const load = async ( quality ) => {
 		const url = new URL( base );

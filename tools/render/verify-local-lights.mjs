@@ -7,7 +7,7 @@
 //   node tools/render/verify-local-lights.mjs [seed]
 // The replica mirrors the TSL by hand: a change to the kernel or the lookup changes it too.
 
-import '../qos.mjs';
+import '../kit/qos.mjs';
 import { GRID, PER_CLUSTER, GUARD, slicesFor, sliceStart, sliceAt, sortInView } from '../../packages/render/lighting/LocalLightClusters.ts';
 
 const seed = Number( process.argv[ 2 ] ?? 1 );

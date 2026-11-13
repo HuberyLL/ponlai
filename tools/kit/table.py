@@ -4,7 +4,7 @@
 # ///
 """Several labels' metrics side by side, per crop and metric, with ratios to a base column.
 
-    uv run tools/parity/table.py <metrics.json | label dir>... [--names a,b,...] [--base <name>]
+    uv run tools/kit/table.py <metrics.json | label dir>... [--names a,b,...] [--base <name>]
         [--refs msaa,gt] [--entries glob,...] [--metrics m1,m2] [--crops c1,c2] [--csv out.csv]
 
 Each input is a metrics.json, or a directory holding one (a baseline.mjs label dir

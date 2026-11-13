@@ -2,9 +2,9 @@
 // over the screen of whoever is using the machine. They run only while the user has allowed them:
 // a file under the user's home holds the time the permission ends. Everything else runs headless.
 // announceHeadedRun posts a desktop notification 10 s before a headed window opens.
-//   node tools/display-gate.mjs allow [hours]   (default 8)
-//   node tools/display-gate.mjs deny
-//   node tools/display-gate.mjs status          (exit code 0 when allowed, 1 when not)
+//   node tools/kit/display-gate.mjs allow [hours]   (default 8)
+//   node tools/kit/display-gate.mjs deny
+//   node tools/kit/display-gate.mjs status          (exit code 0 when allowed, 1 when not)
 import { execFile } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -35,7 +35,7 @@ export function requireDisplayAllowed( label = 'a headed run' ) {
 	if ( displayAllowedUntil() ) return;
 	throw new Error( `${ label } would open a window on the user's screen, and headed runs are not allowed now (${ GATE_FILE }). ` +
 		'Use a headless run instead, or record this run as pending in your report: the main session runs pending ' +
-		'display runs together while the user allows them (node tools/display-gate.mjs allow <hours>).' );
+		'display runs together while the user allows them (node tools/kit/display-gate.mjs allow <hours>).' );
 
 }
 

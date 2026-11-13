@@ -5,7 +5,7 @@
 // limit, so between builds on either side of it the paused pages' back-pressure differs, and so may
 // their frame times.
 import { chromium } from 'playwright';
-import { acquireGpuLock } from './gpu-lock.mjs';
+import { acquireGpuLock } from './kit/gpu-lock.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 

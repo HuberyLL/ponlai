@@ -3,7 +3,7 @@
 // sun's elevation and the weather (exposure, skylight, haze, white balance, the grade) go wrong
 // at one hour under one sky, which the few frames a tuning session looks at miss.
 //
-//   node tools/job.mjs start -- node tools/day-sweep.mjs <url> <outDir> [--scope routine|full]
+//   node tools/kit/job.mjs start -- node tools/day-sweep.mjs <url> <outDir> [--scope routine|full]
 //       [--views name,...] [--view name:query]... [--times all|hourly|midday|dense|key|HH:MM,...]
 //       [--weathers name,...] [--compare <earlier outDir>] [--transitions] [--keep-frames]
 //       [--thr-stops 0.3333] [--thr-de 0.03] [--turn-deg 15] [--sky-mask-deg 5]
@@ -12,12 +12,12 @@
 //       [--turn-deg d] [--sky-mask-deg d]
 //
 // A routine run is hundreds of scene jumps and takes as long as several parity sets: start it
-// through tools/job.mjs and wait on it there, never in a shell of its own. <outDir> must be new
+// through tools/kit/job.mjs and wait on it there, never in a shell of its own. <outDir> must be new
 // (or empty): a run into an old one would read the old run's numbers.
 //
 // It only combines the tools that exist: tools/colour-rows.mjs shoots the frames (tools/parity/
 // capture-set.mjs on one warm page, the scene jump from frame to frame, under the shared GPU lock)
-// and reads the sky, the sea and the land of each; tools/img.py sheet and thumb lay them out and
+// and reads the sky, the sea and the land of each; tools/kit/img.py sheet and thumb lay them out and
 // shrink them; tools/island/day-sweep-plot.py draws the curves. `report` runs the second half again on
 // the frames already in <outDir> (new thresholds, a comparison, a sheet that failed).
 //
@@ -153,7 +153,7 @@
 // or a packages/render/sky/Weather.ts without the exports the weathers' names are read from (WEATHER_PRESETS,
 // PARKED_WEATHER). A frame whose region has too few cells
 // is a gap in its curve and a line in gaps.txt, not a failure.
-import './qos.mjs'; // first: the PNG work and the helpers run with the application policy
+import './kit/qos.mjs'; // first: the PNG work and the helpers run with the application policy
 import { spawn, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, linkSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -373,7 +373,7 @@ function probePose( url, size, extra ) {
 	const q = [ 'debug&paused&t=12&quality=high&weather=fair&hour=12', extra ].filter( Boolean ).join( '&' );
 	return new Promise( ( resolve ) => {
 
-		const child = spawn( process.execPath, [ 'tools/gpu-lock.mjs', 'run', '--shared', '--', process.execPath, 'tools/probe.mjs', url, '--q', q,
+		const child = spawn( process.execPath, [ 'tools/kit/gpu-lock.mjs', 'run', '--shared', '--', process.execPath, 'tools/kit/probe.mjs', url, '--q', q,
 			'--w', w, '--h', h, '--scale', s, '--eval', '({ dist: P.camera.position.distanceTo( P.controls.target ), maxPolar: P.controls.maxPolarAngle * 180 / Math.PI })' ],
 		{ cwd: REPO, stdio: [ 'ignore', 'pipe', 'inherit' ] } );
 		children.add( child );
@@ -622,7 +622,7 @@ function uv( args, what, quiet = false ) {
 
 }
 
-const sheet = ( files, labels, cols, width, file, extra = [] ) => uv( [ 'tools/img.py', 'sheet', ...files, '--labels', labels.join( ',' ), '--cols', String( cols ), '--width', String( width ), ...extra, '--out', file ], `sheet ${ path.basename( file ) }` );
+const sheet = ( files, labels, cols, width, file, extra = [] ) => uv( [ 'tools/kit/img.py', 'sheet', ...files, '--labels', labels.join( ',' ), '--cols', String( cols ), '--width', String( width ), ...extra, '--out', file ], `sheet ${ path.basename( file ) }` );
 
 function link( from, to ) {
 
@@ -649,7 +649,7 @@ function thin( plan, out, keep ) {
 	for ( const camera of plan.cameras ) {
 
 		const own = drop.filter( ( f ) => f.camera === camera.name );
-		if ( own.length && ! uv( [ 'tools/img.py', 'thumb', ...own.map( ( f ) => framePng( out, f ) ), '--short', String( THUMB ), '--out', path.join( out, 'frames', camera.name ) ], 'thumbnails', true ) ) return false;
+		if ( own.length && ! uv( [ 'tools/kit/img.py', 'thumb', ...own.map( ( f ) => framePng( out, f ) ), '--short', String( THUMB ), '--out', path.join( out, 'frames', camera.name ) ], 'thumbnails', true ) ) return false;
 
 	}
 	writeFileSync( path.join( out, 'colour', 'thinned.json' ), JSON.stringify( { thumbShortSide: THUMB, kept: [ ...keep ].sort(), thinned: drop.map( ( f ) => f.view ) } ) );
@@ -975,10 +975,10 @@ function compare( plan, doc, cameras, out, earlier, thr, keep ) {
 			}
 			if ( ! full ) for ( const side of [ 'before', 'after' ] ) {
 
-				if ( readdirSync( path.join( dir, `png-${ side }` ) ).length ) uv( [ 'tools/img.py', 'thumb', path.join( dir, `png-${ side }` ), '--short', String( thumbShortSide ), '--out', path.join( dir, side ) ], 'compare thumbnails', true );
+				if ( readdirSync( path.join( dir, `png-${ side }` ) ).length ) uv( [ 'tools/kit/img.py', 'thumb', path.join( dir, `png-${ side }` ), '--short', String( thumbShortSide ), '--out', path.join( dir, side ) ], 'compare thumbnails', true );
 
 			}
-			if ( ! uv( [ 'tools/img.py', 'sheet', path.join( dir, 'before' ), path.join( dir, 'after' ), '--diff', ...( full ? [] : [ '--match', '*.jpg' ] ), '--width', '480', '--out', path.join( out, 'compare', `${ camera }-${ weather }.png` ) ], `compare sheet ${ camera }-${ weather }` ) ) from = 'failed';
+			if ( ! uv( [ 'tools/kit/img.py', 'sheet', path.join( dir, 'before' ), path.join( dir, 'after' ), '--diff', ...( full ? [] : [ '--match', '*.jpg' ] ), '--width', '480', '--out', path.join( out, 'compare', `${ camera }-${ weather }.png` ) ], `compare sheet ${ camera }-${ weather }` ) ) from = 'failed';
 			rmSync( dir, { recursive: true, force: true } );
 
 		} else from = 'no frame pictured on both sides';

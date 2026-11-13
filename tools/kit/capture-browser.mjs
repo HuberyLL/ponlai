@@ -1,4 +1,4 @@
-// The browser and the readiness that tools/capture.mjs and tools/capture-clip.mjs share.
+// The browser and the readiness that tools/kit/capture.mjs and tools/capture-clip.mjs share.
 //
 // Profile slots. Each capture runs in a persistent browser profile instead of a fresh one, so the
 // page's world cache (IndexedDB, packages/island/world/WorldCache.ts) and the browser's GPU shader cache hit
@@ -7,7 +7,7 @@
 // the profiles are slots, `<root>/<browser build>/<n>`, each taken with its own lock: the
 // directory `<n>.lock` (mkdir is atomic) holding owner.json (pid), stale once that process is gone.
 // A capture takes the lowest free slot, so n jobs at once use slots 0..n-1 and keep them warm. The
-// slots are independent of tools/gpu-lock.mjs (taken after it, held only while the browser runs).
+// slots are independent of tools/kit/gpu-lock.mjs (taken after it, held only while the browser runs).
 // - Affinity: a slot is warm for the pages it has served, not for every page (the world cache is per
 //   origin, so per preview port), so the lowest free slot put a page on a cold slot whenever
 //   another job held its warm one, and kept it there the next time too. A caller that names its
@@ -130,7 +130,7 @@
 // meanwhile. Builds without `loop` are shot with the loop running.
 //
 // Importing this module raises the process to the application scheduling policy on macOS
-// (tools/qos.mjs): the PNG decode and frame compare of readiness run in this process while it holds
+// (tools/kit/qos.mjs): the PNG decode and frame compare of readiness run in this process while it holds
 // a GPU slot, and took 5-10x as long at the legacy QoS agent-started processes get on a busy machine.
 import './qos.mjs'; // first: the decode and compare below run with the application policy
 import { chromium } from 'playwright';
@@ -139,9 +139,12 @@ import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } 
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { createHash } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
+import PROJECT from '../project.mjs';
+import { ROOT as REPO } from './root.mjs';
 
-const REPO = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
+// the page's globals and its loading screen, as the project's configuration names them, for the
+// page code below (passed in: a closure run in the page sees nothing of node's scope)
+const PAGE = PROJECT.page;
 
 /** The rendered frames a running capture, or one given --ready-frames, waits for after the evals. */
 export const READY_FRAMES = 60;
@@ -352,15 +355,15 @@ export async function launchCapture( { viewport, deviceScaleFactor = 1, args = L
  * right after the evals. */
 export async function waitForScene( page, { frames = READY_FRAMES, wait = 0, settle = 0, timeout = 60000 } = {} ) {
 
-	const from = await page.evaluate( () => window.__PONLAI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 );
+	const from = await page.evaluate( ( n ) => window[ n.handle ]?.renderer.info.frame ?? window[ n.diagnostics ]?.frame ?? 0, PAGE );
 	if ( wait > 0 ) await page.waitForTimeout( wait );
-	await page.waitForFunction( ( f ) => {
+	await page.waitForFunction( ( { f, n } ) => {
 
-		if ( ( window.__PONLAI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 ) < f ) return false;
-		const loading = document.getElementById( 'loading' );
+		if ( ( window[ n.handle ]?.renderer.info.frame ?? window[ n.diagnostics ]?.frame ?? 0 ) < f ) return false;
+		const loading = document.getElementById( n.loading );
 		return ! loading || getComputedStyle( loading ).opacity === '0';
 
-	}, from + frames, { timeout, polling: 'raf' } );
+	}, { f: from + frames, n: PAGE }, { timeout, polling: 'raf' } );
 	if ( settle > 0 ) await page.waitForTimeout( settle );
 
 }
@@ -530,9 +533,9 @@ export function samePixels( a, b ) {
  * run over, so the signal cannot hold during them. */
 export async function waitForSettled( page, { timeout = 60000 } = {} ) {
 
-	return page.evaluate( async ( timeout ) => {
+	return page.evaluate( async ( { timeout, n } ) => {
 
-		const s = window.__PONLAI__, diag = () => window.__THREE_GAME_DIAGNOSTICS__;
+		const s = window[ n.handle ], diag = () => window[ n.diagnostics ];
 		if ( typeof diag()?.settled !== 'boolean' || diag().taa?.restTarget === 0 ) return { signal: false };
 		s.loop?.start();
 		const from = s.renderer.info.frame, start = performance.now();
@@ -557,7 +560,7 @@ export async function waitForSettled( page, { timeout = 60000 } = {} ) {
 		} );
 		return { settled, framesWaited: s.renderer.info.frame - from, wallMs: Math.round( performance.now() - start ), ...( settled ? {} : { settle: diag().settle } ) };
 
-	}, timeout );
+	}, { timeout, n: PAGE } );
 
 }
 
@@ -569,12 +572,12 @@ export async function waitForStable( page, { every = STABLE.every, repeats = STA
 	patience = STABLE.patience, cap = STABLE.cap, trace = false, timeout = 60000 } = {} ) {
 
 	// a paused page of the temporal modes shows its rest image once converged: no comparisons
-	const temporal = await page.evaluate( () => {
+	const temporal = await page.evaluate( ( n ) => {
 
-		const t = window.__THREE_GAME_DIAGNOSTICS__?.taa;
-		return !! ( t && t.restTarget > 0 && window.__PONLAI__.taa );
+		const t = window[ n.diagnostics ]?.taa;
+		return !! ( t && t.restTarget > 0 && window[ n.handle ].taa );
 
-	} );
+	}, PAGE );
 	if ( temporal ) return waitForRest( page, { timeout } );
 	const shooter = await pngShooter( page, { timeout } );
 	const ms = { cycle: 0, grab: 0, decode: 0, compare: 0 };
@@ -603,9 +606,9 @@ export async function waitForStable( page, { every = STABLE.every, repeats = STA
 
 	};
 	// the loop runs `every` frames, then stops with the GPU queue drained; returns the frame count
-	const advance = ( every ) => page.evaluate( async ( { every, timeout } ) => {
+	const advance = ( every ) => page.evaluate( async ( { every, timeout, handle } ) => {
 
-		const s = window.__PONLAI__, frameNow = () => s.renderer.info.frame;
+		const s = window[ handle ], frameNow = () => s.renderer.info.frame;
 		const target = frameNow() + every, deadline = performance.now() + timeout;
 		s.loop.start();
 		await new Promise( ( resolve, reject ) => {
@@ -623,17 +626,17 @@ export async function waitForStable( page, { every = STABLE.every, repeats = STA
 		await s.loop.stop();
 		return frameNow();
 
-	}, { every, timeout } );
+	}, { every, timeout, handle: PAGE.handle } );
 	try {
 
 		const start = performance.now();
-		const first = await page.evaluate( async () => {
+		const first = await page.evaluate( async ( handle ) => {
 
-			const s = window.__PONLAI__;
+			const s = window[ handle ];
 			await s.loop.stop();
 			return s.renderer.info.frame;
 
-		} );
+		}, PAGE.handle );
 		let previous = await grab();
 		const history = [];
 		let inExact = 0, inTolerance = 0, status = null, maxSeen = 0, waited = 0;
@@ -691,9 +694,9 @@ export async function waitForStable( page, { every = STABLE.every, repeats = STA
 export async function waitForRest( page, { timeout = 60000 } = {} ) {
 
 	const start = performance.now();
-	const record = await page.evaluate( async ( timeout ) => {
+	const record = await page.evaluate( async ( { timeout, n } ) => {
 
-		const s = window.__PONLAI__, diag = () => window.__THREE_GAME_DIAGNOSTICS__.taa;
+		const s = window[ n.handle ], diag = () => window[ n.diagnostics ].taa;
 		const converged = () => diag().converged && diag().restEpoch === s.taa.epoch.value;
 		const from = s.renderer.info.frame, deadline = performance.now() + timeout;
 		await new Promise( ( resolve, reject ) => {
@@ -712,7 +715,7 @@ export async function waitForRest( page, { timeout = 60000 } = {} ) {
 		return { framesWaited: s.renderer.info.frame - from, restEpoch: s.taa.epoch.value, restTarget: diag().restTarget,
 			restCompleted: s.taa.rest.completed, restRestarts: s.taa.rest.restarts };
 
-	}, timeout );
+	}, { timeout, n: PAGE } );
 	return { rule: 'rest', status: 'converged', temporal: true, ...record, wallMs: Math.round( performance.now() - start ) };
 
 }
@@ -721,20 +724,20 @@ export async function waitForRest( page, { timeout = 60000 } = {} ) {
  * the build has no `loop`. */
 export function stopLoop( page ) {
 
-	return page.evaluate( async () => {
+	return page.evaluate( async ( handle ) => {
 
-		const loop = window.__PONLAI__?.loop;
+		const loop = window[ handle ]?.loop;
 		if ( ! loop ) return false;
 		await loop.stop();
 		return true;
 
-	} );
+	}, PAGE.handle );
 
 }
 
 /** Starts the frame loop again after stopLoop. */
 export function startLoop( page ) {
 
-	return page.evaluate( () => window.__PONLAI__?.loop?.start() );
+	return page.evaluate( ( handle ) => window[ handle ]?.loop?.start(), PAGE.handle );
 
 }

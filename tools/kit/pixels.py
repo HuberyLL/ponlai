@@ -1,5 +1,5 @@
-"""Pixel helpers shared by the image tools: tools/img.py, tools/parity/diff-set.py and
-tools/compare-captures.py import them, so a number means the same in each.
+"""Pixel helpers shared by the image tools: tools/kit/img.py, tools/kit/diff-set.py and
+tools/kit/compare-captures.py import them, so a number means the same in each.
 
 All images are uint8 H x W x 3 RGB arrays (decoded once, never converted to float for a
 difference). Every mean of a difference is an exact integer sum divided once, so it does not depend

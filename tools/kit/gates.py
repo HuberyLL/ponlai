@@ -4,7 +4,7 @@
 # ///
 """Gate verdicts of one baseline.mjs label, regrouped per gate id, with a task's decisions applied.
 
-    uv run tools/parity/gates.py <metrics.json> --thresholds thresholds.json [--policy policy.json]
+    uv run tools/kit/gates.py <metrics.json> --thresholds thresholds.json [--policy policy.json]
         [--normal] [--md out.md] [--json out.json] [--title text]
 
 <metrics.json> is a label's `<root>/<sha>/<label>/metrics.json` measured with --thresholds
@@ -71,12 +71,17 @@ import subprocess
 import sys
 
 HERE = os.path.dirname( os.path.abspath( __file__ ) )
+ROOT = os.path.dirname( os.path.dirname( HERE ) )
+# where the project's configuration says the views' and clips' tables are (its `tables`)
+TABLE_OF = "const p = ( await import( process.argv[ 1 ] ) ).default; console.log( p.tables[ process.argv[ 2 ] ] )"
 
 
-def node_list( module, group ):
+def node_list( table, group ):
 
-	# the groups live in views.mjs and clips.mjs alone, so ask them rather than keep a copy here
-	out = subprocess.run( [ 'node', os.path.join( HERE, module ), 'list', group ], capture_output=True, text=True, check=True ).stdout
+	# the groups live in the views' and clips' tables alone, so ask them rather than keep a copy here
+	config = os.path.join( os.path.dirname( HERE ), 'project.mjs' )
+	module = subprocess.run( [ 'node', '--input-type=module', '-e', TABLE_OF, config, table ], capture_output=True, text=True, check=True ).stdout.strip()
+	out = subprocess.run( [ 'node', os.path.join( ROOT, module ), 'list', group ], capture_output=True, text=True, check=True ).stdout
 	return { line.strip() for line in out.splitlines() if line.strip() }
 
 
@@ -222,8 +227,8 @@ def main():
 		unknown = set( policy ) - { 'about', 'informational', 'judge' }
 		if unknown:
 			raise ValueError( f'policy: unknown key { ", ".join( sorted( unknown ) ) }' )
-		special_views = node_list( 'views.mjs', 'special' ) if a.normal else set()
-		special_clips = node_list( 'clips.mjs', 'special' ) if a.normal else set()
+		special_views = node_list( 'views', 'special' ) if a.normal else set()
+		special_clips = node_list( 'clips', 'special' ) if a.normal else set()
 		items = collect( M, T, policy, special_views, special_clips )
 	except ( OSError, ValueError, KeyError, subprocess.CalledProcessError ) as error:
 		print( f'gates.py: { error }', file=sys.stderr )
