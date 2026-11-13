@@ -1186,6 +1186,59 @@ What WGSL a TSL kernel, pass or material compiles to, which bindings and uniform
 declares, and whether one exceeds WebGPU's default limits, without a GPU: `tools/wgsl-build.mjs`
 with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script of one's own.
 
+## Code lint
+
+`npm run lint` runs ESLint over `packages/` and `app/` with the project's own rules and nothing
+else: no recommended sets and no style rules (the code style is three.js's and is not linted). It
+takes a few seconds, reads the code with type information (typescript-eslint's project service over
+`tsconfig.json`) and is one of the checks every commit passes (`tools/check.mjs`). The config is
+`eslint.config.mjs`, the rules are in `tools/lint/plugin.mjs`, and each rule's message says what is
+wrong, what to write instead and which file explains why.
+
+| Rule | Reports | Where |
+| --- | --- | --- |
+| `ponlai/tsl-method-order` | TSL's `.mix`, `.step` and `.smoothstep` method forms, which take their receiver out of order (a call whose receiver is typed as a TSL node or is untyped) | all code |
+| `ponlai/tsl-only` | shader code in strings: `wgslFn`, `glslFn`, `nativeFn`, `wgsl`, `glsl`, `js`, `code`, `CodeNode`, `FunctionNode` | all code |
+| `ponlai/history-on-graph` | `copyTextureToTexture` outside a pass added with `addPass` | all code but `packages/render/post/graph/` and `packages/render/three/` |
+| `ponlai/pass-on-graph` | `rtt()` and `convertToTexture()` | all code |
+| `ponlai/chunk-normals` | `computeVertexNormals` | `packages/island/world/` |
+| `ponlai/no-dynamic-draw` | `DynamicDrawUsage` | all code |
+| `ponlai/timestamp-owner` | `trackTimestamp` and three's timestamp pools (`timestampPools`, `takeTimestamps`, `resolveTimestamps`, `resolveTimestampsAsync`) | all code but `DynamicResolution.ts`, `debug/FrameProfiler.ts` and `packages/render/three/` |
+| `ponlai/scene-clock` | the wall clock: `performance.now()`, `Date.now()`, `new Date()`, `Date()` | all code but the debug folders, `app/Diagnostics.ts`, `packages/game/GameDebug.ts` and `app/QualityDetect.ts` |
+| `ponlai/vegetation-tag` | reading `alphaToCoverage` (setting it is fine) | all code |
+
+An exception is a comment on the line above the one it excepts, naming the rule and a reason a
+reader can check:
+
+```ts
+// eslint-disable-next-line ponlai/scene-clock -- the time budget of one slice of the growth's work
+const start = performance.now();
+```
+
+A file at its line limit (`verify-file-size`) takes the same comment at the end of the line, as
+`// eslint-disable-line ponlai/<rule> -- <reason>`, so the exception adds no line. A real violation
+that cannot be fixed yet is excepted the same way, its reason starting with `known violation:`. A
+disable comment that no longer suppresses anything is an error, so the exceptions stay true. For
+`ponlai/scene-clock`, a reading that only measures how long something took, budgets a slice of work
+or times out a wait is an exception; one that decides what the scene shows is a violation.
+
+To add a rule:
+
+1. Write it in `tools/lint/plugin.mjs`: a few AST selectors through `selectorRule`, or a rule of its
+   own when it needs the receiver's type, an ancestor or whether a member is read or written. Its
+   message says what to write instead and names the file that explains why.
+2. Turn it on in `eslint.config.mjs` in a block of its own whose `files` and `ignores` are the
+   folders it concerns, each exclusion with its reason in a comment.
+3. Add its fixture, `tools/lint/fixtures/<rule>.ts`: the wrong forms, each line marked
+   `// reported`, beside the right forms the rule must leave alone. A rule scoped to one folder
+   names the path its fixture is linted from in `FIXTURE_PATHS` in `tools/verify-lint.mjs`.
+4. Run `npm run lint` and go through every hit: fix it, narrow the scope or write the exception.
+
+`node tools/verify-lint.mjs` (no options, a few seconds, also in `tools/check.mjs`) lints each
+fixture as if it were a file inside its rule's scope and fails unless the rule reports exactly the
+marked lines, with no other rule and no parse error, and unless every rule has a fixture. The
+fixtures are left out of `npm run lint`.
+
 ## Docs checks
 
 `npm run lint:docs` checks the Markdown files' format with markdownlint-cli2 (a dev dependency;
@@ -1437,10 +1490,11 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   `tools/**/*.mjs` (its header says which literals count). A usage a tool needs is declared in
   `packages/render/Settings.ts`, not changed in the tool. Run it after adding or changing an option.
 - `tools/check.mjs` (`npm run check [-- --full]`) runs the checks every commit passes, one after
-  another: the type check, `verify-layers`, `verify-exits`, `verify-settings`, `verify-file-size`,
-  `verify-three-internals`, `verify-no-binaries`, `verify-game`, `verify-i18n`, `verify-ink`,
-  `verify-framegraph`, `verify-day-cycle`, `verify-weather-state`, `verify-wind`,
-  `verify-local-lights`, `verify-extensions` and `verify-look-params`, then
+  another: the type check, the code lint (`npm run lint`, Code lint), `verify-layers`,
+  `verify-exits`, `verify-settings`, `verify-file-size`, `verify-three-internals`,
+  `verify-no-binaries`, `verify-game`, `verify-i18n`, `verify-ink`, `verify-framegraph`,
+  `verify-day-cycle`, `verify-weather-state`, `verify-wind`, `verify-local-lights`,
+  `verify-extensions`, `verify-look-params` and `verify-lint`, then
   `npm run lint:docs` when a Markdown file is staged. `--full` adds `npm run build` and
   `verify-world-chunks.mjs` and always runs the docs' lint. Every check runs even after one failed;
   it ends with each check's result and time, and exits 1 when any failed. None of them renders or

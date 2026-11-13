@@ -8,12 +8,14 @@ change.
 
 ## Run the checks every commit passes
 
-1. Run `npm run check` before every commit. It runs the type check and the checks that need no
-   GPU (the layers' imports and the packages' exits, the settings against their docs, the files'
-   size, the three.js internals, no binary in git, the CPU regression tools with the renderer's
-   extension points, and the docs' lint when a Markdown file is staged), in about a quarter of a
-   minute, and ends with a list of what passed and failed and how long each took. It checks the
-   files in the working tree, not what is staged: a change left unstaged is checked too.
+1. Run `npm run check` before every commit. It runs the type check, the code lint
+   (`npm run lint`: the project's mechanical rules as ESLint rules, `docs/reference/tools.md`, Code
+   lint) and the checks that need no GPU (the layers' imports and the packages' exits, the
+   settings against their docs, the files' size, the three.js internals, no binary in git, the CPU
+   regression tools with the renderer's extension points and the lint's own fixtures, and the
+   docs' lint when a Markdown file is staged), in about a quarter of a minute, and ends with a
+   list of what passed and failed and how long each took. It checks the files in the working
+   tree, not what is staged: a change left unstaged is checked too.
 2. Fix every check it lists as failed, then run it again. A check that fails on a list of known
    cases (the layers' upward imports, the files over the size limit, the code that reaches into
    three's internals) is fixed in the code, never by adding to its list.

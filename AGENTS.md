@@ -43,10 +43,13 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
 - TypeScript (strict), Vite, three.js `WebGPURenderer` (`three/webgpu`, `three/tsl`). WebGPU is
   required (the ocean FFT runs on compute shaders); without it the page shows a message.
 - `npm run dev` (port 5190), `npm run build` (type-checks, then bundles), `npm run typecheck`,
-  `npm run preview` (port 5191). `npm run check` runs the checks every commit passes (the type
-  check, the layers, the exits, the settings, the file sizes, three's internals and the CPU
-  regression tools; `-- --full` adds the build and the world's chunks), in a few seconds and
-  without a GPU (`docs/how-to/check-a-change.md`). URL options: `docs/reference/url-options.md`;
+  `npm run preview` (port 5191). `npm run lint` checks the project's mechanical rules (TSL's
+  method forms, no shader strings, the frame graph's passes and history, chunk normals, buffer
+  usage, the timestamps' owner, the scene clock, the vegetation's tag) with ESLint
+  (`docs/reference/tools.md`, Code lint). `npm run check` runs the checks every commit passes
+  (the type check, the code lint, the layers, the exits, the settings, the file sizes, three's
+  internals and the CPU regression tools; `-- --full` adds the build and the world's chunks), in
+  a few seconds and without a GPU (`docs/how-to/check-a-change.md`). URL options: `docs/reference/url-options.md`;
   in-page keys: `docs/reference/tools.md`, Page.
 - The tools are in `tools/`, their manual in `docs/reference/tools.md` (Which tool for which
   question). The ones most changes meet:
