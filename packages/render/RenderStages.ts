@@ -40,6 +40,7 @@ import { createExposure, type ExposureTables } from './look/ExposureLook.ts';
 import { createDayWindows, type DayWindowTable } from './look/DayLook.ts';
 import { createAmbientTables, createKeyLift } from './look/AmbientLook.ts';
 import { createHazeTables, type HazeTables } from './look/HazeLook.ts';
+import { createSkyTables } from './look/SkyLook.ts';
 import { createDisplayTables } from './look/DisplayLook.ts';
 import type { Look } from './look/Look.ts';
 import { DAY_PRESETS, type DayPreset, DayCycle, sunRising, duskForce, nightAmbientShare } from './sky/DayCycle.ts';
@@ -373,14 +374,15 @@ export function createScenes( render: RenderParts, { viewport, dpr }: { viewport
 /**
  * The scene the page loads (`sceneOptions`), the sky, the day and the weather, the wind, the rain
  * and the sky's quality knobs. `seaFog` and `dayFog` start the deep sea fog and the day's fog layer
- * on. `look`: the look's tables the exposure, the day's windows and the low key's lift are made
- * from (look/ExposureLook.ts `createExposure`, look/DayLook.ts `createDayWindows`,
- * look/AmbientLook.ts `createKeyLift`), which the sky carries to the day, the grade, the frame's
- * passes, the night's readers and the key's lifted direction (`sky.exposure`, `sky.dayWindows`,
- * `sky.keyLift`), and the haze's (look/HazeLook.ts `createHazeTables`), which the haze's key reads
+ * on. `look`: the look's tables the exposure, the day's windows, the low key's lift and the sky's
+ * tables are made from (look/ExposureLook.ts `createExposure`, look/DayLook.ts `createDayWindows`,
+ * look/AmbientLook.ts `createKeyLift`, look/SkyLook.ts `createSkyTables`), which the sky carries to
+ * the day, the grade, the frame's passes, the night's readers, the key's lifted direction and its
+ * own state, bakes and the haze's key (`sky.exposure`, `sky.dayWindows`, `sky.keyLift`,
+ * `sky.look`), and the haze's (look/HazeLook.ts `createHazeTables`), which the haze's key reads
  * by the hour and the weather (`createEnvironment`'s `prepareHaze`).
  */
-export function createSky( render: RenderParts, { scene: loaded, seaFog, dayFog, look }: { scene: SceneOptions; seaFog: boolean; dayFog: boolean; look: ExposureTables & { day: DayWindowTable } & Pick<Look, 'ambient' | 'haze'> } ) {
+export function createSky( render: RenderParts, { scene: loaded, seaFog, dayFog, look }: { scene: SceneOptions; seaFog: boolean; dayFog: boolean; look: ExposureTables & { day: DayWindowTable } & Pick<Look, 'ambient' | 'haze' | 'sky'> } ) {
 
 	const { quality, renderer } = render;
 
@@ -389,7 +391,7 @@ export function createSky( render: RenderParts, { scene: loaded, seaFog, dayFog,
 	const exposure = createExposure( look );
 	const dayWindows = createDayWindows( look.day );
 	const keyLift = createKeyLift( look.ambient.keyLift );
-	const sky = new Sky( renderer, { exposure, dayWindows, keyLift, elevation: 32, azimuth: - 8 } );
+	const sky = new Sky( renderer, { exposure, dayWindows, keyLift, look: createSkyTables( look.sky ), elevation: 32, azimuth: - 8 } );
 	render.sky = sky;
 	sky.setEnvironmentSource( quality.environmentSource );
 	staged( render ).loaded = loaded;
@@ -574,7 +576,7 @@ export function createEnvironment( render: RenderParts ) {
 		// (weather/HazeKeys.ts `hazeKeyAt`)
 		const progress = weather.progress, blend = progress * progress * ( 3 - 2 * progress );
 		const fogWeather = ( weather.origin === 'fog' ? 1 - blend : 0 ) + ( weather.target === 'fog' ? blend : 0 );
-		hazeKeyAt( stage.hazeTables, sky.dayWindows, sky.elevation, rising, weather.skyMix, sky.weather.windSpeed, sky.weather.rain, dayFogView.on ? 1 : 0, seaFogView.on ? 1 : 0, fogWeather, render.hazeKey );
+		hazeKeyAt( stage.hazeTables, sky.dayWindows, sky.look, sky.elevation, rising, weather.skyMix, sky.weather.windSpeed, sky.weather.rain, dayFogView.on ? 1 : 0, seaFogView.on ? 1 : 0, fogWeather, render.hazeKey );
 		render.pipeline.air.haze.value = sky.weather.haze * render.hazeKey.amount;
 		render.pipeline.air.fog.value = Math.max( sky.weather.fog, render.hazeKey.mist );
 		render.pipeline.air.setLook( render.hazeKey );
@@ -606,7 +608,7 @@ export function createEnvironment( render: RenderParts ) {
 	function publishLighting(): void {
 
 		// three's sun: the direct key, the sky's, which the clouds' shadow cuts per point over the land's
-		// floor, the share of the key a cloud passes on (Sky.ts `keyDirectVisibility`, KEY_THROUGH_CLOUD); the
+		// floor, the share of the key a cloud passes on (Sky.ts `keyDirectVisibility`, `look.keyThroughCloud`); the
 		// land's key (shared.landKey) and the sea's (shared.sunColor): both the sky's key, the sea's cut
 		// by the clouds' own transmittance over the land's floor (Sky.ts `seaKeyVisibility`,
 		// lighting/KeyCloud.ts)

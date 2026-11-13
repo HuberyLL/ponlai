@@ -1,7 +1,6 @@
 // CPU-only transition contracts; Node's native TypeScript stripping needs no browser/GPU.
 // Run: node --experimental-strip-types tools/verify-weather-state.mjs
 import assert from 'node:assert/strict';
-import './island-look.mjs';
 import { Weather, WEATHER_PRESETS, WIND_LEVELS, PREVAILING_HEADING, PARKED_WEATHER, daySkyAt, deckRamp, deckSkyGain, deckSkyGap, overcastDeckLight, withMoon } from '../packages/render/sky/Weather.ts';
 import { moonKeyShare } from '../packages/render/sky/DayCycle.ts';
 import { createDayWindows } from '../packages/render/look/DayLook.ts';

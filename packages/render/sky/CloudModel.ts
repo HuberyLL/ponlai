@@ -33,13 +33,13 @@ type V4 = THREE.Node<'vec4'>;
 
 export const EARTH_RADIUS = 6_360_000;
 // The high shell's base and thickness (m), the clear and fair skies' cumulus. The shell the march
-// reads is `shellBottom` and `shellThickness`, blended by the sky's shares (look/SkyLook.ts CLOUD_SKIES), so
+// reads is `shellBottom` and `shellThickness`, blended by the sky's shares (look/SkyLook.ts `cloudSkies`), so
 // cloudy's and overcast's layers stand lower (`setShell`).
 export const SHELL_BOTTOM = 4000, SHELL_THICKNESS = 5200;
 // What the panorama stores is the radiance times a power of two that follows the clouds' light
 // and the weather's skies (`storeStops`, set by SkyTrack.ts trackClouds: 2^11 at noon, 2^16 to 2^20 on
 // a moonlit night, by how far the weather's clouds spread the night's range; PreExposure.ts
-// `storeStops`, look/SkyLook.ts STORE_RANGE): unscaled, a clear midnight's panorama has its first
+// `storeStops`, look/SkyLook.ts `storeRange`): unscaled, a clear midnight's panorama has its first
 // percentile near 2^-21 (2^-16 over the texels at least a tenth covered), under half float's 2^-14, where its steps are wide enough to show as dark flecks
 // once exposed, and no one fixed scale keeps a cloudy noon's brightest and a darker night's
 // thinnest both in range. A power of two, so what lay in range keeps its bits. The panorama is
@@ -51,7 +51,7 @@ export const SHELL_BOTTOM = 4000, SHELL_THICKNESS = 5200;
 // size, since a half-float texture cannot be read and written in one dispatch): marching every
 // phase again there doubled a cloudy frame's GPU time. A power of two scales a half float exactly
 // where it lies in range, and the power keeps the texels a margin clear of the subnormals and of
-// the ceiling (look/SkyLook.ts STORE_RANGE); a texel outside it carries its old rounding until its phase
+// the ceiling (look/SkyLook.ts `storeRange`); a texel outside it carries its old rounding until its phase
 // comes round. The progressive refresh already keeps texels written frames apart, so this adds
 // no history of its own: once every phase has come round after a change, the panorama equals the
 // whole rewrite's bit for bit (measured through a cloudy dusk), a jump writes it whole

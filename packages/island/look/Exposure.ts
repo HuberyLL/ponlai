@@ -10,7 +10,7 @@ import type { ExposureKey, ExposureLook, SharingKey } from '../../render/setup.t
 // dawn (held from -2 degrees down) and its golden hour (3), a clouded day's (-1, 0, 3, 6 and 12)
 // and the night. They are set against the exposed white of a diffuser under
 // the sun's direct light alone (by night the shaded one), seen toward and away from the sun, with
-// the sky's light as look/SkyLook.ts SKY_LIGHT and CLEAR_SKY set it, together with the haze and the grading.
+// the sky's light as look/SkyLook.ts `skyLight` and `clearSky` set it, together with the haze and the grading.
 // The day's κ follow the sea's share of the meter (ocean/Water.ts): the sea is metered as a share
 // of what a white card laid level at its point would meter, so a frame's sea no longer moves its
 // meter up under a clear sky and down under a closed deck. Each key was lowered in steps on the

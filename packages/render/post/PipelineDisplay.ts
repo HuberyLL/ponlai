@@ -129,7 +129,7 @@ const coolShare = Fn( ( [ c, coolFrom, coolTo ]: [ V3, F, F ] ) => {
 // meadow's yellow-green albedo kept it a dark olive under them, and a light blue enough to turn it
 // turned the stone, sand and skin blue too. 0.4 radians takes the meadow to about 143 degrees, a
 // cool green toward blue-green (0.65 read as teal). The tint is drawn toward at `tint` and keeps
-// the luminance. The shade's readability is the sky light's (look/SkyLook.ts CLEAR_SHADE), not a lift.
+// the luminance. The shade's readability is the sky light's (look/SkyLook.ts `clearShade`), not a lift.
 // Off by default with the clear shade, as the night keeps the moon's own light (`flags=filmNight:true`
 // at load for A/Bs).
 export const NIGHT = debugFlags.filmNight === true ? { greenTurn: 0.4, tint: [ 0.84, 0.96, 1.16 ] as const, amount: 0.3, bloom: 1.5 } : { greenTurn: 0, tint: [ 0.84, 0.96, 1.16 ] as const, amount: 0, bloom: 0 };

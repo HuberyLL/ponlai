@@ -114,7 +114,7 @@ export const DISPLAY: DisplayLook = {
 	// neutral toward cool, the sun's warmth on the lit ground held back: furthest at a sun of 9 degrees
 	// (red half of green, blue 1.36), which keeps the low sun's rock and meadow, and less by 40 degrees
 	// (red 0.59, blue 1.25, the `high` key), where the stronger cast would turn sunlit rock blue. The
-	// high key moves with the sky's (look/SkyLook.ts SKY_LIGHT), which takes the inverse, so the sky holds its
+	// high key moves with the sky's (look/SkyLook.ts `skyLight`), which takes the inverse, so the sky holds its
 	// colour. The golden hour warms a little further (red 1.05, blue 0.9); the clouded skies take a cool
 	// white too (red 0.78, blue 1.16), their grey light kept from reading warm. Overcast takes a cooler
 	// white of its own (red 0.49, blue 1.14, `whiteOvercast`): under the clouded key its slightly warm
@@ -129,7 +129,7 @@ export const DISPLAY: DisplayLook = {
 	// views): all that the sun does not reach at dawn is blue, sky, water and rock alike, and a face turned
 	// to the sun takes a pale warm colour, far less orange than the same face at the same height in
 	// the evening. It is what moves the rose band over the horizon, which the sky's own light
-	// (look/SkyLook.ts SKY_LIGHT, its `dawn` key) cannot reach. The sides are one from the `day` key up.
+	// (look/SkyLook.ts `skyLight`, its `dawn` key) cannot reach. The sides are one from the `day` key up.
 	// Tunable on debug pages (debug/Tune.ts): `post.white.<r|g|b>@golden`, `@dawn`, `@day`, `@high`,
 	// `@cloudy`, `@overcast`, `@night`.
 	whiteBalance: {

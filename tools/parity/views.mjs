@@ -28,7 +28,6 @@
 //   node views.mjs crops <name>            -> the view's anchor names, comma-separated
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import '../island-look.mjs';
 import { eveningHour, morningHour } from '../../packages/render/sky/DayCycle.ts';
 
 // the hour, for a query, at which the morning's or the evening's sun stands `elevation` degrees up

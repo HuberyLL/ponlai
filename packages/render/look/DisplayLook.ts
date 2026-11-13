@@ -11,12 +11,11 @@ import type { BloomKey, DesaturationKey, DisplayLook, Rgb } from './Look.ts';
 // grade, the bloom's keys and the rods' colour at night (`createDisplayTables`). Like the exposure
 // (look/ExposureLook.ts), they are taken as an argument where the renderer's stage creates them
 // (RenderStages.ts `createSeaAndPipeline`, which hands them to the frame's passes: post/Pipeline.ts
-// `look`), not from the installed look as a module loads, so two made from two tables hold their
-// own numbers (tools/verify-look-params.mjs) and this module holds none at module level.
-// post/PipelineDisplay.ts builds the display chain's shader from them, post/Pipeline.ts
-// `updateDisplay` keys them by the sun and the weather each frame, and the methods that read them
-// are their modules' (post/ToneCurve.ts, post/GradeLut.ts, post/PhysicalBloom.ts,
-// post/Purkinje.ts).
+// `look`), so two made from two tables hold their own numbers (tools/verify-look-params.mjs) and
+// this module holds none at module level. post/PipelineDisplay.ts builds the display chain's shader
+// from them, post/Pipeline.ts `updateDisplay` keys them by the sun and the weather each frame, and
+// the methods that read them are their modules' (post/ToneCurve.ts, post/GradeLut.ts,
+// post/PhysicalBloom.ts, post/Purkinje.ts).
 // - The tables register their tunables (debug/Tune.ts) as they are created, under the names they
 //   always had (`post.shade.*`, `post.desaturate.*`, `post.white.*`, `post.bloom.*`,
 //   `post.purkinje.strength@night`); the cool share's edges and overcast's highlights register where

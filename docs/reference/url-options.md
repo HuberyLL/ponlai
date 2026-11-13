@@ -313,7 +313,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `daySkyAt`), how much of the sunlight a cloud passes down the land under it keeps as a light along
   the sun, under every sky `lighting.keyThroughCloud` (0 to 4: higher gives a stronger light from
   the sun's side and darker cast shadows under cloud, `packages/render/look/SkyLook.ts`
-  KEY_THROUGH_CLOUD), and the land's share of the sky's light `lighting.relight.skyGain@high`
+  `keyThroughCloud`), and the land's share of the sky's light `lighting.relight.skyGain@high`
   (`@low`, `@golden`, the rising sun's `@dawn`, `@sunrise`, `@cloudy`, `@cloudyBlue`, `@night`; the
   moon's sky's own `lighting.relight.moon.skyGain@low` and `@high`, its golden and cloudy keys the
   day's), the sun's part of the weather's gain under overcast's deck on the land's ambient light,
@@ -324,7 +324,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   sun's lift of the sky's light on what it lights `lighting.relight.lowSun` (stops; `lowSunFloor`,
   `lowSunFloorFull`, `lowSunFrom`, `lowSunTo` its sun heights:
   `packages/render/lighting/AmbientRelight.ts`), the clouds' model per sky of the weather's blend
-  (`clear`, `fair`, `cloudy`, `overcast`: `packages/render/look/SkyLook.ts` CLOUD_SKIES), the
+  (`clear`, `fair`, `cloudy`, `overcast`: `packages/render/look/SkyLook.ts` `cloudSkies`), the
   shell's base and top (m), the cloud type (0 a stratus, 1 a cumulus), how far it varies from place
   to place and how far the clouds thin with distance `sky.clouds.base@<sky>`,
   `sky.clouds.top@<sky>`, `sky.clouds.type@<sky>`, `sky.clouds.spread@<sky>`,
@@ -358,9 +358,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `tools/dusk-grid.mjs` sets and reads them).
 - `renderLook=neutral` (debug pages only) loads the renderer with its neutral look in place of the
   island's (`packages/render/look/NeutralLook.ts`: gains of 1, no grade, no vignette, no bloom,
-  clean air, one exposure key all day, nothing done for the night), the look it draws with where
-  nobody installed one (`packages/render/look/Look.ts`). The tunables then start from the neutral
-  numbers. It shows what the renderer does without the island's numbers; it is no picture to judge.
+  clean air, one exposure key all day, nothing done for the night). The tunables then start from the
+  neutral numbers. It shows what the renderer does without the island's numbers; it is no picture to
+  judge.
   Off a debug page the island's look loads whatever the option says. The test scenes' page draws
   with the neutral look by itself, and takes the island's with `renderLook=ponlai` (The test
   scenes).

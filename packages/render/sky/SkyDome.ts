@@ -67,7 +67,7 @@ const seaPanorama = Fn( ( [ d, clearSky, sea ]: [ V3, V3, V3 ] ) => {
 	{ name: 'd', type: 'vec3' }, { name: 'clearSky', type: 'vec3' }, { name: 'sea', type: 'vec3' },
 ] } );
 
-// A sky radiance or irradiance as lent to the island (ISLAND_SKY): drawn toward `tint.rgb` at its
+// A sky radiance or irradiance as lent to the island (`look.islandSky`): drawn toward `tint.rgb` at its
 // own luminance by `tint.w`, times `gain`. Linear in the light, so the graded probe's integral is
 // the integral of the graded panorama.
 export const lendIsland = Fn( ( [ light, tint, gain ]: [ V3, V4, F ] ) => {
@@ -117,7 +117,7 @@ const deckPattern = Fn( ( [ d, local, deck, flat ]: [ V3, V3, V3, F ] ) => {
 
 } ).setLayout( { name: 'deckPattern', type: 'float', inputs: [ { name: 'd', type: 'vec3' }, { name: 'local', type: 'vec3' }, { name: 'deck', type: 'vec3' }, { name: 'flat', type: 'float' } ] } );
 
-/** The distant sea's body as the bake lights it (SEA_KNEE): the light that reaches the sea, the
+/** The distant sea's body as the bake lights it (`look.seaKnee`): the light that reaches the sea, the
  * deck irradiance of this bake (drawn before its panoramas) and the sun's on the level water, over
  * the knee and at most 1, times the colour; `landSea` is its CPU twin. At the knee and above it is
  * `seaBody` itself, bit for bit. */
@@ -139,7 +139,7 @@ export function bakeColour( sky: Sky, haze?: SkyHaze ): V4 {
 		const d = equirectToDir( q ).toVar();
 		const cloud = sky.layerAt( vec2( q.x, abs( q.y.sub( 0.5 ) ).mul( 2 ) ) ).toVar();
 		const up = vec3( d.x, abs( d.y ), d.z );
-		// (the environment's source takes the light lent to the island: ISLAND_SKY; the haze as the
+		// (the environment's source takes the light lent to the island: `look.islandSky`; the haze as the
 		// dome lays it, from the sea's level: see `fogEnvironment`)
 		const clear = sky.gapSky( up ).toVar();
 		// the closed deck's glow over the clouds, whole in the seen panorama, about the sun alone in

@@ -618,8 +618,8 @@ full-screen passes as a NodeMaterial, draws as `{ material, object, scene, camer
 the pass's MRT a scene material draws into), in the order
 the page first builds them; the tool loads it through Vite's SSR loader with the project's config,
 so it imports the page's modules as the dev server serves them, and `--q` sets the `location.search`
-their load knobs read. It installs the island's look as the page's entry does
-(`tools/island-look.mjs`), so the shaders hold the numbers the island's page builds with. Entries
+their load knobs read. The entries hand the island's look to what they make, as the page's stages
+do, so the shaders hold the numbers the island's page builds with. Entries
 live in `tools/wgsl-build/` (`fsr3`: every kernel of
 `packages/render/post/fsr3/`, built by the page's own `Fsr3Upscaler` in a frame's order, the
 reactive-mask generator and the debug view included; `ambient-relight`: the sky's projection, the

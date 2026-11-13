@@ -98,16 +98,40 @@
 // - Making the others leaves the island's as it was: its table, and every keyed table over a grid of
 //   elevations, nights, clouds and both sides and every other field, the same numbers bit for bit.
 // - The changed copy differs from the island's in every field, and the neutral set somewhere.
+//
+// The sky's look (packages/render/look/SkyLook.ts `createSkyTables`), in plain node, made from the
+// island's sky table, the neutral one and a copy of the island's with every number moved (every row
+// and key a degree later, every other number by an eighth, the clouds' shell written out where a
+// row stands in the cloud model's own). Guarantees, each a failure:
+// - Each set holds its own table's numbers: every field as the table wrote it (a tint at unit
+//   luminance), and each function that reads them at every row of the table that row's numbers: the
+//   light lent to the island (`islandSky`) at every setting row, every clouded row under a full
+//   cloud and every rising row, under no cloud and a full one; the clear shade's and the low key's
+//   rows; the sky's light, the clear day's gain and the thin layer's colours (DayKeys.ts `keyed`) at
+//   every key on both sides, under a full cloud at every clouded key and at full night; the clouds'
+//   rows and base (`cloudBase`) per sky, and the shadow's share the weather's; each store's night
+//   range (`storeNight`) under each sky alone and with no blend; the sea's knee, the key under cloud
+//   and the key's hue's numbers, and the key's hue (`keyHue`) and the moon's (`moonHue`) worked out
+//   from the table.
+// - Making the others leaves the island's as it was: every reading over a grid of elevations, sides,
+//   clouds, nights, skies and transmittances, and every field, the same numbers bit for bit.
+// - The changed copy differs from the island's in every field the look gives (all but the shadow's
+//   share, the weather's), and the neutral set somewhere.
+// - The haze's key reads the sky's tables it is given (weather/HazeKeys.ts `hazeKeyAt`): under each
+//   decked sky alone its aerosol ends at that set's cloud base, the changed set's off the island's.
+// The sky's state for a frame and its bakes (sky/SkyTrack.ts `trackSky`, sky/SkyBake.ts), which
+// read the tables the sky holds (sky/Sky.ts `look`), are not run: they need a renderer and the
+// sky's nodes; the sky stage hands the sky its tables (RenderStages.ts `createSky`).
+//
 // Under node the tune table is off (packages/render/debug/Tune.ts `TUNE_ON`), so each system's
 // tunables are its own; on a debug page they share one table by name (ExposureLook.ts's,
-// DayLook.ts's, Wind.ts's, AmbientLook.ts's, HazeLook.ts's and DisplayLook.ts's headers). The
-// haze's and the display's tables load in plain node, so all of their numbers, tunables included,
-// are checked here per table.
+// DayLook.ts's, Wind.ts's, AmbientLook.ts's, HazeLook.ts's, DisplayLook.ts's and SkyLook.ts's
+// headers). The haze's, the display's and the sky's tables load in plain node, so all of their
+// numbers, tunables included, are checked here per table.
 //
-// The other systems that take their tables at creation, through Vite's SSR loader with the
-// island's look installed (so a number that came from the installed look instead of the table
-// given would show): the shared uniforms (packages/render/shared.ts `createShared`: the ambient
-// occlusion's floor and the meadow canopy's two media), the local lights (packages/render/lighting/
+// The other systems that take their tables at creation, through Vite's SSR loader: the shared
+// uniforms (packages/render/shared.ts `createShared`: the ambient occlusion's floor and the meadow
+// canopy's two media), the local lights (packages/render/lighting/
 // LocalLights.ts `LocalLights`: the gain), the sea's detail (packages/render/ocean/SeaDetail.ts:
 // its three strengths), the FFT ocean's distant swell (packages/render/ocean/OceanFFT.ts: every
 // field of it), the wind's look the shared uniforms' wind carries (every field but the limbs'
@@ -135,7 +159,6 @@
 // renderer and build their graph as they are made; the stage hands them the tables
 // (RenderStages.ts `createSeaAndPipeline`), whose numbers the plain node part checks.
 import assert from 'node:assert/strict';
-import { installIslandLook } from './island-look.mjs';
 import { createExposure } from '../packages/render/look/ExposureLook.ts';
 import { DayCycle, cloudMoonShare, displayNight, eveningHour, exposureNight, morningHour, moonKeyShare, nightAmbientAt, nightAmbientShare, rampIn, skyNight, starNight, yunpengNightShare } from '../packages/render/sky/DayCycle.ts';
 import { createDayWindows } from '../packages/render/look/DayLook.ts';
@@ -148,7 +171,8 @@ import { createDisplayTables } from '../packages/render/look/DisplayLook.ts';
 import { hasKeys, keyed } from '../packages/render/post/DayKeys.ts';
 import { gradeOf } from '../packages/render/post/GradeLut.ts';
 import { HAZE_KEY_NAMES } from '../packages/render/look/Look.ts';
-import { cloudBase } from '../packages/render/look/SkyLook.ts';
+import { byElevation, cloudBase, createSkyTables, islandSky, keyHue, moonHue, storeNight } from '../packages/render/look/SkyLook.ts';
+import { SHELL_BOTTOM, SHELL_THICKNESS } from '../packages/render/sky/CloudModel.ts';
 import { MIX_SKIES, WEATHER_PRESETS } from '../packages/render/sky/Weather.ts';
 import { FOG_NOISE } from '../packages/render/weather/FogNoise.ts';
 import * as THREE from 'three/webgpu';
@@ -559,6 +583,11 @@ assert.ok( [ 0.5, 3, 5.5 ].every( ( e ) => islandAmbient.lift( e ) !== e ), 'the
 
 console.log( `Ambient light: three sets from three tables, each its own (${ islandAmbientBefore.length } readings), the island's unmoved by the others, the changed copy off the island's in every knob, gain and the lift, the neutral set lifting nothing, the lifted key on its own lift (${ liftedKeys } keys): passed.` );
 
+// the island's sky tables (the sky's look, below), made here for the haze's key, which reads their
+// clouds' base
+const islandSkyWritten = structuredClone( ISLAND_LOOK.sky );
+const islandSkyTables = createSkyTables( ISLAND_LOOK.sky );
+
 // ---- the haze's look
 
 // the island's haze table changed: every field of every key moved, every row a degree later, the
@@ -616,8 +645,8 @@ function ownHaze( tables, table, name ) {
 
 const HAZE_WINDOWS = createDayWindows( ISLAND_LOOK.day );
 const CLEAR = [ 1, 0, 0, 0 ];
-const keyAt = ( tables, elevation, rising, sky = CLEAR, wind = 0, rain = 0, dayFog = 1, seaFog = 0, fogWeather = 0 ) =>
-	hazeKeyAt( tables, HAZE_WINDOWS, elevation, rising, sky, wind, rain, dayFog, seaFog, fogWeather, {} );
+const keyAt = ( tables, elevation, rising, sky = CLEAR, wind = 0, rain = 0, dayFog = 1, seaFog = 0, fogWeather = 0, skyTables = islandSkyTables ) =>
+	hazeKeyAt( tables, HAZE_WINDOWS, skyTables, elevation, rising, sky, wind, rain, dayFog, seaFog, fogWeather, {} );
 const nearHaze = ( actual, expected, what ) => near( actual, expected, what, 1e-12 * Math.max( 1, Math.abs( expected ) ) );
 
 // the haze's key reads the tables it is given: a row's key under a clear sky alone, the fog layer
@@ -641,7 +670,7 @@ function hazeKeyReadsOwn( tables, name ) {
 			desaturate: 1 - ( 1 - k.desaturate ) * tables.keep[ 0 ], gain: tables.gain[ 0 ], mist: k.mist,
 			sunRayleigh: 1 - ( 1 - k.sunRayleigh ) * ( 1 - tables.sunRayleigh[ 0 ] ), rayleighWeight: k.rayleighWeight, mieWeight: k.mieWeight, skyDepth: k.skyDepth,
 			aerosolShare: shape.aerosolShare * scale.aerosolScale, aerosolHeight: shape.aerosolHeight * scale.aerosolHeight,
-			aerosolTop: tables.decked[ 0 ] ? cloudBase( 0 ) : Infinity,
+			aerosolTop: tables.decked[ 0 ] ? cloudBase( islandSkyTables, 0 ) : Infinity,
 			top: shape.top * scale.topScale * ( 1 - fog.fogLayer ) + fog.fogTop * fog.fogLayer,
 			width: shape.width * scale.widthScale * ( 1 - fog.fogLayer ) + fog.fogWidth * fog.fogLayer,
 			fogLayer: fog.fogLayer, droplet: fog.fogLayer, neutral: fog.neutral, scatter: fog.scatter, fogTop: fog.fogTop, fogWidth: fog.fogWidth, visibility: fog.visibility,
@@ -861,6 +890,280 @@ for ( const f of DISPLAY_FIELDS ) islandDisplayAfter[ f ].forEach( ( v, i ) => {
 
 console.log( `Display: three sets from three tables, each its own (${ displayReads } readings of a table), the island's unmoved by the others (${ displayNumbers } readings), the changed copy off the island's in every field: passed.` );
 
+// ---- the sky's look
+
+// the island's sky table changed: every number moved (a row's or a key's elevation a degree later,
+// any other number by an eighth: a set two rows or two keys share moved once), and the clouds' shell
+// written out where a row stands in the cloud model's own
+function changedSky( look ) {
+
+	const out = structuredClone( look.sky ), seen = new Set();
+	for ( const row of out.cloudSkies ) {
+
+		row.base ??= SHELL_BOTTOM;
+		row.top ??= SHELL_BOTTOM + SHELL_THICKNESS;
+
+	}
+	const move = ( o ) => {
+
+		if ( seen.has( o ) ) return;
+		seen.add( o );
+		for ( const [ k, v ] of Object.entries( o ) ) {
+
+			if ( typeof v === 'number' ) o[ k ] = v + ( k === 'at' ? 1 : 0.125 );
+			else if ( v && typeof v === 'object' ) move( v );
+
+		}
+
+	};
+	move( out );
+	return out;
+
+}
+
+const unitOf = ( [ r, g, b ] ) => {
+
+	const l = r * 0.2126 + g * 0.7152 + b * 0.0722;
+	return [ r / l, g / l, b / l ];
+
+};
+const SKY_ELEVATIONS = [];
+for ( let e = - 20; e <= 70; e += 0.25 ) SKY_ELEVATIONS.push( e );
+const SKY_CLOUDS = [ 0, 0.4, 1 ];
+const SKY_MIXES = [ null, ...ONE_SKY, [ 0.4, 0.1, 0.3, 0.2 ], [ 0.5, 0.5, 0, 0 ] ];
+// transmittances toward the sun from a high sun's to one under the horizon's
+const SKY_TRANSMITTANCES = [ [ 0.93, 0.95, 0.97 ], [ 0.7, 0.8, 0.88 ], [ 0.3, 0.45, 0.6 ], [ 0.02, 0.08, 0.2 ], [ 1e-4, 2e-3, 2e-2 ], [ 0.5, 0, 0.1 ] ];
+const SKY_TINTS = [ [ 1, 1, 1 ], [ 1.1, 0.98, 0.9 ] ];
+const SKY_KEYED = [ 'skyLight', 'clearSky', 'streakDirect', 'streakAmbient' ];
+const SKY_PLAIN = [ 'cloudLightTint', 'clearShadeTint', 'lowSun', 'lowSunTint', 'keyDeckWhite', 'moonKey', 'moonKeyLuminance', 'moonSkyHue', 'nightAmbientHue', 'nightAmbientShare' ];
+const SKY_READ = [ 'islandSky', 'clearShade', 'storeRange', 'lowKey', 'cloudSkies', 'shadowDensity', 'seaKnee', 'keyHue', 'moonHue', 'keyThroughCloud' ];
+const SKY_FIELDS = [ ...SKY_KEYED, ...SKY_PLAIN, ...SKY_READ ];
+
+// every number a set of tables gives, by field: what its functions read over a grid of elevations,
+// sides, clouds, nights and skies, and the plain fields as they are held
+function skyReadings( t ) {
+
+	const out = Object.fromEntries( SKY_FIELDS.map( ( f ) => [ f, [] ] ) );
+	const tint = new THREE.Vector4(), colour = new THREE.Color();
+	for ( const e of SKY_ELEVATIONS ) for ( const rising of [ false, true ] ) for ( const cloud of SKY_CLOUDS ) {
+
+		out.islandSky.push( islandSky( t, e, rising, tint, cloud ), ...tint.toArray() );
+		for ( const f of SKY_KEYED ) for ( const night of NIGHTS ) out[ f ].push( ...Object.values( keyed( t[ f ], e, night, {}, cloud, rising ) ) );
+
+	}
+	for ( const e of SKY_ELEVATIONS ) {
+
+		out.lowKey.push( byElevation( t.lowKey, e, 'gain' ) );
+		out.clearShade.push( byElevation( t.clearShade, e, 'share' ) );
+
+	}
+	for ( const group of [ 'dome', 'layer', 'panorama' ] ) for ( const mix of SKY_MIXES ) out.storeRange.push( storeNight( t, group, mix ) );
+	t.cloudSkies.forEach( ( row, s ) => out.cloudSkies.push( cloudBase( t, s ), ...Object.values( row ) ) );
+	out.shadowDensity.push( ...t.shadowDensity.map( ( row ) => row.shadowDensity ) );
+	out.seaKnee.push( t.seaKnee() );
+	out.keyHue.push( t.keyHue.depth(), t.keyHue.dawnDepth(), ...t.keyHue.white, t.keyHue.reddens(), t.keyHue.yellows() );
+	for ( const transmittance of SKY_TRANSMITTANCES ) for ( const sunTint of SKY_TINTS ) for ( const rising of [ false, true ] )
+		out.keyHue.push( ...keyHue( t, colour.setRGB( ...transmittance ), new THREE.Color( ...sunTint ), rising ).toArray() );
+	out.moonHue.push( t.moonHue.red(), t.moonHue.blue(), ...moonHue( t, colour ).toArray() );
+	out.keyThroughCloud.push( t.keyThroughCloud() );
+	for ( const f of SKY_PLAIN ) out[ f ] = typeof t[ f ] === 'number' ? [ t[ f ] ] : leaves( t[ f ] ).map( ( [ , v ] ) => v );
+	return out;
+
+}
+
+// `keys`, a set's keyed table made from the table's `table`, read at every key's elevation on both
+// sides, under a full cloud at every clouded key and at full night, is that key's, the clouded
+// day's and the night's values; returns the readings
+function keysReadOwn( keys, table, what ) {
+
+	let reads = 0;
+	for ( const [ side, rising ] of [ [ 'day', false ], [ 'rising', true ] ] ) for ( const key of table[ side ] ?? [] ) {
+
+		nearKey( keyed( keys, key.at, 0, {}, 0, rising ), key.values, `${ what } ${ side } at ${ key.at }` );
+		reads ++;
+
+	}
+	if ( table.cloudy ) for ( const key of hasKeys( table.cloudy ) ? table.cloudy : [ { at: 30, values: table.cloudy } ] ) {
+
+		nearKey( keyed( keys, key.at, 0, {}, 1 ), key.values, `${ what } cloudy at ${ key.at }` );
+		reads ++;
+
+	}
+	if ( table.night ) for ( const e of [ - 12, 30 ] ) {
+
+		nearKey( keyed( keys, e, 1, {}, 0.4 ), table.night, `${ what } at night` );
+		reads ++;
+
+	}
+	return reads;
+
+}
+
+// `t`, made from `table`, holds the table's numbers: each field as written (a tint at unit
+// luminance), and each function that reads it at every row of the table that row's numbers
+function ownSky( t, table, name ) {
+
+	let reads = 0;
+	const read = ( actual, expected, what ) => {
+
+		if ( Number.isFinite( expected ) ) near( actual, expected, `${ name } sky: ${ what }`, 1e-12 * Math.max( 1, Math.abs( expected ) ) );
+		else assert.equal( actual, expected, `${ name } sky: ${ what }` );
+		reads ++;
+
+	};
+	const tinted = ( actual, [ r, g, b, amount ], what ) => {
+
+		unitOf( [ r, g, b ] ).forEach( ( v, c ) => read( actual[ c ], v, `${ what } ${ c }` ) );
+		if ( amount !== undefined ) read( actual[ 3 ], amount, `${ what }'s amount` );
+
+	};
+	assert.deepEqual( Object.keys( t ).sort(), [ ...SKY_FIELDS ].sort(), `${ name } sky: its fields` );
+	tinted( t.cloudLightTint, table.cloudLightTint, 'cloudLightTint' );
+	tinted( t.clearShadeTint, table.clearShadeTint, 'clearShadeTint' );
+	tinted( t.lowSunTint, table.lowSunTint, 'lowSunTint' );
+	for ( const f of [ 'clearShade', 'lowSun', 'keyDeckWhite', 'storeRange', 'lowKey', 'moonKey', 'moonSkyHue', 'nightAmbientHue', 'nightAmbientShare' ] ) {
+
+		assert.deepEqual( t[ f ], table[ f ], `${ name } sky: ${ f }` );
+		reads ++;
+
+	}
+	assert.deepEqual( t.islandSky, table.islandSky, `${ name } sky: islandSky` );
+	// the light lent to the island at each row: the setting rows', the clouded ones' under a full
+	// cloud, the rising ones' (under a full cloud with the clouded setting side's gain)
+	const tint = new THREE.Vector4(), clouded = new THREE.Vector4();
+	for ( const [ side, rising, cloud ] of [ [ 'setting', false, 0 ], [ 'clouded', false, 1 ], [ 'rising', true, 0 ], [ 'rising', true, 1 ] ] ) table.islandSky[ side ].forEach( ( row, i ) => {
+
+		const what = `islandSky ${ side } row ${ i }${ cloud ? ' under cloud' : '' }`;
+		const gain = islandSky( t, row.at, rising, tint, cloud );
+		tinted( tint.toArray(), [ ...( row.tint ?? [ 1, 1, 1 ] ), row.amount ?? 0 ], what );
+		read( gain, rising && cloud ? islandSky( t, row.at, false, clouded, 1 ) : row.gain ?? 1, `${ what }'s gain` );
+
+	} );
+	for ( const rows of [ table.clearShade, table.lowKey ] ) for ( const row of rows ) {
+
+		const key = rows === table.lowKey ? 'gain' : 'share';
+		read( byElevation( rows === table.lowKey ? t.lowKey : t.clearShade, row.at, key ), row[ key ], `${ key } at ${ row.at }` );
+
+	}
+	reads += keysReadOwn( t.skyLight, table.skyLight, `${ name } sky: skyLight` );
+	reads += keysReadOwn( t.clearSky, table.clearSky, `${ name } sky: clearSky` );
+	for ( const f of [ 'streakDirect', 'streakAmbient' ] ) {
+
+		for ( const side of [ 'day', 'rising' ] ) for ( const key of t[ f ][ side ] ) {
+
+			nearKey( keyed( t[ f ], key.at, 0, {}, 0, side === 'rising' ), table[ f ][ key.name ], `${ name } sky: ${ f } ${ side } at ${ key.at }` );
+			reads ++;
+
+		}
+		nearKey( keyed( t[ f ], 30, 1, {}, 0 ), table[ f ].night, `${ name } sky: ${ f } at night` );
+		reads ++;
+
+	}
+	t.shadowDensity.forEach( ( row, s ) => read( row.shadowDensity, WEATHER_PRESETS[ MIX_SKIES[ s ] ].shadowDensity, `shadowDensity of ${ MIX_SKIES[ s ] }` ) );
+	table.cloudSkies.forEach( ( row, s ) => {
+
+		const want = { base: row.base ?? SHELL_BOTTOM, top: row.top ?? SHELL_BOTTOM + SHELL_THICKNESS, type: row.type, spread: row.spread, farFade: row.farFade };
+		for ( const [ k, v ] of Object.entries( want ) ) read( t.cloudSkies[ s ][ k ], v, `cloudSkies ${ MIX_SKIES[ s ] } ${ k }` );
+		read( cloudBase( t, s ), want.base, `cloudBase of ${ MIX_SKIES[ s ] }` );
+
+	} );
+	// each store's night range: a sky alone takes its own row, no blend the clear sky's
+	for ( const group of [ 'dome', 'layer', 'panorama' ] ) for ( const [ s, mix ] of [ [ 0, null ], ...ONE_SKY.map( ( m, i ) => [ i, m ] ) ] ) {
+
+		const [ top, floor ] = table.storeRange[ group ][ s ];
+		// (centred between the floor and the top a night's store must keep, SkyLook.ts NIGHT_FLOOR
+		// and NIGHT_TOP: 2^-1 and 2^13)
+		read( storeNight( t, group, mix ), ( 13 + ( - 13 + 12 ) - top - floor ) / 2, `storeNight ${ group } ${ mix ? MIX_SKIES[ s ] : 'without a blend' }` );
+
+	}
+	read( t.seaKnee(), table.seaKnee, 'seaKnee' );
+	read( t.keyThroughCloud(), table.keyThroughCloud, 'keyThroughCloud' );
+	read( t.keyHue.depth(), table.keyHue.depth, 'keyHue.depth' );
+	read( t.keyHue.dawnDepth(), table.keyHue.dawnDepth, 'keyHue.dawnDepth' );
+	read( t.keyHue.reddens(), table.keyHue.reddens, 'keyHue.reddens' );
+	read( t.keyHue.yellows(), table.keyHue.yellows, 'keyHue.yellows' );
+	assert.deepEqual( t.keyHue.white, table.keyHue.white, `${ name } sky: keyHue.white` );
+	// the key's hue from the table's numbers
+	for ( const [ r, g, b ] of SKY_TRANSMITTANCES ) for ( const sunTint of SKY_TINTS ) for ( const rising of [ false, true ] ) {
+
+		const what = `keyHue of ${ [ r, g, b ] }${ rising ? ' rising' : '' }`;
+		const got = keyHue( t, new THREE.Color( r, g, b ), new THREE.Color( ...sunTint ), rising ).toArray();
+		if ( g <= 0 ) {
+
+			got.forEach( ( v, c ) => read( v, 0, `${ what } ${ c }` ) );
+			continue;
+
+		}
+		const { depth: cap, dawnDepth, white, reddens, yellows } = table.keyHue;
+		const depth = - Math.log( g );
+		const scale = 1 / Math.pow( 1 + Math.pow( depth / ( rising ? dawnDepth : cap ), 6 ), 1 / 6 );
+		const share = ( onset ) => scale * ( 1 - Math.exp( - Math.pow( depth / onset, 2.5 ) ) );
+		const luminance = ( [ x, y, z ] ) => x * 0.2126 + y * 0.7152 + z * 0.0722;
+		const hue = [ white[ 0 ] * Math.pow( r / g, share( reddens ) ), 1, white[ 1 ] * Math.pow( b / g, share( yellows ) ) ];
+		const level = luminance( [ r * sunTint[ 0 ], g * sunTint[ 1 ], b * sunTint[ 2 ] ] ) / luminance( hue );
+		hue.forEach( ( v, c ) => read( got[ c ], v * level, `${ what } ${ c }` ) );
+
+	}
+	// the moon's key and its hue from the table's numbers
+	const [ mr, mg, mb ] = table.moonKey.colour;
+	const moonLuminance = mr * 0.2126 + mg * 0.7152 + mb * 0.0722;
+	read( t.moonKeyLuminance, moonLuminance, 'moonKeyLuminance' );
+	read( t.moonHue.red(), table.moonHue.red, 'moonHue.red' );
+	read( t.moonHue.blue(), table.moonHue.blue, 'moonHue.blue' );
+	{
+
+		const r = table.moonHue.red / table.moonKey.red, b = table.moonHue.blue / table.moonKey.blue;
+		const level = moonLuminance / ( mr * r * 0.2126 + mg * 0.7152 + mb * b * 0.0722 );
+		moonHue( t, new THREE.Color() ).toArray().forEach( ( v, c ) => read( v, [ r * level, level, b * level ][ c ], `moonHue ${ c }` ) );
+
+	}
+	return reads;
+
+}
+
+const islandSkyBefore = skyReadings( islandSkyTables );
+const skyLooks = { island: ISLAND_LOOK.sky, neutral: NEUTRAL_LOOK.sky, changed: changedSky( ISLAND_LOOK ) };
+const skies = { island: islandSkyTables, neutral: createSkyTables( skyLooks.neutral ), changed: createSkyTables( skyLooks.changed ) };
+let skyReads = 0;
+for ( const [ name, t ] of Object.entries( skies ) ) skyReads += ownSky( t, skyLooks[ name ], name );
+assert.deepEqual( ISLAND_LOOK.sky, islandSkyWritten, 'the island\'s sky table moved' );
+const islandSkyAfter = skyReadings( islandSkyTables );
+let skyNumbers = 0;
+for ( const f of SKY_FIELDS ) islandSkyAfter[ f ].forEach( ( v, i ) => {
+
+	assert.ok( Object.is( v, islandSkyBefore[ f ][ i ] ), `the island's sky ${ f } reading ${ i } moved: ${ islandSkyBefore[ f ][ i ] } -> ${ v }` );
+	skyNumbers ++;
+
+} );
+{
+
+	// (the clouds' shadow's share is the weather's, the same in every set)
+	const changed = skyReadings( skies.changed ), neutral = skyReadings( skies.neutral );
+	for ( const f of SKY_FIELDS ) if ( f !== 'shadowDensity' ) assert.ok( changed[ f ].some( ( v, i ) => ! Object.is( v, islandSkyBefore[ f ][ i ] ) ), `changed sky: ${ f } reads as the island's` );
+	assert.ok( SKY_FIELDS.some( ( f ) => neutral[ f ].length !== islandSkyBefore[ f ].length || neutral[ f ].some( ( v, i ) => ! Object.is( v, islandSkyBefore[ f ][ i ] ) ) ), 'neutral sky: reads as the island\'s' );
+
+}
+// the haze's key reads the clouds' base of the sky's tables it is given: under each decked sky alone
+// the aerosol ends at that sky's base, the changed set's off the island's
+let skyHaze = 0;
+islandHaze.decked.forEach( ( decked, s ) => {
+
+	if ( ! decked ) return;
+	const mix = ONE_SKY[ s ];
+	for ( const [ name, t ] of Object.entries( skies ) ) {
+
+		// (one over its inverse: equal to the last bits)
+		near( keyAt( islandHaze, 30, false, mix, 0, 0, 1, 0, 0, t ).aerosolTop, cloudBase( t, s ), `${ name } sky: the haze's aerosol top under ${ MIX_SKIES[ s ] }`, 1e-12 * cloudBase( t, s ) );
+		skyHaze ++;
+
+	}
+	assert.notEqual( keyAt( islandHaze, 30, false, mix, 0, 0, 1, 0, 0, skies.changed ).aerosolTop, keyAt( islandHaze, 30, false, mix ).aerosolTop, `changed sky: the haze's aerosol top under ${ MIX_SKIES[ s ] }` );
+
+} );
+assert.ok( skyHaze > 0, 'no decked sky in the island\'s haze' );
+
+console.log( `Sky: three sets from three tables, each its own (${ skyReads } readings of a table), the island's unmoved by the others (${ skyNumbers } readings), the changed copy off the island's in every field the look gives, the haze's aerosol top on its own sky's cloud base (${ skyHaze } readings): passed.` );
+
 // ---- the systems that load through Vite's SSR loader
 
 // every number a system made from `look` holds, by name, in order
@@ -944,7 +1247,6 @@ try {
 	const load = ( file ) => server.ssrLoadModule( `/${ file }` );
 	const { installSettings, parseSettings } = await load( 'packages/render/Settings.ts' );
 	installSettings( parseSettings( '' ) );
-	await installIslandLook( load );
 	const { createShared } = await load( 'packages/render/shared.ts' );
 	const { LocalLights } = await load( 'packages/render/lighting/LocalLights.ts' );
 	const { SeaDetail } = await load( 'packages/render/ocean/SeaDetail.ts' );

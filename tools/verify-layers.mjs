@@ -1,8 +1,8 @@
 // Checks the direction of the imports between the code's layers, that a package is imported only
-// through its exits, that the world's chunk worker and the headless exits import only plain code, that the renderer and the island keep off the page, which files
-// write another module's state, that each layer names only the userData keys declared for it, and
-// that no module reads the look where none is installed. CPU only, no GPU, a few seconds (the page and state checks run
-// TypeScript's checker over packages/ and app/).
+// through its exits, that the world's chunk worker and the headless exits import only plain code,
+// that the renderer and the island keep off the page, which files write another module's state and
+// that each layer names only the userData keys declared for it. CPU only, no GPU, a few seconds
+// (the page and state checks run TypeScript's checker over packages/ and app/).
 //   node tools/verify-layers.mjs
 //
 // The layers, lowest first: render (light, sky, weather, sea, the frame's passes, the generic
@@ -76,19 +76,6 @@
 //   list repeats a key of the renderer's. A key counts where it is written after the
 //   bag (`x.userData.key`, `x.userData[ 'key' ]`); one reached through an alias of the bag
 //   (`const data = material.userData`) or a computed name is not seen.
-// - The look checks: the renderer draws with the look its page installs (packages/render/look/Look.ts), which
-//   a module reads as it loads (`readLook(`), so a reader that loads where no look is installed
-//   takes the neutral one without a word. Neither that module nor any reader is among the files
-//   the chunk worker loads (the world is generated without the look, and no worker installs one).
-//   No reader is among the files the headless game loads (every module tools/play-game.mjs
-//   and its fixture name, with what those load: the game is played without the look); look/Look.ts
-//   itself may be, through the setup exit, whose settings the game's words read (it reads nothing
-//   while no reader loads),
-//   and no reader is among the files an entry's first module (app/PageSettings.ts, and the scene
-//   page's app/ScenesBoot.ts) or the renderer's setup exit loads: the first installs the look and
-//   must have run before the first reader does, and the second is what it installs the look through. The files a file loads are
-//   its static imports and re-exports followed through relative specifiers, `import type` left
-//   out (it is erased) and dynamic imports too (they load later).
 //
 // Output: a summary on stdout, every upward import found (known or not) and the failures. It takes
 // no options. Exit 0 when everything passes, 1 with the failures listed.
@@ -572,31 +559,6 @@ try {
 
 }
 
-// the look checks: who reads the installed look (look/Look.ts `readLook`), and where they must not load
-const LOOK = 'packages/render/look/Look.ts';
-const lookReaders = files.filter( ( f ) => f !== LOOK && /\breadLook\(/.test( readFileSync( path.join( SRC, f ), 'utf8' ) ) );
-if ( ! files.includes( LOOK ) || lookReaders.length === 0 ) failures.push( `look check: ${ LOOK } or its readers (\`readLook(\`) not found` );
-const workerLoads = loadClosure( 'packages/island/world/chunkWorker.ts' );
-if ( workerLoads.has( LOOK ) ) failures.push( `look check: the chunk worker loads ${ LOOK } (the world is generated without the look: no worker installs one)` );
-for ( const f of lookReaders ) if ( workerLoads.has( f ) ) failures.push( `look check: the chunk worker loads ${ f }, which reads the look` );
-const entryLoads = loadClosure( 'app/PageSettings.ts' );
-if ( ! entryLoads.has( LOOK ) ) failures.push( `look check: app/PageSettings.ts does not load ${ LOOK }: the entry installs the look there` );
-for ( const f of lookReaders ) if ( entryLoads.has( f ) ) failures.push( `look check: PageSettings.ts loads ${ f }, which reads the look before the entry installs it` );
-const SCENES_ENTRY = 'app/ScenesBoot.ts';
-const scenesEntryLoads = loadClosure( SCENES_ENTRY );
-if ( ! scenesEntryLoads.has( LOOK ) ) failures.push( `look check: ${ SCENES_ENTRY } does not load ${ LOOK }: the scene page's entry installs the look there` );
-for ( const f of lookReaders ) if ( scenesEntryLoads.has( f ) ) failures.push( `look check: ${ SCENES_ENTRY } loads ${ f }, which reads the look before the entry installs it` );
-const SETUP = [ ...exits ].find( ( [ , { side } ] ) => side === 'setup' )?.[ 0 ];
-const setupLoads = SETUP ? loadClosure( SETUP ) : new Set();
-if ( ! SETUP ) failures.push( 'look check: tools/layers.json names no setup exit, through which the entry installs the look' );
-for ( const f of lookReaders ) if ( setupLoads.has( f ) ) failures.push( `look check: the setup exit ${ SETUP } loads ${ f }, which reads the look before the entry installs it` );
-// the headless game: every module tools/play-game.mjs and its fixture name, static or dynamic
-const HEADLESS = [ 'tools/play-game.mjs', 'tools/game-fixture.mjs' ];
-const headlessLoads = new Set();
-for ( const tool of HEADLESS ) for ( const [ , f ] of readFileSync( path.join( ROOT, tool ), 'utf8' ).matchAll( /['"]\.\.\/((?:packages|app)\/[^'"]+\.ts)['"]/g ) ) for ( const g of loadClosure( f ) ) headlessLoads.add( g );
-if ( ! headlessLoads.has( 'packages/game/Session.ts' ) ) failures.push( `look check: ${ HEADLESS[ 0 ] } does not load packages/game/Session.ts: the headless game's files were not found` );
-for ( const f of lookReaders ) if ( headlessLoads.has( f ) ) failures.push( `look check: the headless game loads ${ f }, which reads the look` );
-
 // the page check
 const program = typedProgram();
 const pageHits = pageGlobals( table, program );
@@ -692,7 +654,7 @@ for ( const [ layer, { file, keys } ] of Object.entries( userLists ) ) {
 
 }
 
-console.log( `verify-layers: ${ files.length } files, ${ edges } imports, ${ upward.size } upward (${ KNOWN.length } known), ${ across } across packages, ${ exits.size } exits and ${ lazy.size } lazy, ${ sceneFiles.length } test scene files, the headless and setup exits' ${ headlessFiles.size } files, chunk worker ${ workerFiles } files, ${ pageHits.length } page globals named (${ Object.keys( PAGE_NEEDS ).length } files allowed), ${ statePairs } writes of another file's state (${ ACROSS.length } across layers), ${ Object.entries( userLists ).map( ( [ l, { keys } ] ) => `${ Object.keys( keys ).length } ${ l }` ).join( ' and ' ) } userData keys declared, ${ exitNameCount } names in the exits, ${ lookReaders.length } readers of the look (none in the chunk worker's ${ workerLoads.size } files, the headless game's ${ headlessLoads.size }, the entry's first ${ entryLoads.size }, the scene page's entry's ${ scenesEntryLoads.size } or the setup exit's ${ setupLoads.size })` );
+console.log( `verify-layers: ${ files.length } files, ${ edges } imports, ${ upward.size } upward (${ KNOWN.length } known), ${ across } across packages, ${ exits.size } exits and ${ lazy.size } lazy, ${ sceneFiles.length } test scene files, the headless and setup exits' ${ headlessFiles.size } files, chunk worker ${ workerFiles } files, ${ pageHits.length } page globals named (${ Object.keys( PAGE_NEEDS ).length } files allowed), ${ statePairs } writes of another file's state (${ ACROSS.length } across layers), ${ Object.entries( userLists ).map( ( [ l, { keys } ] ) => `${ Object.keys( keys ).length } ${ l }` ).join( ' and ' ) } userData keys declared and ${ exitNameCount } names in the exits` );
 for ( const [ key, pair ] of [ ...upward ].sort() ) console.log( `  ${ known.has( key ) ? 'known' : 'NEW  ' } ${ pair }: ${ key }` );
 if ( failures.length ) {
 

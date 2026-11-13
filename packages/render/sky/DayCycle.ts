@@ -292,7 +292,7 @@ export function starNight( windows: DayWindows, daylight: number, elevation: num
 	return dusk + ( night - dusk ) * cloud;
 
 }
-/** The night key's share in the sky's light (look/SkyLook.ts SKY_LIGHT, its one reader), at the sun's
+/** The night key's share in the sky's light (look/SkyLook.ts `skyLight`, its one reader), at the sun's
  * `elevation` (degrees), `rising` or setting, under a clouded share `cloud`: under cloud none from
  * 2 degrees up, all of it by -6; a clear sky's comes in from -7 to -11 degrees after sunset by
  * stops (`windows.depth.sky`) and leaves from -13 to -3 before sunrise (the header). A debug page can

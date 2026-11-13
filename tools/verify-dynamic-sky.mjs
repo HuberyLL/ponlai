@@ -6,7 +6,6 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
-import './island-look.mjs';
 import { DAY_PRESETS } from '../packages/render/sky/DayCycle.ts';
 import { renderedFrames } from './page-eval.mjs';
 

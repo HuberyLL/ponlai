@@ -55,12 +55,11 @@ A tool is written to these rules:
   the page adds it to one of the three, never a global of its own.
 - Expensive results that depend only on the commit, the tool and the browser are stored and
   reused through `parity/reference.mjs`; record in the key everything that changes them.
-- A node tool that imports a module of `packages/` that reads the look (anything that reaches
-  `packages/render/look/`, such as `packages/render/sky/DayCycle.ts`) imports `island-look.mjs`
-  above that import: the renderer draws with the look its page installs and with a neutral one where
-  nobody did, so without it the tool reads the neutral numbers, not the island's. A tool that loads
-  the modules through Vite's loader calls its `installIslandLook` after it installs the settings
-  (`tools/wgsl-build.mjs`).
+- A node tool that makes a system of the renderer that takes the look's tables hands it the set
+  it wants, as the page's stages do: the island's (`ISLAND_LOOK`,
+  `packages/island/look/IslandLook.ts`) for the numbers the island's page draws with, such as
+  `createExposure( ISLAND_LOOK )` or `createDayWindows( ISLAND_LOOK.day )`
+  (`tools/verify-day-cycle.mjs`).
 - CPU-heavy node tools import `qos.mjs` first. Python tools declare their dependencies inline (PEP
   723) and run with `uv run`; image metrics come from `parity/pixels.py`.
 - Tools are shared by every session's worktrees. A tool change goes to main promptly, and the

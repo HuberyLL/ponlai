@@ -24,6 +24,7 @@ import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
 import type { Exposure } from '../look/ExposureLook.ts';
 import type { DayWindows } from '../look/DayLook.ts';
 import type { KeyLiftShading } from '../look/AmbientLook.ts';
+import type { SkyTables } from '../look/SkyLook.ts';
 import type { DayCycleSnapshot } from './DayCycle.ts';
 import type { WeatherState } from './Weather.ts';
 import { setKeyCloud } from '../lighting/KeyCloud.ts';
@@ -46,7 +47,7 @@ const METER_FLOOR = 2 ** - 40;
 // environment's source (and so the environment's PMREM atlases, filtered from it): the radiance
 // times a power of two that each bake takes from the light on the clouds and the weather's skies at
 // its moment, worked out as the cloud dome's is (Clouds.ts `storeLight`, PreExposure.ts
-// `storeStops`, STORE_RANGE: the layer's `layerStops`, the panoramas' `panoramaStops`). Unscaled,
+// `storeStops`, `look.storeRange`: the layer's `layerStops`, the panoramas' `panoramaStops`). Unscaled,
 // a clear midnight's sky lay near 2^-18 (its first percentile) and its layer near 2^-21, under
 // half float's 2^-14, where the steps are coarse, and one fixed power of two that lifts them and
 // keeps a day's brightest under STORE_CEILING leaves too little room for a night pressed darker
@@ -62,15 +63,15 @@ const METER_FLOOR = 2 ** - 40;
 type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed' | 'windDirection'>;
 
 // The sky: atmosphere, clouds, night sky and the baked environment (the look's tables it reads,
-// the names in capitals below and `islandSky`, `keyHue`, `moonHue`, are look/SkyLook.ts's). One cloud field feeds the
+// `look` and the names under it below, are look/SkyLook.ts's `createSkyTables`). One cloud field feeds the
 // visible sky, water reflections, environment lighting and cloud shadows; on the island's direct
 // light the shadows keep a floor (`keyDirectVisibility`: a share of what the cloud layer passes
-// down, KEY_THROUGH_CLOUD, which the sea and the air keep too: `seaKeyVisibility`, `deckKeyFloor`), and under a
+// down, `look.keyThroughCloud`, which the sea and the air keep too: `seaKeyVisibility`, `deckKeyFloor`), and under a
 // closed deck the key and the clouds' sunlight lose their colour, not their luminance (Weather.ts), as from a cloudy sky on
 // the sunlight the clouds scatter many times does (trackClouds). By day the sky's light, the
 // sun's in-scattered light, takes one gain
-// against the sun's own (SKY_LIGHT, an illuminance colour), which everything that reads the sky
-// takes, and under a clear or fair day's sun another that holds it against the key (CLEAR_SKY);
+// against the sun's own (`look.skyLight`, an illuminance colour), which everything that reads the sky
+// takes, and under a clear or fair day's sun another that holds it against the key (`look.clearSky`);
 // a cloud deck does not mute the clear sky's colour behind it. At night the clear sky is the
 // moon's in-scatter, lit as the sun lights it (the moon's light above the air under the sun's sky
 // gain at the moon's height, `track`), and the stars: no airglow and no night floor of its own (the
@@ -89,10 +90,10 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // turns there over the handoff and holds there all night, so the water's glint and the clouds'
 // light see the moon where it is drawn. The clouds take their own path between the two in the
 // twilight, while no light reaches them (CLOUD_TURN). After sunset the light the sky lends the island takes a gain
-// of its own (ISLAND_SKY), and under a clouded high sun a tint of its own (CLOUD_LIGHT_TINT), which
+// of its own (`look.islandSky`), and under a clouded high sun a tint of its own (`look.cloudLightTint`), which
 // the sky the eye sees, the sea's reflection of it and the sea's own body never take. The dome lays the air's haze over
 // itself (`fogDome`, VolumetricHaze.ts `skyHaze`): the clouds at the distance to their shell's middle
-// height (the weather's shell: CLOUD_SKIES, low under cloudy and overcast skies), under the low
+// height (the weather's shell: `look.cloudSkies`, low under cloudy and overcast skies), under the low
 // deck's share at the march's own opacity-weighted depth, and under the thin layer's share of their
 // opacity at its own height (Clouds `sampleViewFog`), the sky behind them along the whole way; so the haze's composite leaves the sky's pixels. Measured on the horizon
 // views (paused, fresh loads): overcast's sky box spread .067 to .059, its gradient p99 .019 to .043
@@ -118,7 +119,7 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // percent away from it). So the drawn sky stands above the sky the land's harmonics give toward the
 // sun at mid elevations, and under it at the horizon and away from the sun. Under the horizon the
 // environment is the distant sea, its reflection of the sky over its body, which the light that
-// reaches the sea lights, the sky's and the sun's (SEA_KNEE).
+// reaches the sea lights, the sky's and the sun's (`look.seaKnee`).
 // The sun's disc and the moon's take the clouds' transmittance once, per pixel, in the composite
 // (SkyDome.ts `domeColour`); the march stores none once less than 0.003 gets through (CloudKernels.ts `makeMarch`),
 // so a deck some 6 deep along the view hides the disc whole. The mean over each disc, read from the
@@ -152,7 +153,7 @@ export interface SkyEndpoint {
 	deckIrradianceMap: THREE.RenderTarget;
 	version: number;
 	irradiance: THREE.Color;
-	// the distant sea's body as its bake lit it (SEA_KNEE): what the bake took and, read back with its
+	// the distant sea's body as its bake lit it (`look.seaKnee`): what the bake took and, read back with its
 	// deck irradiance, the radiance (`landSea`)
 	sea: { body: THREE.Color; night: THREE.Color; sun: number; knee: number; radiance: THREE.Color };
 	// the power of two its panorama is stored at (the bake's `panoramaStops`)
@@ -205,7 +206,7 @@ export class Sky {
 	night = new NightSky();
 	lightning = new Lightning();
 	sunIlluminance: number;
-	// the moon's key light (MOON_KEY) at its share
+	// the moon's key light (`look.moonKey`) at its share
 	readonly moonKeyColor = new THREE.Color();
 	elevation: number;
 	azimuth: number;
@@ -273,6 +274,10 @@ export class Sky {
 	// shading elevation under a sun key, which lighting/KeyLift.ts turns into the direction the
 	// surfaces take the key's light from (`keyDir` lifted)
 	readonly keyLift: KeyLiftShading;
+	// the sky's tables (look/SkyLook.ts `createSkyTables`), given to the constructor: what the sky's
+	// state for a frame (SkyTrack.ts), the bakes' distant sea (SkyBake.ts) and the haze's aerosol top
+	// read
+	readonly look: SkyTables;
 	// (the grade's exposure starts at the exposure's by day: the constructor sets it)
 	readonly grade = { exposure: 0, daylight: 1, night: 0, exposureNight: 0 };
 	readonly weather: DisplayedWeather = { haze: 0, rain: 0, fog: 0, windSpeed: 3.8, windDirection: 40 };
@@ -292,7 +297,7 @@ export class Sky {
 	// cross-faded with it. The dome's metering illuminance and the exposure's sky term (shared.ts
 	// `skyMeterLog2`).
 	readonly meterLog2Node: THREE.Node<'float'>;
-	// The irradiance probe as lent to the island after sunset (ISLAND_SKY): the islanders' sky fill.
+	// The irradiance probe as lent to the island after sunset (`look.islandSky`): the islanders' sky fill.
 	readonly islandIrradianceNode: V3;
 	// The cloudless sky's irradiance over pi (the clear sky the atmosphere gives, with the night's
 	// moonlit sky, under no clouds and none of the weather's dimming), baked and cross-faded with
@@ -385,7 +390,7 @@ export class Sky {
 	displayNightAmbient = uniform( new THREE.Color( 0, 0, 0 ) );
 	displayAmbientGain = uniform( 1 );
 	// the clear day's sky gain over the clouded sky's, which the open sky behind the clouds takes
-	// (CLEAR_SKY, `gapSky`), on the sun's share of the sky at the sun's height and on the moon's at the
+	// (`look.clearSky`, `gapSky`), on the sun's share of the sky at the sun's height and on the moon's at the
 	// moon's; live, as the atmosphere's own uniforms are, and read by the bakes and the exposure's
 	// meter (post/Metering.ts) too
 	readonly gapGain = { sun: uniform( 1 ), moon: uniform( 1 ) };
@@ -398,7 +403,7 @@ export class Sky {
 	// the moon's sky and deck light it scatters (VolumetricHaze.ts `SEEN_AIR`), and the exposure's
 	// meter divides it out of the sky's pixels (post/Metering.ts).
 	domeGapGain = { sun: this.gapGain.sun, moon: uniform( 1 ) };
-	// the key's floor under cloud and the weather's cast shadow on the island (KEY_THROUGH_CLOUD,
+	// the key's floor under cloud and the weather's cast shadow on the island (`look.keyThroughCloud`,
 	// Weather.ts `castShadow`)
 	// (the sea's floor too: `seaKeyFloor`)
 	keyCloudFloor = uniform( 0 );
@@ -411,7 +416,7 @@ export class Sky {
 	landQuad: THREE.QuadMesh;
 	reflectionSource: THREE.RenderTarget;
 	upperQuad: THREE.QuadMesh;
-	// the distant sea's body as the bake takes it (SEA_KNEE, SkyDome.ts `seaNode`): the colour times the sun's
+	// the distant sea's body as the bake takes it (`look.seaKnee`, SkyDome.ts `seaNode`): the colour times the sun's
 	// illuminance, the night's share, the sun's direct light on the level water (E / pi, luminance) and
 	// the knee; and the latest bake's radiance, read back (`seaRadiance`), with that bake's version
 	seaBody = uniform( new THREE.Color() );
@@ -439,7 +444,7 @@ export class Sky {
 	environmentStops: [ number, number ] = [ 0, 0 ];
 	environmentGainA = uniform( 1 );
 	environmentReadValue = 1;
-	// The light the sky lends the island for this frame's sun (ISLAND_SKY: the tint and its amount,
+	// The light the sky lends the island for this frame's sun (`look.islandSky`: the tint and its amount,
 	// the gain), and the bake's copies: the island's for the environment's source, neutral for the
 	// other panoramas.
 	islandTint = uniform( new THREE.Vector4( 1, 1, 1, 0 ) );
@@ -472,12 +477,14 @@ export class Sky {
 
 	/** `exposure`: the exposure made from the look's tables (look/ExposureLook.ts `createExposure`);
 	 * `dayWindows`: the day's windows made from them (look/DayLook.ts `createDayWindows`); `keyLift`:
-	 * the low key's lift made from them (look/AmbientLook.ts `createKeyLift`). */
-	constructor( renderer: THREE.WebGPURenderer, { exposure, dayWindows, keyLift, sunIlluminance = SUN_ILLUMINANCE, elevation = 32, azimuth = - 8 }: { exposure: Exposure; dayWindows: DayWindows; keyLift: KeyLiftShading; sunIlluminance?: number; elevation?: number; azimuth?: number } ) {
+	 * the low key's lift made from them (look/AmbientLook.ts `createKeyLift`); `look`: the sky's
+	 * tables made from them (look/SkyLook.ts `createSkyTables`). */
+	constructor( renderer: THREE.WebGPURenderer, { exposure, dayWindows, keyLift, look, sunIlluminance = SUN_ILLUMINANCE, elevation = 32, azimuth = - 8 }: { exposure: Exposure; dayWindows: DayWindows; keyLift: KeyLiftShading; look: SkyTables; sunIlluminance?: number; elevation?: number; azimuth?: number } ) {
 
 		this.exposure = exposure;
 		this.dayWindows = dayWindows;
 		this.keyLift = keyLift;
+		this.look = look;
 		this.grade.exposure = exposure.day;
 		this.renderer = renderer;
 		this.sunIlluminance = sunIlluminance;
@@ -738,7 +745,7 @@ export class Sky {
 	get transitioning(): boolean { return this.transitionDuration > 0 && this.transitionElapsed < this.transitionDuration; }
 	get moonDir(): THREE.Vector3 { return this.night.moonDir.value; }
 	/** The floor of the key's visibility the air under a closed deck keeps (VolumetricHaze.ts
-	 * `keyFloor`), this frame's: the land's floor (KEY_THROUGH_CLOUD) by overcast's share. It follows
+	 * `keyFloor`), this frame's: the land's floor (`look.keyThroughCloud`) by overcast's share. It follows
 	 * the key by day, at dusk and by night, so the air toward the sun or the moon keeps the light
 	 * the deck passes down in place of the key it hides; 0 under clear, fair and cloudy skies, whose
 	 * air takes the clouds' own shadow. */
@@ -1009,7 +1016,7 @@ export class Sky {
 
 	}
 
-	// The open sky behind the clouds, where it shows through them (CLEAR_SKY): the clear day's.
+	// The open sky behind the clouds, where it shows through them (`look.clearSky`): the clear day's.
 	gapSky( direction: V3, gains = this.gapGain ): V3 {
 
 		return this.atmosphere.skyRadiance( direction, true, gains );
@@ -1064,7 +1071,7 @@ export class Sky {
 
 	}
 
-	// A bake's distant sea on the CPU (SkyDome.ts `seaNode`'s twin, SEA_KNEE), from its deck irradiance read back:
+	// A bake's distant sea on the CPU (SkyDome.ts `seaNode`'s twin, `look.seaKnee`), from its deck irradiance read back:
 	// the ground bounce takes it as the environment's lower half (`seaRadiance`). Only a newer bake's
 	// overwrites it, and an answer for an endpoint a newer bake has taken lands nowhere. At the knee and
 	// above it is the body the bake took, bit for bit.
@@ -1160,7 +1167,7 @@ export class Sky {
 
 	/** The clouds' shadow on the island's key, three's sun and the light the land bounces of it (the
 	 * ground's bounce, the ambient light's bounce lobe): the clouds' own over the land's floor
-	 * (KEY_THROUGH_CLOUD: a share of what the cloud layer passes down, on whichever light keys the
+	 * (`look.keyThroughCloud`: a share of what the cloud layer passes down, on whichever light keys the
 	 * scene, the moon's by night: `track`), so the land keeps a
 	 * directional light through the sun's map under the thickest deck, and in a gap, where the
 	 * clouds' own is 1, the sky's own key. The sea takes it too (`seaKeyVisibility`), the air the

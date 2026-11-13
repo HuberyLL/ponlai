@@ -153,9 +153,9 @@ folder is its layer.
   What it leaves the layers above: its stages
   ([packages/render/RenderStages.ts](packages/render/RenderStages.ts)), which build its parts on
   one object (`RenderParts`) and run a frame (`createFrameStages`); the registries of rule 18; the
-  settings and the look, installed before it loads (rules 14 and 16); and the formats of the data a
-  scene fits it with (the ambient light's probes, the bounce's ground, the shore's fields), with
-  neutral data of its own in those formats
+  settings, installed before it loads, and the look, handed to its stages (rules 14 and 16); and
+  the formats of the data a scene fits it with (the ambient light's probes, the bounce's ground,
+  the shore's fields), with neutral data of its own in those formats
   ([packages/render/NeutralInputs.ts](packages/render/NeutralInputs.ts)).
 - **The island** ([packages/island/](packages/island/)): this island, drawn by the renderer. The
   world ([packages/island/world/](packages/island/world/)) is generated from its land: the land
@@ -180,8 +180,8 @@ folder is its layer.
   [app/WorldBoot.ts](app/WorldBoot.ts) before its own parts, which starts the world's generation
   on the land a resumed save grew): the one place that assembles the renderer,
   the island and the game (rule 12). It holds the address, the reloads and the browser's storage,
-  chooses the quality tier ([app/QualityDetect.ts](app/QualityDetect.ts)), installs the settings
-  and the island's look, and builds the layers a stage at a time. Its own parts are in
+  chooses the quality tier ([app/QualityDetect.ts](app/QualityDetect.ts)), installs the settings,
+  picks the island's look, and builds the layers a stage at a time. Its own parts are in
   [app/](app/): the cameras' views, the frame loop, the GUI, the scene jump, the diagnostics and
   the handles the tools drive, which it mounts on `window`.
 - **The scene page** ([app/scenes/](app/scenes/), loaded by its own entry
@@ -225,10 +225,9 @@ folder is its layer.
   before any other module loads; every module then reads its options through that one entrance, as
   it loads or when it builds. Where nothing installed them (node, a worker) every option reads as
   absent and each reader takes its default.
-- **The look to its readers.** The page's entry installs the island's numbers
-  ([packages/render/look/Look.ts](packages/render/look/Look.ts), `installLook`) after the
-  settings and before any reader of the look loads; each reader takes its numbers once, as it
-  loads.
+- **The look to its readers.** The page's entry picks the island's numbers after the settings
+  ([app/PageSettings.ts](app/PageSettings.ts), `PAGE_LOOK`), and the page hands them to the
+  stages, which make each system's tables from them where they create it.
 
 ## Rules across the layers
 
@@ -353,18 +352,19 @@ folder is its layer.
     chunk worker and node ([packages/render/data.ts](packages/render/data.ts),
     [packages/island/land.ts](packages/island/land.ts),
     [packages/game/sim/index.ts](packages/game/sim/index.ts)). The renderer has a third, its setup
-    exit ([packages/render/setup.ts](packages/render/setup.ts)): the settings, the look and the
-    quality tiers, which the page's first module installs before the renderer's other modules load
-    and read them, and which node loads too. Each exit exports only the names another package takes,
-    each name from one exit. Another package, or the page, imports a package only through them; the
-    modules the page loads on demand (the debug probes and the game itself) are lazy exits, imported
-    dynamically, so they stay in chunks of their own
+    exit ([packages/render/setup.ts](packages/render/setup.ts)): the settings and the quality tiers,
+    which the page's first module installs before the renderer's other modules load and read them,
+    and the look's types and neutral set, which the page picks from; node loads it too. Each exit
+    exports only the names another package takes, each name from one exit. Another package, or the
+    page, imports a package only through them; the modules the page loads on demand (the debug
+    probes and the game itself) are lazy exits, imported dynamically, so they stay in chunks of
+    their own
     ([tools/verify-layers.mjs](tools/verify-layers.mjs)). An exit loads its whole package, so a
     module does nothing as it loads but declare and register: no `await` and no read of the page
     ([tools/verify-exits.mjs](tools/verify-exits.mjs), which also loads the headless and setup exits
     in node). A module may still hold state at module level (uniforms, buffers, tables) and compute
-    constants from the settings and the look as it loads (some systems take their look at creation
-    instead: rule 16), so that state is one per process: a page
+    constants from the settings as it loads (the look it takes at creation: rule 16), so that state
+    is one per process: a page
     holds one renderer, and the parts that would clash say so (a second light table and a second
     install of the shared uniforms throw). *Why:* what a package offers is a list that can be read
     and reviewed, and a change inside a package cannot break another; a module that worked as it
@@ -500,13 +500,14 @@ folder is its layer.
     ([packages/render/look/NeutralLook.ts](packages/render/look/NeutralLook.ts): every gain one,
     every offset zero, no grade, one exposure key for the whole day) and its own modules hold only
     physical constants and the constants of their methods; the island's numbers are the island's
-    data ([packages/island/look/](packages/island/look/)). Ten systems take their tables as an
-    argument where they are created, and the entry hands them the set it installs: the exposure,
-    the day's windows and the low key's lift, where the renderer's sky stage creates them
-    ([packages/render/look/ExposureLook.ts](packages/render/look/ExposureLook.ts)
+    data ([packages/island/look/](packages/island/look/)). Every system takes its tables as an
+    argument where it is created, from the set the page hands its stages: the exposure,
+    the day's windows, the low key's lift and the sky's tables, where the renderer's sky stage
+    creates them ([packages/render/look/ExposureLook.ts](packages/render/look/ExposureLook.ts)
     `createExposure`, [packages/render/look/DayLook.ts](packages/render/look/DayLook.ts)
     `createDayWindows`, [packages/render/look/AmbientLook.ts](packages/render/look/AmbientLook.ts)
-    `createKeyLift`), which the sky and the day cycle carry to their readers; the haze's keys and
+    `createKeyLift`, [packages/render/look/SkyLook.ts](packages/render/look/SkyLook.ts)
+    `createSkyTables`), which the sky and the day cycle carry to their readers; the haze's keys and
     what the weather adds to them, also from the sky stage
     ([packages/render/look/HazeLook.ts](packages/render/look/HazeLook.ts) `createHazeTables`),
     which the haze's key reads by the hour and the weather
@@ -530,15 +531,14 @@ folder is its layer.
     made from two sets hold their own numbers
     ([tools/verify-look-params.mjs](tools/verify-look-params.mjs)), though on a debug page two
     exposures, two sets of the day's windows, two winds, two ambient grades, two sets of the
-    haze's tables or two of the display's share their tunables by name, and the shared uniforms,
-    the grade's uniforms, the display chain's uniforms for the cool share and overcast's
-    highlights, and the light table are still one a page (rule 11). The other system (the sky)
-    takes the installed look, not a constructor's argument: the page's entry installs it after the
-    settings and before any module that reads it loads, and each reader takes its numbers once
-    as it loads. Installing it after a reader has loaded throws and names that reader, and so
-    does installing a second, different set. So a process has one look, and a page cannot hold
-    two renderers that draw with different looks. Three sets of numbers do not pass through the
-    look yet and stay the renderer's: the weathers'
+    haze's tables, two of the display's or two of the sky's share their tunables by name, and the
+    shared uniforms, the grade's uniforms, the display chain's uniforms for the cool share and
+    overcast's highlights, and the light table are still one a page (rule 11). No module holds a
+    look: the island's page picks its set in its entry
+    ([app/PageSettings.ts](app/PageSettings.ts)), the test scenes' entry picks one and hands it to
+    the scene page ([app/ScenesBoot.ts](app/ScenesBoot.ts)), and a tool hands the set it wants to
+    what it creates. Three sets
+    of numbers do not pass through the look yet and stay the renderer's: the weathers'
     presets with the wind's four levels
     ([packages/render/sky/Weather.ts](packages/render/sky/Weather.ts), which the headless game
     reads too), the sea's chlorophyll
@@ -557,9 +557,8 @@ folder is its layer.
     and a look spread over the sky, the haze, the exposure and the grade cannot be read, compared or
     replaced as one thing; a second scene needs its own without editing the renderer. A new
     material follows [docs/how-to/add-material.md](docs/how-to/add-material.md).
-    [tools/verify-layers.mjs](tools/verify-layers.mjs) checks that no reader of the look loads in
-    the chunk worker, in the headless game or before the entry has installed it; no tool checks the
-    rest of this rule (whether a number is the look's or physics' is a judgement), a review does.
+    Beyond the check that each system holds its own set's numbers, no tool checks the rest of this
+    rule (whether a number is the look's or physics' is a judgement), a review does.
 17. **One convention for distance, light, exposure and time.**
     - Distance is in metres, y up, and the sea's rest level is the water level every module reads.
       Angles are radians in code and degrees where a person types them.
