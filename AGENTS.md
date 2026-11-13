@@ -56,17 +56,12 @@ sun and the sky give it (deep clear water, chunky stone, a lush meadow that move
 
 ## Skills
 
-Each with this project's facts in `docs/bindings/<name>.md`:
-
-- building-aaa-stylised-realism: `skills/building-aaa-stylised-realism/SKILL.md`
-- diagnosing-nonrepeating-frames: `skills/diagnosing-nonrepeating-frames/SKILL.md`
-- diagnosing-visual-defects: `skills/diagnosing-visual-defects/SKILL.md`
-- fitting-a-look-to-reference-images: `skills/fitting-a-look-to-reference-images/SKILL.md`
-- measuring-performance-changes: `skills/measuring-performance-changes/SKILL.md`
-- verifying-rendering-changes: `skills/verifying-rendering-changes/SKILL.md`
-- writing-docs-and-skills: `skills/writing-docs-and-skills/SKILL.md`
-- writing-tools-and-checks: `skills/writing-tools-and-checks/SKILL.md`
-- writing-tsl-and-passes: `skills/writing-tsl-and-passes/SKILL.md`
+Each is `skills/<name>/SKILL.md`, with this project's facts in `docs/bindings/<name>.md`:
+building-aaa-stylised-realism (the look, materials), diagnosing-nonrepeating-frames (frames that
+differ by run), diagnosing-visual-defects (on-screen faults), fitting-a-look-to-reference-images
+(light, air, image values), measuring-performance-changes (speed, frame time),
+verifying-rendering-changes (rendering changes), writing-docs-and-skills (docs, rules, skills),
+writing-tools-and-checks (tools and checks), writing-tsl-and-passes (TSL, passes, GPU buffers).
 
 ## Rules for every change
 
@@ -113,6 +108,9 @@ Each with this project's facts in `docs/bindings/<name>.md`:
   relative. Comments and docs state what was measured and found, never cite the git-ignored
   `artifacts/` notes, plans or reports, or internal task and milestone names (a tool's output folder
   may be named).
+- Game UI (what the player sees in `?game`, mock-ups too) is built with the
+  `threejs-game-ui-designer` skill when the agent has it, to read as a game's, not a product's
+  (`docs/design/ui.md`).
 - Code style follows three.js (mrdoob): tabs, spaces inside parentheses and brackets, English
   comments that explain why.
 - A visual change is compared against captures from before it, crops included, and the measured
@@ -160,8 +158,6 @@ that changes Markdown.
 
 ## Checks run by hand
 
-They render, under the GPU lock:
-
 | After changing | Run | It holds |
 | --- | --- | --- |
 | The growth, or what depends on the land's shape | `verify-growth-swap` | A grown page draws a fresh load's frame; a swap never builds a pipeline |
@@ -194,12 +190,10 @@ led to it. A rule without a check that is broken a second time gets one in the c
 ## Map
 
 The folders in full: `ARCHITECTURE.md`, Code map; file by file: `node tools/repo/code-map.mjs`.
-
-- `app/`: the page (entry, assembly, frame loop, GUI, scene jump); `app/scenes/`, `scenes.html`: the
-  renderer's test scenes.
-- `packages/render/`: the renderer, built without the island. `packages/island/`: the island, its
-  world in chunks, grown in place. `packages/game/`: the game behind `?game`, its headless rules in
-  `sim/`. `tools/`: checks, captures, probes, profiling, the GPU lock, the code lint. Each of these
-  four has its own rules in an `AGENTS.md`, imported by a `CLAUDE.md` beside it.
-- `skills/`: the skills, linked from `.claude/skills/`. `docs/`: the documentation by kind
-  (`docs/README.md`). `public/` (git-ignored): the assets.
+`app/`: the page (entry, assembly, frame loop, GUI, scene jump); `app/scenes/`, `scenes.html`: the
+renderer's test scenes. `packages/render/`: the renderer, built without the island.
+`packages/island/`: the island, its world in chunks, grown in place. `packages/game/`: the game
+behind `?game`, its headless rules in `sim/`. `tools/`: checks, captures, probes, profiling, the GPU
+lock, the code lint. Each of these four has its own rules in an `AGENTS.md`, imported by a
+`CLAUDE.md` beside it. `skills/`: the skills, linked from `.claude/skills/`. `docs/`: the
+documentation by kind (`docs/README.md`). `public/` (git-ignored): the assets.

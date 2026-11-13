@@ -31,9 +31,10 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { ROOT } from '../kit/root.mjs';
 
-// The root's budget: a little above its size when the layers' rules files were split out of it.
-const ROOT_LINES = 215;
-const ROOT_CHARS = 15000;
+// The root's budget: under 200 lines, and a little above its characters when the layers' rules
+// files were split out of it.
+const ROOT_LINES = 200;
+const ROOT_CHARS = 14500;
 // A page longer than this opens with its contents.
 const LONG_PAGE = 100;
 

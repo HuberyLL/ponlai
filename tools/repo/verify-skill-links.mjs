@@ -24,8 +24,9 @@
 //   reference file of the skill, so each is one step from SKILL.md.
 // - Bindings: a path `docs/bindings/<x>.md` in SKILL.md names the skill's own binding and a tracked
 //   file, and every tracked binding belongs to a skill.
-// - Index: the `## Skills` section of the root AGENTS.md lists every tracked skill once, each line
-//   `- <name>: \`skills/<name>/SKILL.md\``, and names no skill that does not exist.
+// - Index: the `## Skills` section of the root AGENTS.md names every tracked skill once and no other
+//   name. A name is a hyphenated word followed by `(` (`writing-tsl-and-passes (TSL, passes)`);
+//   the section states the path patterns `skills/<name>/SKILL.md` and `docs/bindings/<name>.md`.
 //
 // Output: on success one line on stdout with the counts; on failure the faults, on stderr.
 //
@@ -122,12 +123,16 @@ if ( ! index ) failures.push( 'AGENTS.md: no "## Skills" section' );
 else {
 
 	const listed = new Map();
-	for ( const line of index[ 1 ].split( '\n' ).filter( ( l ) => l.startsWith( '- ' ) ) ) {
+	for ( const [ , name ] of index[ 1 ].matchAll( /(?<![\w-])([a-z0-9]+(?:-[a-z0-9]+)+)\s+\(/g ) ) {
 
-		const m = line.match( /^- ([a-z0-9-]+): `skills\/([a-z0-9-]+)\/SKILL\.md`$/ );
-		if ( ! m || m[ 1 ] !== m[ 2 ] ) { failures.push( `AGENTS.md, Skills: '${ line }' is not "- <name>: \`skills/<name>/SKILL.md\`"` ); continue; }
-		listed.set( m[ 1 ], ( listed.get( m[ 1 ] ) ?? 0 ) + 1 );
-		if ( ! skills.includes( m[ 1 ] ) ) failures.push( `AGENTS.md, Skills: ${ m[ 1 ] } is not a tracked skill` );
+		listed.set( name, ( listed.get( name ) ?? 0 ) + 1 );
+		if ( ! skills.includes( name ) ) failures.push( `AGENTS.md, Skills: ${ name } is not a tracked skill` );
+
+	}
+
+	for ( const pattern of [ '`skills/<name>/SKILL.md`', '`docs/bindings/<name>.md`' ] ) {
+
+		if ( ! index[ 1 ].includes( pattern ) ) failures.push( `AGENTS.md, Skills: the path pattern ${ pattern } is not stated` );
 
 	}
 
