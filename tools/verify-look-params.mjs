@@ -20,25 +20,54 @@
 //   everywhere, a stop more in the keys' `key` for every sky (overcast's terms included), the other
 //   keys unchanged.
 // - The day cycle (packages/render/sky/DayCycle.ts) reads the exposure it is given.
-// Under node the tune table is off (packages/render/debug/Tune.ts `TUNE_ON`), so each exposure's
-// tunables are its own; on a debug page they share one table by name (ExposureLook.ts's header).
+//
+// The day's windows (packages/render/look/DayLook.ts `createDayWindows`), in plain node, made from
+// the island's day table, the neutral one and a copy of the island's with every window moved a
+// degree, the handoff and the moon's key lowered, the clouded daylight's window raised, every depth
+// a stop deeper and the ease half a degree longer. Guarantees, each a failure:
+// - Each set holds its own table's numbers: the handoff's top, the moon key's top, every dusk
+//   window (the moon key's and the handoff's made from the two tops), the clouded daylight's window,
+//   the depths and the ease.
+// - Making the others leaves the island's as it was: every night share of the day cycle (the
+//   display's, the exposure's, the stars', the sky's, the ambient's, the yunpeng's, the clouds'
+//   moonlight, the moon's key) over a grid of elevations, sides, clouded shares and daylights is the
+//   same number bit for bit before and after.
+// - Every share read with the changed copy differs from the island's somewhere, and the neutral
+//   set's somewhere.
+// - The day cycle reads the windows it is given: its handoff and the moon's key gain are its own
+//   set's, and differ under the changed copy.
+//
+// The wind's look (packages/render/weather/Wind.ts `windResponse`), in plain node, made from the
+// island's wind table, the neutral one and a copy of the island's with every number changed.
+// Guarantees, each a failure:
+// - Each response holds its own table's numbers, and the plants' speed by the wind (`plantSpeedOf`)
+//   follows its own table.
+// - Making the others leaves the island's as it was.
+// - A wind made on a response (`Wind`, `createWindUniforms`) sets the plants' speed from that
+//   response at every wind, and the previous frame's uniforms hold the same response.
+// Under node the tune table is off (packages/render/debug/Tune.ts `TUNE_ON`), so each system's
+// tunables are its own; on a debug page they share one table by name (ExposureLook.ts's,
+// DayLook.ts's and Wind.ts's headers).
 //
 // The other systems that take their tables at creation, through Vite's SSR loader with the
 // island's look installed (so a number that came from the installed look instead of the table
 // given would show): the shared uniforms (packages/render/shared.ts `createShared`: the ambient
 // occlusion's floor and the meadow canopy's two media), the local lights (packages/render/lighting/
 // LocalLights.ts `LocalLights`: the gain), the sea's detail (packages/render/ocean/SeaDetail.ts:
-// its three strengths) and the FFT ocean's distant swell (packages/render/ocean/OceanFFT.ts: every
-// field of it). Each is made from the island's look, the neutral one and a copy of the island's
-// with every one of these numbers changed, in that order. Guarantees, each a failure:
+// its three strengths), the FFT ocean's distant swell (packages/render/ocean/OceanFFT.ts: every
+// field of it) and the wind's look the shared uniforms' wind carries (every field but the limbs'
+// reference speed, a tunable, which the plain node part checks). Each is made from the island's
+// look, the neutral one and a copy of the island's with every one of these numbers changed, in
+// that order. Guarantees, each a failure:
 // - Each reads its own table's numbers, equal to the table's and none from another.
 // - Making the others leaves the island's as it was.
 // - The three differ wherever their tables do (the changed copy everywhere).
 import assert from 'node:assert/strict';
 import { installIslandLook } from './island-look.mjs';
 import { createExposure } from '../packages/render/look/ExposureLook.ts';
-import { DayCycle } from '../packages/render/sky/DayCycle.ts';
+import { DayCycle, cloudMoonShare, displayNight, eveningHour, exposureNight, morningHour, moonKeyShare, nightAmbientAt, nightAmbientShare, rampIn, skyNight, starNight, yunpengNightShare } from '../packages/render/sky/DayCycle.ts';
 import { createDayWindows } from '../packages/render/look/DayLook.ts';
+import { Wind, createWindUniforms, plantSpeedOf, windResponse } from '../packages/render/weather/Wind.ts';
 import { ISLAND_LOOK } from '../packages/island/look/IslandLook.ts';
 import { NEUTRAL_LOOK } from '../packages/render/look/NeutralLook.ts';
 
@@ -177,6 +206,159 @@ for ( const hour of [ 3, 7, 12, 18.5 ] ) {
 
 console.log( `Exposure: three exposures from three tables, each its own (${ before.length } readings), the island's unmoved by the others, the changed copy off by its changes alone, the day cycle reading its own: passed.` );
 
+// ---- the day's windows
+
+// the island's day table changed: every window a degree lower, the tops lowered, the clouded
+// daylight's window raised, every depth a stop deeper and the ease half a degree longer
+function changedDay( look ) {
+
+	const day = structuredClone( look.day );
+	day.handoffTop -= 0.25;
+	day.moonKeyTop -= 0.5;
+	for ( const share of Object.values( day.duskWindows ) ) for ( const side of Object.keys( share ) ) share[ side ] = share[ side ].map( ( e ) => e - 1 );
+	day.cloudedDaylight = day.cloudedDaylight.map( ( d ) => d + 0.05 );
+	for ( const layer of Object.keys( day.duskDepth ) ) day.duskDepth[ layer ] += 1;
+	day.duskEase += 0.5;
+	return day;
+
+}
+
+// every number a set of windows holds, by name
+const windowNumbers = ( w ) => ( {
+	handoffTop: w.handoffTop, moonKeyTop: w.moonKeyTop,
+	...Object.fromEntries( Object.entries( w.dusk ).flatMap( ( [ share, sides ] ) => Array.isArray( sides ) ? [ [ `dusk.${ share }`, [ ...sides ] ] ] : Object.entries( sides ).map( ( [ side, span ] ) => [ `dusk.${ share }.${ side }`, [ ...span ] ] ) ) ),
+	cloudedDaylight: [ ...w.cloudedDaylight ],
+	...Object.fromEntries( Object.entries( w.depth ).map( ( [ k, v ] ) => [ `depth.${ k }`, v ] ) ),
+	ease: w.ease.degrees,
+} );
+// the same names, read from a day table
+const dayNumbers = ( day ) => windowNumbers( {
+	handoffTop: day.handoffTop, moonKeyTop: day.moonKeyTop,
+	dusk: { ...day.duskWindows, moonKey: [ day.moonKeyTop - 2, day.moonKeyTop ], handoff: [ day.moonKeyTop, day.handoffTop ] },
+	cloudedDaylight: day.cloudedDaylight, depth: day.duskDepth, ease: { degrees: day.duskEase },
+} );
+
+// every night share a set of windows makes, by share, over a grid of elevations, sides, clouded
+// shares and daylights
+const DUSK_ELEVATIONS = [];
+for ( let e = - 16; e <= 4; e += 0.125 ) DUSK_ELEVATIONS.push( e );
+function shareReadings( w ) {
+
+	const out = { display: [], exposure: [], stars: [], sky: [], ambient: [], ambientAt: [], yunpeng: [], cloudMoon: [], moonKey: [] };
+	for ( const e of DUSK_ELEVATIONS ) {
+
+		out.ambientAt.push( nightAmbientAt( w, e ) );
+		out.moonKey.push( moonKeyShare( w, e ) );
+		for ( const rising of [ false, true ] ) for ( const cloud of [ 0, 0.5, 1 ] ) {
+
+			out.exposure.push( exposureNight( w, e, rising, cloud ) );
+			out.sky.push( skyNight( w, e, rising, cloud ) );
+			out.ambient.push( nightAmbientShare( w, e, rising, cloud ) );
+			out.yunpeng.push( yunpengNightShare( w, e, rising, cloud ) );
+			out.cloudMoon.push( cloudMoonShare( w, e, rising, cloud ) );
+			for ( const daylight of [ 0.1, 0.3, 0.6 ] ) {
+
+				out.display.push( displayNight( w, daylight, e, rising, cloud ) );
+				out.stars.push( starNight( w, daylight, e, rising, cloud ) );
+
+			}
+
+		}
+
+	}
+	return out;
+
+}
+
+const dayLooks = { island: ISLAND_LOOK.day, neutral: NEUTRAL_LOOK.day, changed: changedDay( ISLAND_LOOK ) };
+const islandDayBefore = shareReadings( islandWindows );
+const windowSets = { island: islandWindows, neutral: createDayWindows( dayLooks.neutral ), changed: createDayWindows( dayLooks.changed ) };
+for ( const [ name, w ] of Object.entries( windowSets ) ) assert.deepEqual( windowNumbers( w ), dayNumbers( dayLooks[ name ] ), `${ name } windows: the table's numbers` );
+const dayRead = Object.fromEntries( Object.entries( windowSets ).map( ( [ name, w ] ) => [ name, shareReadings( w ) ] ) );
+let shareCount = 0;
+for ( const [ share, values ] of Object.entries( islandDayBefore ) ) {
+
+	values.forEach( ( v, i ) => assert.ok( Object.is( dayRead.island[ share ][ i ], v ), `island ${ share } share moved at reading ${ i }: ${ v } -> ${ dayRead.island[ share ][ i ] }` ) );
+	assert.ok( dayRead.changed[ share ].some( ( v, i ) => v !== values[ i ] ), `changed: the ${ share } share reads as the island's` );
+	shareCount += values.length;
+
+}
+assert.ok( Object.keys( islandDayBefore ).some( ( share ) => dayRead.neutral[ share ].some( ( v, i ) => v !== islandDayBefore[ share ][ i ] ) ), 'the neutral windows read as the island\'s' );
+
+// the day cycle reads the windows it is given
+let cycleMoved = false;
+for ( const elevation of [ 1, - 0.5, - 1, - 1.5, - 2.5, - 3, - 4, - 6 ] ) for ( const hour of [ eveningHour( elevation ), morningHour( elevation ) ] ) {
+
+	const a = new DayCycle( island, islandWindows, { hour, paused: true } ).snapshot(), b = new DayCycle( island, windowSets.changed, { hour, paused: true } ).snapshot();
+	for ( const [ name, w, snap ] of [ [ 'island', islandWindows, a ], [ 'changed', windowSets.changed, b ] ] ) {
+
+		assert.equal( snap.handoff, rampIn( snap.elevation, w.dusk.handoff ), `day cycle at ${ hour }: ${ name } handoff` );
+		assert.equal( snap.moonKeyGain, moonKeyShare( w, snap.elevation ) * snap.moonVisibility, `day cycle at ${ hour }: ${ name } moon key` );
+
+	}
+	cycleMoved ||= a.handoff !== b.handoff || a.moonKeyGain !== b.moonKeyGain;
+
+}
+assert.ok( cycleMoved, 'the day cycle reads the island\'s windows under the changed copy' );
+
+console.log( `Day windows: three sets from three tables, each its own (${ Object.keys( windowNumbers( islandWindows ) ).length } numbers, ${ shareCount } share readings), the island's unmoved by the others, the changed copy and the neutral set off the island's, the day cycle reading its own: passed.` );
+
+// ---- the wind's look
+
+// the island's wind table changed: every number moved
+function changedWind( look ) {
+
+	const wind = structuredClone( look.wind );
+	wind.gustGain += 0.5;
+	wind.gustJitter += 0.25;
+	wind.plantWind = wind.plantWind.map( ( [ u, p ] ) => [ u, p + 1 ] );
+	wind.plantSpeed += 10;
+	wind.plantRateSpread += 0.05;
+	return wind;
+
+}
+
+const WIND_SPEEDS = [];
+for ( let u = 0; u <= 16; u += 0.25 ) WIND_SPEEDS.push( u );
+// a response's numbers by name, with the plants' speed it gives at every wind
+const responseReadings = ( r ) => ( {
+	gustGain: r.gustGain, gustJitter: r.gustJitter, plantSpeed: r.plantSpeed, plantRateSpread: r.plantRateSpread,
+	plantWind: r.plantWind.map( ( p ) => [ ...p ] ),
+	speeds: WIND_SPEEDS.map( ( u ) => plantSpeedOf( r, u ) ),
+} );
+// the plants' speed a table gives at wind `u`: a line through its points, past the last one on
+// along its last piece's slope (weather/Wind.ts `plantSpeedOf`, worked out here from the table)
+function tableSpeed( table, u ) {
+
+	const k = table.plantWind;
+	let i = 1;
+	while ( i < k.length - 1 && u > k[ i ][ 0 ] ) i ++;
+	return Math.max( 0, k[ i - 1 ][ 1 ] + ( k[ i ][ 1 ] - k[ i - 1 ][ 1 ] ) * ( u - k[ i - 1 ][ 0 ] ) / ( k[ i ][ 0 ] - k[ i - 1 ][ 0 ] ) );
+
+}
+const windLooks = { island: ISLAND_LOOK.wind, neutral: NEUTRAL_LOOK.wind, changed: changedWind( ISLAND_LOOK ) };
+const islandResponse = windResponse( windLooks.island );
+const islandWindBefore = responseReadings( islandResponse );
+const responses = { island: islandResponse, neutral: windResponse( windLooks.neutral ), changed: windResponse( windLooks.changed ) };
+for ( const [ name, r ] of Object.entries( responses ) ) {
+
+	const table = windLooks[ name ], read = responseReadings( r );
+	for ( const k of [ 'gustGain', 'gustJitter', 'plantSpeed', 'plantRateSpread' ] ) assert.equal( read[ k ], table[ k ], `${ name } wind: ${ k }` );
+	assert.deepEqual( read.plantWind, table.plantWind, `${ name } wind: plantWind` );
+	read.speeds.forEach( ( v, i ) => near( v, tableSpeed( table, WIND_SPEEDS[ i ] ), `${ name } wind: plants' speed at ${ WIND_SPEEDS[ i ] } m/s` ) );
+	// a wind made on the response takes the plants' speed from it, at rest and at every wind, and
+	// its previous frame holds the same response
+	const uniforms = createWindUniforms( r );
+	assert.equal( uniforms.response, r, `${ name } wind: the uniforms' response` );
+	assert.equal( uniforms.previous.response, r, `${ name } wind: the previous frame's response` );
+	for ( const u of [ 0.5, 3.8, 7, 11, 15 ] ) assert.equal( new Wind( createWindUniforms( r ), { speed: u } ).uniforms.plantSpeed.value, plantSpeedOf( r, u ), `${ name } wind: the wind's plants' speed at ${ u } m/s` );
+
+}
+assert.deepEqual( responseReadings( islandResponse ), islandWindBefore, 'the island\'s wind moved' );
+for ( const k of Object.keys( islandWindBefore ) ) assert.notDeepEqual( responseReadings( responses.changed )[ k ], islandWindBefore[ k ], `changed wind: ${ k } reads as the island's` );
+
+console.log( `Wind: three responses from three tables, each its own (${ WIND_SPEEDS.length } plants' speeds each), the island's unmoved by the others, the wind and its previous frame on their own response: passed.` );
+
 // ---- the systems that load through Vite's SSR loader
 
 // every number a system made from `look` holds, by name, in order
@@ -194,9 +376,19 @@ function systemReadings( made ) {
 		'seaDetail.slick': detail.slickAmount.value,
 		'seaDetail.streak': detail.streakAmount.value,
 		...Object.fromEntries( Object.entries( fft.swell ).map( ( [ k, v ] ) => [ `swell.${ k }`, v ] ) ),
+		...windNumbers( shared.wind.response ),
 	};
 
 }
+
+// the wind's numbers by name (a response's or a table's). Not the limbs' reference speed: Vite's
+// loader runs in its dev mode, where the tune table is on (debug/Tune.ts `TUNE_ON`) and shared by
+// name, so every response after the first reads the first one's `wind.plants.speed`, as on a debug
+// page (weather/Wind.ts `windResponse`); the plain node part checks it per table.
+const windNumbers = ( w ) => ( {
+	'shared.wind.gustGain': w.gustGain, 'shared.wind.gustJitter': w.gustJitter,
+	'shared.wind.plantRateSpread': w.plantRateSpread, 'shared.wind.plantWind': w.plantWind.flat().join( ' ' ),
+} );
 
 // the same names, read from a look's tables
 function tableReadings( look ) {
@@ -212,6 +404,7 @@ function tableReadings( look ) {
 		'seaDetail.slick': look.sea.detail.slick,
 		'seaDetail.streak': look.sea.detail.streak,
 		...Object.fromEntries( Object.entries( look.sea.swell ).map( ( [ k, v ] ) => [ `swell.${ k }`, v ] ) ),
+		...windNumbers( look.wind ),
 	};
 
 }
@@ -230,6 +423,7 @@ function changedSystems( look ) {
 	out.localLights.gain += 2;
 	for ( const k of Object.keys( out.sea.detail ) ) out.sea.detail[ k ] += 0.5;
 	for ( const k of Object.keys( out.sea.swell ) ) out.sea.swell[ k ] += 1;
+	out.wind = changedWind( look );
 	return out;
 
 }
@@ -291,4 +485,4 @@ try {
 	await server.close();
 
 }
-console.log( `Shared uniforms, local lights, sea detail and swell: three of each from three tables, each its own (${ systems } numbers), the island's unmoved by the others: passed.` );
+console.log( `Shared uniforms (the wind's look among them), local lights, sea detail and swell: three of each from three tables, each its own (${ systems } numbers), the island's unmoved by the others: passed.` );
