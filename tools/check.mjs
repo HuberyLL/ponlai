@@ -9,7 +9,8 @@
 // eslint.config.mjs), the direction of imports between the layers, the packages' exits and the page
 // check (verify-layers), the exits' loading (verify-exits),
 // the page's settings against their docs (verify-settings), the files' size (verify-file-size), the three.js internals the code reaches into (verify-three-internals), no
-// binary in git (verify-no-binaries, every file in the index), then the CPU regression tools (the
+// binary in git (verify-no-binaries, every file in the index), nothing tracked under .claude/ but the
+// public skills' links (verify-skill-links), then the CPU regression tools (the
 // game's simulation, its words, the ink, the frame graph's compiler, the day cycle, the weather's
 // state, the wind, the local lights, the renderer's extension points, the look tables passed at creation, the
 // code lint's own rules against their fixtures), and the docs' lint (`npm run lint:docs`) when a Markdown file
@@ -63,6 +64,7 @@ const checks = [
 	[ 'verify-file-size', node( 'verify-file-size.mjs' ) ],
 	[ 'verify-three-internals', node( 'verify-three-internals.mjs' ) ],
 	[ 'verify-no-binaries', node( 'verify-no-binaries.mjs' ) ],
+	[ 'verify-skill-links', node( 'verify-skill-links.mjs' ) ],
 	[ 'verify-game', node( 'verify-game.mjs' ) ],
 	[ 'verify-i18n', node( 'verify-i18n.mjs' ) ],
 	[ 'verify-ink', node( 'verify-ink.mjs' ) ],
