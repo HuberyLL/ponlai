@@ -72,8 +72,8 @@ node tools/kit/job.mjs start --wait -- node tools/kit/gpu-lock.mjs run --shared 
 ## Fix
 
 - A kept result that waits for its inputs holds the page's ready signal through `settled`'s
-  `pending` list (`packages/render/post/Settled.ts`; `docs/how-to/check-a-change.md`, Add a
-  history-dependent effect).
+  `pending` list (`packages/render/post/Settled.ts`;
+  [verifying-rendering-changes](verifying-rendering-changes.md), History).
 - A new fact about three.js or WebGPU goes into `docs/reference/three-behaviour.md`, and the
   module's rule into its header.
 - A fix that changes the converged image needs new stored references (`tools/kit/parity/README.md`):
@@ -82,6 +82,7 @@ node tools/kit/job.mjs start --wait -- node tools/kit/gpu-lock.mjs run --shared 
 ## Prove
 
 - The loop of Reproduce, with N chosen as the skill says.
-- Then the checks the change touches (`docs/how-to/check-a-change.md`): the test scenes with
+- Then the checks the change touches ([verifying-rendering-changes](verifying-rendering-changes.md),
+  Kinds): the test scenes with
   `--verify --check`, the parity set with `--check`, `tools/island/verify-scene-jump.mjs`,
   `tools/island/verify-growth-swap.mjs`, and `npm run check`.

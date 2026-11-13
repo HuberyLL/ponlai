@@ -21,7 +21,9 @@ import { SeabedRise } from './SeabedRise.ts';
 // needing one would be a bug (tools/render/verify-first-use.mjs and the page's pipeline count). A grown
 // page against a fresh load of its land, pipelines across swaps included: tools/island/verify-growth-swap.mjs.
 // Anything new that depends on the land's shape joins the swap, the same function of the version as
-// at load (docs/how-to/check-a-change.md, Add something that depends on the land's shape).
+// at load: through `GrowthPage` (below), a vegetation kind's `growth` (vegetation/Registry.ts) or
+// IslandStages.ts `onSwap`, with its main-thread work in the preparation's idle-time steps (below),
+// never in the swap's frame.
 //
 // - When: the game (`start()` once the page shows) generates the next piece at once, as it will
 //   need it; any other page only from its first `grow()`, so a page that never grows spends no

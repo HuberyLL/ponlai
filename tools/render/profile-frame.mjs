@@ -7,7 +7,7 @@
 // the 60 fps criterion (`--accept`), and measures pacing on the real display (`--display`). A
 // performance change is measured with it on a production build, before and after. The scenes, the
 // modes, how a run holds the GPU lock and how to read the results: docs/reference/profile-frame.md.
-// The steps for a change: docs/how-to/check-a-change.md.
+// The steps for a change: skills/measuring-performance-changes/SKILL.md.
 //
 // Usage:
 //   node tools/render/profile-frame.mjs [url] [options]

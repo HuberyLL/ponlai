@@ -8,13 +8,9 @@ contributors and agents are in [AGENTS.md](../AGENTS.md); the project's structur
 
 Steps for one task.
 
-- [Add a material](how-to/add-material.md)
 - [Add game content](how-to/add-game-content.md): a need, an item, a place, an option or a
   building in the game's simulation.
-- [Check a change](how-to/check-a-change.md): the small scenes, a visual change, a performance
-  change, a new history-dependent effect, something that depends on the land's shape.
 - [Upgrade three.js](how-to/upgrade-three.md): move to another version of three.js.
-- [Write a tool](how-to/write-a-tool.md): the rules a tool in `tools/` follows.
 
 ## Reference
 
@@ -41,7 +37,7 @@ Facts to look up.
 - [three.js and WebGPU behaviour](reference/three-behaviour.md): what three r186, WebGPU and TSL
   do that the code is written around; read it before writing TSL or a pass of the frame graph.
 - [Glossary](reference/glossary.md): the project's own words.
-- [Parity captures](../tools/kit/parity/README.md): the method across the parity tools: which
+- [Parity captures](../tools/kit/parity/README.md): the facts across the parity tools: which
   comparison is byte-exact, how a tolerance is set and how the stored references are used.
 - Skill bindings (`docs/bindings/`): this project's facts for each skill in `skills/`, a page per
   skill under its name.

@@ -14,6 +14,8 @@ artifacts/
 !.claude/skills/measuring-performance-changes
 !.claude/skills/diagnosing-visual-defects
 !.claude/skills/writing-docs-and-skills
+!.claude/skills/verifying-rendering-changes
+!.claude/skills/writing-tools-and-checks
 CLAUDE.local.md
 # The game's assets: public/ is filled from a GitHub release (tools/repo/assets.mjs, assets.lock.json),
 # and no binary file goes into git anywhere else either (tools/verify-no-binaries.mjs)

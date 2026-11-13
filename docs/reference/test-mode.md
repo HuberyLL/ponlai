@@ -34,8 +34,7 @@ settle on its own on a still scene reads the switch, and is frozen or off under 
 | The wenyao's schools (`packages/island/life/Wenyao.ts`) | Step only with the scene clock's step, from a layout the land gives. A page loaded paused never steps them; `establishScene` returns them to that layout, and so does a Grow while they have not stepped. They need no switch. |
 | The falling leaves (`packages/island/world/FallingLeaves.ts`) | Off under the switch: not made, so `settled` never waits for them. |
 
-A new history-dependent effect follows `docs/how-to/check-a-change.md`, Add a history-dependent
-effect.
+A new history-dependent effect follows `docs/bindings/verifying-rendering-changes.md`, History.
 
 ## Settled
 
@@ -70,4 +69,4 @@ waited behind it.
 The bound changes how many frames a second a paused page draws, never what it draws: the parity
 views and the probe readings are the same bytes with and without it. A running page, and a paused
 one with `testMode=0`, is not bounded. A held frame is an animation frame on which the page does not
-tick (`docs/how-to/write-a-tool.md`, on waiting for rendered frames).
+tick (`docs/bindings/writing-tools-and-checks.md`, Build, on waiting for rendered frames).

@@ -8,7 +8,7 @@ It does the image work around captures (tools/kit/capture.mjs, capture-set, capt
 captures or sets differ, a region's colour and light, a crop or a labelled sheet for the eye, a
 clip's flicker. Use it instead of a Pillow or NumPy script of one's own. Its numbers are
 diff-set.py's and compare-captures.py's (the shared helpers in tools/kit/pixels.py). How to check a
-visual change with it: docs/how-to/check-a-change.md.
+visual change with it: skills/verifying-rendering-changes/SKILL.md.
 
 Usage:
   uv run tools/kit/img.py diff  A B            [region] [--thr 1,2,8,32] [--bbox-thr 0] [--heat P] [--json]

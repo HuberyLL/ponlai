@@ -3,8 +3,11 @@
 Parity captures check that a change leaves the image as it was: paused captures of a fixed set of
 views, compared view by view with a reference set, pixel for pixel or within the reference's own
 repeatability, with 1:1 crops of named subjects for judging a change that is meant to show. Clips
-do the same for motion. This page is the method that spans the tools. Each tool's manual is its
-header (`node <tool> --help`); the tools are listed in `docs/reference/tools.md`.
+do the same for motion. This page holds the facts that span the parity tools; the method of
+verifying a change with them is the skill
+[verifying-rendering-changes](../../../skills/verifying-rendering-changes/SKILL.md) and its
+[binding](../../../docs/bindings/verifying-rendering-changes.md). Each tool's manual is its header
+(`node <tool> --help`); the tools are listed in `docs/reference/tools.md`.
 
 The tools:
 

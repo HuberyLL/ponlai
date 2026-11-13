@@ -31,9 +31,9 @@ GPU rules names its sections in brackets. Read these sections for what the chang
 
 For new work: a pass, a plant kind or a kind of local light,
 `docs/reference/extension-points.md` (the three declarations each must make); a material,
-`docs/how-to/add-material.md`. Shaders are TSL only, never WGSL or GLSL strings (lint rule
-`ponlai/tsl-only`); code that differs by anti-aliasing mode reads `post/Antialiasing.ts`'s
-exports, never the tier.
+[building-aaa-stylised-realism](building-aaa-stylised-realism.md#materials). Shaders are TSL
+only, never WGSL or GLSL strings (lint rule `ponlai/tsl-only`); code that differs by
+anti-aliasing mode reads `post/Antialiasing.ts`'s exports, never the tier.
 
 ## Version
 
@@ -46,9 +46,9 @@ exports, never the tier.
 ## Write
 
 - A history-dependent effect (a temporal resolve, adaptation, accumulation, a bake kept between
-  frames): `docs/how-to/check-a-change.md`, Add a history-dependent effect (its clear on a scene
-  jump, `settled`'s pending list, the test mode's switch). A pass declares it with its `testMode`
-  (`docs/reference/extension-points.md`, The three declarations).
+  frames): [verifying-rendering-changes](verifying-rendering-changes.md), History (its clear on a
+  scene jump, `settled`'s pending list, the test mode's switch). A pass declares it with its
+  `testMode` (`docs/reference/extension-points.md`, The three declarations).
 - New frame work is a pass on the frame graph (`packages/render/post/Pipeline.ts`,
   `packages/render/post/ExtraPass.ts`); a draw that shows only at times is a latent of its scene
   pass. Lint rules `ponlai/pass-on-graph` and `ponlai/history-on-graph` refuse `rtt()`,
@@ -90,8 +90,8 @@ node tools/render/wgsl-build.mjs <entry> [--out <dir>] [--q "<query>"] [--featur
   ```
 
 - The scenes are `ball`, `empty`, `plants` (compared to the pixel) and `sea` (named only, read by
-  its `readings.tsv`). Which changes they cover: `docs/how-to/check-a-change.md`, Run the small
-  scenes first.
+  its `readings.tsv`). Which changes they cover:
+  [verifying-rendering-changes](verifying-rendering-changes.md), Kinds.
 - One page value without a shot: `tools/kit/probe.mjs` on `<url>scenes.html`.
 
 ## Checks

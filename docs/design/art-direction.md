@@ -51,7 +51,7 @@ island decides within it:
 - The materials hold physically plausible values, and one physically based light sets the
   relations between them, so grass, stone, bamboo and sand read as one place without being tuned
   against each other. How a material's values are found and checked:
-  [Add a material](../how-to/add-material.md).
+  the skill [building-aaa-stylised-realism](../../skills/building-aaa-stylised-realism/SKILL.md).
 - A material is never tuned to make up for the light. Tuning it so bakes the light's error into
   its albedo, and it breaks again whenever the light changes.
 - The style sits in three places: the content chosen, the light's global departures, and the

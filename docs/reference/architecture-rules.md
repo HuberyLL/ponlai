@@ -78,7 +78,7 @@ under MSAA, with every history-dependent effect frozen or off, shot once the pag
 holds ([Test mode](test-mode.md)). There a paused frame repeats exactly and equals a fresh
 load's, and refactors are checked byte for byte. Under the temporal modes a paused page shows its
 rest image, compared within the tolerance. A new history-dependent effect follows
-[check-a-change.md](../how-to/check-a-change.md), Add a history-dependent effect.
+the [verifying-rendering-changes binding](../bindings/verifying-rendering-changes.md), History.
 
 **Why:** a save must play on as the original; a grown page must hold the world a fresh load
 holds; a headless run must repeat byte for byte, so that a change to the rules shows as a
@@ -428,7 +428,8 @@ and a second scene needs its own without editing the renderer.
 **Enforced by:** [verify-look-params.mjs](../../tools/render/verify-look-params.mjs) checks that
 each system holds its own set's numbers. Whether a number is the look's or physics' is a
 judgement, left to review. A new material follows
-[add-material.md](../how-to/add-material.md).
+[building-aaa-stylised-realism](../../skills/building-aaa-stylised-realism/SKILL.md) and its
+[binding](../bindings/building-aaa-stylised-realism.md#materials).
 
 **Came from:** none on record.
 

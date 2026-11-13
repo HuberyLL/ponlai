@@ -13,7 +13,7 @@
 //   never the island or the game, and never another layer's module by its path
 //   (tools/repo/verify-layers.mjs).
 // - Its surfaces are lit as every other surface is (`surface`: the shared lighting model and the
-//   metering light, docs/how-to/add-material.md).
+//   metering light, docs/bindings/building-aaa-stylised-realism.md, Materials).
 // - Everything it places is a function of constants: no random stream, no clock, so a load repeats.
 import * as THREE from 'three/webgpu';
 import { GroundBounceLightingModel, writeMeter, type RenderParts, type VegetationKind } from '../../packages/render/index.ts';

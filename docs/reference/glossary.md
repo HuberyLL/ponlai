@@ -46,8 +46,8 @@ Lip
 
 Lookdev
 : Look development: making each material right on its own: real values checked against the real
-  range, then seen first on the clear day at noon, before the other weathers and hours ([Add a
-  material](../how-to/add-material.md)).
+  range, then seen first on the clear day at noon, before the other weathers and hours
+  ([building-aaa-stylised-realism](../../skills/building-aaa-stylised-realism/SKILL.md)).
 
 Parked
 : Kept compiling and loadable by name but out of the default checks, until revived as its own
