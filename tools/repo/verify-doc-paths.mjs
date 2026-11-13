@@ -30,8 +30,9 @@
 // The docs' commands (package.json):
 // - `npm run lint:docs` checks the Markdown files' format with markdownlint-cli2 (a dev
 //   dependency; its rules in .markdownlint-cli2.jsonc: prose wrapped at 100 columns, fenced code
-//   with a language), then runs this tool, then checks the links offline with lychee (local files
-//   and `#anchors`; its config in lychee.toml). `npm run check` runs it when a Markdown file is
+//   with a language), then runs this tool and tools/repo/verify-doc-shape.mjs (the rules files'
+//   budget and imports, the long pages' contents), then checks the links offline with lychee (local
+//   files and `#anchors`; its config in lychee.toml). `npm run check` runs it when a Markdown file is
 //   staged, and `npm run check -- --full` always.
 // - `npm run lint:links` checks the web links too; sites that refuse automated clients (403, 405,
 //   429) count as present.

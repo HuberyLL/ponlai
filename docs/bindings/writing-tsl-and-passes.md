@@ -8,6 +8,16 @@ fills in its own facts.
 Every command that renders in a browser runs under the GPU lock and every wait goes through
 `tools/kit/job.mjs` (`AGENTS.md`). `tools/render/wgsl-build.mjs` needs neither: it renders nothing.
 
+Contents:
+
+- [Read first](#read-first)
+- [Version](#version)
+- [Write](#write)
+- [WGSL build](#wgsl-build)
+- [Test scenes](#test-scenes)
+- [Checks](#checks)
+- [Record](#record)
+
 ## Read first
 
 The behaviour page is `docs/reference/three-behaviour.md`; `AGENTS.md`'s table of shader, pass and

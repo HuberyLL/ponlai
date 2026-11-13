@@ -9,6 +9,17 @@ priority and headed runs that go with it. The commands are in the tools' own hea
 `tools/kit/display-gate.mjs` (headed runs). The lock's design (its files, the rules between copies
 of the lock) is the comment below the imports of `tools/kit/gpu-lock-impl.mjs`.
 
+Contents:
+
+- [Modes and slots](#modes-and-slots)
+- [Holding a slot](#holding-a-slot)
+- [The queue and the levels](#the-queue-and-the-levels)
+- [Copies of the lock](#copies-of-the-lock)
+- [Before a timing run](#before-a-timing-run)
+- [Long jobs and waiting](#long-jobs-and-waiting)
+- [Process priority](#process-priority)
+- [Headed runs](#headed-runs)
+
 ## Modes and slots
 
 Frame times are meaningful only one browser at a time: two pages that share the GPU each measure

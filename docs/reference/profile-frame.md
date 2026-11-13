@@ -8,6 +8,19 @@ modes, how the runs hold the GPU lock, and how to read the results. The steps fo
 change: the skill [measuring-performance-changes](../../skills/measuring-performance-changes/SKILL.md)
 and its [binding](../bindings/measuring-performance-changes.md).
 
+Contents:
+
+- [Scenes](#scenes)
+- [High's standard](#highs-standard)
+- [Timestamps](#timestamps)
+- [Modes](#modes)
+- [A/B comparisons](#ab-comparisons)
+- [Reading the results](#reading-the-results)
+- [Display mode](#display-mode)
+- [The GPU lock and the machine's load](#the-gpu-lock-and-the-machines-load)
+- [Hangs, lost scenes and unfinished runs](#hangs-lost-scenes-and-unfinished-runs)
+- [Browser and caches](#browser-and-caches)
+
 ## Scenes
 
 Every scene runs its clock, with a fixed weather and the camera moving as in play: a slow orbit

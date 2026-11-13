@@ -5,6 +5,29 @@ in one sentence under the same number; this page gives the rule, why it holds, w
 the mistake it came from. Where a module owns the detail, the rule links to its header comment
 rather than repeating it. Numbers are never reused: 20, 21 and 22 are not in use.
 
+Contents:
+
+- [Rule 1: An action's condition holds every tick](#rule-1-an-actions-condition-holds-every-tick)
+- [Rule 2: What happened is told once, as events](#rule-2-what-happened-is-told-once-as-events)
+- [Rule 3: Outside input is checked once, at the entrance](#rule-3-outside-input-is-checked-once-at-the-entrance)
+- [Rule 4: Determinism and path independence](#rule-4-determinism-and-path-independence)
+- [Rule 5: Generic generation](#rule-5-generic-generation)
+- [Rule 6: The game stays headless](#rule-6-the-game-stays-headless)
+- [Rule 7: Content is registered definitions; the core names none](#rule-7-content-is-registered-definitions-the-core-names-none)
+- [Rule 8: Systems talk through events and the state they own](#rule-8-systems-talk-through-events-and-the-state-they-own)
+- [Rule 9: Presentation by outcome and event category, with a default](#rule-9-presentation-by-outcome-and-event-category-with-a-default)
+- [Rule 10: Four layers, one direction](#rule-10-four-layers-one-direction)
+- [Rule 11: A package is imported through its exits](#rule-11-a-package-is-imported-through-its-exits)
+- [Rule 12: One place assembles; each state has one owner](#rule-12-one-place-assembles-each-state-has-one-owner)
+- [Rule 13: Only the page touches the browser's page](#rule-13-only-the-page-touches-the-browsers-page)
+- [Rule 14: Outside settings are checked once, at one entrance](#rule-14-outside-settings-are-checked-once-at-one-entrance)
+- [Rule 15: A change of the scene is announced once, and whoever keeps something of it follows](#rule-15-a-change-of-the-scene-is-announced-once-and-whoever-keeps-something-of-it-follows)
+- [Rule 16: Materials give surfaces; the light is computed in one place; the look is passed in](#rule-16-materials-give-surfaces-the-light-is-computed-in-one-place-the-look-is-passed-in)
+- [Rule 17: One convention for distance, light, exposure and time](#rule-17-one-convention-for-distance-light-exposure-and-time)
+- [Rule 18: One registered definition adds one thing](#rule-18-one-registered-definition-adds-one-thing)
+- [Rule 19: A source file stays under 1500 lines](#rule-19-a-source-file-stays-under-1500-lines)
+- [Rule 23: three's internals are reached in one place](#rule-23-threes-internals-are-reached-in-one-place)
+
 ## Rule 1: An action's condition holds every tick
 
 Every timed action declares what it needs to go on: its place still there, still offering the

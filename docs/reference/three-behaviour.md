@@ -13,6 +13,14 @@ code lint checks the entries that name a lint rule
 
 Module paths are under `packages/render/` unless they say otherwise.
 
+Contents:
+
+- [TSL](#tsl)
+- [Screen and passes](#screen-and-passes)
+- [Compiling and pipelines](#compiling-and-pipelines)
+- [Buffers](#buffers)
+- [The device and its queue](#the-device-and-its-queue)
+
 ## TSL
 
 ### The displaced position

@@ -31,8 +31,8 @@ sun and the sky give it (deep clear water, chunky stone, a lush meadow that move
 - `npm run dev` (port 5190), `build` (type-checks, then bundles), `typecheck`, `preview` (port
   5191), `lint` (the code lint). `npm run check`: what every commit passes, in seconds, without a
   GPU (`tools/check.mjs`); `-- --full` adds the build and the world's chunks. `npm run lint:docs`:
-  Markdown, offline links, docs paths; `lint:links` adds web links. In-page keys:
-  `docs/reference/page.md`.
+  Markdown, offline links, docs paths, the rules files' shape; `lint:links` adds web links. In-page
+  keys: `docs/reference/page.md`.
 
 ## Tools
 

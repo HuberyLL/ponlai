@@ -8,6 +8,15 @@ in its own facts.
 The rules every tool follows are in `AGENTS.md` (Tools; Stack and commands); this page gives the
 facts a tool is built on.
 
+Contents:
+
+- [Index](#index)
+- [Manual](#manual)
+- [Build](#build)
+- [Prove](#prove)
+- [Checks](#checks)
+- [Register](#register)
+
 ## Index
 
 - `docs/reference/tools.md` indexes the tools by question, one table per group. Each tool's manual
