@@ -616,11 +616,14 @@ const readJs = ( view, cpu ) => `async () => { ${ PAGE }
 		const w = { moonKeyGain: v( snap.moonKeyGain ), handoff: v( snap.handoff ), daylight: v( snap.daylight ), nightVisibility: v( snap.nightVisibility ),
 			nightSkyLevel: v( snap.nightSkyLevel ), moonVisibility: v( snap.moonVisibility ), overcastAdaptation: v( snap.overcastAdaptation ),
 			gradeNight: v( s.pipeline.settings.night ), gradeExposureNight: v( s.pipeline.settings.exposureNight ), cloud, rising: v( rising ) };
-		if ( DC.moonKeyShare ) w.moonKeyShare = DC.moonKeyShare( e );
-		if ( DC.nightAmbientShare ) w.nightAmbientShare = DC.nightAmbientShare( e, rising, cloud );
-		if ( DC.displayNight ) w.displayNight = DC.displayNight( snap.daylight, e, rising, cloud );
-		if ( DC.exposureNight ) w.exposureNight = DC.exposureNight.length === 3 ? DC.exposureNight( e, rising, cloud ) : DC.exposureNight( snap.daylight, e, rising, cloud );
-		if ( DC.starNight ) w.starNight = DC.starNight( snap.daylight, e, rising, cloud );
+		// (the shares take the day cycle's windows first; a --src from before the cycle held them
+		// calls them without)
+		const dw = s.dayCycle.windows, share = ( f, ...args ) => dw ? f( dw, ...args ) : f( ...args );
+		if ( DC.moonKeyShare ) w.moonKeyShare = share( DC.moonKeyShare, e );
+		if ( DC.nightAmbientShare ) w.nightAmbientShare = share( DC.nightAmbientShare, e, rising, cloud );
+		if ( DC.displayNight ) w.displayNight = share( DC.displayNight, snap.daylight, e, rising, cloud );
+		if ( DC.exposureNight ) w.exposureNight = dw || DC.exposureNight.length === 3 ? share( DC.exposureNight, e, rising, cloud ) : DC.exposureNight( snap.daylight, e, rising, cloud );
+		if ( DC.starNight ) w.starNight = share( DC.starNight, snap.daylight, e, rising, cloud );
 		for ( const [ n, [ lo, hi ] ] of DC.duskShares ?? [] ) w[ 'share.' + n ] = lo === hi ? lo : [ lo, hi ];
 		out.__weights = w;
 

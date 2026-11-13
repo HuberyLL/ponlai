@@ -1,14 +1,14 @@
 import { MathUtils, Matrix3, Quaternion, Vector3 } from 'three/webgpu';
 import { TUNE_ON, tune, tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
-import { CLOUDED_DAYLIGHT, DUSK_DEPTH, DUSK_EASE, DUSK_WINDOWS, type Span } from '../look/DayLook.ts';
+import type { DayWindows, Span } from '../look/DayLook.ts';
 import type { Exposure } from '../look/ExposureLook.ts';
 
 // The day cycle: an equinox day at a fixed latitude, its stars a fixed real sky; the moon is
 // placed, not orbited. One dominant key light (the sun by day, the moon by
 // night) drives terrain, characters, water and every shadow map; a sun/moon handoff
 // passes through zero direct light: the sun's key fades as its drawn disk sinks below the horizon,
-// and only then turns toward the moon (HANDOFF_TOP; `keyDir` turns along the great circle from the
+// and only then turns toward the moon (the windows' `handoffTop`; `keyDir` turns along the great circle from the
 // sun to the moon). The sun is drawn at twice its true
 // size and the moon larger (NightSky.ts `MOON_ANGULAR_RADIUS`); shadows and glints use the true sun. A low sun's key stays
 // orange red: the optical depth that sets its hue is capped (and a high sun's key is a warm white
@@ -26,7 +26,7 @@ import type { Exposure } from '../look/ExposureLook.ts';
 // the exposure's `nightMeterLift` stops by about -12 degrees, so the stars and the disk keep their
 // display.
 // The night ambient rises as the sun's skylight fades after sunset, and the moon's key comes in
-// once the handoff has turned it (MOON_KEY_TOP). Each night share comes in over a window placed
+// once the handoff has turned it (the windows' `moonKeyTop`). Each night share comes in over a window placed
 // so that what it adds in half a degree is no more than what the twilight loses in it. The aim:
 // every light the dusk is judged by (the land's, the sea's, the sky's, the haze's) falls as the
 // sun sinks, rising by no more than 2 % of itself in any half degree (tools/dusk-grid.mjs, its
@@ -60,8 +60,8 @@ import type { Exposure } from '../look/ExposureLook.ts';
 // -11 to -14 left the upper sky black at -9 to -11 under a day's exposure. Through the evening's
 // window each of the other night layers comes in by stops (`duskIn`: the night ambient, the sky's
 // night key, the stars and the haze's and the clouds' own moonlight), from some stops under the
-// twilight's own light it adds to (DUSK_DEPTH) to all of
-// it at -11, easing into it over the last three degrees (DUSK_EASE); the display's night weight,
+// twilight's own light it adds to (the windows' `depth`) to all of
+// it at -11, easing into it over the last three degrees (the windows' `ease`); the display's night weight,
 // which keys the exposure to that light, keeps an even fade. Faded evenly in light from -7, the
 // night's layers raised the land's light 2.5 stops in the first half degree: the land rose by 0.05
 // in Oklab L and the exposure fell 2.2 stops from -7 to -7.5 degrees, where the steps before it rose
@@ -69,7 +69,7 @@ import type { Exposure } from '../look/ExposureLook.ts';
 // from -8 to -10 and lands at -11 by 1.4 and 0.5, no step on the land rises by more than 0.01 in L,
 // and the sky's falls to the night's without turning. The clouded share keeps
 // the daylight's timing for the display (its night whole by about -2.5 degrees); the exposure's
-// night comes in from the horizon to -5 and the sky's by -6 (DUSK_WINDOWS), and a
+// night comes in from the horizon to -5 and the sky's by -6 (the windows' `dusk`), and a
 // side's flip at noon or midnight moves nothing: every weight here is 0 by day and 1 by night on
 // both sides.
 //
@@ -89,10 +89,10 @@ import type { Exposure } from '../look/ExposureLook.ts';
 // it (the key, the night sky's moonlit wash, the clouds' moonlight), so advancing it never darkens a
 // night.
 // The numbers chosen for the look (where the key turns to the moon, the dusk's windows and depths,
-// the ease) are look/DayLook.ts's, the exposure keys and the night sky's exposure the exposure's it
-// is given (look/ExposureLook.ts); this file keeps
-// the sun's path, the moon's and the stars' places, the shares' forms that read those tables, and
-// the clock.
+// the ease) are the day's windows the cycle is given (look/DayLook.ts `createDayWindows`), which
+// every share's function here takes as its first argument; the exposure keys and the night sky's
+// exposure are the exposure's it is given (look/ExposureLook.ts). This file keeps the sun's path,
+// the moon's and the stars' places, the shares' forms that read those tables, and the clock.
 
 export type DayPreset = keyof typeof DAY_PRESETS;
 
@@ -217,10 +217,10 @@ export function rampIn( elevation: number, [ whole, none ]: Span ): number {
 	return 1 - smoothstep( whole, none, elevation );
 
 }
-// a clouded sky's night by the daylight (CLOUDED_DAYLIGHT)
-function fromDaylight( daylight: number ): number {
+// a clouded sky's night by the daylight (the windows' `cloudedDaylight`)
+function fromDaylight( windows: DayWindows, daylight: number ): number {
 
-	return 1 - smoothstep( CLOUDED_DAYLIGHT[ 0 ], CLOUDED_DAYLIGHT[ 1 ], daylight );
+	return 1 - smoothstep( windows.cloudedDaylight[ 0 ], windows.cloudedDaylight[ 1 ], daylight );
 
 }
 // how far the sun has come through a twilight's window (degrees: 0 at `from`, 1 at `to`)
@@ -239,14 +239,14 @@ function inStops( t: number, least: number, cloud = 0 ): number {
 
 }
 /** A night layer's share through the evening's `window` (degrees: all of it under the first, none
- * over the second), coming in from `depth` stops under all of it (DUSK_DEPTH), under a clouded
- * share `cloud` all of it: exactly none and all at the window's ends, as the smoothstep it
- * replaced, and over the night end's DUSK_EASE degrees its rate falls to none (a cubic in the
- * window's place there, whose slope is the even stops' where it starts). */
-export function duskIn( elevation: number, window: readonly [ number, number ], depth: number, cloud = 0 ): number {
+ * over the second), coming in from `depth` stops under all of it (the windows' `depth`), under a
+ * clouded share `cloud` all of it: exactly none and all at the window's ends, as the smoothstep it
+ * replaced, and over the night end's last degrees (the windows' `ease`) its rate falls to none (a
+ * cubic in the window's place there, whose slope is the even stops' where it starts). */
+export function duskIn( windows: DayWindows, elevation: number, window: readonly [ number, number ], depth: number, cloud = 0 ): number {
 
 	const t = across( elevation, window );
-	const ease = Math.min( DUSK_EASE.degrees / ( window[ 1 ] - window[ 0 ] ), 1 );
+	const ease = Math.min( windows.ease.degrees / ( window[ 1 ] - window[ 0 ] ), 1 );
 	const x = t < ease ? t / ease : 1;
 	return inStops( t < ease ? ease * x * x * ( 2 - x ) : t, 2 ** - depth, cloud );
 
@@ -258,49 +258,49 @@ export function duskIn( elevation: number, window: readonly [ number, number ], 
  * leaves from -12 to -7 before sunrise (the header), evenly (a smoothstep) on both sides: it keys
  * the exposure to the light, and by stops it lagged the night's light through the evening's
  * window, the land rising by 0.06 in Oklab L. */
-export function displayNight( daylight: number, elevation: number, rising: boolean, cloud: number ): number {
+export function displayNight( windows: DayWindows, daylight: number, elevation: number, rising: boolean, cloud: number ): number {
 
-	const night = fromDaylight( daylight );
-	const dawn = rampIn( elevation, rising ? DUSK_WINDOWS.display.morning : DUSK_WINDOWS.display.evening );
+	const night = fromDaylight( windows, daylight );
+	const dawn = rampIn( elevation, rising ? windows.dusk.display.morning : windows.dusk.display.evening );
 	return dawn + ( night - dawn ) * cloud;
 
 }
 /** The exposure's night weight (look/ExposureLook.ts `keysAt`: the night key's share, and the
  * overcast night's offset by it) at the sun's `elevation` (degrees), `rising` or setting, under a
- * clouded share `cloud` (Weather.ts `cloudedShare`), over its own windows (DUSK_WINDOWS.exposure):
+ * clouded share `cloud` (Weather.ts `cloudedShare`), over its own windows (`windows.dusk.exposure`):
  * the meter's handover to the night key is a question of the light it reads, the display's of how
  * the night looks, so each is set apart. A clear sky's comes in as the display's does; a clouded
  * one's from the horizon to -5 degrees, a smoothstep by elevation, as the deck's twilight goes
- * (its own window, DUSK_WINDOWS.exposure.clouded). Taken by the daylight, as the display's is, it
+ * (its own window, `windows.dusk.exposure.clouded`). Taken by the daylight, as the display's is, it
  * came in from the horizon to about -3 degrees, and the handover from the deck's dusk keys
  * (look/ExposureLook.ts `cloudySunset` -2.5, `cloudyDusk` -2.9) to the night key (-2.57) came too
  * early for the metered light: the exposure fell while the land under the deck grew darker. */
-export function exposureNight( elevation: number, rising: boolean, cloud: number ): number {
+export function exposureNight( windows: DayWindows, elevation: number, rising: boolean, cloud: number ): number {
 
-	const night = rampIn( elevation, DUSK_WINDOWS.exposure.clouded );
-	const dawn = rampIn( elevation, rising ? DUSK_WINDOWS.exposure.morning : DUSK_WINDOWS.exposure.evening );
+	const night = rampIn( elevation, windows.dusk.exposure.clouded );
+	const dawn = rampIn( elevation, rising ? windows.dusk.exposure.morning : windows.dusk.exposure.evening );
 	return dawn + ( night - dawn ) * cloud;
 
 }
 /** The stars' share (SkyTrack.ts `starVisibility`): the display's night (`displayNight`), but the
- * evening's clear share by stops (DUSK_DEPTH.stars), as the stars are light the meter reads. */
-export function starNight( daylight: number, elevation: number, rising: boolean, cloud: number ): number {
+ * evening's clear share by stops (`windows.depth.stars`), as the stars are light the meter reads. */
+export function starNight( windows: DayWindows, daylight: number, elevation: number, rising: boolean, cloud: number ): number {
 
-	if ( rising ) return displayNight( daylight, elevation, rising, cloud );
-	const night = fromDaylight( daylight );
-	const dusk = duskIn( elevation, DUSK_WINDOWS.stars.evening, DUSK_DEPTH.stars );
+	if ( rising ) return displayNight( windows, daylight, elevation, rising, cloud );
+	const night = fromDaylight( windows, daylight );
+	const dusk = duskIn( windows, elevation, windows.dusk.stars.evening, windows.depth.stars );
 	return dusk + ( night - dusk ) * cloud;
 
 }
 /** The night key's share in the sky's light (look/SkyLook.ts SKY_LIGHT, its one reader), at the sun's
  * `elevation` (degrees), `rising` or setting, under a clouded share `cloud`: under cloud none from
  * 2 degrees up, all of it by -6; a clear sky's comes in from -7 to -11 degrees after sunset by
- * stops (DUSK_DEPTH.sky) and leaves from -13 to -3 before sunrise (the header). A debug page can
+ * stops (`windows.depth.sky`) and leaves from -13 to -3 before sunrise (the header). A debug page can
  * force it (`duskForce`). */
-export function skyNight( elevation: number, rising: boolean, cloud: number ): number {
+export function skyNight( windows: DayWindows, elevation: number, rising: boolean, cloud: number ): number {
 
-	const night = rampIn( elevation, DUSK_WINDOWS.sky.clouded );
-	const dawn = rising ? rampIn( elevation, DUSK_WINDOWS.sky.morning ) : duskIn( elevation, DUSK_WINDOWS.sky.evening, DUSK_DEPTH.sky );
+	const night = rampIn( elevation, windows.dusk.sky.clouded );
+	const dawn = rising ? rampIn( elevation, windows.dusk.sky.morning ) : duskIn( windows, elevation, windows.dusk.sky.evening, windows.depth.sky );
 	return duskForce( 'skyNight', dawn + ( night - dawn ) * cloud );
 
 }
@@ -328,55 +328,55 @@ export const MOON = tuneObject( { elevation: 20, turn: 0 }, { elevation: 'sky.mo
 	turn: { min: - 180, max: 180, onChange: markSkyRetune },
 } );
 /** The moon's share of the key at a sun elevation (degrees), before its visibility (the snapshot's
- * `moonKeyGain`): none above MOON_KEY_TOP, whole two degrees lower. */
-export function moonKeyShare( elevation: number ): number {
+ * `moonKeyGain`): none above the windows' `moonKeyTop`, whole two degrees lower. */
+export function moonKeyShare( windows: DayWindows, elevation: number ): number {
 
-	return rampIn( elevation, DUSK_WINDOWS.moonKey );
+	return rampIn( elevation, windows.dusk.moonKey );
 
 }
 
 /** The night's ambient share at a sun elevation (degrees): the sun's scattered skylight falls about
  * tenfold between the horizon and -4 degrees, and the night's ambient rises across the same band so
  * the two together never dip. */
-export function nightAmbientAt( elevation: number ): number {
+export function nightAmbientAt( windows: DayWindows, elevation: number ): number {
 
-	return rampIn( elevation, DUSK_WINDOWS.ambient.clouded );
+	return rampIn( elevation, windows.dusk.ambient.clouded );
 
 }
 /** The night ambient's share under a clouded share `cloud` (the night sky's ambient in the
  * clouds and the sea, the leaves' night key, and the night that
  * takes the sward's tint under cloud away, materials/SwardTint.ts): under cloud
  * `nightAmbientAt`'s, a clear sky's in from -7 to -11 degrees after sunset by stops
- * (DUSK_DEPTH.ambient) and out from -12 to -7 before sunrise with the display's night
+ * (`windows.depth.ambient`) and out from -12 to -7 before sunrise with the display's night
  * (`displayNight`). Through a clear twilight the frame
  * keeps a day's exposure, five stops over the night's at -7 degrees: the clumps lit by -5 then
  * glowed brightest in the twilight and dimmed as the night came in. */
-export function nightAmbientShare( elevation: number, rising: boolean, cloud: number ): number {
+export function nightAmbientShare( windows: DayWindows, elevation: number, rising: boolean, cloud: number ): number {
 
-	const clear = rising ? rampIn( elevation, DUSK_WINDOWS.ambient.morning ) : duskIn( elevation, DUSK_WINDOWS.ambient.evening, DUSK_DEPTH.ambient );
-	return clear + ( nightAmbientAt( elevation ) - clear ) * cloud;
+	const clear = rising ? rampIn( elevation, windows.dusk.ambient.morning ) : duskIn( windows, elevation, windows.dusk.ambient.evening, windows.depth.ambient );
+	return clear + ( nightAmbientAt( windows, elevation ) - clear ) * cloud;
 
 }
 /** The yunpeng's share of the night (their glow and the local lights, set from it by the island), at the sun's
  * `elevation` (degrees), `rising` or setting, under a clouded share `cloud`: the night ambient's
- * own form (`nightAmbientShare`) over windows of its own (DUSK_WINDOWS.yunpeng), so the lamps keep
+ * own form (`nightAmbientShare`) over windows of its own (`windows.dusk.yunpeng`), so the lamps keep
  * their coming in whatever the ambient's windows become. */
-export function yunpengNightShare( elevation: number, rising: boolean, cloud: number ): number {
+export function yunpengNightShare( windows: DayWindows, elevation: number, rising: boolean, cloud: number ): number {
 
-	const windows = DUSK_WINDOWS.yunpeng;
-	const clear = rising ? rampIn( elevation, windows.morning ) : duskIn( elevation, windows.evening, DUSK_DEPTH.ambient );
-	return clear + ( rampIn( elevation, windows.clouded ) - clear ) * cloud;
+	const own = windows.dusk.yunpeng;
+	const clear = rising ? rampIn( elevation, own.morning ) : duskIn( windows, elevation, own.evening, windows.depth.ambient );
+	return clear + ( rampIn( elevation, own.clouded ) - clear ) * cloud;
 
 }
 /** The clouds' own moonlight's share (Sky.ts, the clouds' `moonShare`), at the sun's `elevation`
  * (degrees), `rising` or setting, under a clouded share `cloud`: a clear evening's with the night
- * sky's own light, by stops (DUSK_DEPTH.cloudMoon), the morning's and a clouded sky's over their
- * own windows (DUSK_WINDOWS.cloudMoon). */
-export function cloudMoonShare( elevation: number, rising: boolean, cloud: number ): number {
+ * sky's own light, by stops (`windows.depth.cloudMoon`), the morning's and a clouded sky's over their
+ * own windows (`windows.dusk.cloudMoon`). */
+export function cloudMoonShare( windows: DayWindows, elevation: number, rising: boolean, cloud: number ): number {
 
-	const windows = DUSK_WINDOWS.cloudMoon;
-	const clouded = rampIn( elevation, windows.clouded );
-	return rising ? rampIn( elevation, windows.morning ) : MathUtils.lerp( duskIn( elevation, windows.evening, DUSK_DEPTH.cloudMoon ), clouded, cloud );
+	const own = windows.dusk.cloudMoon;
+	const clouded = rampIn( elevation, own.clouded );
+	return rising ? rampIn( elevation, own.morning ) : MathUtils.lerp( duskIn( windows, elevation, own.evening, windows.depth.cloudMoon ), clouded, cloud );
 
 }
 
@@ -523,11 +523,15 @@ export class DayCycle {
 	private completedDays = 0;
 	/** The exposure the cycle reads its base exposure and the night sky's from. */
 	readonly exposure: Exposure;
+	/** The day's windows the cycle's handoff and the night's shares read (look/DayLook.ts). */
+	readonly windows: DayWindows;
 
-	/** `exposure`: the base exposure by the sun's elevation and the night sky's (look/ExposureLook.ts). */
-	constructor( exposure: Exposure, options: DayCycleOptions = {} ) {
+	/** `exposure`: the base exposure by the sun's elevation and the night sky's (look/ExposureLook.ts);
+	 * `windows`: the day's windows (look/DayLook.ts `createDayWindows`). */
+	constructor( exposure: Exposure, windows: DayWindows, options: DayCycleOptions = {} ) {
 
 		this.exposure = exposure;
+		this.windows = windows;
 		this.paused = false;
 		this.advanceMoonPhase = false;
 		this.reset( options );
@@ -606,7 +610,7 @@ export class DayCycle {
 		// before the moon's key light fades in. Through the handoff the sun stands near the east or
 		// west point; at the default turn the moon stands on the meridian, about a right angle away,
 		// and at no turn opposed (the moon stands above the horizon).
-		const handoff = rampIn( elevation, DUSK_WINDOWS.handoff );
+		const handoff = rampIn( elevation, this.windows.dusk.handoff );
 		const keyDir = handoff === 0 ? sunDir.clone() : handoff === 1 ? moonDir.clone() :
 			sunDir.clone().applyQuaternion( _keyTurn.slerpQuaternions( _noTurn, _turn.setFromUnitVectors( sunDir, moonDir ), handoff ) );
 		return {
@@ -624,10 +628,10 @@ export class DayCycle {
 			moonPhase: this.phase,
 			moonIllumination,
 			moonVisibility,
-			// The moon's key comes in as soon as the handoff has turned it (from MOON_KEY_TOP), not
+			// The moon's key comes in as soon as the handoff has turned it (from the windows' `moonKeyTop`), not
 			// four degrees later: between the sun's last light and the night's ambient the meadow
 			// fell to about half its night brightness. It does not follow the phase.
-			moonKeyGain: moonKeyShare( elevation ) * moonVisibility,
+			moonKeyGain: moonKeyShare( this.windows, elevation ) * moonVisibility,
 			starFrame: starFrame.clone(),
 			daylight,
 			nightVisibility: 1 - smoothstep( - 15, - 3, elevation ),

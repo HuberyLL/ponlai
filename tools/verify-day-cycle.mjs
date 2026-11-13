@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import './island-look.mjs';
 import { DayCycle, DAY_PRESETS, NOON_ELEVATION, MOON, cloudMoonShare, displayNight, exposureNight, moonDirection, moonKeyShare, nightAmbientAt, nightAmbientShare, skyNight, starNight, sunElevationAt, morningHour, eveningHour, yunpengNightShare } from '../packages/render/sky/DayCycle.ts';
-import { DUSK_WINDOWS, HANDOFF_TOP, MOON_KEY_TOP } from '../packages/render/look/DayLook.ts';
+import { createDayWindows } from '../packages/render/look/DayLook.ts';
 import { createExposure } from '../packages/render/look/ExposureLook.ts';
 import { ISLAND_LOOK } from '../packages/island/look/IslandLook.ts';
 
@@ -11,9 +11,13 @@ import { ISLAND_LOOK } from '../packages/island/look/IslandLook.ts';
 const exposure = createExposure( ISLAND_LOOK );
 const { day: DAY_EXPOSURE, night: NIGHT_EXPOSURE, nightGain: NIGHT_EXPOSURE_GAIN, nightSky: NIGHT_SKY_EXPOSURE } = exposure;
 const exposureAt = ( elevation ) => exposure.at( elevation );
+// the island's day windows, which the day cycle and the night's shares take as the sky stage hands
+// them over
+const windows = createDayWindows( ISLAND_LOOK.day );
+const { handoffTop: HANDOFF_TOP, moonKeyTop: MOON_KEY_TOP, dusk: DUSK_WINDOWS } = windows;
 
 const near = ( actual, expected, tolerance = 1e-10 ) => assert.ok( Math.abs( actual - expected ) <= tolerance, `${ actual } != ${ expected }` );
-const cycle = new DayCycle( exposure );
+const cycle = new DayCycle( exposure, windows );
 // The clock starts at the golden hour, its sun 26.2 degrees up in the afternoon.
 near( cycle.hour, DAY_PRESETS[ 'golden-hour' ] );
 near( cycle.snapshot().elevation, 26.2, 1e-9 );
@@ -95,7 +99,7 @@ for ( let minute = 0; minute <= 1440; minute ++ ) {
 	assert.ok( s.exposure >= DAY_EXPOSURE - 1e-12 && s.exposure <= NIGHT_EXPOSURE + 1e-12 );
 	assert.equal( s.exposure, exposureAt( s.elevation ) );
 	// The night's ambient arrives before the stars, across the band where the sun's sky fades.
-	const nightAmbient = nightAmbientAt( s.elevation );
+	const nightAmbient = nightAmbientAt( windows, s.elevation );
 	assert.ok( nightAmbient >= 0 && nightAmbient <= 1 && nightAmbient >= s.nightVisibility );
 	if ( s.elevation <= DUSK_WINDOWS.ambient.clouded[ 0 ] ) assert.equal( nightAmbient, 1 );
 	if ( s.elevation >= DUSK_WINDOWS.ambient.clouded[ 1 ] ) assert.equal( nightAmbient, 0 );
@@ -113,7 +117,7 @@ for ( let minute = 0; minute <= 1440; minute ++ ) {
 }
 // Every dusk share only grows as the sun sinks, on both sides of the day and under a clear and a
 // clouded sky, from +2 to -14 degrees in steps of 0.05, and is exactly 0 from +2.5 degrees up (the
-// shares' own shape, look/DayLook.ts DUSK_WINDOWS; no GPU).
+// shares' own shape, the day windows' `dusk`; no GPU).
 {
 
 	const daylightAt = ( elevation, rising ) => {
@@ -123,11 +127,14 @@ for ( let minute = 0; minute <= 1440; minute ++ ) {
 
 	};
 	const shares = {
-		display: ( e, rising, cloud ) => displayNight( daylightAt( e, rising ), e, rising, cloud ),
-		exposure: exposureNight,
-		stars: ( e, rising, cloud ) => starNight( daylightAt( e, rising ), e, rising, cloud ),
-		sky: skyNight, ambient: nightAmbientShare, yunpeng: yunpengNightShare, cloudMoon: cloudMoonShare,
-		moonKey: ( e ) => moonKeyShare( e ),
+		display: ( e, rising, cloud ) => displayNight( windows, daylightAt( e, rising ), e, rising, cloud ),
+		exposure: ( e, rising, cloud ) => exposureNight( windows, e, rising, cloud ),
+		stars: ( e, rising, cloud ) => starNight( windows, daylightAt( e, rising ), e, rising, cloud ),
+		sky: ( e, rising, cloud ) => skyNight( windows, e, rising, cloud ),
+		ambient: ( e, rising, cloud ) => nightAmbientShare( windows, e, rising, cloud ),
+		yunpeng: ( e, rising, cloud ) => yunpengNightShare( windows, e, rising, cloud ),
+		cloudMoon: ( e, rising, cloud ) => cloudMoonShare( windows, e, rising, cloud ),
+		moonKey: ( e ) => moonKeyShare( windows, e ),
 	};
 	for ( const [ name, share ] of Object.entries( shares ) ) for ( const rising of [ false, true ] ) for ( const cloud of [ 0, 1 ] ) {
 
@@ -164,7 +171,7 @@ for ( const hour of [ 0, 6, 12, 18, 24 ] ) {
 	assert.ok( before.moonDir.distanceTo( after.moonDir ) < 1e-6 );
 	assert.ok( before.keyDir.distanceTo( after.keyDir ) < 1e-6 );
 	for ( const key of [ 'daylight', 'nightVisibility' ] ) near( before[ key ], after[ key ], 1e-5 );
-	near( nightAmbientAt( before.elevation ), nightAmbientAt( after.elevation ), 1e-5 );
+	near( nightAmbientAt( windows, before.elevation ), nightAmbientAt( windows, after.elevation ), 1e-5 );
 	// (the exposure and the deck's adaptation are several units and steep at the horizon: the
 	// same relative step)
 	near( before.exposure, after.exposure, 1e-4 );
@@ -271,7 +278,7 @@ for ( const phase of [ 0, 0.125, 0.25, 0.499999, 0.5, 0.500001, 0.75, 0.875, 0.9
 
 }
 // A new clock's moon is full; it shows only once the sun is five degrees down.
-assert.equal( new DayCycle( exposure ).moonPhase, 0.5 );
+assert.equal( new DayCycle( exposure, windows ).moonPhase, 0.5 );
 for ( let minute = 0; minute < 1440; minute ++ ) {
 
 	cycle.setHour( minute / 60 );
@@ -282,7 +289,7 @@ for ( let minute = 0; minute < 1440; minute ++ ) {
 }
 // The stars' sky is fixed (STARS): one frame at every hour of the night, on the first day and a
 // hundred days on.
-const starClock = new DayCycle( exposure, { hour: 0 } );
+const starClock = new DayCycle( exposure, windows, { hour: 0 } );
 const starFrame = starClock.snapshot().starFrame.elements.slice();
 for ( const days of [ 0, 100 ] ) {
 
@@ -328,7 +335,7 @@ for ( const invalid of [ NaN, Infinity, - Infinity ] ) {
 	assert.throws( () => { cycle.dayLength = invalid; }, RangeError );
 	assert.throws( () => { cycle.lunarPeriodDays = invalid; }, RangeError );
 	assert.throws( () => cycle.advance( invalid ), RangeError );
-	assert.throws( () => new DayCycle( exposure, { hour: invalid } ), RangeError );
+	assert.throws( () => new DayCycle( exposure, windows, { hour: invalid } ), RangeError );
 
 }
 for ( const invalid of [ 0, - 1 ] ) {

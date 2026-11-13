@@ -3,10 +3,16 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import './island-look.mjs';
-import { Wind, createWindUniforms, flutterWave, plantRate, plantWave, wave, weatherWind, CLOCK_PERIOD, GUST_TILE, GUST_TRAVEL, GUST_TIME_PERIOD, GUST_EVOLUTION, PLANT_RATE_BANDS, PLANT_RATE_SPREAD, REFERENCE_SPEED, REFERENCE_GUSTINESS, plantSpeedOf } from '../packages/render/weather/Wind.ts';
+import { Wind, createWindUniforms as windUniforms, flutterWave, plantRate, plantWave, wave, weatherWind, windResponse, CLOCK_PERIOD, GUST_TILE, GUST_TRAVEL, GUST_TIME_PERIOD, GUST_EVOLUTION, PLANT_RATE_BANDS, REFERENCE_SPEED, REFERENCE_GUSTINESS, plantSpeedOf as speedOf } from '../packages/render/weather/Wind.ts';
+import { ISLAND_LOOK } from '../packages/island/look/IslandLook.ts';
 import { Weather, WIND_LEVELS, PREVAILING_HEADING } from '../packages/render/sky/Weather.ts';
 import { debugFlags } from '../packages/render/debug/DebugFlags.ts';
 
+// the island's wind look, as the page's shared uniforms take it (shared.ts `createShared`)
+const response = windResponse( ISLAND_LOOK.wind );
+const createWindUniforms = () => windUniforms( response );
+const plantSpeedOf = ( u10 ) => speedOf( response, u10 );
+const PLANT_RATE_SPREAD = response.plantRateSpread;
 const near = ( a, b, tolerance = 1e-9 ) => assert.ok( Math.abs( a - b ) <= tolerance, `${ a } != ${ b }` );
 const wind = new Wind( createWindUniforms(), { time: 12 } );
 const start = wind.uniforms.displacement.value.clone();
@@ -49,7 +55,7 @@ for ( const [ name, level ] of Object.entries( WIND_LEVELS ) ) {
 // fair's load is the wind the plants and the sea were tuned at
 assert.deepEqual( weatherWind( new Weather( 'fair' ).state ), { speed: REFERENCE_SPEED, heading: PREVAILING_HEADING, gustiness: REFERENCE_GUSTINESS } );
 // A plant's own sway rate (Wind.ts `plantRate`, `plantWave`'s): its kind's and up to
-// PLANT_RATE_SPREAD of it quicker, in PLANT_RATE_BANDS bands from the kind's own to the spread's
+// the look's plantRateSpread of it quicker, in PLANT_RATE_BANDS bands from the kind's own to the spread's
 // top, always whole cycles per CLOCK_PERIOD (the bamboo's culms, the yunpeng and the branches, the
 // sprays: Deform.ts).
 for ( const rate of [ 0.095, 0.16, 0.21 ] ) {
@@ -57,7 +63,7 @@ for ( const rate of [ 0.095, 0.16, 0.21 ] ) {
 	const bands = new Set();
 	for ( let i = 0; i < 1024; i ++ ) {
 
-		const f = plantRate( rate, ( i + 0.5 ) / 1024 );
+		const f = plantRate( response, rate, ( i + 0.5 ) / 1024 );
 		near( f * CLOCK_PERIOD, Math.round( f * CLOCK_PERIOD ), 1e-6 );
 		assert.ok( f >= rate - 1e-12 && f <= rate * ( 1 + PLANT_RATE_SPREAD ) + 0.0005 + 1e-12, `${ rate }: ${ f }` );
 		bands.add( f );
@@ -124,8 +130,10 @@ assert.deepEqual( prev( step ), cur( step ), 'A paused frame has no motion' );
 // last RENDERED frame drew it. main.ts updates the wind once per tick and every tick renders, so
 // before each update the current state is the frame just drawn. Steps of dt and then 2 dt, a
 // change of speed and heading, and paused frames.
-const state = ( w ) => Object.fromEntries( Object.entries( w ).map( ( [ k, u ] ) => [ k, typeof u.value === 'number' ? u.value : u.value.toArray() ] ) );
+// (`response` is no uniform: the look's numbers, one object both states share)
+const state = ( w ) => Object.fromEntries( Object.entries( w ).filter( ( [ k ] ) => k !== 'response' ).map( ( [ k, u ] ) => [ k, typeof u.value === 'number' ? u.value : u.value.toArray() ] ) );
 const vegetationKeys = Object.keys( createWindUniforms().previous );
+assert.equal( wind.uniforms.previous.response, wind.uniforms.response, 'both states carry the wind\'s one response' );
 const current = ( w ) => state( Object.fromEntries( vegetationKeys.map( ( k ) => [ k, w.uniforms[ k ] ] ) ) );
 const previous = ( w ) => state( w.uniforms.previous );
 const frames = new Wind( createWindUniforms(), { speed: 5, heading: 30, time: 997 } );
@@ -202,7 +210,7 @@ grassWrap.update( 0.02, 6 );
 const g1 = grassWrap.uniforms.plantClock.value;
 assert.ok( g1 < g0, 'the plants\' clock wrapped' );
 // the grass's rate, and each band of the bamboo's culms
-for ( const rate of [ 0.084, ...[ 0, 0.3, 0.6, 0.9 ].map( ( xi ) => plantRate( 0.095, xi / 16 ) ) ] ) near( turn( g0 * rate, g1 * rate ), 0.02 * plantSpeedOf( 6 ) * rate, 1e-6 );
+for ( const rate of [ 0.084, ...[ 0, 0.3, 0.6, 0.9 ].map( ( xi ) => plantRate( response, 0.095, xi / 16 ) ) ] ) near( turn( g0 * rate, g1 * rate ), 0.02 * plantSpeedOf( 6 ) * rate, 1e-6 );
 wrap.update( 0.02, 6 );
 assert.ok( wrap.uniforms.clock.value < atWrap.clock, 'the clock wrapped' );
 assert.ok( wrap.uniforms.gustTime.value < atWrap.gustTime, 'the gusts\' time wrapped' );

@@ -37,6 +37,7 @@ import { settings as params, numberSetting, type SettingsQuery } from './Setting
 import * as THREE from 'three/webgpu';
 import { Sky } from './sky/Sky.ts';
 import { createExposure, type ExposureTables } from './look/ExposureLook.ts';
+import { createDayWindows, type DayWindowTable } from './look/DayLook.ts';
 import type { Look } from './look/Look.ts';
 import { DAY_PRESETS, type DayPreset, DayCycle, sunRising, duskForce, nightAmbientShare } from './sky/DayCycle.ts';
 import { isParkedWeather, WEATHER_PRESETS, type WeatherName, isWindLevel, type WindLevel, Weather, type TunedField, type WeatherState, deckLight, cloudedShare, type WindChoice } from './sky/Weather.ts';
@@ -365,22 +366,24 @@ export function createScenes( render: RenderParts, { viewport, dpr }: { viewport
 /**
  * The scene the page loads (`sceneOptions`), the sky, the day and the weather, the wind, the rain
  * and the sky's quality knobs. `seaFog` and `dayFog` start the deep sea fog and the day's fog layer
- * on. `look`: the look's tables the exposure is made from (look/ExposureLook.ts `createExposure`:
- * the exposure takes its tables here, the other systems from the installed look), which the sky
- * carries to the day, the grade and the frame's passes (`sky.exposure`).
+ * on. `look`: the look's tables the exposure and the day's windows are made from
+ * (look/ExposureLook.ts `createExposure`, look/DayLook.ts `createDayWindows`), which the sky carries
+ * to the day, the grade, the frame's passes and the night's readers (`sky.exposure`,
+ * `sky.dayWindows`).
  */
-export function createSky( render: RenderParts, { scene: loaded, seaFog, dayFog, look }: { scene: SceneOptions; seaFog: boolean; dayFog: boolean; look: ExposureTables } ) {
+export function createSky( render: RenderParts, { scene: loaded, seaFog, dayFog, look }: { scene: SceneOptions; seaFog: boolean; dayFog: boolean; look: ExposureTables & { day: DayWindowTable } } ) {
 
 	const { quality, renderer } = render;
 
 	// ------------------------------------------------------------------ sky, light, water optics
 
 	const exposure = createExposure( look );
-	const sky = new Sky( renderer, { exposure, elevation: 32, azimuth: - 8 } );
+	const dayWindows = createDayWindows( look.day );
+	const sky = new Sky( renderer, { exposure, dayWindows, elevation: 32, azimuth: - 8 } );
 	render.sky = sky;
 	sky.setEnvironmentSource( quality.environmentSource );
 	staged( render ).loaded = loaded;
-	const dayCycle = new DayCycle( exposure, loaded.day );
+	const dayCycle = new DayCycle( exposure, dayWindows, loaded.day );
 	render.dayCycle = dayCycle;
 	const weather = new Weather( loaded.weather, loaded.wind );
 	render.weather = weather;
@@ -554,7 +557,7 @@ export function createEnvironment( render: RenderParts ) {
 		// (weather/HazeKeys.ts `hazeKeyAt`)
 		const progress = weather.progress, blend = progress * progress * ( 3 - 2 * progress );
 		const fogWeather = ( weather.origin === 'fog' ? 1 - blend : 0 ) + ( weather.target === 'fog' ? blend : 0 );
-		hazeKeyAt( sky.elevation, rising, weather.skyMix, sky.weather.windSpeed, sky.weather.rain, dayFogView.on ? 1 : 0, seaFogView.on ? 1 : 0, fogWeather, render.hazeKey );
+		hazeKeyAt( sky.dayWindows, sky.elevation, rising, weather.skyMix, sky.weather.windSpeed, sky.weather.rain, dayFogView.on ? 1 : 0, seaFogView.on ? 1 : 0, fogWeather, render.hazeKey );
 		render.pipeline.air.haze.value = sky.weather.haze * render.hazeKey.amount;
 		render.pipeline.air.fog.value = Math.max( sky.weather.fog, render.hazeKey.mist );
 		render.pipeline.air.setLook( render.hazeKey );
@@ -887,7 +890,7 @@ export function createAmbient( render: RenderParts, { ambientData, world }: { am
 	const ambient = new AmbientVolume( renderer, ambientData );
 	render.ambient = ambient;
 	installAmbientVolume( ambient );
-	const ambientRelight = new AmbientRelight( { renderer, volume: ambient, shared, sky: ambientSky, weights: () => sky.environmentWeights(), cloud: ( position ) => sky.keyDirectVisibility( position ), seaCloud: ( position ) => sky.cloudVisibility( position ), keyHeight: () => liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), sunElevation: () => sky.elevation, rising: () => sky.rising, clouded: () => cloudedShare( weather.skyMix ), overcast: () => weather.skyMix[ 3 ] ?? 0, moon: () => ( { elevation: sky.moonElevation, skyShare: sky.moonSkyShare } ) } );
+	const ambientRelight = new AmbientRelight( { renderer, volume: ambient, shared, sky: ambientSky, weights: () => sky.environmentWeights(), cloud: ( position ) => sky.keyDirectVisibility( position ), seaCloud: ( position ) => sky.cloudVisibility( position ), keyHeight: () => liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), dayWindows: sky.dayWindows, sunElevation: () => sky.elevation, rising: () => sky.rising, clouded: () => cloudedShare( weather.skyMix ), overcast: () => weather.skyMix[ 3 ] ?? 0, moon: () => ( { elevation: sky.moonElevation, skyShare: sky.moonSkyShare } ) } );
 	render.ambientRelight = ambientRelight;
 	// the environment's own harmonics, which the specular's relight divides by (AmbientSample.ts)
 	installEnvironmentHarmonics( ambientRelight );
@@ -1202,7 +1205,7 @@ export function createFrameStages( render: RenderParts, host: FrameHost ): Frame
 			// the leaves' night key and the sward's go by the night ambient's share (sky/DayCycle.ts
 			// `nightAmbientShare`), the local lights by a share of the scene's own (`lightNight`); a debug
 			// page may force each reader's (DayCycle.ts `duskForce`)
-			return nightAmbientShare( sky.elevation, sky.rising, shared.clouded.value );
+			return nightAmbientShare( sky.dayWindows, sky.elevation, sky.rising, shared.clouded.value );
 
 		},
 

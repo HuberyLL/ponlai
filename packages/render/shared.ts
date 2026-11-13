@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { float, uniform, vec3 } from 'three/tsl';
-import { createWindUniforms } from './weather/Wind.ts';
+import { createWindUniforms, windResponse } from './weather/Wind.ts';
 import { displacementUniforms } from './vegetation/Displacement.ts';
 import { ABSORPTION, BACKSCATTER, FORWARD_ANGLE, FORWARD_SCATTER, SCATTER } from './ocean/SeaOptics.ts';
 import type { Look } from './look/Look.ts';
@@ -16,12 +16,13 @@ import type { Look } from './look/Look.ts';
 //   the install throws too, at the read, naming the field (its stack names the reader): unlike the
 //   settings and the look, the uniforms have no defaults a reader could take instead.
 // - The look's numbers every material's shader reads take their tables here, as an argument
-//   (look/Look.ts; the entry hands over the set it installs): the ambient occlusion's floor and the
-//   meadow canopy's media. So two objects made from two sets hold their own
+//   (look/Look.ts; the entry hands over the set it installs): the ambient occlusion's floor, the
+//   meadow canopy's media and the wind's look, which the wind's states carry (weather/Wind.ts
+//   `windResponse`). So two objects made from two sets hold their own
 //   (tools/verify-look-params.mjs).
 export const createShared = ( look: SharedTables ) => ( {
 	time: uniform( 0 ),
-	wind: createWindUniforms(),
+	wind: createWindUniforms( windResponse( look.wind ) ),
 	// the displacement field the islanders part the meadow through (world/Trample.ts): the
 	// base nodes the blades sample it by (vegetation/Displacement.ts)
 	displacement: displacementUniforms,
@@ -102,7 +103,7 @@ export const createShared = ( look: SharedTables ) => ( {
 } );
 
 /** The look's tables the shared object takes (`createShared`). */
-export type SharedTables = Pick<Look, 'occlusion' | 'meadowCanopy'>;
+export type SharedTables = Pick<Look, 'occlusion' | 'meadowCanopy' | 'wind'>;
 
 export type Shared = ReturnType<typeof createShared>;
 

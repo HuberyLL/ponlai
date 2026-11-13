@@ -638,7 +638,7 @@ export function createIslandFrame( render: RenderParts, island: IslandParts, { f
 
 		// the yunpeng's glow and its local lights by their own share of the night (sky/DayCycle.ts
 		// `yunpengNightShare`); a debug page may force it (DayCycle.ts `duskForce`)
-		night: () => setYunpengNight( duskForce( 'yunpeng', yunpengNightShare( sky.elevation, sky.rising, shared.clouded.value ) ) ),
+		night: () => setYunpengNight( duskForce( 'yunpeng', yunpengNightShare( sky.dayWindows, sky.elevation, sky.rising, shared.clouded.value ) ) ),
 
 		tintSward( nightAmbient ) {
 

@@ -4,7 +4,7 @@ import { Fn, clamp as clampNode, dot, floor, fract, ivec3, mix, select, sin, uin
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tune } from '../debug/Tune.ts';
 import { PREVAILING_HEADING, type WeatherState } from '../sky/Weather.ts';
-import { GUST_GAIN, GUST_JITTER, PLANT_RATE_SPREAD, PLANT_SPEED, PLANT_WIND, plantSpeedOf } from '../look/WindLook.ts';
+import type { WindLook } from '../look/Look.ts';
 
 // The weather's one wind, integrated on the CPU, what every part of the scene takes from it, and
 // the one wind field all vegetation moves in.
@@ -18,7 +18,7 @@ import { GUST_GAIN, GUST_JITTER, PLANT_RATE_SPREAD, PLANT_SPEED, PLANT_WIND, pla
 // its own. U_ref is REFERENCE_SPEED, the gentle level's 3.8 m/s (fair's load), at which the sea was
 // tuned:
 // - vegetation: `direction`; the plants' speed U_p (`plantSpeed`, m/s), a piecewise-linear map of
-//   U10 (PLANT_WIND, `plantSpeedOf`), from which the wind's strength on the plants is taken
+//   U10 (the look's `plantWind`, `plantSpeedOf`), from which the wind's strength on the plants is taken
 //   (`windStrength`: the grass's gusted wind, the limbs' `plantLoad`) and the grass's swing opens;
 //   the gust field's along-wind travel (`gustScroll`, at GUST_TRAVEL U_p, shared with the sea) and
 //   its own time (`gustTime`), which together sweep and reshape the gusts; the plants' phase clock
@@ -30,7 +30,7 @@ import { GUST_GAIN, GUST_JITTER, PLANT_RATE_SPREAD, PLANT_SPEED, PLANT_WIND, pla
 //   still, while the sea, the clouds, the rain and the haze keep U10, the sea's state the true one.
 //   The grass and the plants sway faster as the wind rises, and a stronger wind bends them further:
 //   how hard it blows reads at a glance. The gust factor enters nothing today: the gusts' share of
-//   the strength is GUST_GAIN.
+//   the strength is the look's `gustGain`.
 // - the sea: the FFT's spectrum follows `speed` and `heading` (OceanFFT.setWind: tidewater's sea
 //   state at that wind), so the sea is the same function of the weather however the page reached
 //   it: the wind sea turns with the weather's wind, while the swell keeps the prevailing heading
@@ -61,7 +61,7 @@ import { GUST_GAIN, GUST_JITTER, PLANT_RATE_SPREAD, PLANT_SPEED, PLANT_WIND, pla
 // across the meadow and the grove as a wave, a patch crossing its own size in a second or two on a
 // fair day, and a stronger wind sends them faster. Much faster and, seen from the island camera's
 // height, the gusts would flicker rather than run. The gust q is the noise mapped to 0..1. The wind's strength on the plants
-// is linear in their speed, w = U_p ( 1 + GUST_GAIN q ) (`windStrength`), so a light breeze shows its gusts and a
+// is linear in their speed, w = U_p ( 1 + gustGain q ) (`windStrength`), so a light breeze shows its gusts and a
 // gale does not press everything flat at once. (Gusts as a noise field scrolled with the wind:
 // CREDITS.md.)
 // `windField` gives the gust and the limbs' load from it (`plantLoad`); still air is the rest pose.
@@ -74,10 +74,10 @@ import { GUST_GAIN, GUST_JITTER, PLANT_RATE_SPREAD, PLANT_SPEED, PLANT_WIND, pla
 // kind's drag exponent and scaled by the plant's own load in fair's mean wind, set by its height,
 // its crown's area and its stiffness (Deform.ts, Bamboo.ts, Yunpeng.ts). A limb on a plant
 // (Deform.ts `branchBend`, `sprayBend`) takes a load linear in the wind's strength at the root,
-// u_p = sat( w / PLANT_SPEED ) (`plantLoad`, `windField`'s z). A plant's swing about its bend
+// u_p = sat( w / plantSpeed ) (`plantLoad`, `windField`'s z). A plant's swing about its bend
 // runs on the plants' travel (`plantClock`) at the kind's rate in swings a metre, so its frequency
 // is the rate times U_p and a stronger wind sways the plants faster; each plant swings a little
-// quicker by a band of its own (up to PLANT_RATE_SPREAD in PLANT_RATE_BANDS steps) and on a phase
+// quicker by a band of its own (up to `plantRateSpread` in PLANT_RATE_BANDS steps) and on a phase
 // of its own (`plantWave`, from a hash of its root), so neighbours sway apart. Leaf edges, sprays
 // and fronds flutter on their own phases at fixed rates (`clock`), a small motion on top.
 //
@@ -142,12 +142,15 @@ export const GUST_TIME_PERIOD = GUST_EVOLUTION * CLOCK_PERIOD;
 // Brunet 1996, as given in Tse, Poindexter and Variano 2016; a forest gives 1.75, Christen et al.
 // 2008), U_p taken as that wind.
 export const GUST_TRAVEL = 1.8;
-// The gusts' share of the wind's strength (`windStrength`: w = S ( 1 + GUST_GAIN q )), a blade's
-// largest offset for its gust sample (GUST_JITTER, `gustJitter`), the limbs' reference speed
-// (PLANT_SPEED, `plantLoad`), the plants' speed by the wind's (PLANT_WIND, `plantSpeedOf`) and the
-// spread of their sway rates (PLANT_RATE_SPREAD, `plantWave`) are the look's: look/WindLook.ts,
-// handed on from here to the modules that take the wind from this file.
-export { GUST_GAIN, GUST_JITTER, PLANT_RATE_SPREAD, PLANT_SPEED, PLANT_WIND, plantSpeedOf };
+// The gusts' share of the wind's strength (`gustGain`, `windStrength`: w = S ( 1 + gustGain q )), a
+// blade's largest offset for its gust sample (`gustJitter`), the limbs' reference speed
+// (`plantSpeed`, `plantLoad`), the plants' speed by the wind's (`plantWind`, `plantSpeedOf`) and the
+// spread of their sway rates (`plantRateSpread`, `plantWave`) are the look's (look/Look.ts
+// `WindLook`). The wind takes them where it is created, not as this module loads: `windResponse`
+// makes them from a look's table, `createWindUniforms` carries them in both of the vegetation's
+// wind states (`response`), and every function here reads them from the state or the response it
+// is given, so two winds made from two tables hold their own (tools/verify-look-params.mjs). The
+// numbers reach the shaders as literals, as before.
 // The gust q's mean (`gustAt`): the gust noise is symmetric about 0, so q about 1/2.
 export const GUST_MEAN = 0.5;
 // The air's density (kg/m^3), the one Koizumi et al.'s drag coefficients were computed with
@@ -158,24 +161,58 @@ export const AIR_DENSITY = 1.2;
 export const ROUGHNESS = 0.003;
 /** The mean wind at `z` metres over U10's, by the log law over ROUGHNESS (0 at and below z0). */
 export const logLaw = ( z: number ): number => Math.max( 0, Math.log( z / ROUGHNESS ) / Math.log( 10 / ROUGHNESS ) );
-// Each plant's sway rate is its kind's times 1 + up to PLANT_RATE_SPREAD, in PLANT_RATE_BANDS
+// Each plant's sway rate is its kind's times 1 + up to the look's `plantRateSpread`, in PLANT_RATE_BANDS
 // even steps from 0 (`plantWave`).
 export const PLANT_RATE_BANDS = 4;
 const TAU = Math.PI * 2;
 
+/** The wind's look (look/Look.ts `WindLook`) as the wind reads it (`windResponse`): the table's
+ * numbers, the limbs' reference speed `plantSpeed` tunable at load (`wind.plants.speed`). Plain
+ * numbers, which the shaders take as literals. */
+export type WindResponse = Readonly<WindLook>;
+
+/** The wind's look made from a look's table: registers the limbs' reference speed as a tunable
+ * (debug/Tune.ts) under the name it always had. The tune table is one per process: on a debug page
+ * a second response reads the first one's `wind.plants.speed`. */
+export function windResponse( look: WindLook ): WindResponse {
+
+	return {
+		gustGain: look.gustGain,
+		gustJitter: look.gustJitter,
+		plantWind: look.plantWind,
+		plantSpeed: tune( 'wind.plants.speed', look.plantSpeed, { min: 10, max: 100, scale: 'log', load: true } )(),
+		plantRateSpread: look.plantRateSpread,
+	};
+
+}
+
+/** The plants' speed U_p (m/s) for a mean wind 10 m up `u10` (m/s): a line through the response's
+ * `plantWind` points, and past the last one on along its last piece's slope. */
+export function plantSpeedOf( response: Pick<WindResponse, 'plantWind'>, u10: number ): number {
+
+	const keys = response.plantWind;
+	let i = 1;
+	while ( i < keys.length - 1 && u10 > keys[ i ][ 0 ] ) i ++;
+	const [ x0, y0 ] = keys[ i - 1 ], [ x1, y1 ] = keys[ i ];
+	return Math.max( 0, y0 + ( y1 - y0 ) * ( u10 - x0 ) / ( x1 - x0 ) );
+
+}
+
 // The wind's state as the vegetation's displacement reads it (see `windField` and
 // `setWindDisplacement`); every value integrated or set from the weather, never time * a changing
-// speed, so a paused frame and a seek reproduce the same pose.
-function vegetationWind( direction: Vector2 ) {
+// speed, so a paused frame and a seek reproduce the same pose. `response` is no uniform: the
+// look's numbers the functions below read from the state, the same object in both states.
+function vegetationWind( direction: Vector2, response: WindResponse ) {
 
 	return {
 		direction: uniform( direction.clone() ), // world-space travel direction; unit x/z
 		breeze: uniform( 1 ), // speed / fair speed: the leaves' flutter and the plants' drag (`plantWind`)
-		plantSpeed: uniform( plantSpeedOf( REFERENCE_SPEED ) ), // the plants' speed U_p, m/s (PLANT_WIND)
+		plantSpeed: uniform( plantSpeedOf( response, REFERENCE_SPEED ) ), // the plants' speed U_p, m/s (`plantWind`)
 		clock: uniform( 0 ), // scene seconds modulo CLOCK_PERIOD: the leaves' flutter
 		gustScroll: uniform( 0 ), // the gusts' along-wind travel (GUST_TRAVEL x the plants') modulo GUST_TILE, m: their sweep
 		gustTime: uniform( 0 ), // the gust noise's time axis, GUST_EVOLUTION cells a second, modulo GUST_TIME_PERIOD
 		plantClock: uniform( 0 ), // the plants' phase clock: their speed integrated modulo CLOCK_PERIOD, m: the grass's and the plants' sway
+		response,
 	};
 
 }
@@ -186,9 +223,9 @@ function vegetationWind( direction: Vector2 ) {
 export type WindState = ReturnType<typeof vegetationWind>;
 
 /** A wind state's values as two vec4s, ( direction, breeze, clock ) and ( gust scroll, gust time,
- * plant clock, plants' speed ), and the state read back from two such nodes: a debug
- * kernel's per-step wind (packages/island/debug/WindProbe.ts), so the scrolls stay read here alone
- * (tools/verify-wind.mjs). */
+ * plant clock, plants' speed ), and the state read back from two such nodes with the wind's
+ * `response`: a debug kernel's per-step wind (packages/island/debug/WindProbe.ts), so the scrolls
+ * stay read here alone (tools/verify-wind.mjs). */
 export const WIND_STATE_VEC4S = 2;
 export function packWindState( state: WindState ): number[] {
 
@@ -197,26 +234,27 @@ export function packWindState( state: WindState ): number[] {
 
 }
 
-export function windStateOf( a: Node<'vec4'>, b: Node<'vec4'> ): WindState {
+export function windStateOf( a: Node<'vec4'>, b: Node<'vec4'>, response: WindResponse ): WindState {
 
-	return { direction: a.xy, breeze: a.z, clock: a.w, gustScroll: b.x, gustTime: b.y, plantClock: b.z, plantSpeed: b.w } as unknown as WindState;
+	return { direction: a.xy, breeze: a.z, clock: a.w, gustScroll: b.x, gustTime: b.y, plantClock: b.z, plantSpeed: b.w, response } as unknown as WindState;
 
 }
 
 /** Add this object to shared before constructing materials, then give that same object to
- * Wind. Every consumer holds the same node identities throughout weather transitions. */
-export function createWindUniforms() {
+ * Wind. Every consumer holds the same node identities throughout weather transitions. `response`:
+ * the wind's look (`windResponse`), which both states carry. */
+export function createWindUniforms( response: WindResponse ) {
 
 	const angle = HEADING * Math.PI / 180;
 	const direction = new Vector2( - Math.cos( angle ), - Math.sin( angle ) );
 	return {
-		...vegetationWind( direction ),
+		...vegetationWind( direction, response ),
 		velocity: uniform( direction.clone().multiplyScalar( REFERENCE_SPEED ) ), // air velocity, m/s
 		displacement: uniform( new Vector2() ), // integrated air displacement, metres
 		gale: uniform( 0 ), // the wind beyond 1.5 x the fair-weather wind, U / U_ref - 1.5 in [ 0, 1.6 ]
 		// The vegetation's wind as it was for the previous rendered frame: equal to the current
 		// one while paused and after a seek or reset (no motion across a jump).
-		previous: vegetationWind( direction ),
+		previous: vegetationWind( direction, response ),
 	};
 
 }
@@ -333,19 +371,20 @@ export function evolutionTime( wind: WindState, rate: number ): Node<'float'> {
 }
 
 /** The wind's strength on the plants (m/s) at the gust `q` (`gustAt`): linear in the plants' speed
- * S = U_p (`plantSpeed`), S ( 1 + GUST_GAIN q ). */
+ * S = U_p (`plantSpeed`), S ( 1 + gustGain q ). */
 export function windStrength( wind: WindState, q: Node<'float'> ): Node<'float'> {
 
-	return wind.plantSpeed.mul( q.mul( GUST_GAIN ).add( 1 ) );
+	return wind.plantSpeed.mul( q.mul( wind.response.gustGain ).add( 1 ) );
 
 }
 
-/** A blade's offset (m, x and z within +-GUST_JITTER) for its gust sample, from a hash of its root
- * (world x, z): added to the root it reads `gustAt` at. */
-export function gustJitter( root: Node<'vec2'> ): Node<'vec2'> {
+/** A blade's offset (m, x and z within +-the wind's `gustJitter`) for its gust sample, from a hash
+ * of its root (world x, z): added to the root it reads `gustAt` at. */
+export function gustJitter( wind: WindState, root: Node<'vec2'> ): Node<'vec2'> {
 
+	const jitter = wind.response.gustJitter;
 	const x = fract( sin( dot( root, vec2( 63.7264, 10.873 ) ) ).mul( 42319.7231 ) );
-	return vec2( x, rootHash( root ) ).mul( 2 * GUST_JITTER ).sub( GUST_JITTER );
+	return vec2( x, rootHash( root ) ).mul( 2 * jitter ).sub( jitter );
 
 }
 
@@ -370,31 +409,33 @@ export function windAt( wind: WindState, position: Node<'vec2'> ): Node<'vec4'> 
 }
 
 /** The limbs' load at the gust `q` (`gustAt`): the wind's strength there over the limbs'
- * reference speed, u_p = sat( S ( 1 + GUST_GAIN q ) / PLANT_SPEED ) (`windStrength`), 0..1. */
+ * reference speed, u_p = sat( S ( 1 + gustGain q ) / plantSpeed ) (`windStrength`), 0..1. */
 export function plantLoad( wind: WindState, q: Node<'float'> ): Node<'float'> {
 
-	return clampNode( windStrength( wind, q ).div( PLANT_SPEED ), 0, 1 );
+	return clampNode( windStrength( wind, q ).div( wind.response.plantSpeed ), 0, 1 );
 
 }
 
 /** The plants' wind at the gust `q` (`gustAt`): the gusted wind 10 m up over fair's mean,
- * u = ( U10 / U_ref ) ( 1 + GUST_GAIN q ) / ( 1 + GUST_GAIN GUST_MEAN ) (`breeze`), its mean the
+ * u = ( U10 / U_ref ) ( 1 + gustGain q ) / ( 1 + gustGain GUST_MEAN ) (`breeze`), its mean the
  * level's U10 over U_ref. The drag on a plant follows it (Deform.ts `mainBend`). */
 export function plantWind( wind: WindState, q: Node<'float'> ): Node<'float'> {
 
-	return wind.breeze.mul( q.mul( GUST_GAIN ).add( 1 ) ).div( 1 + GUST_GAIN * GUST_MEAN );
+	const gain = wind.response.gustGain;
+	return wind.breeze.mul( q.mul( gain ).add( 1 ) ).div( 1 + gain * GUST_MEAN );
 
 }
 
 /** A plant's own sway rate (swings a metre of the plants' travel) for its kind's `rate` (whole
- * cycles per CLOCK_PERIOD) and its hash `xi` (0..1): rate ( 1 + PLANT_RATE_SPREAD k / ( B - 1 ) ),
- * k its band, floor( B fract( 16 xi ) ) of B = PLANT_RATE_BANDS (the hash's lower digits, so the
- * band does not follow the phase the plant takes from `xi`), rounded to three decimals so it
- * completes whole cycles per CLOCK_PERIOD. The CPU twin of `plantWave`'s rate. */
-export function plantRate( rate: number, xi: number ): number {
+ * cycles per CLOCK_PERIOD) and its hash `xi` (0..1), under the wind's `response`:
+ * rate ( 1 + plantRateSpread k / ( B - 1 ) ), k its band, floor( B fract( 16 xi ) ) of
+ * B = PLANT_RATE_BANDS (the hash's lower digits, so the band does not follow the phase the plant
+ * takes from `xi`), rounded to three decimals so it completes whole cycles per CLOCK_PERIOD. The
+ * CPU twin of `plantWave`'s rate. */
+export function plantRate( response: Pick<WindResponse, 'plantRateSpread'>, rate: number, xi: number ): number {
 
 	const band = Math.floor( ( xi * 16 % 1 ) * PLANT_RATE_BANDS );
-	return Math.floor( rate * CLOCK_PERIOD * ( 1 + PLANT_RATE_SPREAD * band / ( PLANT_RATE_BANDS - 1 ) ) + 0.5 ) / CLOCK_PERIOD;
+	return Math.floor( rate * CLOCK_PERIOD * ( 1 + response.plantRateSpread * band / ( PLANT_RATE_BANDS - 1 ) ) + 0.5 ) / CLOCK_PERIOD;
 
 }
 
@@ -407,7 +448,7 @@ export function plantWave( wind: WindState, rate: number, xi: Node<'float'>, pha
 
 	if ( Math.abs( rate * CLOCK_PERIOD - Math.round( rate * CLOCK_PERIOD ) ) > 1e-6 ) throw new RangeError( `plantWave: ${ rate } a metre is not whole cycles per ${ CLOCK_PERIOD } m` );
 	const band = floor( fract( xi.mul( 16 ) ).mul( PLANT_RATE_BANDS ) );
-	const cycles = floor( band.mul( rate * CLOCK_PERIOD * PLANT_RATE_SPREAD / ( PLANT_RATE_BANDS - 1 ) ).add( rate * CLOCK_PERIOD + 0.5 ) );
+	const cycles = floor( band.mul( rate * CLOCK_PERIOD * wind.response.plantRateSpread / ( PLANT_RATE_BANDS - 1 ) ).add( rate * CLOCK_PERIOD + 0.5 ) );
 	return sin( fract( wind.plantClock.mul( cycles.div( CLOCK_PERIOD ) ) ).mul( TAU ).add( phase ) );
 
 }
@@ -486,7 +527,7 @@ export class Wind {
 	private gustAge = 0; // the gust noise's time axis, cells (float64 here; wrapped for the shaders)
 	private readonly previousVelocity = new Vector2();
 
-	constructor( uniforms = createWindUniforms(), settings: WindSettings = {} ) {
+	constructor( uniforms: WindUniforms, settings: WindSettings = {} ) {
 
 		this.uniforms = uniforms;
 		this.reset( settings );
@@ -516,7 +557,7 @@ export class Wind {
 		this.publish( speed, heading, gustiness );
 		this.elapsed = time;
 		this.uniforms.displacement.value.copy( this.uniforms.velocity.value ).multiplyScalar( time );
-		this.plantTravel = time * plantSpeedOf( speed );
+		this.plantTravel = time * plantSpeedOf( this.uniforms.response, speed );
 		this.gustAge = time * GUST_EVOLUTION;
 		this.publishVegetation();
 		this.keepPrevious();
@@ -551,7 +592,8 @@ export class Wind {
 		// Trapezoidal integration follows the smoothly transitioning CPU weather state and
 		// does not change when a rendering-quality setting changes its update cadence.
 		this.uniforms.displacement.value.addScaledVector( this.previousVelocity.add( this.uniforms.velocity.value ), dt * 0.5 );
-		this.plantTravel += dt * ( plantSpeedOf( previousSpeed ) + plantSpeedOf( speed ) ) * 0.5;
+		const response = this.uniforms.response;
+		this.plantTravel += dt * ( plantSpeedOf( response, previousSpeed ) + plantSpeedOf( response, speed ) ) * 0.5;
 		this.gustAge += dt * GUST_EVOLUTION;
 		this.publishVegetation();
 
@@ -606,7 +648,7 @@ export class Wind {
 		this.uniforms.velocity.value.copy( this.uniforms.direction.value ).multiplyScalar( speed );
 		const ratio = speed / REFERENCE_SPEED;
 		this.uniforms.breeze.value = ratio;
-		this.uniforms.plantSpeed.value = plantSpeedOf( speed );
+		this.uniforms.plantSpeed.value = plantSpeedOf( this.uniforms.response, speed );
 		this.uniforms.gale.value = clamp( ratio - 1.5, 0, 1.6 );
 
 	}

@@ -158,7 +158,7 @@ import type { FullKey, HazeLook } from '../../render/setup.ts';
 //     orange showing through a thin air: 4.7 laid 0.9 of it, a pale veil over the glow. Its rows
 //     hold it from -1 down to -7 degrees and give way to the night's from -7 to -11, the window in
 //     which the sky's night comes in, and as it does, by stops (DayCycle.ts `skyNight`, `duskIn`:
-//     from DUSK_DEPTH.haze, 6.75 stops under the night's key at -7, where the light it adds to the
+//     from `duskDepth.haze`, 6.75 stops under the night's key at -7, where the light it adds to the
 //     sky is 1.8 stops over the twilight's; evenly, it raised the meter's sky a seventh of a stop in
 //     the first half degree, a share of the step the night's layers made there): the night's key,
 //     taken from -4 to -12 before, already had a few percent of the night's Rayleigh (8) at -5.3,

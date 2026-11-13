@@ -1,7 +1,7 @@
 import type { WindLook } from '../../render/setup.ts';
 
 // The island's wind look (packages/island/look/: the island's numbers for the renderer's look tables,
-// look/Look.ts; look/WindLook.ts reads these): how the island's plants answer the weather's wind.
+// look/Look.ts; weather/Wind.ts `windResponse` reads these): how the island's plants answer the weather's wind.
 
 export const WIND: WindLook = {
 	// the gusts' share of the wind's strength: a full gust doubles it

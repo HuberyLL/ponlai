@@ -1,7 +1,8 @@
 import type { DayLook } from '../../render/setup.ts';
 
 // The island's day look (packages/island/look/: the island's numbers for the renderer's look tables,
-// look/Look.ts; look/DayLook.ts reads these, and its comments say what each table is): where the
+// look/Look.ts; look/DayLook.ts `createDayWindows` makes the day's windows from these, and its
+// comments say what each table is): where the
 // key turns from the sun to the moon, the dusk's windows, how deep under all of it each night
 // layer comes in and the ease at the window's night end, and the exposure by the sun's elevation
 // with the night sky's own exposure. sky/DayCycle.ts's header says how the day runs.
@@ -39,9 +40,9 @@ export const DAY: DayLook = {
 	// Atmosphere.sunlightAt).
 	handoffTop: - 0.7,
 	// Elevation (degrees) at which the moon's key starts to rise, in full two degrees lower: the
-	// handoff has just turned the key to the moon, so it turns through zero light (HANDOFF_TOP to here).
+	// handoff has just turned the key to the moon, so it turns through zero light (`handoffTop` to here).
 	moonKeyTop: - 2.5,
-	// Where each of the dusk's shares comes in (look/DayLook.ts DUSK_WINDOWS). Every share is 0 at
+	// Where each of the dusk's shares comes in (look/DayLook.ts `dusk`). Every share is 0 at
 	// +2.5 degrees and over.
 	duskWindows: {
 		display: { evening: [ - 11, - 7 ], morning: [ - 12, - 7 ] },
@@ -58,7 +59,7 @@ export const DAY: DayLook = {
 	cloudedDaylight: [ 0.2, 0.45 ],
 	// How deep under all of it (stops) each night layer comes in at the evening's window's day end
 	// (-7 degrees), rising by even stops a degree toward all of it at -11 (`duskIn`, which eases the
-	// last DUSK_EASE degrees; the header). Each starts under the twilight's own light it adds to: the
+	// last `duskEase` degrees; the header). Each starts under the twilight's own light it adds to: the
 	// depth is that layer's full light over the twilight's at -7 (measured, in the comments) and about
 	// five stops more. (The moon's key and its sky take none: they lie under the twilight's light
 	// already, the header.)
@@ -75,7 +76,7 @@ export const DAY: DayLook = {
 		// the clouds' own moonlight (`cloudMoonShare`): 3.9 over the sky's
 		cloudMoon: 9,
 	},
-	// Over how many degrees at the night's end of the evening's window (DUSK_WINDOWS' evening windows)
+	// Over how many degrees at the night's end of the evening's window (`duskWindows`' evening windows)
 	// its night layers ease into all of their light (`duskIn`). By even stops to the end,
 	// each came in fastest at -11 degrees, an eighth of its depth in the last half degree, and stopped
 	// there: the clear evening's exposure over the horizon fell 1.5 stops a half degree into -11 and
