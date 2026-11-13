@@ -15,7 +15,7 @@ import { LocalTone } from '../../packages/render/post/LocalTone.ts';
 import { vignetteFactor } from '../../packages/render/post/PipelineDisplay.ts';
 import { preExposure } from '../../packages/render/post/PreExposure.ts';
 import { createDisplayTables } from '../../packages/render/look/DisplayLook.ts';
-import { installedLook } from '../../packages/render/look/Look.ts';
+import { ISLAND_LOOK } from '../../packages/island/look/IslandLook.ts';
 
 // a graph resource as Pipeline.ts declares it
 function resource( name, format, type ) {
@@ -70,8 +70,8 @@ export default function () {
 	// the exposure as the passes after the meter read it (Pipeline.ts `exposureRead`)
 	const exposure = exp2( textureLoad( texture( exposureState ), ivec2( 0 ) ).x ).mul( preExposure.inverse );
 
-	// the display's tables of the installed look (the island's: tools/wgsl-build.mjs)
-	const display = createDisplayTables( installedLook().display );
+	// the display's tables of the island's look, as the page's stage makes them
+	const display = createDisplayTables( ISLAND_LOOK.display );
 
 	// the bloom, with the sky's test and a stand-in extra term
 	const isSky = ( at ) => select( textureLoad( texture( surfaceDepth ), ivec2( at.mul( renderSize ) ) ).x.lessThan( - 9e4 ), float( 1 ), float( 0 ) );

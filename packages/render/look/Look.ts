@@ -2,42 +2,34 @@ import type { DayKey, DayKeys, KeyValues } from '../post/DayKeys.ts';
 import type { GradeChanges } from '../post/GradeLut.ts';
 import type { ToneCurve } from '../post/ToneCurve.ts';
 import type { SwellParams } from '../ocean/OceanSpectrum.ts';
-import { NEUTRAL_LOOK } from './NeutralLook.ts';
 
 // The look the renderer draws with: the numbers chosen for a picture, one set per system, handed
 // in by whoever owns the picture. The renderer holds the types (here), the code that reads the
 // numbers and registers their tunables (the modules beside this one: AmbientLook.ts,
-// ExposureLook.ts, DisplayLook.ts, HazeLook.ts, SkyLook.ts) and a
-// neutral set (NeutralLook.ts), which it draws with when nobody installed one. The island's
-// numbers are the island's (packages/island/look/), installed by the page's entry (PageSettings.ts)
-// after the settings. It is installed once, as the settings are (Settings.ts): a second install of
-// another set throws. The same set installed again changes nothing and passes: tools/dusk-grid.mjs
-// installs the island's look in node's own modules (tools/island-look.mjs) and again in those of
-// its `--src` tree, which by default is the same tree, so the same modules and the same set.
+// ExposureLook.ts, DisplayLook.ts, HazeLook.ts, SkyLook.ts) and a neutral set (NeutralLook.ts).
+// The island's numbers are the island's (packages/island/look/). A page picks one set (the
+// island's page in PageSettings.ts, the test scenes' in ScenesBoot.ts) and hands it to the
+// renderer's stages; a tool hands the set it wants to what it creates.
 //
-// No module reads the installed look as it loads (tools/verify-layers.mjs): every system takes its
-// tables as an argument where it is created, so two made from two sets in one process hold their
-// own numbers (tools/verify-look-params.mjs): the exposure, the day's windows, the low key's lift
-// and the sky's tables, where the renderer's sky stage creates them (ExposureLook.ts
-// `createExposure`, DayLook.ts `createDayWindows`, AmbientLook.ts `createKeyLift`, SkyLook.ts
-// `createSkyTables`, which the sky's state for a frame, its bakes and the haze's key read); the
-// ambient grade's table and its gains under overcast's deck, where the light stage creates the grade's controller (AmbientLook.ts
+// No module holds a look: every system takes its tables as an argument where it is created, so two
+// made from two sets in one process hold their own numbers (tools/verify-look-params.mjs): the
+// exposure, the day's windows, the low key's lift and the sky's tables, where the renderer's sky
+// stage creates them (ExposureLook.ts `createExposure`, DayLook.ts `createDayWindows`,
+// AmbientLook.ts `createKeyLift`, SkyLook.ts `createSkyTables`, which the sky's state for a frame,
+// its bakes and the haze's key read); the ambient grade's table and its gains under overcast's
+// deck, where the light stage creates the grade's controller (AmbientLook.ts
 // `createAmbientTables`, lighting/AmbientGrade.ts `createAmbientGrade`), which the ambient light's
 // relight reads too; the haze's keys, rows and per-sky scales, where the sky stage creates them
 // (HazeLook.ts `createHazeTables`), which weather/HazeKeys.ts `hazeKeyAt` reads by the hour and the
-// weather; the ambient occlusion's floor and the meadow canopy's media,
-// which every material's shader reads, in the shared uniforms (shared.ts `createShared`); the
-// local lights' gain (lighting/LocalLights.ts `createLocalLights`, from the stage `createLight`);
-// the sea's detail and distant swell (ocean/SeaDetail.ts, ocean/OceanFFT.ts, from the stage
-// `createSeaAndPipeline`); the display's tables, which the frame's passes read each frame and
-// build the display chain and the bloom from (DisplayLook.ts `createDisplayTables`, from the same
-// stage); and the wind on the plants, in the shared uniforms' wind (weather/Wind.ts
-// `windResponse`, from `createShared`). No module holds a value of theirs. The
-// entry hands them the set it installs; a module that cannot name that set reads it back with
-// `installedLook` (the test scenes' page).
+// weather; the ambient occlusion's floor and the meadow canopy's media, which every material's
+// shader reads, in the shared uniforms (shared.ts `createShared`); the local lights' gain
+// (lighting/LocalLights.ts `createLocalLights`, from the stage `createLight`); the sea's detail and
+// distant swell (ocean/SeaDetail.ts, ocean/OceanFFT.ts, from the stage `createSeaAndPipeline`); the
+// display's tables, which the frame's passes read each frame and build the display chain and the
+// bloom from (DisplayLook.ts `createDisplayTables`, from the same stage); and the wind on the
+// plants, in the shared uniforms' wind (weather/Wind.ts `windResponse`, from `createShared`).
 //
-// Headless: types and three functions, no three.js and nothing of the page. The world's chunk
-// worker and the headless game never load it (tools/verify-layers.mjs).
+// Headless: types and one list of names, no three.js and nothing of the page.
 
 /** A span of the sun's elevation (degrees): [ whole, none ] or [ from, to ], as its reader says. */
 export type Span = readonly [ number, number ];
@@ -360,38 +352,4 @@ export interface Look {
 	localLights: LocalLightsLook;
 	meadowCanopy: MeadowCanopyLook;
 	wind: WindLook;
-}
-
-let installed: Look | null = null;
-let firstReader: string | null = null;
-
-/** Installs the look every reader takes its numbers from, once. Call it before any reader loads: it
- * throws once one has read, naming the first, and when another set was installed before (the same
- * set again passes: see the header). */
-export function installLook( look: Look ): void {
-
-	if ( installed === look ) return;
-	if ( firstReader !== null ) throw new Error( `installLook: the look was read before it was installed, first by ${ firstReader }: install it before any module that reads it loads` );
-	if ( installed !== null ) throw new Error( 'installLook: the look is installed once, before any module that reads it loads' );
-	installed = look;
-
-}
-
-/** The installed look, or the neutral set where none was installed: for an entry that installed
- * a set and hands the same set to the systems that take their tables at creation (the header)
- * from a module that cannot name it (the test scenes' page). It does not
- * count as a read: a set installed after it is called is not what it returned. */
-export function installedLook(): Look {
-
-	return installed ?? NEUTRAL_LOOK;
-
-}
-
-/** The installed look's numbers for `system`, or the neutral set's where none was installed.
- * `reader` names the calling module (its path in its package), for `installLook`'s error. */
-export function readLook<K extends keyof Look>( system: K, reader: string ): Look[ K ] {
-
-	firstReader ??= reader;
-	return ( installed ?? NEUTRAL_LOOK )[ system ];
-
 }

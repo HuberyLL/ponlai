@@ -11,7 +11,7 @@ import { Fn, float, ivec2, normalize, texture, textureLoad, uniform, uv, vec2, v
 import { NightSky } from '../../packages/render/sky/NightSky.ts';
 import { LightShafts } from '../../packages/render/post/LightShafts.ts';
 import { purkinjeScale, purkinjeShift } from '../../packages/render/post/Purkinje.ts';
-import { installedLook } from '../../packages/render/look/Look.ts';
+import { ISLAND_LOOK } from '../../packages/island/look/IslandLook.ts';
 
 export default function () {
 
@@ -35,7 +35,7 @@ export default function () {
 	const light = uniform( 0.01 );
 	const constants = new THREE.NodeMaterial();
 	constants.name = 'flare-visibility';
-	constants.fragmentNode = vec4( purkinjeScale( installedLook().display.purkinje.retina, light ), 0, 0, shafts.occlusion( depth, vec2( 4, 4 ), cloud.x, cloud.y ) );
+	constants.fragmentNode = vec4( purkinjeScale( ISLAND_LOOK.display.purkinje.retina, light ), 0, 0, shafts.occlusion( depth, vec2( 4, 4 ), cloud.x, cloud.y ) );
 	const visible = uniform( 1 ), gain = uniform( 1 );
 	const flare = new THREE.NodeMaterial();
 	flare.name = 'flare';

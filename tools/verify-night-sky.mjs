@@ -17,7 +17,6 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
-import './island-look.mjs';
 import { eveningHour } from '../packages/render/sky/DayCycle.ts';
 import { MOON_ANGULAR_RADIUS } from '../packages/render/sky/NightSky.ts';
 import { renderedFrames } from './page-eval.mjs';

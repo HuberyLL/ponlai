@@ -129,10 +129,9 @@
 // headers). The haze's, the display's and the sky's tables load in plain node, so all of their
 // numbers, tunables included, are checked here per table.
 //
-// The other systems that take their tables at creation, through Vite's SSR loader with the
-// island's look installed (so a number that came from the installed look instead of the table
-// given would show): the shared uniforms (packages/render/shared.ts `createShared`: the ambient
-// occlusion's floor and the meadow canopy's two media), the local lights (packages/render/lighting/
+// The other systems that take their tables at creation, through Vite's SSR loader: the shared
+// uniforms (packages/render/shared.ts `createShared`: the ambient occlusion's floor and the meadow
+// canopy's two media), the local lights (packages/render/lighting/
 // LocalLights.ts `LocalLights`: the gain), the sea's detail (packages/render/ocean/SeaDetail.ts:
 // its three strengths), the FFT ocean's distant swell (packages/render/ocean/OceanFFT.ts: every
 // field of it), the wind's look the shared uniforms' wind carries (every field but the limbs'
@@ -160,7 +159,6 @@
 // renderer and build their graph as they are made; the stage hands them the tables
 // (RenderStages.ts `createSeaAndPipeline`), whose numbers the plain node part checks.
 import assert from 'node:assert/strict';
-import { installIslandLook } from './island-look.mjs';
 import { createExposure } from '../packages/render/look/ExposureLook.ts';
 import { DayCycle, cloudMoonShare, displayNight, eveningHour, exposureNight, morningHour, moonKeyShare, nightAmbientAt, nightAmbientShare, rampIn, skyNight, starNight, yunpengNightShare } from '../packages/render/sky/DayCycle.ts';
 import { createDayWindows } from '../packages/render/look/DayLook.ts';
@@ -1249,7 +1247,6 @@ try {
 	const load = ( file ) => server.ssrLoadModule( `/${ file }` );
 	const { installSettings, parseSettings } = await load( 'packages/render/Settings.ts' );
 	installSettings( parseSettings( '' ) );
-	await installIslandLook( load );
 	const { createShared } = await load( 'packages/render/shared.ts' );
 	const { LocalLights } = await load( 'packages/render/lighting/LocalLights.ts' );
 	const { SeaDetail } = await load( 'packages/render/ocean/SeaDetail.ts' );

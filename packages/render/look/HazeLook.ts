@@ -8,10 +8,10 @@ import { HAZE_KEY_NAMES, type FogFields, type FullKey, type HazeKey, type HazeKe
 // (`createHazeTables`). weather/HazeKeys.ts `hazeKeyAt` eases them by the hour and the weather,
 // taking them as its first argument; the haze (weather/VolumetricHaze.ts) takes the result. Like
 // the exposure (look/ExposureLook.ts), they are taken as an argument where the renderer's sky stage
-// creates them (RenderStages.ts `createSky`, for its `prepareHaze`), not from the installed look as
-// a module loads, so two made from two tables hold their own numbers (tools/verify-look-params.mjs)
-// and this module holds none at module level: only the blank key, which no look changes. The
-// aerosol layer's top under a deck is the sky's (look/SkyLook.ts `cloudBase`).
+// creates them (RenderStages.ts `createSky`, for its `prepareHaze`), so two made from two tables
+// hold their own numbers (tools/verify-look-params.mjs) and this module holds none at module level:
+// only the blank key, which no look changes. The aerosol layer's top under a deck is the sky's
+// (look/SkyLook.ts `cloudBase`).
 // - The tables register their tunables (debug/Tune.ts) as they are created, under the names they
 //   always had (`haze.key.*`, `haze.fog.*`, `sky.weather.*@<cloudy|overcast>`). The tune table is
 //   one per process: on a debug page a second set made from another table reads the first one's

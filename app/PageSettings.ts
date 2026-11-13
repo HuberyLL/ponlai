@@ -3,15 +3,13 @@
 // reports in one form each option nobody declared and each value outside its declared range (a
 // console warning per option; the option keeps whatever its reader makes of it, as before),
 // chooses the quality tier (QualityDetect.ts) and installs both for every module (Settings.ts).
-// Then it installs the look the renderer draws with (look/Look.ts): the island's
-// (island/look/IslandLook.ts), or on a debug page with `renderLook=neutral` the renderer's own neutral
-// one. No module this one imports reads the look (tools/verify-layers.mjs, its look check): the
-// modules that do load with the page, after this one ran. The exposure takes its tables at
-// creation instead (look/ExposureLook.ts): the page hands it the same set (`PAGE_LOOK`).
+// It also picks the look the renderer draws with (look/Look.ts): the island's
+// (island/look/IslandLook.ts), or on a debug page with `renderLook=neutral` the renderer's own
+// neutral one, which the page (main.ts) hands to the renderer's stages (`PAGE_LOOK`).
 // The rest of the page's own state outside the scene lives here too: the reload with changed
 // options (a load setting's new value) and the browser's storage for what a page remembers between
 // visits (the dynamic resolution's scale).
-import { installSettings, parseSettings, settingProblems, type SettingName, installLook, NEUTRAL_LOOK, type Look } from '../packages/render/setup.ts';
+import { installSettings, parseSettings, settingProblems, type SettingName, NEUTRAL_LOOK, type Look } from '../packages/render/setup.ts';
 import { chooseQuality, type QualityChoice } from './QualityDetect.ts';
 import { ISLAND_LOOK } from '../packages/island/land.ts';
 
@@ -21,10 +19,8 @@ for ( const problem of settingProblems( query ) ) console.warn( `[settings] ${ p
 export const QUALITY_CHOICE: QualityChoice = chooseQuality( query );
 installSettings( query, QUALITY_CHOICE.tier );
 const debugPage = import.meta.env.DEV || query.has( 'debug' ) || query.has( 'profile' );
-/** The look this load draws with: installed here for the systems that read it as they load, and
- * handed by the page (main.ts) to the renderer's stage that takes its tables (the exposure's). */
+/** The look this load draws with, which the page (main.ts) hands to the renderer's stages. */
 export const PAGE_LOOK: Look = debugPage && query.get( 'renderLook' ) === 'neutral' ? NEUTRAL_LOOK : ISLAND_LOOK;
-installLook( PAGE_LOOK );
 
 /** Reloads the page with options set (a string; '' names one bare) or removed (null), in order. */
 export function reloadWith( changes: Partial<Record<SettingName, string | null>> ): void {

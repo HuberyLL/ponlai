@@ -20,7 +20,7 @@ import { makeTerrainMaterial } from '../../packages/island/materials/TerrainMate
 import { shared } from '../../packages/render/shared.ts';
 import { createDayWindows } from '../../packages/render/look/DayLook.ts';
 import { createAmbientTables } from '../../packages/render/look/AmbientLook.ts';
-import { installedLook } from '../../packages/render/look/Look.ts';
+import { ISLAND_LOOK } from '../../packages/island/look/IslandLook.ts';
 
 const array = ( name, layers, colorSpace = THREE.NoColorSpace ) => {
 
@@ -39,7 +39,7 @@ export default async function ( { renderer } ) {
 	installAmbientVolume( volume );
 	// the specular's relight over a sky that has projected nothing (as ambient-materials builds it)
 	installEnvironmentHarmonics( new AmbientRelight( {
-		renderer, volume, shared, sky: new AmbientSky( renderer ), weights: () => ( { a: 0, b: 1, blend: 0 } ), cloud: () => float( 1 ), seaCloud: () => float( 1 ), keyHeight: () => 1, dayWindows: createDayWindows( installedLook().day ), grade: createAmbientTables( installedLook().ambient ),
+		renderer, volume, shared, sky: new AmbientSky( renderer ), weights: () => ( { a: 0, b: 1, blend: 0 } ), cloud: () => float( 1 ), seaCloud: () => float( 1 ), keyHeight: () => 1, dayWindows: createDayWindows( ISLAND_LOOK.day ), grade: createAmbientTables( ISLAND_LOOK.ambient ),
 	} ) );
 
 	const detail = array( 'detail', 4 );

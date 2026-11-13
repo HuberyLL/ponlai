@@ -31,7 +31,7 @@ import { createGui, addLookFolders, addHazeFolders } from './Gui.ts';
 import { createDiagnostics, exposeDebugHandles } from './Diagnostics.ts';
 import { createSceneControls } from './Scene.ts';
 
-// the scene's uniforms, which every material reads: made here, from the look the entry installed
+// the scene's uniforms, which every material reads: made here, from the look the entry picked
 // (PageSettings.ts), and installed before anything builds
 const shared = createShared( PAGE_LOOK );
 installShared( shared );
@@ -84,7 +84,7 @@ const GAME = params.has( 'game' );
 // that hour. A parked weather loads on a debug page only.
 const sceneDefaults = GAME ? { hour: 8, dayLength: 1440, parkedWeather: render.DEBUG } : { hour: DAY_PRESETS[ 'golden-hour' ], dayLength: 2880, parkedWeather: render.DEBUG };
 page.sceneOptions = ( query ) => sceneOptions( query, sceneDefaults );
-// the look's tables the exposure is made from: the set the entry installed (PageSettings.ts)
+// the look's tables the exposure is made from: the set the entry picked (PageSettings.ts)
 createSky( render, { scene: page.sceneOptions( params ), seaFog: params.has( 'seaFog' ), dayFog: params.has( 'dayFog' ), look: PAGE_LOOK } );
 createTrample( render, island );
 createCameraViews( render, island, page );

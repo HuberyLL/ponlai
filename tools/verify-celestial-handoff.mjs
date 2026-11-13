@@ -10,7 +10,6 @@ import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
 import { installWaitFrames } from './page-eval.mjs';
-import './island-look.mjs';
 import { createDayWindows } from '../packages/render/look/DayLook.ts';
 import { ISLAND_LOOK } from '../packages/island/look/IslandLook.ts';
 import { mkdir, writeFile } from 'node:fs/promises';

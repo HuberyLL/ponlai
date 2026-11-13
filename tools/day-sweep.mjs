@@ -158,7 +158,6 @@ import { spawn, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, linkSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import './island-look.mjs';
 import { DAY_PRESETS, DayCycle, eveningHour, morningHour } from '../packages/render/sky/DayCycle.ts';
 import { createExposure } from '../packages/render/look/ExposureLook.ts';
 import { createDayWindows } from '../packages/render/look/DayLook.ts';

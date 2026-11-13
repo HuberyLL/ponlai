@@ -90,8 +90,6 @@ async function loadConsumers() {
 
 	} } );
 	const THREE = await import( 'three/webgpu' );
-	// (the consumers reach modules that read the look: the island's, as its page has it)
-	await import( './island-look.mjs' );
 	const { SunShadow } = await import( '../packages/render/lighting/SunShadow.ts' );
 	const { RefractedSun } = await import( '../packages/render/lighting/RefractedSun.ts' );
 	const { IslandGround } = await import( '../packages/island/camera/IslandGround.ts' );

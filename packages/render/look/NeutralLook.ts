@@ -1,7 +1,7 @@
 import type { BloomKey, DuskWindow, FullKey, Look, Rgb, Span, StreakKeys } from './Look.ts';
 
-// The neutral look: what the renderer draws with when nobody installed a look (look/Look.ts), and
-// what `renderLook=neutral` loads on a debug page. It is no picture of its own: every gain is 1,
+// The neutral look: what the test scenes' page draws with (app/ScenesBoot.ts), and what
+// `renderLook=neutral` loads on a debug page of the island's. It is no picture of its own: every gain is 1,
 // every offset, strength and cast 0, no grade, no vignette, no bloom, nothing done for the night,
 // and one key held all day in every table that is keyed by the sun. Where a number has no such
 // identity it takes the plainest value its reader accepts, and the comment beside it says why.
