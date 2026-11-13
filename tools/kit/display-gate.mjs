@@ -65,8 +65,8 @@ export function requireDisplayAllowed( label = 'a headed run' ) {
 
 }
 
-// Headed runs take over the user's screen, and the user asked to be told, not asked: post a
-// notification, then give them 10 s before the window opens. A failed notification never stops a run.
+// A headed run takes over the screen: post a notification, then wait 10 s before the window opens,
+// so whoever uses the machine sees it coming. A failed notification never stops a run.
 export async function announceHeadedRun( { label, scenes, minutes } ) {
 
 	const text = `${ label }: a headed run takes the screen in 10 s, ${ scenes } scenes, about ${ minutes } min`.replace( /\\/g, '\\\\' ).replace( /"/g, '\\"' );

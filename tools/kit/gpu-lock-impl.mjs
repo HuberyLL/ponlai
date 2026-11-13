@@ -72,11 +72,10 @@ import { fileURLToPath } from 'node:url';
 // pid or `#ticket`; the process keeps it for its later requests: a lease's next one; an exclusive
 // hold is not bumped, its owner.json goes without the mutex); the scheduling table;
 // PONLAI_GPU_PRIORITY; the default of its mode, normal for shared requests and low for exclusive
-// ones. The defaults are the user's (2026-10-13): timing runs get no special treatment and simply
-// rank below captures and probes. One exception bounds that wait (the user's choice,
-// 2026-10-13): an exclusive request at its default level ranks normal (source `aged`) once
-// AGE_AFTER_MS (30 min) has passed since its run's first request, keeping its ticket number, so it
-// goes before the normal requests queued after it. Replayed against a logged day (a simulation),
+// ones. So by default timing runs get no special treatment and simply rank below captures and
+// probes. One exception bounds that wait: an exclusive request at its default level ranks normal
+// (source `aged`) once AGE_AFTER_MS (30 min) has passed since its run's first request, keeping its
+// ticket number, so it goes before the normal requests queued after it. Replayed against a logged day (a simulation),
 // it left the day's total agent wait unchanged and ended its one timing run that waited over 30 min;
 // with captures half as frequent again (an overloaded queue) it cut the timing runs' p90 wall clock
 // by over a quarter for 30 % more agent wait. Shorter thresholds or aging per piece rather than per
@@ -87,8 +86,8 @@ import { fileURLToPath } from 'node:url';
 // request; shared requests never age. The level is decided at every look from the clock (levelOf),
 // and waiters re-rank on every poll, so a promotion needs no event. PONLAI_GPU_LOCK_AGE_S
 // shortens the threshold for the lock's own tests only; sessions leave it unset. The scheduling table
-// (`ponlai-gpu.lock.priorities.json` beside the lock) is how the user or a main session schedules
-// sessions: entries { match, level, until?, note? }, `match` a substring of one of a request's
+// (`ponlai-gpu.lock.priorities.json` beside the lock) ranks sessions, never set by a run for itself:
+// entries { match, level, until?, note? }, `match` a substring of one of a request's
 // session names or of its label; the longest match wins, an entry past `until` is ignored (and
 // dropped at the next write), and `prio set` lists what an entry applies to now (and warns when
 // nothing). A request's session names are the names of the checkouts (a worktree, or the main
