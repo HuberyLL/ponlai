@@ -17,7 +17,8 @@
 //   `.claude/skills/<name>`, its target exactly `../../skills/<name>`, `skills/<name>/SKILL.md`
 //   tracked), and every tracked skill has its link.
 // - Frontmatter: SKILL.md opens with `---` lines holding `name`, equal to the folder's name (lower
-//   case, digits and hyphens, at most 64 characters), and a `description` that is not empty.
+//   case, digits and hyphens, at most 64 characters), and a `description` of 1 to 1024 characters
+//   (the Agent Skills limit).
 // - Body: at most 500 lines after the frontmatter.
 // - Reference files: every other file of the skill is at most one folder below SKILL.md and named
 //   in SKILL.md (its path from the skill's folder), and a Markdown reference file links to no other
@@ -43,6 +44,7 @@ const read = ( path ) => readFileSync( `${ ROOT }/${ path }`, 'utf8' );
 const LINK = /^\.claude\/skills\/([a-z0-9-]+)$/;
 const NAME = /^[a-z0-9-]{1,64}$/;
 const BODY_LINES = 500;
+const DESCRIPTION_CHARS = 1024;
 
 const entries = git( [ 'ls-files', '-s', '-z', '--', '.claude' ] ).split( '\0' ).filter( Boolean );
 const files = git( [ 'ls-files', '-z', '--', 'skills', 'docs/bindings' ] ).split( '\0' ).filter( Boolean );
@@ -81,6 +83,7 @@ for ( const name of skills ) {
 	if ( ! NAME.test( name ) ) failures.push( `${ file }: the name is not lower case, digits and hyphens of at most 64 characters` );
 	const description = field( 'description' );
 	if ( ! description ) failures.push( `${ file }: no description` );
+	else if ( [ ...description ].length > DESCRIPTION_CHARS ) failures.push( `${ file }: description of ${ [ ...description ].length } characters (at most ${ DESCRIPTION_CHARS })` );
 	const body = text.slice( front[ 0 ].length ).replace( /\n$/, '' ).split( '\n' ).length;
 	if ( body > BODY_LINES ) failures.push( `${ file }: body of ${ body } lines (at most ${ BODY_LINES })` );
 

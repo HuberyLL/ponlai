@@ -23,6 +23,8 @@ homes in this repository:
 | Module header | The header comment of each file under `packages/` and `app/` |
 | Third-party sources | `CREDITS.md` |
 
+- A rule in a rules file is one line. What enforces it is recorded in the file's lists (Checks,
+  below); the mistake behind it goes in the commit message that adds it, never in the file.
 - A new page gets a line in the docs index, `docs/README.md`.
 - The code map is printed, not kept: `node tools/repo/code-map.mjs [folder]` lists each file with
   its header's first line.
@@ -53,8 +55,10 @@ homes in this repository:
   (`tools/repo/verify-doc-paths.mjs`'s header).
 - `npm run lint:links`: the web links too, run by hand.
 - A rule turned into a check: a lint rule in `tools/repo/lint/` (named `ponlai/…`) or a `verify-*`
-  tool, named in `AGENTS.md`, What the checks hold or Checks run by hand; the mistake it came from
-  goes in the commit message (`AGENTS.md`, Adding a rule).
+  tool, named in `AGENTS.md`, What the checks hold or Checks run by hand (or a folder's
+  `AGENTS.md`); the mistake it came from goes in the commit message (`AGENTS.md`, Adding a rule).
+- A rule that needs judgement: one line in the rules file naming the page or header that owns its
+  detail, with nothing written for what enforces it; the mistake goes in the commit message.
 
 ## Commit
 

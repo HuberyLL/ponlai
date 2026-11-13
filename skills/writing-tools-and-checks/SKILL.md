@@ -1,6 +1,6 @@
 ---
 name: writing-tools-and-checks
-description: Turns a script that keeps being written into a tool, and a mistake that keeps being made into a check, in a repository that agents work in, when one-off scripts pile up for the same question, a tool's options are only learnt by running it, a rule in the docs is broken a second time, a review finds the same kind of fault again, or a check passes without ever having been seen to fail. Looks for an existing tool first, gives a tool one question, its manual in its header and a --help that does nothing else, meaningful exit codes and the project's facts from one configuration; prefers making a mistake impossible in the architecture or the types over a lint rule, a check or text; proves every check by planting the fault it is for; runs checks that need no GPU with every commit and names the others beside the change that needs them. Use with any repository developed mostly by AI agents, and with renderers whose checks need a GPU, whenever a tool, a verify script, a lint rule or a rule of the rules file is written or changed.
+description: Turns a script that keeps being written into a tool, and a mistake that keeps being made into a check, when one-off scripts pile up for the same question, a tool's options are only learnt by running it, a rule in the docs is broken a second time, a review finds the same kind of fault again, or a check passes without ever having been seen to fail. Looks for an existing tool first, gives a tool one question, its manual in its header, a --help that does nothing else, meaningful exit codes and the project's facts from one configuration; prefers making a mistake impossible in the architecture or the types over a lint rule, a check or text; proves every check by planting the fault it is for; runs checks that need no GPU with every commit and names the others beside the change that needs them. Use with any repository developed mostly by AI agents, and with renderers whose checks need a GPU, whenever a tool, a verify script, a lint rule or a rule of the rules file is written or changed.
 ---
 
 # Writing tools and checks
@@ -151,7 +151,7 @@ Then place the check where it runs:
 
 ### 7. Register it (binding: Register)
 
-Add the tool to the index of tools by its question, and the check to the rules file's row for the
-rule it enforces.
+Add the tool to the index of tools by its question, and record the check where the project records
+what enforces the rule it holds.
 
 Why each rule holds, the cases it comes from and the sources: [background.md](background.md).

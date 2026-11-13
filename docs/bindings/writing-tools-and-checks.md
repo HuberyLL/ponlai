@@ -174,5 +174,5 @@ the commit.
 - A new entry tool gets a line in `docs/reference/tools.md` under its group, by its question;
   `verify-tool-manuals` fails until it has one.
 - A new check is named where its rule is (`AGENTS.md`, What the checks hold or Checks run by hand,
-  or a folder's `AGENTS.md`), and a check that needs no GPU is added to `tools/check.mjs`'s list
-  and its header.
+  or a folder's `AGENTS.md`); the mistake behind the rule goes in the commit message. A check that
+  needs no GPU is added to `tools/check.mjs`'s list and its header.
