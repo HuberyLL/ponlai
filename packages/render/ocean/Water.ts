@@ -150,7 +150,7 @@ import { settings } from '../Settings.ts';
 // - The reflection only finds what lies inside `reflectionBounds` (see below): anything opaque
 //   placed off the island or above 3 m (REFLECTOR_HEIGHT; a tree, a boat, a hut, a mast) must grow
 //   that box through `hold`, or the sea will not reflect it (the game's props and the plants'
-//   crowns do: main.ts `holdOpaque`, `holdPlants`). A held box never lowers the box's floor.
+//   crowns do: IslandStages.ts `holdOpaque`, `holdPlants`). A held box never lowers its floor.
 //
 // Motion vectors (the temporal modes, Motion.ts): the sea writes its velocity with its colour (class
 // water). Each vertex is moved back to where it was a step of the scene clock ago (`step`: the
