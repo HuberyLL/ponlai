@@ -9,7 +9,7 @@ import { Matrix3, Vector3 } from 'three/webgpu';
 // curve (PipelineDisplay.ts toneCurve: at first Hill's, now an adjustable one fitted to it) and
 // turns the result back through the ODT's saturation. The two saturations (about 0.89 together) are
 // left at 1 now (CURVE_SATURATION): the curve no longer greys every colour alike, and the grade's
-// hue bands (look/DisplayLook.ts BASE_GRADE) set each hue's saturation instead. Per-channel tone
+// hue bands (look/DisplayLook.ts `baseGrade`) set each hue's saturation instead. Per-channel tone
 // mapping in the rendering space clips saturated colours toward cyan, magenta and yellow; AP1 rolls
 // them off toward white, but bends reds and oranges toward yellow (a low sun's glints and sky).
 // After Patry, "Real-Time Samurai Cinema" (SIGGRAPH 2021), the curve's space is AP1 with its red

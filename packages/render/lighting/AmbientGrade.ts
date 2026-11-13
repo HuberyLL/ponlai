@@ -43,7 +43,7 @@ import { overcastDeckLight, withMoon } from '../sky/Weather.ts';
 // the night's by -13. A return from -7 still lit the rock's edges from -9 to -7 degrees (on the
 // island view their brightest tenth C 0.083 to 0.085 at -9 and -8, 0.066 or less held). What blue
 // they keep (C about a fifth of their L at -6.5 degrees, whether the reflection is 0.1 or none) is
-// the dawn's display white over a grey surface (look/DisplayLook.ts WHITE_BALANCE), not this light.
+// the dawn's display white over a grey surface (look/DisplayLook.ts `whiteBalance`), not this light.
 //
 // The sun's bounce is 1 under the clear and the fair sky from the high sun to its last light at
 // -1.3 degrees, set with the probes' sky gain (AmbientRelight.ts PROBE_SKY) by the lit ground's

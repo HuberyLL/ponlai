@@ -8,7 +8,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, texture, textureLoad, uv, screenCoordinate, ivec2, vec2, vec3, vec4, float, mix,
 	smoothstep, clamp, max, min, length, sin, log2, exp2, floor, luminance, sRGBTransferEOTF, sqrt,
-	pow, outputStruct, mat4, atan, cos, abs, select, mod, step,
+	pow, outputStruct, mat4, atan, cos, abs, select, mod, step, uniform,
 } from 'three/tsl';
 import { fsr1 } from 'three/addons/tsl/display/FSR1Node.js';
 import { FSR } from './FSR.ts';
@@ -30,10 +30,10 @@ import { toneMatrices } from './ToneSpace.ts';
 import { BLUE_NOISE, blueNoiseTexture } from './BlueNoise.ts';
 import { sampleLut } from './GradeLut.ts';
 import { LocalTone } from './LocalTone.ts';
-import { tuneUniform } from '../debug/Tune.ts';
+import { tuneUniformOf } from '../debug/Tune.ts';
 import { settings } from '../Settings.ts';
 import { hasGpuFeature } from '../three/Backend.ts';
-import { COOL_SHARE, HIGHLIGHT_GREY as HIGHLIGHT_LOOK, VIGNETTE } from '../look/DisplayLook.ts';
+import type { DisplayTables } from '../look/DisplayLook.ts';
 import type { Pipeline, PipelineFrame } from './Pipeline.ts';
 type Extent = ReturnType<FrameGraph<PipelineFrame>[ 'extent' ]>;
 type F = THREE.Node<'float'>;
@@ -45,15 +45,19 @@ type V4 = THREE.Node<'vec4'>;
 // place among its steps: the composite of the haze, the shafts and the rods' colour over the scene,
 // the metering, the bloom, the sharp image, the local tone mapping, the grade and the display pass,
 // the output and the upscale, the rain's layer after the resolve and the temporal resolve. Its
-// numbers chosen for the look are look/DisplayLook.ts's; the pipeline sets its uniforms each frame
-// (Pipeline.ts `updateDisplay`). The rules of the frame and its passes are Pipeline.ts's header.
+// numbers chosen for the look are the display's tables the pipeline was made with
+// (look/DisplayLook.ts `createDisplayTables`, Pipeline.ts `look`); the pipeline sets its uniforms
+// each frame (Pipeline.ts `updateDisplay`). The cool share's edges and overcast's highlights are
+// uniforms built as this module loads, so they keep their place among the nodes, and set from the
+// tables (their tunables registered) as the chain builds: the display chains of one page share
+// them. The rules of the frame and its passes are Pipeline.ts's header.
 //
 // tidewater's display chain (PostFX.js, 4811ba4), as it has become: its physical bloom
 // (PhysicalBloom.ts) added to the image; its grade in linear light (the vignette; its saturation
-// and contrast left for the grade table's hue bands, look/DisplayLook.ts BASE_GRADE, and the
-// shade's contrast, SHADE_CONTRAST); our tone curve (ToneCurve.ts) on the exposed colour, in the
+// and contrast left for the grade table's hue bands, look/DisplayLook.ts `baseGrade`, and the
+// shade's contrast, `shadeContrast`); our tone curve (ToneCurve.ts) on the exposed colour, in the
 // curve space of ToneSpace.ts with the white balance folded into its input matrix; the grade's
-// tables; overcast's highlights toward grey (HIGHLIGHT_GREY); the BT.709 OETF shown as sRGB, and a
+// tables; overcast's highlights toward grey (`highlightGrey`); the BT.709 OETF shown as sRGB, and a
 // blue-noise dither (BlueNoise.ts; its luminance-weighted grain is gone). tidewater meters its
 // frame's luminance and scales it by an auto exposure before the grade; here the meter reads the
 // light on the scene (Metering.ts, Exposure.ts).
@@ -97,17 +101,15 @@ const bt709 = Fn( ( [ l ]: [ V3 ] ) => {
 } ).setLayout( { name: 'bt709', type: 'vec3', inputs: [ { name: 'l', type: 'vec3' } ] } );
 // The local tone mapping (LocalTone.ts), on unless `flags=localTone:false` at load.
 const LOCAL_TONE_ON = debugFlags.localTone !== false;
-/** Where a colour counts as cool for the desaturation's `cool` share (DESATURATION): its blue less
- * its red, as a share of its spread (max less min), from `COOL_FROM` (none of it cool) to `COOL_TO`
- * (all of it), read through the white balance (`balance`). */
-const COOL_FROM = tuneUniform( 'post.desaturate.coolFrom', COOL_SHARE.from, { min: - 1, max: 1 } );
-const COOL_TO = tuneUniform( 'post.desaturate.coolTo', COOL_SHARE.to, { min: - 1, max: 1 } );
-// overcast's highlights toward grey (look/DisplayLook.ts HIGHLIGHT_GREY): the amount and the edges
-const HIGHLIGHT_GREY = {
-	amount: tuneUniform( 'post.highlight.amount', HIGHLIGHT_LOOK.amount, { min: 0, max: 1 } ),
-	from: tuneUniform( 'post.highlight.from', HIGHLIGHT_LOOK.from, { min: 0, max: 1 } ),
-	to: tuneUniform( 'post.highlight.to', HIGHLIGHT_LOOK.to, { min: 0, max: 1 } ),
-};
+/** Where a colour counts as cool for the desaturation's `cool` share (look/DisplayLook.ts
+ * `desaturation`): its blue less its red, as a share of its spread (max less min), from `COOL_FROM`
+ * (none of it cool) to `COOL_TO` (all of it), read through the white balance (`balance`). Set from
+ * the tables' `coolShare` as the chain builds (`buildDisplay`). */
+const COOL_FROM = uniform( 0 );
+const COOL_TO = uniform( 0 );
+// overcast's highlights toward grey (look/DisplayLook.ts `highlightGrey`): the amount and the edges,
+// set from the tables as the chain builds
+const HIGHLIGHT_GREY = { amount: uniform( 0 ), from: uniform( 0 ), to: uniform( 0 ) };
 /** How cool the colour `c` (white balanced) is, 0 to 1 (`coolFrom`, `coolTo`: COOL_FROM, COOL_TO). The
  * edges come in as inputs: a laid-out helper that reads uniforms in its body can be emitted with
  * another material's uniform names (r186), which broke the rain's materials under taa. */
@@ -156,10 +158,11 @@ const NIGHT_TINT = ( () => {
 
 } )();
 
-/** The vignette's factor at screen uv `at` for its `strength` (VIGNETTE). */
-export function vignetteFactor( at: V2, strength: F ): F {
+/** The vignette's factor at screen uv `at` for its `strength`, of the shape `shape`
+ * (look/DisplayLook.ts `vignette`). */
+export function vignetteFactor( shape: DisplayTables[ 'vignette' ], at: V2, strength: F ): F {
 
-	const fall = smoothstep( VIGNETTE.inner, VIGNETTE.outer, length( at.sub( 0.5 ) ) ).mul( VIGNETTE.depth );
+	const fall = smoothstep( shape.inner, shape.outer, length( at.sub( 0.5 ) ) ).mul( shape.depth );
 	return mix( float( 1 ), fall.oneMinus(), strength );
 
 }
@@ -178,7 +181,12 @@ export interface DisplayBuild {
  * them (after the scene half's resolves, before the passes are declared). */
 export function buildDisplay( p: Pipeline, c: DisplayBuild ): void {
 
-	const renderer = p.renderer, sky = p.sky, rain = p.rain, g = p.graph, u = p.u;
+	const renderer = p.renderer, sky = p.sky, rain = p.rain, g = p.graph, u = p.u, look = p.look;
+	// the cool share's edges and overcast's highlights, from the tables (tunable on debug pages,
+	// debug/Tune.ts: `post.desaturate.coolFrom`, `coolTo`, `post.highlight.amount`, `from`, `to`)
+	tuneUniformOf( COOL_FROM, 'post.desaturate.coolFrom', look.coolShare.from, { min: - 1, max: 1 } );
+	tuneUniformOf( COOL_TO, 'post.desaturate.coolTo', look.coolShare.to, { min: - 1, max: 1 } );
+	for ( const k of [ 'amount', 'from', 'to' ] as const ) tuneUniformOf( HIGHLIGHT_GREY[ k ], `post.highlight.${ k }`, look.highlightGrey[ k ], { min: 0, max: 1 } );
 	const { sceneColor, surfaceDepth, velocity, veilReactive, opaqueColor, meterLight, exposureStatePrev, rainAir, rainOverlay, rainLayer, rainInput, rainBehind, rainGrade, hdr, sharp, display, easu } = p.resources;
 	const { temporal, renderSize, canvasSize, exposureRead, exposure, linearDisplay: LINEAR_DISPLAY, dev: DEV } = c;
 	// ---- composite: the scene target holds the opaque image with the sea and the rain drawn over it
@@ -213,7 +221,7 @@ export function buildDisplay( p: Pipeline, c: DisplayBuild ): void {
 	// key's share at its lifted cosine and the sky's irradiance lent to the island, at its fill;
 	// Purkinje.ts `purkinjeScale`)
 	const openLight = u.purkinjeKey.add( luminance( sky.islandIrradianceNode ).mul( shared.skyFill ) );
-	constantsMat.fragmentNode = vec4( purkinjeScale( openLight ), 0, 0, p.shafts.occlusion( tSurfaceDepth, g.extent( { of: 'render' } ), discCloud.r, discCloud.g ) );
+	constantsMat.fragmentNode = vec4( purkinjeScale( look.purkinje.retina, openLight ), 0, 0, p.shafts.occlusion( tSurfaceDepth, g.extent( { of: 'render' } ), discCloud.r, discCloud.g ) );
 	p.constants.quad = new THREE.QuadMesh( constantsMat );
 	p.constants.quad.name = 'Post.Constants';
 	// with the rods' colour by night (Purkinje.ts, off: its strength 0; its retinal scale the
@@ -277,7 +285,7 @@ export function buildDisplay( p: Pipeline, c: DisplayBuild ): void {
 	const frame = g.extent( { of: 'render' } );
 	// (in hdr's units: pre-exposed)
 	const flare = ( q: V2, strength: F ) => p.shafts.flare( q, frame.x.div( frame.y ), constant.a, strength.mul( u.bloom ) ).mul( preExposure.scale );
-	const bloom = p.bloom = new PhysicalBloom( g, tHdr ?? sceneTex, exposure, isSky, flare );
+	const bloom = p.bloom = new PhysicalBloom( look, g, tHdr ?? sceneTex, exposure, isSky, flare );
 	const withBloom = hdrColor.add( bloom.read( uv() ).mul( u.bloom ) );
 
 	// ---- the sharp image: the composite and the blooms (the composite evaluated here, inline,
@@ -300,24 +308,24 @@ export function buildDisplay( p: Pipeline, c: DisplayBuild ): void {
 
 	// ---- tidewater's grade, to display values: the scene at the exposure, the vignette (the
 	// resolve leaves it to the canvas pass, after the accumulation), the tone curve with the
-	// white balance, the grade's tables, overcast's highlights toward grey (HIGHLIGHT_GREY) and the
+	// white balance, the grade's tables, overcast's highlights toward grey (`highlightGrey`) and the
 	// BT.709 OETF (its saturation and contrast are the
 	// table's, GradeLut.ts) (`encode` false: the output code's sRGB decode). `at`: the
 	// screen uv whose local tone mapping it takes (none for the grade's table).
-	// the vignette's factor at the pixel being drawn (VIGNETTE): round in the frame's own uv, the
+	// the vignette's factor at the pixel being drawn (`vignette`): round in the frame's own uv, the
 	// same into an image of any size
 	const vignetteAt = ( _size: THREE.UniformNode<'vec2', THREE.Vector2> ) => {
 
-		return vignetteFactor( uv(), u.vignette );
+		return vignetteFactor( look.vignette, uv(), u.vignette );
 
 	};
 	const grade = ( lin: V3, vignette: boolean, encode: boolean, at?: V2 ): V3 => {
 
 		const c = lin.mul( exposure ).toVar();
-		// the desaturation (DESATURATION), before the local gain
+		// the desaturation (`desaturation`), before the local gain
 		c.addAssign( vec3( luminance( c ) ).sub( c ).mul( u.desaturate.mul( mix( float( 1 ), coolShare( u.balance.mul( c ), COOL_FROM, COOL_TO ), u.desaturateCool ) ) ) );
 		if ( localTone && at ) c.assign( localTone.apply( c, at ) );
-		// the shade's contrast (SHADE_CONTRAST)
+		// the shade's contrast (`shadeContrast`)
 		c.mulAssign( exp2( min( log2( max( luminance( c ), 1e-6 ) ).sub( log2( u.shadePivot ) ), 0 ).mul( u.shadeSlope ) ) );
 		// the night's grade (NIGHT): the greens turned toward blue-green, a silver-blue tint
 		If( u.night.greaterThan( 0.001 ), () => {
@@ -340,7 +348,7 @@ export function buildDisplay( p: Pipeline, c: DisplayBuild ): void {
 		// the BT.709 OETF, a code the canvas shows as sRGB (`encode` false: that code's sRGB decode,
 		// so the temporal canvas pass's sRGB encode gives the code back)
 		const graded = looked.mul( looked ).toVar();
-		// overcast's highlights toward grey (HIGHLIGHT_GREY): a weight of 0 adds nothing
+		// overcast's highlights toward grey (`highlightGrey`): a weight of 0 adds nothing
 		const y = luminance( graded );
 		graded.addAssign( vec3( y ).sub( graded ).mul( HIGHLIGHT_GREY.amount.mul( smoothstep( HIGHLIGHT_GREY.from, HIGHLIGHT_GREY.to, y ) ).mul( u.highlightShare ) ) );
 		const v = ( bt709( clamp( graded, 0, 1 ) as V3 ) as V3 ).toVar();

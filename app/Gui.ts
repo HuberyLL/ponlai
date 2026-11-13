@@ -3,7 +3,7 @@
 // Its handlers call the renderer's and the island's operations; the game adds its own folder
 // between them (main.ts).
 import { reloadWith } from './PageSettings.ts';
-import { DAY_PRESETS, type DayPreset, WEATHER_PRESETS, isParkedWeather, type WeatherName, WIND_LEVELS, type WindLevel, WHITE_BALANCE, LOCAL_TONE, FrameStats, shared, AMBIENT_KNOBS, type AmbientView, markSkyRetune, type AAMode, AA_MODE, renderEvent, debugViewChoices, type RenderParts } from '../packages/render/index.ts';
+import { DAY_PRESETS, type DayPreset, WEATHER_PRESETS, isParkedWeather, type WeatherName, WIND_LEVELS, type WindLevel, LOCAL_TONE, FrameStats, shared, AMBIENT_KNOBS, type AmbientView, markSkyRetune, type AAMode, AA_MODE, renderEvent, debugViewChoices, type RenderParts } from '../packages/render/index.ts';
 import { settings as params, numberSetting, type QualityTier, ACTIVE_QUALITY } from '../packages/render/setup.ts';
 import GUI from 'lil-gui';
 import { qualityLines } from './QualityDetect.ts';
@@ -267,15 +267,16 @@ export function addLookFolders( render: RenderParts, page: PageParts ) {
 	islanderF.add( characterLook.softSkin, 'value', 0.005, 0.4, 0.005 ).name( 'skin edge' );
 	islanderF.add( characterLook.skyRimGain, 'value', 0, 4, 0.01 ).name( 'sky rim' );
 	islanderF.add( characterLook.shadowSaturation, 'value', 0.5, 2, 0.01 ).name( 'shade saturation' );
-	// the display chain (Pipeline.ts): tidewater's grade (TIDEWATER_GRADE), its exposure from the clock
+	// the display chain (Pipeline.ts): tidewater's grade (its display tables' `strengths`), its exposure from the clock
 	// and the weather, the white balance, the local tone mapping and the grade's tables
 	const postF = gui.addFolder( 'Post' );
 	postF.add( S, 'exposureOffset', - 3, 3, 0.05 ).name( 'exposure offset (stops)' );
 	postF.add( S, 'bloom', 0, 3, 0.05 ).name( 'bloom strength' );
 	{
 
-		// the high sun's white balance (look/DisplayLook.ts WHITE_BALANCE)
-		const day = WHITE_BALANCE.day[ WHITE_BALANCE.day.length - 1 ].values;
+		// the high sun's white balance (look/DisplayLook.ts `whiteBalance`)
+		const white = pipeline.look.whiteBalance;
+		const day = white.day[ white.day.length - 1 ].values;
 		postF.add( day, 'r', 0.4, 1.5, 0.005 ).name( 'white balance red (high sun)' );
 		postF.add( day, 'b', 0.5, 1.5, 0.005 ).name( 'white balance blue (high sun)' );
 

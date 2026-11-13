@@ -9,7 +9,7 @@ import { Fn, texture, uv, vec2, vec3, vec4, float, inverseSqrt, luminance, max, 
 import type { FrameGraph, GraphResources, ResourceHandle, SizeClass } from './graph/FrameGraph.ts';
 import type { PassBuilder } from './graph/GraphCompiler.ts';
 import { keyed } from './DayKeys.ts';
-import { BLOOM, BLOOM_HIGH_SUN as HIGH_SUN } from '../look/DisplayLook.ts';
+import type { BloomKey, DisplayTables } from '../look/DisplayLook.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -72,11 +72,19 @@ type V4 = THREE.Node<'vec4'>;
 // - The extra term, smooth over a level's texel, comes out of every level whole: the result holds
 //   it times the weights' sum (`strength`), so its caller divides it by that and the reader's
 //   factor, and it leaves at its own radiance.
-// The keys' values and why they are what they are: look/DisplayLook.ts BLOOM.
+// The keys come with the display's tables the bloom is made with (look/DisplayLook.ts `bloom`, the
+// uniforms starting from `bloomStart`); their values and why they are what they are are the look's.
 
 const LEVELS = 8;
 
 const levelSize = ( i: number ): SizeClass => ( { of: 'render', scale: 0.5 / 2 ** i, min: 1 } );
+
+// the bloom's uniforms, from the key `start`: the land's and the sky's sets and the levels' weights
+const bloomUniforms = ( start: BloomKey ) => ( {
+	threshold: uniform( start.threshold ), knee: uniform( start.knee ), share: uniform( start.share ), cap: uniform( start.cap ),
+	skyThreshold: uniform( start.skyThreshold ), skyKnee: uniform( start.skyKnee ), skyShare: uniform( start.skyShare ), skyCap: uniform( start.skyCap ),
+	weights: Array.from( { length: LEVELS }, () => uniform( 0.5 ) ),
+} );
 
 // The 13-tap downsample's taps (render or source texels off the destination texel's centre) and
 // their shares: the inner 2x2 box's four taps and the centre, the edges' and the corners'.
@@ -95,22 +103,21 @@ export class PhysicalBloom {
 	private readonly up: ResourceHandle[];
 	private readonly quads: { sky: THREE.QuadMesh; down: THREE.QuadMesh[]; up: THREE.QuadMesh[] };
 
-	readonly uniforms = {
-		threshold: uniform( HIGH_SUN.threshold ), knee: uniform( HIGH_SUN.knee ), share: uniform( HIGH_SUN.share ), cap: uniform( HIGH_SUN.cap ),
-		skyThreshold: uniform( HIGH_SUN.skyThreshold ), skyKnee: uniform( HIGH_SUN.skyKnee ), skyShare: uniform( HIGH_SUN.skyShare ), skyCap: uniform( HIGH_SUN.skyCap ),
-		weights: Array.from( { length: LEVELS }, () => uniform( 0.5 ) ),
-	};
-	private readonly keyedValues = { ...BLOOM.day[ 0 ].values };
+	readonly uniforms: ReturnType<typeof bloomUniforms>;
+	private readonly keyedValues: BloomKey;
 
 	/** The weights' sum: what a smooth term added to level 0 comes out times (see the header). */
 	readonly strength: F;
 
-	/** `input`: the image to bloom (scene radiance), at the render's size or the canvas's; `exposure`
-	 * scales it to the exposed image; `isSky` is 1 where screen uv `at` shows the sky; `extra`,
-	 * radiance added at screen uv to level 0 (the sun's or the moon's flare, LightShafts.ts), given
-	 * `strength` to divide by; the targets are declared on `graph`. */
-	constructor( private readonly graph: GraphResources, input: THREE.TextureNode, private readonly exposure: F, private readonly isSky: ( at: V2 ) => F, private readonly extra?: ( at: V2, strength: F ) => V3 ) {
+	/** `look`: the display's tables, whose bloom keys it reads (look/DisplayLook.ts); `input`: the
+	 * image to bloom (scene radiance), at the render's size or the canvas's; `exposure` scales it to
+	 * the exposed image; `isSky` is 1 where screen uv `at` shows the sky; `extra`, radiance added at
+	 * screen uv to level 0 (the sun's or the moon's flare, LightShafts.ts), given `strength` to divide
+	 * by; the targets are declared on `graph`. */
+	constructor( private readonly look: Pick<DisplayTables, 'bloom' | 'bloomStart'>, private readonly graph: GraphResources, input: THREE.TextureNode, private readonly exposure: F, private readonly isSky: ( at: V2 ) => F, private readonly extra?: ( at: V2, strength: F ) => V3 ) {
 
+		this.uniforms = bloomUniforms( look.bloomStart );
+		this.keyedValues = { ...look.bloom.day[ 0 ].values };
 		this.strength = this.uniforms.weights.reduce<F>( ( sum, w ) => sum.add( w ), float( 0 ) );
 
 		const color = ( name: string, size: SizeClass ) => graph.color( name, { size, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
@@ -214,10 +221,10 @@ export class PhysicalBloom {
 	}
 
 	/** Sets the land's and the sky's sets and the levels' weights for the sun's `elevation`
-	 * (degrees), the night's weight and the weather's cloud (BLOOM, DayKeys.ts). */
+	 * (degrees), the night's weight and the weather's cloud (its tables' `bloom`, DayKeys.ts). */
 	update( elevation: number, night: number, cloud: number ): void {
 
-		const k = keyed( BLOOM, elevation, night, this.keyedValues, cloud ), u = this.uniforms;
+		const k = keyed( this.look.bloom, elevation, night, this.keyedValues, cloud ), u = this.uniforms;
 		u.threshold.value = k.threshold; u.knee.value = k.knee; u.share.value = k.share; u.cap.value = k.cap;
 		u.skyThreshold.value = k.skyThreshold; u.skyKnee.value = k.skyKnee; u.skyShare.value = k.skyShare; u.skyCap.value = k.skyCap;
 		const w = [ k.w0, k.w1, k.w2, k.w3, k.w4, k.w5, k.w6, k.w7 ];

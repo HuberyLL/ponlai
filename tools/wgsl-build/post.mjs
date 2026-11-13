@@ -14,6 +14,8 @@ import { PhysicalBloom } from '../../packages/render/post/PhysicalBloom.ts';
 import { LocalTone } from '../../packages/render/post/LocalTone.ts';
 import { vignetteFactor } from '../../packages/render/post/PipelineDisplay.ts';
 import { preExposure } from '../../packages/render/post/PreExposure.ts';
+import { createDisplayTables } from '../../packages/render/look/DisplayLook.ts';
+import { installedLook } from '../../packages/render/look/Look.ts';
 
 // a graph resource as Pipeline.ts declares it
 function resource( name, format, type ) {
@@ -68,9 +70,12 @@ export default function () {
 	// the exposure as the passes after the meter read it (Pipeline.ts `exposureRead`)
 	const exposure = exp2( textureLoad( texture( exposureState ), ivec2( 0 ) ).x ).mul( preExposure.inverse );
 
+	// the display's tables of the installed look (the island's: tools/wgsl-build.mjs)
+	const display = createDisplayTables( installedLook().display );
+
 	// the bloom, with the sky's test and a stand-in extra term
 	const isSky = ( at ) => select( textureLoad( texture( surfaceDepth ), ivec2( at.mul( renderSize ) ) ).x.lessThan( - 9e4 ), float( 1 ), float( 0 ) );
-	const bloom = new PhysicalBloom( graph, texture( hdr ), exposure, isSky, ( at, strength ) => at.xyx.div( strength ) );
+	const bloom = new PhysicalBloom( display, graph, texture( hdr ), exposure, isSky, ( at, strength ) => at.xyx.div( strength ) );
 	const q = bloom.quads;
 
 	// the local tone's grid, and its slicing drawn as a full-screen pass
@@ -81,7 +86,7 @@ export default function () {
 	slice.fragmentNode = vec4( localTone.apply( tSharp.rgb.mul( exposure ), uv() ), 1 );
 	const vignette = new THREE.NodeMaterial();
 	vignette.name = 'Vignette';
-	vignette.fragmentNode = vec4( vec3( vignetteFactor( uv(), uniform( 1 ) ) ), 1 );
+	vignette.fragmentNode = vec4( vec3( vignetteFactor( display.vignette, uv(), uniform( 1 ) ) ), 1 );
 	const bloomRead = new THREE.NodeMaterial();
 	bloomRead.name = 'Bloom.Read';
 	bloomRead.fragmentNode = vec4( bloom.read( uv() ), 1 );

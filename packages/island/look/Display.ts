@@ -2,7 +2,7 @@ import type { DayKey } from '../../render/index.ts';
 import type { BloomKey, DesaturationKey, DisplayLook, Rgb } from '../../render/setup.ts';
 
 // The island's display look (packages/island/look/: the island's numbers for the renderer's look
-// tables, look/Look.ts; look/DisplayLook.ts reads these): the shade's contrast, the desaturation,
+// tables, look/Look.ts; look/DisplayLook.ts makes the display's tables from these): the shade's contrast, the desaturation,
 // overcast's highlights toward grey, the bloom's and the vignette's strengths, the vignette's
 // shape, the white balance, the tone curve's three settings, the base grade, the bloom's keys and
 // the rods' colour at night. The methods that read them are their modules' (post/ToneCurve.ts,
@@ -59,7 +59,7 @@ export const DISPLAY: DisplayLook = {
 	// twelfth, the night by about a half. The rising sun's `dawn` key, held from -1 degree down,
 	// fades the cool colours by 0.6 and passes into the golden key's by 1.5 (the golden key's own
 	// values, shared): before the sun the clear morning's land, sea and sky took the dawn's white
-	// (`dawn`, WHITE_BALANCE) on top of their own blue, and the upper sky and the far sea turned violet
+	// (`dawn`, `whiteBalance`) on top of their own blue, and the upper sky and the far sea turned violet
 	// (h 271 to 278 from -4 to 0 degrees). A fade of every colour brought them back to h 250 to 262,
 	// but it took the warm colours with them: the rose band over the horizon (h 327 to 353, C 0.03 to
 	// 0.05 from -8 to -1 degrees) went to a grey-blue band (h 263, the white's cast), and the meadow's
@@ -84,7 +84,7 @@ export const DISPLAY: DisplayLook = {
 	coolShare: { from: 0, to: 0.6 },
 	// Overcast's highlights toward grey: the grade's tables' linear output c becomes
 	// c + ( Y( c ) - c ) amount smoothstep( from, to, Y( c ) ) share, `share` overcast's share in the sky
-	// times one less the night's weight (as its white, WHITE_OVERCAST: none at night, and nothing at all
+	// times one less the night's weight (as its white, `whiteOvercast`: none at night, and nothing at all
 	// where the sky holds no overcast). Overcast's white, which turns the deck away from the sun
 	// blue-green grey and the meadow green, turned the bright sky about the sun cyan too (OKLab a -0.033
 	// at a lightness of 0.74, 10 to 30 degrees from it), and a warmer white turns the deck and the
@@ -99,7 +99,7 @@ export const DISPLAY: DisplayLook = {
 	highlightGrey: { amount: 0.58, from: 0.067, to: 0.4 },
 
 	// The bloom's strength (times the time's and the weather's, and its share is the threshold's:
-	// BLOOM) and the vignette's strength (VIGNETTE). No grain: a dither of half a
+	// `bloom`) and the vignette's strength (`vignette`). No grain: a dither of half a
 	// code value is all the noise the frame takes.
 	strengths: { bloom: 1.36, vignette: 1 },
 	// The vignette's shape: with r the distance from the frame's centre in its own uv (round in uv,
@@ -117,7 +117,7 @@ export const DISPLAY: DisplayLook = {
 	// high key moves with the sky's (look/SkyLook.ts SKY_LIGHT), which takes the inverse, so the sky holds its
 	// colour. The golden hour warms a little further (red 1.05, blue 0.9); the clouded skies take a cool
 	// white too (red 0.78, blue 1.16), their grey light kept from reading warm. Overcast takes a cooler
-	// white of its own (red 0.49, blue 1.14, WHITE_OVERCAST): under the clouded key its slightly warm
+	// white of its own (red 0.49, blue 1.14, `whiteOvercast`): under the clouded key its slightly warm
 	// grey deck read as a neutral grey and the meadow under it as yellow-green (hue 120); its own key
 	// brings the deck to a blue-green grey (OKLab a -0.022, b -0.008) and the meadow to green (hue
 	// 132), the lightness all but unchanged. It comes in over the clouded day's white by overcast's share in
@@ -148,7 +148,7 @@ export const DISPLAY: DisplayLook = {
 
 	// The base grade (post/GradeLut.ts builds its tables from these changes over no grade): the day's, which the other grades build
 	// on. No contrast and no saturation over the whole frame (the contrast is the shade's,
-	// SHADE_CONTRAST, and the tone curve's): each hue moved on its own, lightly, the neutral axis left
+	// `shadeContrast`, and the tone curve's): each hue moved on its own, lightly, the neutral axis left
 	// where it is but for a touch of cool in the highlights.
 	// - The warm hues (red to yellow) times 1.15: the earth, the bark and the low sun's light keep
 	//   their colour under the softer curve; they also turn 8 degrees toward red, so the golden hour's
@@ -158,7 +158,7 @@ export const DISPLAY: DisplayLook = {
 	//   4 degrees toward red.
 	// - The sky's blue times 1.2: the noon sky read pale and grey over the brighter curve.
 	// - The green times 0.95 and turned 3.5 degrees toward yellow: the cool noon white balance
-	//   (WHITE_BALANCE) already takes the sunlit meadow from yellow-green to
+	//   (`whiteBalance`) already takes the sunlit meadow from yellow-green to
 	//   green, and a turn toward blue-green over it took the lit blades past it (on screen, in linear
 	//   light, their mean red to green about 0.53 to 0.60 at 4 degrees toward blue-green, 0.61 to 0.66
 	//   at this turn, from 0.74 to 0.81 under a neutral white), and a touch less loud than the sky over

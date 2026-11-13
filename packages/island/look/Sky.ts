@@ -171,8 +171,8 @@ const KEY_DECK_WHITE = 0.3;
 // haze's light: the golden key takes the sky warm (red over blue about 2.9), the low key near grey,
 // the high key blue (blue over red about 1.5), the atmosphere's own colour doing the rest, and the
 // night key is about 0.03, its red about twice its green, which the night's white balance takes
-// back (look/DisplayLook.ts WHITE_BALANCE): the land's dark colours stay near neutral under it,
-// the clear night's dome is dark, its low sky the haze's moonlit light (Haze.ts NIGHT) and
+// back (the display's `whiteBalance`, look/Display.ts): the land's dark colours stay near neutral
+// under it, the clear night's dome is dark, its low sky the haze's moonlit light (Haze.ts NIGHT) and
 // its blue the moonlit atmosphere's own and the rods' (Purkinje.ts).
 // The golden, low and morning keys keep the colour they lent the sky before the ozone's absorption
 // was integrated over each channel's band (Atmosphere.ts): with it the bare sky lost red and blue
@@ -211,7 +211,7 @@ const KEY_DECK_WHITE = 0.3;
 // green 0.79 and blue 0.86 of red: set by least squares, with the dawn's haze weights
 // (HazeKeys.ts), against the dawn's horizon views from -8 to 3 degrees over the atmosphere with its
 // multiple scattering whole (it was the dusk key's near-neutral colour before, 0.89 and 0.86), and the
-// display's dawn white balance (look/DisplayLook.ts WHITE_BALANCE) cools it from there: the band
+// display's dawn white balance (`whiteBalance`, look/Display.ts) cools it from there: the band
 // over the horizon, nearly all the haze's light, and the sea under it stay a quiet blue grey. By 12
 // degrees the picture has gone cool and quiet, and `morning` is the day's light at about two thirds
 // of the low key with less green (red a little over blue, green about 0.7 of them), which turns the

@@ -47,7 +47,7 @@ import type { ExtraPass } from './ExtraPass.ts';
 import type { WaveMaps } from '../ocean/WaveMaps.ts';
 import { settings } from '../Settings.ts';
 import { DEFAULT_POST_OPTIONS, postOptionsFromURL, type PostOptions } from './PostOptions.ts';
-import { BASE_GRADE, DESATURATION, PURKINJE, SHADE_CONTRAST, TIDEWATER_GRADE, TONE_CURVE, WHITE_BALANCE, WHITE_OVERCAST } from '../look/DisplayLook.ts';
+import type { DisplayTables } from '../look/DisplayLook.ts';
 import { declarePasses } from './PipelinePasses.ts';
 import { buildDisplay, GRADE_TABLE, NIGHT, TONE_SPACE } from './PipelineDisplay.ts';
 
@@ -113,7 +113,7 @@ import { buildDisplay, GRADE_TABLE, NIGHT, TONE_SPACE } from './PipelineDisplay.
 //   display: the exposure, the local tone mapping, tidewater's grade (the night's grade, the
 //   tone, the vignette), the white balance and the tone curve in their
 //   curve space (ToneSpace.ts), the grade's two tables (GradeLut.ts, indexed by the square root of linear light),
-//   overcast's highlights toward grey (HIGHLIGHT_GREY), the BT.709 OETF, dither ── displayRT
+//   overcast's highlights toward grey (`highlightGrey`), the BT.709 OETF, dither ── displayRT
 //   ── copied to the screen
 // Under the temporal modes (Antialiasing.ts: aa=taa|taau) the scene half is single-sampled and
 // jittered, and writes the motion vectors beside the colour:
@@ -203,7 +203,8 @@ import { buildDisplay, GRADE_TABLE, NIGHT, TONE_SPACE } from './PipelineDisplay.
 // first runs later (the rain, the upscale) builds nothing then.
 // Where the parts are: the graph's structural choices (`PostOptions`, `?post=`) in PostOptions.ts;
 // the display chain's materials, built in the constructor's place for them, in PipelineDisplay.ts
-// (`buildDisplay`), and their numbers chosen for the look in look/DisplayLook.ts; the passes above,
+// (`buildDisplay`), and their numbers chosen for the look in the display's tables the pipeline is
+// made with (`look`: look/DisplayLook.ts `createDisplayTables`); the passes above,
 // declared in order once the materials are built, in PipelinePasses.ts (`declarePasses`). This file
 // keeps the targets, the constructor's steps, the sizes and the per-frame updates.
 
@@ -270,14 +271,14 @@ import { buildDisplay, GRADE_TABLE, NIGHT, TONE_SPACE } from './PipelineDisplay.
 //   65504.
 // - The display chain is tidewater's with our tone curve (ToneCurve.ts) and, over it, the local
 //   tone mapping, curve space and white balance after Patry, "Real-Time Samurai Cinema" (SIGGRAPH
-//   2021), in this order: the desaturation (DESATURATION) and the local tone mapping first
+//   2021), in this order: the desaturation (`desaturation`) and the local tone mapping first
 //   (LocalTone.ts: a function of the frame, nothing kept between frames), one
-//   curve and grade (the shade's contrast, SHADE_CONTRAST; the tone, TONE, and the night's grade, NIGHT, over it are off by default), then
+//   curve and grade (the shade's contrast, `shadeContrast`; the tone, TONE, and the night's grade, NIGHT, over it are off by default), then
 //   the grade's tables (GradeLut.ts, indexed by the square root of the curve's linear output: the first generated from the grade's parameters, `grade` and
-//   `setGrade`, the second the identity), then overcast's highlights toward grey (HIGHLIGHT_GREY).
+//   `setGrade`, the second the identity), then overcast's highlights toward grey (`highlightGrey`).
 //   The curve maps each channel in the
 //   space of ToneSpace.ts, AP1 with its red primary moved out, and the white balance is folded
-//   into its input matrix (WHITE_BALANCE, keyed by the sun and the weather; rebuilt only when it changes). The exposure is metered
+//   into its input matrix (`whiteBalance`, keyed by the sun and the weather; rebuilt only when it changes). The exposure is metered
 //   from the frame by the meter pass (Metering.ts, Exposure.ts: the metering illuminance's and the
 //   luminance's histograms and the sky's mean luminance, against keyed targets) into the exposure
 //   state's texel, which every pass after it loads (`exposure`, 2^( EV - P ) for the pre-exposed
@@ -337,10 +338,6 @@ type V4 = THREE.Node<'vec4'>;
 // what a pass's setup declares its reads and writes on
 export type PassBuilder = Parameters<Parameters<FrameGraph<PipelineFrame>[ 'addPass' ]>[ 2 ]>[ 0 ];
 
-// The exposed mid grey as the default curve shows it, in linear display values: the grade's
-// contrast pivots there (GradeLut.ts).
-const SHOWN_GREY = TONE_CURVE.mid;
-
 export interface PipelineSettings {
 	// the clock's and the weather's exposure (DayCycle, Sky): the level the night sky's own light
 	// is tuned against, no longer the frame's (Exposure.ts meters that)
@@ -348,7 +345,7 @@ export interface PipelineSettings {
 	// stops over the exposure's target (the GUI's)
 	exposureOffset: number;
 	// the tone curve's slope at black, the mid grey it shows and the input that shows white
-	// (look/DisplayLook.ts TONE_CURVE)
+	// (look/DisplayLook.ts `toneCurve`)
 	curve: ToneCurve;
 	// the grade's two tables (GradeLut.ts, `Pipeline.luts`): 0 the first, 1 the second
 	lut: number;
@@ -384,17 +381,8 @@ export class Pipeline {
 	renderer: THREE.WebGPURenderer;
 	width = 1;
 	height = 1;
-	// (the bloom's and the vignette's strengths tunable on debug pages, debug/Tune.ts:
-	// `post.bloom.strength`, `post.vignette.strength`)
-	settings: PipelineSettings = tuneObject( {
-		// (the exposure starts at the sky's exposure by day: the constructor sets it)
-		exposure: 0, exposureOffset: 0,
-		// (tunable on debug pages, debug/Tune.ts: `post.tone.blackSlope`, `midGrey`, `white`)
-		curve: tuneObject( { ...TONE_CURVE }, { toe: 'post.tone.blackSlope', mid: 'post.tone.midGrey', white: 'post.tone.white' },
-			{ toe: { min: 1.5, max: 3 }, mid: { min: 0.12, max: 0.22 }, white: { min: 8, max: 32, scale: 'log' } } ),
-		lut: 0, ...TIDEWATER_GRADE, tone: TONE, night: 0, exposureNight: 0, skyMix: [ 0, 1, 0, 0 ],
-	} as PipelineSettings, { bloom: 'post.bloom.strength', vignette: 'post.vignette.strength' },
-	{ bloom: { min: 0, max: 2 }, vignette: { min: 0, max: 1.5 } } );
+	// (from the display's tables: the constructor makes them)
+	settings: PipelineSettings;
 
 	// The canvas's size; larger than width x height while the frame is upscaled.
 	outputWidth = 1;
@@ -495,8 +483,8 @@ export class Pipeline {
 	 * `value` replaces it; `settings.lut` blends from the first to the second. */
 	readonly luts = lutNodes();
 	/** The first table's grade (GradeLut.ts): `setGrade` changes it and fills the table anew. */
-	readonly grade: GradeParams = gradeOf( {}, BASE_GRADE );
-	// the shade's contrast this frame (SHADE_CONTRAST)
+	readonly grade: GradeParams;
+	// the shade's contrast this frame (`shadeContrast`)
 	private readonly shade = { pivot: 0, slope: 0 };
 	private readonly desaturation = { amount: 0, cool: 0 };
 	private readonly white = { r: 1, g: 1, b: 1 };
@@ -505,16 +493,16 @@ export class Pipeline {
 	// the tone curve whose coefficients were last solved (ToneCurve.ts)
 	private toneCurveKey = '';
 	u = {
-		// tidewater's grade
-		bloom: uniform( TIDEWATER_GRADE.bloom ), tone: uniform( 0 ), night: uniform( 0 ),
+		// tidewater's grade (the bloom's strength the display's: the constructor sets it)
+		bloom: uniform( 0 ), tone: uniform( 0 ), night: uniform( 0 ),
 		vignette: uniform( 1 ),
-		// the shade's contrast (SHADE_CONTRAST): its pivot as an exposed luminance, and its slope
+		// the shade's contrast (`shadeContrast`): its pivot as an exposed luminance, and its slope
 		shadePivot: uniform( 0.8 ), shadeSlope: uniform( 0 ),
-		// the desaturation before the local gain (DESATURATION)
+		// the desaturation before the local gain (`desaturation`)
 		desaturate: uniform( 0 ), desaturateCool: uniform( 0 ),
-		// overcast's highlights toward grey (HIGHLIGHT_GREY): overcast's share by day
+		// overcast's highlights toward grey (`highlightGrey`): overcast's share by day
 		highlightShare: uniform( 0 ),
-		// the white balance alone (WHITE_BALANCE), through which the desaturation's cool share reads
+		// the white balance alone (`whiteBalance`), through which the desaturation's cool share reads
 		// its colours
 		balance: uniform( new THREE.Matrix3() ),
 		// the Purkinje shift's weight: the night's times its strength, and the key's share of the
@@ -539,16 +527,31 @@ export class Pipeline {
 	};
 
 
-	/** `temporal`: the tier's resolve settings (Quality.ts `taa`); `extraPasses`: ExtraPass.ts. */
-	constructor( renderer: THREE.WebGPURenderer, readonly sky: Sky, sunShadow: SunShadow, rain?: Rain, options: Partial<PostOptions> = postOptionsFromURL(), temporal?: TemporalSettings, readonly extraPasses: readonly ExtraPass[] = [] ) {
+	/** `look`: the display's tables (look/DisplayLook.ts `createDisplayTables`); `temporal`: the
+	 * tier's resolve settings (Quality.ts `taa`); `extraPasses`: ExtraPass.ts. */
+	constructor( renderer: THREE.WebGPURenderer, readonly sky: Sky, readonly look: DisplayTables, sunShadow: SunShadow, rain?: Rain, options: Partial<PostOptions> = postOptionsFromURL(), temporal?: TemporalSettings, readonly extraPasses: readonly ExtraPass[] = [] ) {
 
-		this.settings.exposure = sky.exposure.day;
+		// (the bloom's and the vignette's strengths tunable on debug pages, debug/Tune.ts:
+		// `post.bloom.strength`, `post.vignette.strength`)
+		this.settings = tuneObject( {
+			// (the exposure starts at the sky's exposure by day)
+			exposure: sky.exposure.day, exposureOffset: 0,
+			// (tunable on debug pages, debug/Tune.ts: `post.tone.blackSlope`, `midGrey`, `white`)
+			curve: tuneObject( { ...look.toneCurve }, { toe: 'post.tone.blackSlope', mid: 'post.tone.midGrey', white: 'post.tone.white' },
+				{ toe: { min: 1.5, max: 3 }, mid: { min: 0.12, max: 0.22 }, white: { min: 8, max: 32, scale: 'log' } } ),
+			lut: 0, ...look.strengths, tone: TONE, night: 0, exposureNight: 0, skyMix: [ 0, 1, 0, 0 ],
+		} as PipelineSettings, { bloom: 'post.bloom.strength', vignette: 'post.vignette.strength' },
+		{ bloom: { min: 0, max: 2 }, vignette: { min: 0, max: 1.5 } } );
+		this.u.bloom.value = look.strengths.bloom;
+		this.grade = gradeOf( {}, look.baseGrade );
 		this.renderer = renderer;
 		this.rain = rain;
 		// (a tone curve the solve cannot meet keeps the last good one and reports it, debug/Tune.ts)
 		const curve = this.settings.curve;
 		tuneCheck( [ 'post.tone.blackSlope', 'post.tone.midGrey', 'post.tone.white' ], () => checkToneCurve( solveToneCurve( curve ), curve.white ) );
-		fillGradeLut( this.grade, SHOWN_GREY, this.luts[ 0 ].value as THREE.Data3DTexture );
+		// (the exposed mid grey as the default curve shows it, in linear display values: the grade's
+		// contrast pivots there, GradeLut.ts)
+		fillGradeLut( this.grade, look.toneCurve.mid, this.luts[ 0 ].value as THREE.Data3DTexture );
 		this.options = { ...DEFAULT_POST_OPTIONS, ...options };
 		this.settled.settle = ( temporal ?? QUALITY.high.taa ).restSettle;
 		const O = this.options;
@@ -1135,7 +1138,7 @@ export class Pipeline {
 	setGrade( changes: GradeChanges = {} ): void {
 
 		mergeGrade( this.grade, changes );
-		fillGradeLut( this.grade, SHOWN_GREY, this.luts[ 0 ].value as THREE.Data3DTexture );
+		fillGradeLut( this.grade, this.look.toneCurve.mid, this.luts[ 0 ].value as THREE.Data3DTexture );
 
 	}
 
@@ -1212,21 +1215,22 @@ export class Pipeline {
 		mu.dt.value = reset ? 0 : dt;
 		mu.up.value = ex.adaptUp; mu.down.value = ex.adaptDown;
 		u.bloom.value = S.bloom * ( 1 + S.tone * 0.5 ) * ( 1 + night * NIGHT.bloom );
-		const shade = keyed( SHADE_CONTRAST, this.sky.elevation, night, this.shade, cloud );
+		const D = this.look;
+		const shade = keyed( D.shadeContrast, this.sky.elevation, night, this.shade, cloud );
 		u.shadePivot.value = 0.18 * 2 ** shade.pivot; u.shadeSlope.value = shade.slope;
-		const desaturation = keyed( DESATURATION, this.sky.elevation, night, this.desaturation, cloud, this.sky.rising );
+		const desaturation = keyed( D.desaturation, this.sky.elevation, night, this.desaturation, cloud, this.sky.rising );
 		u.desaturate.value = desaturation.amount; u.desaturateCool.value = desaturation.cool;
-		u.purkinje.value = night * PURKINJE.strength;
+		u.purkinje.value = night * D.purkinje.strength;
 		const keyColor = this.sky.keyColor;
 		u.purkinjeKey.value = ( 0.2126 * keyColor.r + 0.7152 * keyColor.g + 0.0722 * keyColor.b ) * liftedKeyHeight( this.sky.keyLift, this.sky.keyDir, this.sky.keyIsMoon ) / Math.PI;
 		// the day's and the clouded white (DayKeys.ts `keyed`, without the night), overcast's
-		// (WHITE_OVERCAST) over them by overcast's share, then the night's over all by the night's
+		// (`whiteOvercast`) over them by overcast's share, then the night's over all by the night's
 		// weight, as `keyed` blends it: under no overcast the white is `keyed`'s to the bit
-		const white = keyed( WHITE_BALANCE, this.sky.elevation, 0, this.white, cloud, this.sky.rising );
-		const overcast = S.skyMix[ 3 ] ?? 0, atNight = WHITE_BALANCE.night!;
+		const white = keyed( D.whiteBalance, this.sky.elevation, 0, this.white, cloud, this.sky.rising );
+		const overcast = S.skyMix[ 3 ] ?? 0, atNight = D.whiteBalance.night!;
 		for ( const k of [ 'r', 'g', 'b' ] as const ) {
 
-			const v = white[ k ] + ( WHITE_OVERCAST[ k ] - white[ k ] ) * overcast;
+			const v = white[ k ] + ( D.whiteOvercast[ k ] - white[ k ] ) * overcast;
 			white[ k ] = v + ( atNight[ k ] - v ) * night;
 
 		}
@@ -1248,7 +1252,7 @@ export class Pipeline {
 			// a set the solve cannot meet (a pole or a fold in range: settings far from the
 			// default, as the GUI can reach) keeps the last good curve; the default must pass
 			const failed = checkToneCurve( k, C.white );
-			if ( failed && DEV && key === `${ TONE_CURVE.toe } ${ TONE_CURVE.mid } ${ TONE_CURVE.white }` ) throw new Error( `tone curve ${ key }: ${ failed }` );
+			if ( failed && DEV && key === `${ D.toneCurve.toe } ${ D.toneCurve.mid } ${ D.toneCurve.white }` ) throw new Error( `tone curve ${ key }: ${ failed }` );
 			if ( failed ) console.warn( `tone curve ${ key }: ${ failed }; the last good curve stays` );
 			else {
 
