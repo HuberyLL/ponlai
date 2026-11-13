@@ -131,7 +131,7 @@
 //   import { withGpuLock, acquireGpuLock } from './gpu-lock.mjs';
 //   await withGpuLock( 'profile island', async () => { ... } );           // held while fn runs
 //   await acquireGpuLock( 'capture overview' );                           // held until this process exits
-//   await acquireGpuLock( 'verify-sky', { shared: true } );               // shared with other probes
+//   await acquireGpuLock( 'probe', { shared: true } );                    // shared with other probes
 //   await leaseGpuLock( 'capture v', { shared: true, budget: 20000 } );   // kept from the last piece of work, or yielded to a waiter
 //   await leaseGpuLock( 'profile', { keepPlace: true } );                 // exclusive: yields to a waiter ranked before it, asks again in its old place
 //   lockState();                                                          // holders and queue in turn, with levels (job.mjs)
