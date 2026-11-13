@@ -122,7 +122,11 @@ nothing below a host reads the page or the wall clock (the save's timestamp asid
   island and the game. It builds them a stage at a time, the renderer's stages
   ([src/RenderStages.ts](src/RenderStages.ts)) and the island's
   ([src/IslandStages.ts](src/IslandStages.ts)) alternating in a fixed order, each stage putting
-  what it builds on its layer's one object; the game starts from those two objects. The page's own
+  what it builds on its layer's one object; the game starts from those two objects. A frame is
+  assembled the same way: the page's tick ([src/app/Frame.ts](src/app/Frame.ts)) calls the
+  renderer's frame stages and the island's in turn, in an order that is part of the image, and
+  does only its own work between them (the timer, the game's update and draw, the render scale,
+  the pacer). The page's own
   parts are in [src/app/](src/app/): the cameras' views, the frame loop, the GUI, the scene jump,
   the diagnostics and the handles the tools drive (it mounts them on `window`). The page also holds
   the address, the reloads and the browser's storage, and it chooses the quality tier
@@ -182,9 +186,15 @@ of them: a plant kind ([Registry.ts](src/world/vegetation/Registry.ts)), a kind 
 things, or the registry refuses them ([Extensions.ts](src/Extensions.ts)): the quality knob that
 governs their cost, how they stand in the test mode, and how they follow the land's growth. The
 marks the layers leave for each other in three's `userData` are one declared list
-([UserData.ts](src/UserData.ts)). *Why:* a new effect that forgot one of the three showed only
-later, as a capture that did not repeat, a frame time that crept or a grown page that differed from
-a fresh load; and a renderer that names the island's plants cannot draw another scene.
+([UserData.ts](src/UserData.ts)). The plant kinds' registry is closed once the renderer has placed
+them (the stage `placeVegetation` in [RenderStages.ts](src/RenderStages.ts): the scene, the depth
+prepasses; the sun's caster box and the rain's bake read the same list): a kind registered after
+it is refused with what had already read the kinds. Work a scene does every frame is not
+registered: its page calls it between the renderer's frame stages (`createFrameStages`), where its
+order belongs, as the island's frame stages are called. *Why:* a new effect that forgot one of the
+three showed only later, as a capture that did not repeat, a frame time that crept or a grown page
+that differed from a fresh load; and a renderer that names the island's plants cannot draw another
+scene.
 [tools/verify-extensions.mjs](tools/verify-extensions.mjs) registers definitions of its own and
 searches the owners for the scene's names.
 

@@ -1,7 +1,14 @@
-// The page's frame: the canvas's size and the render scale (fixed, dynamic or stepped), the tick
-// that advances the scene clock, the day, the weather, the wind and everything that follows them,
-// then renders, the loop that paces it, and the controls a tool holds, resumes and steps it by
-// (`loop`, `step`, `setTime`).
+// The page's frame: the canvas's size and the render scale (fixed, dynamic or stepped), the tick,
+// the loop that paces it, and the controls a tool holds, resumes and steps it by (`loop`, `step`,
+// `setTime`).
+// The tick is the order of a frame. It calls the renderer's frame stages (RenderStages.ts
+// `createFrameStages`) and the island's (IslandStages.ts `createIslandFrame`) in turn, and does
+// the page's own between them: the timer and the frame's deltas, the game's update and its draw,
+// the GUI's mirrors of the weather and the wind, the dynamic render scale, the pacer's queue and
+// the diagnostics. The order is part of the image: a stage reads what the ones before it wrote in
+// the same frame, so a new call goes where its statements belong. The page writes no uniform and
+// no cadence of the renderer's here; it sets the scene's pause (`render.paused`, the day clock's)
+// and reads the rest.
 import { pageStore } from '../PageSettings.ts';
 import { DynamicResolution, TAAU_MAX_UPSCALE, GpuFrameTimer, PassScaling, renderScaleKey, FramePacer, PAUSED_QUEUE, gpuDevice, threeAnimation, frameBookkeeping, TEST_MODE, AA_MODE, renderEvent, createFrameStages, type RenderParts } from '../render.ts';
 import { settings as params, dynamicRange, renderPixelRatio, outputPixelRatio } from '../renderSetup.ts';

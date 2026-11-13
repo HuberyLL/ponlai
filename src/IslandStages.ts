@@ -4,6 +4,12 @@
 // scans, the world's data and land, its meshes, its debug views, the vegetation, and the growth in
 // place. The rules of RenderStages.ts hold here too: the statements' order is part of the image,
 // and a stage that ends in a wait returns its promise to the entry.
+// - The island's part of a frame is a set of stages too (`createIslandFrame`): the growth, the
+//   camera, the night's share of its glow, the sward's tint, its creatures and falling leaves, its
+//   islander and the trail. The page's tick calls each between the renderer's frame stages
+//   (RenderStages.ts `FrameStages`) where the statement stood, and their order is part of the image.
+// - The vegetation's stage registers every plant kind, then hands the registry to the renderer's
+//   `placeVegetation`, which closes it: a kind is registered before that call or not at all.
 // - The page's camera views (app/CameraViews.ts) need the document, so the page builds the island
 //   view's framing (`IslandFraming`), which the land's changes call, and hands it to the stages that
 //   frame the land (`createVegetation`, `createGrowth`).

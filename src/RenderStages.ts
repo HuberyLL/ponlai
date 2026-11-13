@@ -13,6 +13,25 @@
 //   entry's to order.
 // - What the island gives a stage comes as an argument typed by the renderer's own types: this
 //   file names nothing of the island's.
+// - The registered plant kinds are placed by a stage too (`placeVegetation`: the scene, the
+//   wind's motion flag, the two depth prepasses), which closes their registry; the sun's caster box
+//   and the rain's collision bake read the same registry (`vegetationCasters`,
+//   `bakeRainCollision`), each called where the scene's order has it.
+// The frame's stages (`createFrameStages`) are the renderer's work in a frame, cut where the
+// scene's own work goes between: whether the frame is held, the scene clock, the day and the
+// weather, the sky and its light, the local lights, the weather's effects with the sky's bake, the
+// sun's maps and the sea, the relight, the draw and the submit. A page's tick calls them in that
+// order, once each (app/Frame.ts), with the island's between them (IslandStages.ts
+// `createIslandFrame`).
+// - The order of the statements inside a frame stage, and of the stages, is part of the image and
+//   of what a stepped clip repeats: a statement reads what the ones before it wrote in the same
+//   frame (the sky's state, the wind, the scene clock). New per-frame work goes into the stage
+//   whose statements it follows, or into the scene's own between two stages.
+// - What only the page knows comes through `FrameHost`: its switches, the pacer's interval, its
+//   own reasons a still frame is not final, and whether the canvas shows.
+// - The cadences that count wall-clock seconds (the sky's periodic bake, the refracted sun's map)
+//   and the hold of a still scene are the stages' own state; a tool that steps the frames restarts
+//   or holds them through `restartCadences` and `holdStill`.
 import { settings as params, numberSetting, type SettingsQuery } from './Settings.ts';
 import * as THREE from 'three/webgpu';
 import { Sky } from './sky/Sky.ts';

@@ -60,7 +60,8 @@ keeps the test mode's byte comparisons valid this way (`docs/reference/tools.md`
    `onJump` for a scene jump, `onCut` for a cut of the temporal modes' history), beside its
    creation; `establishScene` (`src/app/Scene.ts`) walks the table, and
    `tools/verify-scene-jump.mjs` checks it.
-2. Report it to `settled` (app/Frame.ts `pending`, or the rest's signature) until it has converged
+2. Report it to `settled` (`src/RenderStages.ts` `settleFrame`'s `pending`, the page's own through
+   `FrameHost.pending`, or the rest's signature) until it has converged
    on a still scene, or freeze it or turn it off in the test mode.
 3. Freeze it or turn it off under the test mode's one switch (`src/debug/TestMode.ts`;
    `docs/reference/tools.md`, Test mode).
