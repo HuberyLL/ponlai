@@ -217,7 +217,7 @@ function tableReadings( look ) {
 // the island's look with every number these systems take changed
 function changedSystems( look ) {
 
-	const out = structuredClone( { occlusion: look.occlusion, meadowCanopy: look.meadowCanopy, localLights: look.localLights, sea: look.sea } );
+	const out = structuredClone( { occlusion: look.occlusion, meadowCanopy: look.meadowCanopy, localLights: look.localLights, sea: look.sea, wind: look.wind } );
 	out.occlusion.floor += 0.125;
 	for ( const medium of [ out.meadowCanopy.canopy, out.meadowCanopy.cast ] ) {
 

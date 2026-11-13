@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { Fn, If, float, instanceIndex, instancedArray, tan, uint, vec2, vec3, vec4 } from 'three/tsl';
-import { GUST_TRAVEL, PLANT_RATE_BANDS, PLANT_RATE_SPREAD, WIND_STATE_VEC4S, Wind, createWindUniforms, gustAt, packWindState, plantSpeedOf, plantWind, windField, windStateOf, type WindState, type PlantWind, mainBend, plantLean, windDisplacement, debugFlags, setDebugFlag, type Shared, OPEN_DRIFT, type SeaDetail, nextFrame } from '../../render/index.ts';
+import { GUST_TRAVEL, PLANT_RATE_BANDS, WIND_STATE_VEC4S, Wind, createWindUniforms, gustAt, packWindState, plantSpeedOf, plantWind, windField, windStateOf, type WindState, type WindResponse, type PlantWind, mainBend, plantLean, windDisplacement, debugFlags, setDebugFlag, type Shared, OPEN_DRIFT, type SeaDetail, nextFrame } from '../../render/index.ts';
 import { bladeWindOffset, plantGrass } from '../world/Grass.ts';
 import { BAMBOO_WIND } from '../world/BambooMaterials.ts';
 import { culmLoad } from '../world/Bamboo.ts';
@@ -116,7 +116,7 @@ function windStates( ctx: WindProbeContext, { steps, dt }: Series ): { states: F
 	const { speed, heading, gustiness } = ctx.wind;
 	const freeze = debugFlags.windFreeze;
 	setDebugFlag( 'windFreeze', false );
-	const copy = new Wind( createWindUniforms(), { speed, heading, gustiness, time: ctx.wind.time } );
+	const copy = new Wind( createWindUniforms( ctx.wind.uniforms.response ), { speed, heading, gustiness, time: ctx.wind.time } );
 	const u = copy.uniforms, states = new Float32Array( steps * STATE * 4 );
 	for ( let k = 0; k < steps; k ++ ) {
 
@@ -134,8 +134,9 @@ function windStates( ctx: WindProbeContext, { steps, dt }: Series ): { states: F
 type Body = ( wind: WindState, input: V4, air: V4 ) => { s: V2; d: V2 };
 
 // One dispatch of `body` for every input and step: out[ plant * steps + k ] = ( s, d ).
-async function evaluate( renderer: THREE.WebGPURenderer, inputs: Float32Array, states: Float32Array, steps: number, body: Body ): Promise<Float32Array> {
+async function evaluate( ctx: WindProbeContext, inputs: Float32Array, states: Float32Array, steps: number, body: Body ): Promise<Float32Array> {
 
+	const { renderer } = ctx, response = ctx.wind.uniforms.response;
 	const n = inputs.length / 4, total = n * steps;
 	const input = instancedArray( inputs, 'vec4' ), state = instancedArray( states, 'vec4' ), out = instancedArray( total, 'vec4' );
 	const kernel = Fn( () => {
@@ -145,7 +146,7 @@ async function evaluate( renderer: THREE.WebGPURenderer, inputs: Float32Array, s
 
 			const plant = i.div( uint( steps ) ), k = i.mod( uint( steps ) ).mul( uint( STATE ) );
 			const s0 = state.element( k ).toVar(), s1 = state.element( k.add( 1 ) ).toVar();
-			const wind = windStateOf( s0, s1 );
+			const wind = windStateOf( s0, s1, response );
 			const r = body( wind, input.element( plant ).toVar(), state.element( k.add( 2 ) ).toVar() );
 			out.element( i ).assign( vec4( r.s, r.d ) );
 
@@ -400,7 +401,7 @@ async function gustGrid( ctx: WindProbeContext, o: Options, slow: ReturnType<typ
 		inputs.set( [ a * D.x + c * C.x, a * D.y + c * C.y, 0, 0 ], ( j * na + i ) * 4 );
 
 	}
-	const out = await evaluate( ctx.renderer, inputs, slow.states, steps, ( wind, p, air ) => ( { s: vec2( 0, sample( wind, p.xy, air ) ), d: vec2( 0 ) } ) );
+	const out = await evaluate( ctx, inputs, slow.states, steps, ( wind, p, air ) => ( { s: vec2( 0, sample( wind, p.xy, air ) ), d: vec2( 0 ) } ) );
 	const w = ( i: number, j: number, k: number ) => out[ ( ( j * na + i ) * steps + k ) * 4 + 1 ];
 	let mean = 0, gusty = 0;
 	for ( let j = 0; j < nc; j ++ ) for ( let i = 0; i < na; i ++ ) for ( let k = 0; k < steps; k ++ ) { const v = w( i, j, k ); mean += v; if ( v > 0.5 ) gusty ++; }
@@ -435,7 +436,7 @@ async function gustGrid( ctx: WindProbeContext, o: Options, slow: ReturnType<typ
 	// cross-correlation, refined by a parabola
 	const travel = ( m: number ) => {
 
-		const range = Math.ceil( GUST_TRAVEL * plantSpeedOf( slow.speed ) * 1.3 * o.slow.dt * m / h ) + 2, across = Math.ceil( 3 / h );
+		const range = Math.ceil( GUST_TRAVEL * plantSpeedOf( ctx.wind.uniforms.response, slow.speed ) * 1.3 * o.slow.dt * m / h ) + 2, across = Math.ceil( 3 / h );
 		let best = - Infinity, bi = 0, bj = 0;
 		const score = new Map<string, number>();
 		const corr = ( di: number, dj: number ) => {
@@ -468,7 +469,7 @@ async function gustGrid( ctx: WindProbeContext, o: Options, slow: ReturnType<typ
 		meanGust: r3( mean ), gustShare: r3( gusty / N ),
 		correlationLength: { along: length( true ), across: length( false ) },
 		travel: [ 1, 2, 4 ].map( travel ),
-		windSpeed: slow.speed, gustSpeed: r3( GUST_TRAVEL * plantSpeedOf( slow.speed ) ),
+		windSpeed: slow.speed, gustSpeed: r3( GUST_TRAVEL * plantSpeedOf( ctx.wind.uniforms.response, slow.speed ) ),
 	} };
 
 }
@@ -496,12 +497,12 @@ function inventory( ctx: WindProbeContext ) {
 }
 
 // each plant kind's sway rate, swings a metre of the plants' travel (Deform.ts mainBend's rate;
-// each plant up to PLANT_RATE_SPREAD of it quicker in PLANT_RATE_BANDS bands: Wind.ts
+// each plant up to the wind's `plantRateSpread` of it quicker in PLANT_RATE_BANDS bands: Wind.ts
 // `plantWave`), and its frequency (Hz) at the plants' speed `speed`
-const swayRates = ( speed: number ) => ( {
+const swayRates = ( response: WindResponse, speed: number ) => ( {
 	perMetre: { bamboo: BAMBOO_WIND.rate, yunpeng: YUNPENG_WIND.rate },
 	hz: { bamboo: r3( BAMBOO_WIND.rate * speed ), yunpeng: r3( YUNPENG_WIND.rate * speed ) },
-	spread: PLANT_RATE_SPREAD, bands: PLANT_RATE_BANDS,
+	spread: response.plantRateSpread, bands: PLANT_RATE_BANDS,
 } );
 
 // W5: the directions things travel in, degrees in the world's x-z plane ( atan2( z, x ) ), and
@@ -568,8 +569,8 @@ export async function windProbe( ctx: WindProbeContext, options: Partial<Options
 
 		const body = kind.body;
 		const random = rng( o.seed + 7 );
-		const f = await evaluate( ctx.renderer, kind.inputs, fast.states, o.fast.steps, body );
-		const s = await evaluate( ctx.renderer, kind.inputs, slow.states, o.slow.steps, body );
+		const f = await evaluate( ctx, kind.inputs, fast.states, o.fast.steps, body );
+		const s = await evaluate( ctx, kind.inputs, slow.states, o.slow.steps, body );
 		plants[ kind.name ] = { fast: sways( kind, f, o.fast.steps, fast.direction, random, o.anchors ), slow: sways( kind, s, o.slow.steps, slow.direction, random, o.anchors ) };
 
 	}
@@ -580,7 +581,7 @@ export async function windProbe( ctx: WindProbeContext, options: Partial<Options
 	const w5 = o.w5 ? await directions( ctx, o ) : null;
 	return {
 		time, windSpeed: fast.speed, heading: fast.heading, gustiness: ctx.wind.gustiness, meanDirection: [ r3( fast.direction.x ), r3( fast.direction.y ) ],
-		swayRates: swayRates( plantSpeedOf( fast.speed ) ),
+		swayRates: swayRates( ctx.wind.uniforms.response, plantSpeedOf( ctx.wind.uniforms.response, fast.speed ) ),
 		series: { fast: o.fast, slow: o.slow }, plants, gust, w4, w5, ms: Math.round( performance.now() - t0 ),
 	};
 

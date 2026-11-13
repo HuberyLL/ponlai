@@ -6,7 +6,7 @@ import {
 	positionWorld, specularColor, specularColorBlended, specularF90, vertexIndex, workgroupArray, workgroupBarrier, workgroupId,
 } from 'three/tsl';
 import { LAWN_GAIN, MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_SIZE, groundGains, supportsMeadow } from '../materials/Meadow.ts';
-import { GUST_GAIN, GUST_MEAN, gustAt, gustJitter, wave, windStrength, type WindState, RESPONSE, displacementAt, runSteps, CANOPY_SHADE, transmission, vegetationMaterial, unjitteredPadded, TEMPORAL, debugFlags, MEADOW_SHADE, meadowShadeAt, meadowShadeFloor, receiveScreenAO, textureSteps, type VegetationKind, type Shared, tune, tuneApply, tuneUniform, liftKeyWorld } from '../../render/index.ts';
+import { GUST_MEAN, gustAt, gustJitter, wave, windStrength, type WindState, RESPONSE, displacementAt, runSteps, CANOPY_SHADE, transmission, vegetationMaterial, unjitteredPadded, TEMPORAL, debugFlags, MEADOW_SHADE, meadowShadeAt, meadowShadeFloor, receiveScreenAO, textureSteps, type VegetationKind, type Shared, tune, tuneApply, tuneUniform, liftKeyWorld } from '../../render/index.ts';
 import { VEGETATION_STRIDE as STRIDE, type WorldData } from './types.ts';
 import { noise3, smoothstep as smoothstepNumber } from '../../render/data.ts';
 import { GROVES, grassOnLitter } from './BambooGroves.ts';
@@ -208,8 +208,8 @@ const CLUMP = { size: 1, pull: 0.3, column: 0.2, on: debugFlags.grassClumps !== 
  * typical intensity of the wind's turbulence near the ground. `lag` pi / 2 sets the tip a quarter
  * of a swing behind the root. S is the plants' speed U_p (Wind.ts `plantSpeed`) gusted as the
  * plants' main bend gusts its wind (Wind.ts `plantWind`): the wind's strength at the gust q_g at
- * the blade's root (`windStrength`, U_p ( 1 + GUST_GAIN q_g ), q_g 0 between gusts and 1 at a full
- * gust's core) over its mean ( 1 + GUST_GAIN GUST_MEAN ), so its mean is U_p and a full gust
+ * the blade's root (`windStrength`, U_p ( 1 + gustGain q_g ), q_g 0 between gusts and 1 at a full
+ * gust's core) over its mean ( 1 + gustGain GUST_MEAN ), so its mean is U_p and a full gust
  * takes it to 4/3 of that, a gust factor within the levels' 1.3 to 1.5 (sky/Weather.ts
  * WIND_LEVELS). The blade's load is
  * q = ( u / `half` )^2, the wind's pressure on it in units of a `half` m/s wind's. The sway is the
@@ -1001,7 +1001,7 @@ function bladeFacing( wind: WindState, sum: V2 ): V2 {
 function swingAt( wind: WindState, phase: F, t: F, gust: F ): F {
 
 	const flutter = wave( wind.plantClock, SWING.rate, phase.mul( TAU ).sub( t.mul( SWING.lag ) ) );
-	const u = windStrength( wind, gust ).mul( flutter.mul( SWING.flutter ).add( 1 ) ).div( SWING.half.mul( 1 + GUST_GAIN * GUST_MEAN ) );
+	const u = windStrength( wind, gust ).mul( flutter.mul( SWING.flutter ).add( 1 ) ).div( SWING.half.mul( 1 + wind.response.gustGain * GUST_MEAN ) );
 	const q = u.mul( u );
 	return q.div( q.add( 1 ) );
 
@@ -1100,7 +1100,7 @@ function bladeVertex( reads: ReturnType<MeadowBlades[ 'reads' ]>, wind: WindStat
 	// the gust at the root moved by the blade's own offset, so a gust's edge frays (Wind.ts
 	// `gustJitter`)
 	const root = A.xyz;
-	const gust = gustAt( wind, root.xz.add( gustJitter( root.xz ) ) ).toVar();
+	const gust = gustAt( wind, root.xz.add( gustJitter( wind, root.xz ) ) ).toVar();
 	// the displacement field's parting, read along the facing before the field turns it (PARTING)
 	const unparted = bladeFacing( wind, C.xy ).toVar();
 	const high = displacementAt( root.xz.add( unparted.mul( L.mul( PARTING.high ) ) ), previous ).toVar();
