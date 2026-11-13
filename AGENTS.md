@@ -164,7 +164,7 @@ meets it.
   buffer, instancing or raw WebGPU work, you must read `docs/reference/three-behaviour.md`: most of
   what it lists fails without an error.
 - A pass, a plant kind or a local
-  light: `docs/how-to/add-to-the-renderer.md`. A material: `docs/how-to/add-material.md`.
+  light: `docs/reference/extension-points.md`. A material: `docs/how-to/add-material.md`.
 - The world's generator: `packages/island/world/Chunks.ts`'s header. Something that depends on the
   land's shape: `packages/island/world/Growth.ts`'s header. It and a history-dependent effect:
   `docs/how-to/check-a-change.md`.

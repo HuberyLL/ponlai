@@ -29,8 +29,8 @@ GPU rules names its sections in brackets. Read these sections for what the chang
 | Raw WebGPU, the queue, timestamps | Submits and encoders; Timestamps |
 | Splitting or merging draws | Split draws |
 
-The guides for new work: a pass, a plant kind or a kind of local light,
-`docs/how-to/add-to-the-renderer.md` (the three declarations each must make); a material,
+For new work: a pass, a plant kind or a kind of local light,
+`docs/reference/extension-points.md` (the three declarations each must make); a material,
 `docs/how-to/add-material.md`. Shaders are TSL only, never WGSL or GLSL strings (lint rule
 `ponlai/tsl-only`); code that differs by anti-aliasing mode reads `post/Antialiasing.ts`'s
 exports, never the tier.
@@ -48,7 +48,7 @@ exports, never the tier.
 - A history-dependent effect (a temporal resolve, adaptation, accumulation, a bake kept between
   frames): `docs/how-to/check-a-change.md`, Add a history-dependent effect (its clear on a scene
   jump, `settled`'s pending list, the test mode's switch). A pass declares it with its `testMode`
-  (`docs/how-to/add-to-the-renderer.md`, Before you start).
+  (`docs/reference/extension-points.md`, The three declarations).
 - New frame work is a pass on the frame graph (`packages/render/post/Pipeline.ts`,
   `packages/render/post/ExtraPass.ts`); a draw that shows only at times is a latent of its scene
   pass. Lint rules `ponlai/pass-on-graph` and `ponlai/history-on-graph` refuse `rtt()`,

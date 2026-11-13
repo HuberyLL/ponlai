@@ -490,7 +490,7 @@ A plant kind, a kind of light and an extra pass each state three things, or the 
 them ([Extensions.ts](../../packages/render/Extensions.ts)): the quality knob that governs their
 cost, how they stand in the test mode, and how they follow the land's growth. The three are
 statements the registry checks for, not hooks: a follower named there is still wired by hand
-(rule 15). The steps for each: [add-to-the-renderer.md](../how-to/add-to-the-renderer.md).
+(rule 15). What each registration takes: [Extension points](extension-points.md).
 
 These are not registries: the marks the layers leave for each other in three's `userData` (a
 declared list, rule 10); a weather (a closed set of names with their presets,
