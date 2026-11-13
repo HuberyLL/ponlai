@@ -6,7 +6,7 @@
 // modules declare and register as they load and do nothing else: no top-level await and no page
 // global read at load (tools/verify-exits.mjs). The debug modules the page loads on demand are not
 // here: they are lazy exits (tools/layers.json), imported dynamically or for their types only.
-export { awaitWarmUp, bakeWithHaze, checkMotion, createAmbient, createBounceAndShore, createEnvironment, createFrameStages, createKey, createLight, createRenderer, createScenes, createSeaAndPipeline, createSky, createWater, primeSharedBuilds, publishSkyLight, registerLightHistories, registerSceneHistories, sceneOptions, setUpRenderer, startWaveMaps } from './RenderStages.ts';
+export { awaitWarmUp, bakeWithHaze, checkMotion, createAmbient, createBounceAndShore, createEnvironment, createFrameStages, createKey, createLight, createRenderer, createScenes, createSeaAndPipeline, createSky, createWater, placeVegetation, vegetationCasters, bakeRainCollision, primeSharedBuilds, publishSkyLight, registerLightHistories, registerSceneHistories, sceneOptions, setUpRenderer, startWaveMaps } from './RenderStages.ts';
 export type { FrameStages, RenderParts, SceneOptions } from './RenderStages.ts';
 export { classifyBy } from './debug/Classes.ts';
 export type { ClassRule } from './debug/Classes.ts';
@@ -80,12 +80,10 @@ export { puddleField, puddleRipples } from './weather/Puddles.ts';
 export type { Rain } from './weather/Rain.ts';
 export { AIR_DENSITY, GUST_GAIN, GUST_MEAN, GUST_TRAVEL, PLANT_RATE_BANDS, PLANT_RATE_SPREAD, REFERENCE_SPEED, WIND_STATE_VEC4S, Wind, createWindUniforms, gustAt, gustJitter, logLaw, packWindState, plantSpeedOf, plantWind, rootHash, setWindDisplacement, wave, weatherWind, windBefore, windDisplacement, windField, windStateOf, windStrength } from './weather/Wind.ts';
 export type { WindState, WindUniforms } from './weather/Wind.ts';
-export { installOpaquePrepass } from './world/OpaquePrepass.ts';
 export { boundsSteps, runSteps } from './world/Steps.ts';
 export { geometrySteps, textureSteps } from './world/Upload.ts';
-export { installVegetationPrepass } from './world/VegetationPrepass.ts';
 export { previousSway, useRestPoseShadows } from './world/VegetationShadow.ts';
-export { followWindMotionFlag, installWindMotionFlag } from './world/WindMotion.ts';
+export { followWindMotionFlag } from './world/WindMotion.ts';
 export { useLeafCoverage } from './world/vegetation/Coverage.ts';
 export { defaultPlant } from './world/vegetation/DefaultPlant.ts';
 export { CROWN_DRAG, branchBend, leafFlutter, mainBend, plantLean } from './world/vegetation/Deform.ts';

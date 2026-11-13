@@ -7,7 +7,7 @@
 // - The page's camera views (app/CameraViews.ts) need the document, so the page builds the island
 //   view's framing (`IslandFraming`), which the land's changes call, and hands it to the stages that
 //   frame the land (`createVegetation`, `createGrowth`).
-import { WIND_VIEW, shared, testSources, debugFlags, TEST_MODE, declareSceneEvents, installVegetationPrepass, createDisplacementField, displacementField, installOpaquePrepass, GTAO, SS_SHADOW, Vegetation, defaultPlant, installWindMotionFlag, duskForce, yunpengNightShare, type RenderParts } from './render.ts';
+import { WIND_VIEW, shared, testSources, debugFlags, TEST_MODE, declareSceneEvents, createDisplacementField, displacementField, Vegetation, defaultPlant, placeVegetation, vegetationCasters, bakeRainCollision, duskForce, yunpengNightShare, type RenderParts } from './render.ts';
 import { settings as params, type SettingsQuery } from './renderSetup.ts';
 import * as THREE from 'three/webgpu';
 import { FreeCameraControls } from './camera/FreeCameraControls.ts';
@@ -369,7 +369,7 @@ export function createWorldViews( render: RenderParts, island: IslandParts ) {
  */
 export function createVegetation( render: RenderParts, island: IslandParts, { framing }: { framing: IslandFraming } ) {
 
-	const { mark, setStatus, renderer, scene, sunShadow } = render;
+	const { mark, setStatus, renderer, sunShadow } = render;
 	const { controls, data, world } = island;
 	const { frameLand } = framing;
 	staged( island ).setSunCasters = setSunCasters;
@@ -398,13 +398,9 @@ export function createVegetation( render: RenderParts, island: IslandParts, { fr
 	const bamboo = buildBamboo( data, { shared, atlas: bambooAtlas() } );
 	island.bamboo = bamboo;
 	for ( const kind of bambooKinds( bamboo ) ) vegetation.add( kind );
-	scene.add( ...vegetation.roots() );
-	installWindMotionFlag( scene );
-	installVegetationPrepass( scene, vegetation.roots( ( kind ) => kind.prepass ) );
-	// the opaque scene's depth for the ambient occlusion (post/GTAO.ts, high's `ao` knob) and the
-	// screen-space shade over the whole scene (post/MeadowShade.ts `SS_SHADOW`): the island, its stones
-	// and floor, and the plants without a prepass of their own
-	if ( GTAO || SS_SHADOW ) installOpaquePrepass( [ world.group, ...vegetation.roots( ( kind ) => ! kind.prepass ) ] );
+	// every kind is registered: the renderer places them in the scene and its prepasses, with the
+	// island, its stones and floor as the ground, and the registry takes no more
+	placeVegetation( render, vegetation, { ground: [ world.group ] } );
 	// Everything that casts into the sun's map: the figures cast through their own map, and the sea
 	// floor's stones only into the refracted one. The game's props grow it (`holdOpaque`), and so
 	// does the island (setSunCasters again at each growth step).
@@ -427,13 +423,7 @@ export function createVegetation( render: RenderParts, island: IslandParts, { fr
 	heldOpaque.push( bambooBox, yunpengBox );
 	function setSunCasters(): void {
 
-		sunCasters.makeEmpty();
-		for ( const root of [ world.group, ...vegetation.roots( ( kind ) => kind.sunCaster ) ] ) {
-
-			root.updateWorldMatrix( true, true );
-			root.traverse( ( object ) => { if ( ( object as THREE.Mesh ).isMesh && object.castShadow ) sunCasters.expandByObject( object ); } );
-
-		}
+		vegetationCasters( vegetation, { ground: [ world.group ], box: sunCasters } );
 		for ( const box of heldOpaque ) sunCasters.union( box );
 		// (the island parts' caster columns come with the chunks, World.ts)
 		sunShadow.setCasters( sunCasters, world.columns );
@@ -449,8 +439,7 @@ export function createVegetation( render: RenderParts, island: IslandParts, { fr
 	frameLand();
 	// Drops stop on the first surface they meet: rock, turf, leaves (the meadow's blades are generated
 	// as they draw, Grass.ts, and stay out of the bake).
-	render.rain!.collision.setArea( island.landBox );
-	render.rain!.bakeCollision( renderer, [ world.group, ...vegetation.roots( ( kind ) => kind.rainBake ) ] );
+	bakeRainCollision( render, vegetation, { ground: [ world.group ], area: island.landBox } );
 	mark( 'meshes' );
 	setStatus( 'Waking the villagers…' );
 	// The islanders are the Hanming people (src/characters/looks.ts HANMING: a woven bamboo hat, a

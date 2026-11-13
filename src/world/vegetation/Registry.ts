@@ -82,6 +82,8 @@ export type RegisteredKind<P = unknown, L = unknown> = VegetationKind<P, L> & { 
 export class Vegetation<L = unknown> {
 
 	readonly kinds: RegisteredKind<unknown, L>[] = [];
+	/** why the registry takes no more kinds, once it is closed */
+	private closed: string | null = null;
 
 	/** `defaultRoot` draws a kind without art of its own (DefaultPlant.ts `defaultPlant`, with the
 	 * scene's uniforms, which the registry's maker has). */
@@ -89,6 +91,7 @@ export class Vegetation<L = unknown> {
 
 	add<P>( definition: VegetationKind<P, L> ): void {
 
+		if ( this.closed !== null ) throw new Error( `Vegetation: '${ definition.name }' is registered too late: ${ this.closed }, so its root would be in no scene, prepass, shadow box or rain bake. Register every kind before that call` );
 		checkDeclarations( 'Vegetation', definition.name, definition );
 		if ( definition.growth && definition.land === 'independent' ) throw new Error( `Vegetation: '${ definition.name }' has a growth and declares that it does not depend on the land` );
 		let root = definition.root;
@@ -112,6 +115,15 @@ export class Vegetation<L = unknown> {
 
 		} );
 		this.kinds.push( kind as RegisteredKind<unknown, L> );
+
+	}
+
+	/** Closes the registry: `add` throws from here on, giving `reason` (what has read the kinds and
+	 * will not read them again). The stage that places the kinds calls it (RenderStages.ts
+	 * `placeVegetation`). */
+	close( reason: string ): void {
+
+		this.closed ??= reason;
 
 	}
 

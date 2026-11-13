@@ -69,12 +69,16 @@ import { SUN_GLINT_DISC } from './lighting/SunDisc.ts';
 import { debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
 import { ambientGrade } from './lighting/AmbientGrade.ts';
 import { updateLeafLight } from './world/vegetation/LeafLight.ts';
-import { prepassScene } from './world/VegetationPrepass.ts';
-import { opaquePrepassScene } from './world/OpaquePrepass.ts';
+import { prepassScene, installVegetationPrepass } from './world/VegetationPrepass.ts';
+import { opaquePrepassScene, installOpaquePrepass } from './world/OpaquePrepass.ts';
 import { PeriodicWork } from './post/DynamicResolution.ts';
 import type { TemporalFrame } from './post/TemporalAA.ts';
 import type { SettleFrame } from './post/Settled.ts';
 import type { HazeFrame } from './weather/VolumetricHaze.ts';
+import { installWindMotionFlag } from './world/WindMotion.ts';
+import { GTAO } from './post/GTAO.ts';
+import { SS_SHADOW } from './post/MeadowShade.ts';
+import type { Vegetation } from './world/vegetation/Registry.ts';
 
 /** A scene as the query names it: what a load and a scene jump both establish (`sceneOptions`). */
 export interface SceneOptions {
@@ -871,6 +875,53 @@ export function createAmbient( render: RenderParts, { ambientData, world }: { am
 	refractedSun.setCasters( world.group, world.subsets );
 	refractedSun.bindTerrain( world.group, waveMaps );
 	return refractedSun.prepare();
+
+}
+
+/**
+ * Places the registered plant kinds in the frame, in registry order: their roots in the scene, the
+ * wind's motion flag on the scene's materials, the depth prepass of the kinds that take one, and
+ * the opaque scene's prepass over `ground` and the kinds that take none. It closes the registry:
+ * a kind registered afterwards would be in none of them (Registry.ts `close`). The sun's caster
+ * box and the rain's collision bake read the same registry (`vegetationCasters`,
+ * `bakeRainCollision`), which the scene calls where its own order has them.
+ */
+export function placeVegetation<L>( render: RenderParts, vegetation: Vegetation<L>, { ground }: { ground: THREE.Object3D[] } ) {
+
+	const { scene } = render;
+	scene.add( ...vegetation.roots() );
+	installWindMotionFlag( scene );
+	installVegetationPrepass( scene, vegetation.roots( ( kind ) => kind.prepass ) );
+	// the opaque scene's depth for the ambient occlusion (post/GTAO.ts, high's `ao` knob) and the
+	// screen-space shade over the whole scene (post/MeadowShade.ts `SS_SHADOW`): the ground, and the
+	// plants without a prepass of their own
+	if ( GTAO || SS_SHADOW ) installOpaquePrepass( [ ...ground, ...vegetation.roots( ( kind ) => ! kind.prepass ) ] );
+	vegetation.close( 'placeVegetation has placed the kinds in the scene and its prepasses' );
+
+}
+
+/** The box of everything that casts into the sun's map, into `box`: the meshes that cast a shadow
+ * under `ground` and under the roots of the kinds registered as casters. */
+export function vegetationCasters<L>( vegetation: Vegetation<L>, { ground, box }: { ground: THREE.Object3D[]; box: THREE.Box3 } ): THREE.Box3 {
+
+	box.makeEmpty();
+	for ( const root of [ ...ground, ...vegetation.roots( ( kind ) => kind.sunCaster ) ] ) {
+
+		root.updateWorldMatrix( true, true );
+		root.traverse( ( object ) => { if ( ( object as THREE.Mesh ).isMesh && object.castShadow ) box.expandByObject( object ); } );
+
+	}
+	return box;
+
+}
+
+/** Bakes the rain's collision map over `area`: drops stop on the first surface they meet, `ground`
+ * and the kinds registered for the bake. */
+export function bakeRainCollision<L>( render: RenderParts, vegetation: Vegetation<L>, { ground, area }: { ground: THREE.Object3D[]; area: Bounds } ) {
+
+	const { renderer } = render;
+	render.rain!.collision.setArea( area );
+	render.rain!.bakeCollision( renderer, [ ...ground, ...vegetation.roots( ( kind ) => kind.rainBake ) ] );
 
 }
 
