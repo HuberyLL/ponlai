@@ -6,7 +6,7 @@
 
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, attribute, texture, uniform, varying, vec2, vec3, vec4, float, int, normalize, refract, max, dFdx, dFdy, abs,
+	Fn, If, attribute, texture, uniform, varying, vec2, vec3, vec4, float, int, normalize, refract, max, abs,
 	clamp, mix, smoothstep, exp, length, screenCoordinate, cameraPosition, cameraProjectionMatrix,
 	screenSize,
 } from 'three/tsl';
@@ -33,11 +33,15 @@ import type { FrameGraph } from '../post/graph/FrameGraph.ts';
 // The caustics, by rasterised photon splatting (Evan Wallace's "WebGL Water", as tidewater's
 // Caustics.js, 4811ba4). A fine grid over one FFT tile is drawn into the caustics' layer; each
 // vertex is a point on the wave surface, the sun ray is refracted through the surface normal there
-// and followed down to a plane D metres below, and the vertex is placed at that landing point. The
-// fragment writes the area ratio (surface patch / its image on the floor) additively, which is the
-// light's concentration: focusing folds form the bright networks. The grid covers the tile plus a
-// margin on every side (the FFT tiles, so the margin is the neighbouring tiles' surface), so light
-// refracted in from across the tile's edge lands inside it and the result tiles seamlessly. Two
+// and followed down to a plane D metres below, and the vertex is placed at that landing point. Each
+// triangle writes its area ratio (surface patch / its image on the floor) additively, which is the
+// light's concentration: focusing folds form the bright networks. The ratio is computed from the
+// triangle's corners in the vertex stage, never from screen derivatives: the quads those come from
+// form differently from one draw to the next on a busy GPU, and at a fold the ratio turns their
+// last bit into a visible change, so the same inputs drew different layers
+// (`docs/reference/three-behaviour.md`, Split draws). The grid covers the tile plus a margin on
+// every side (the FFT tiles, so the margin is the neighbouring tiles' surface), so light refracted
+// in from across the tile's edge lands inside it and the result tiles seamlessly. Two
 // layers, each with two focal planes (shallow, deep) blended by the real depth at lookup: fine
 // networks from the finest cascade (its slopes read one level down, so ripples under about 11 cm,
 // which defocus at once, are left out) in R and G, and broad focusing from the next cascade, whose
@@ -45,7 +49,7 @@ import type { FrameGraph } from '../post/graph/FrameGraph.ts';
 // its own tile's coordinates. The pattern is a function of the cascades and the key's direction
 // alone, so of the scene clock: it keeps no history, a paused frame repeats, and the layer is drawn
 // again only when the scene time, the spectrum or the key's direction changed. The splats conserve
-// the light, so the layer's mean is 1 (but for the few cells folded past a cap).
+// the light, so the layer's mean is 1 (but for the few triangles folded past a cap).
 // The lookup (`causticsAt`): the light that lands at a floor point entered the water up-sun along
 // the refracted sun ray, through the slope of the long waves above; it is blurred with depth (the
 // sun's disk and forward scattering) through the layer's mips, filtered over the pixel's footprint
@@ -104,74 +108,108 @@ class CausticLayer {
 		this.tile = fft.sizes[ cascade ];
 		this.channel = channel;
 
-		// indexed grid over [-margin, 1 + margin]^2 (in tile units) at the tile's vertex density: each
-		// surface vertex is shaded once instead of once per triangle corner
+		// The grid over [-margin, 1 + margin]^2 (in tile units) at the tile's vertex density, its cells
+		// split in two triangles, drawn as two meshes (each cell's lower-left and upper-right
+		// triangle) so that every vertex starts at most one triangle of each: a triangle's first
+		// vertex (WebGPU's provoking vertex) computes the triangle's area ratio from its own corner and
+		// the two others it is given, and hands it on flat (no screen derivatives: see the note at the
+		// top). Each vertex is shaded once a mesh instead of once per triangle corner.
 		const g = Math.ceil( grid * ( 1 + 2 * margin ) );
-		const pos = new Float32Array( ( g + 1 ) * ( g + 1 ) * 3 );
+		const at = ( i: number, j: number ) => [ i / g * ( 1 + 2 * margin ) - margin, j / g * ( 1 + 2 * margin ) - margin ];
+		const V = ( g + 1 ) * ( g + 1 );
+		const pos = new Float32Array( V * 3 );
+		// each vertex's two other corners: of the cell's lower-left triangle it starts ( right, up ),
+		// of the upper-right triangle it starts as the cell's upper-right corner ( left, down )
+		const lower = new Float32Array( V * 4 ), upper = new Float32Array( V * 4 );
 		for ( let j = 0; j <= g; j ++ ) for ( let i = 0; i <= g; i ++ ) {
 
-			const k = ( j * ( g + 1 ) + i ) * 3;
-			pos[ k ] = i / g * ( 1 + 2 * margin ) - margin;
-			pos[ k + 1 ] = j / g * ( 1 + 2 * margin ) - margin;
+			const v = j * ( g + 1 ) + i;
+			pos.set( at( i, j ), v * 3 );
+			lower.set( [ ...at( Math.min( i + 1, g ), j ), ...at( i, Math.min( j + 1, g ) ) ], v * 4 );
+			upper.set( [ ...at( Math.max( i - 1, 0 ), j ), ...at( i, Math.max( j - 1, 0 ) ) ], v * 4 );
 
 		}
 
-		const idx = new Uint32Array( g * g * 6 );
-		for ( let j = 0, n = 0; j < g; j ++ ) for ( let i = 0; i < g; i ++ ) {
+		const lowerIdx = new Uint32Array( g * g * 3 ), upperIdx = new Uint32Array( g * g * 3 );
+		for ( let j = 0, n = 0; j < g; j ++ ) for ( let i = 0; i < g; i ++, n += 3 ) {
 
 			const a = j * ( g + 1 ) + i;
-			idx[ n ++ ] = a; idx[ n ++ ] = a + 1; idx[ n ++ ] = a + g + 1;
-			idx[ n ++ ] = a + g + 1; idx[ n ++ ] = a + 1; idx[ n ++ ] = a + g + 2;
+			lowerIdx.set( [ a, a + 1, a + g + 1 ], n );
+			upperIdx.set( [ a + g + 2, a + g + 1, a + 1 ], n );
 
 		}
 
-		const geo = new THREE.BufferGeometry();
-		geo.setAttribute( 'position', new THREE.BufferAttribute( pos, 3 ) );
-		geo.setIndex( new THREE.BufferAttribute( idx, 1 ) );
+		const position = new THREE.BufferAttribute( pos, 3 );
+		const halves = ( [ [ lower, lowerIdx ], [ upper, upperIdx ] ] as const ).map( ( [ corners, idx ] ) => {
+
+			const geo = new THREE.BufferGeometry();
+			geo.setAttribute( 'position', position );
+			geo.setAttribute( 'corners', new THREE.BufferAttribute( corners, 4 ) );
+			geo.setIndex( new THREE.BufferAttribute( idx, 1 ) );
+			return geo;
+
+		} );
 
 		const tile = this.tile;
 		depths.forEach( ( D, plane ) => {
 
-			const q0 = attribute<'vec3'>( 'position', 'vec3' ).xy;
-			const d = texture( fft.derivatives, q0 ).depth( int( cascade ) ).level( float( slopeLevel ) );
-			const s = vec2( d.x.div( max( d.z.add( 1 ), 0.3 ) ), d.y.div( max( d.w.add( 1 ), 0.3 ) ) );
-			const n = normalize( vec3( s.x.negate(), 1, s.y.negate() ) );
-			const T = refract( shared.sunDir.negate(), n, ETA );
-			const T0 = refract( shared.sunDir.negate(), vec3( 0, 1, 0 ), ETA );
-			// the flat surface's offset is removed so the pattern stays registered with the entry point
-			// (the lookup applies it again with the real depth)
-			const off = T.xz.div( max( T.y.negate(), 0.15 ) ).sub( T0.xz.div( max( T0.y.negate(), 0.15 ) ) ).mul( D );
-			const p = q0.mul( tile );
-			const q = p.add( off );
-			const vOld = varying( p ), vNew = varying( q );
+			// a surface point (tile units) and where its refracted sun ray lands on the plane (m)
+			const land = ( q0: V2 ) => {
 
-			const mat = new THREE.NodeMaterial();
-			mat.name = 'caustics splat';
-			// texture v runs down the target in WebGPU: row 0 at the top (clip y = +1)
-			const uvq = q.div( tile );
-			mat.vertexNode = vec4( uvq.x.mul( 2 ).sub( 1 ), float( 1 ).sub( uvq.y.mul( 2 ) ), 0, 1 );
-			const ox = dFdx( vOld ), oy = dFdy( vOld ), nx = dFdx( vNew ), ny = dFdy( vNew );
-			const ao = abs( ox.x.mul( oy.y ).sub( ox.y.mul( oy.x ) ) );
-			const an = abs( nx.x.mul( ny.y ).sub( nx.y.mul( ny.x ) ) );
-			// the light is conserved: each cell writes its own area's worth over its image, so the
-			// layer's mean is 1 (the margins' light that leaves the tile comes back in from the other
-			// side), with no reading of it at lookup. Only cells folded to under 1/64 of their area are
-			// capped, so the half floats' sums stay finite; their peaks are spread by the lookup's blur.
-			const I = ao.div( max( an, ao.mul( 1 / 64 ) ).max( 1e-12 ) );
-			const out = [ 0, 0, 0, 0 ].map( ( _, k ) => k === channel + plane ? I : float( 0 ) );
-			mat.fragmentNode = vec4( out[ 0 ], out[ 1 ], out[ 2 ], out[ 3 ] );
-			mat.blending = THREE.CustomBlending;
-			mat.blendEquation = THREE.AddEquation;
-			mat.blendSrc = THREE.OneFactor;
-			mat.blendDst = THREE.OneFactor;
-			mat.blendSrcAlpha = THREE.OneFactor;
-			mat.blendDstAlpha = THREE.OneFactor;
-			mat.depthTest = false;
-			mat.depthWrite = false;
-			mat.side = THREE.DoubleSide;
-			const mesh = new THREE.Mesh( geo, mat );
-			mesh.frustumCulled = false;
-			scene.add( mesh );
+				const d = texture( fft.derivatives, q0 ).depth( int( cascade ) ).level( float( slopeLevel ) );
+				const s = vec2( d.x.div( max( d.z.add( 1 ), 0.3 ) ), d.y.div( max( d.w.add( 1 ), 0.3 ) ) );
+				const n = normalize( vec3( s.x.negate(), 1, s.y.negate() ) );
+				const T = refract( shared.sunDir.negate(), n, ETA );
+				const T0 = refract( shared.sunDir.negate(), vec3( 0, 1, 0 ), ETA );
+				// the flat surface's offset is removed so the pattern stays registered with the entry
+				// point (the lookup applies it again with the real depth)
+				const off = T.xz.div( max( T.y.negate(), 0.15 ) ).sub( T0.xz.div( max( T0.y.negate(), 0.15 ) ) ).mul( D );
+				return q0.mul( tile ).add( off );
+
+			};
+			const area = ( a: V2, b: V2, c: V2 ) => {
+
+				const e = b.sub( a ), f = c.sub( a );
+				return abs( e.x.mul( f.y ).sub( e.y.mul( f.x ) ) );
+
+			};
+
+			for ( const geo of halves ) {
+
+				const q0 = attribute<'vec3'>( 'position', 'vec3' ).xy;
+				const corners = attribute<'vec4'>( 'corners', 'vec4' );
+				const q = land( q0 );
+				// the light is conserved: each triangle writes its own area's worth over its image, so
+				// the layer's mean is 1 (the margins' light that leaves the tile comes back in from the
+				// other side), with no reading of it at lookup. Only triangles folded to under 1/64 of
+				// their area are capped, so the half floats' sums stay finite; their peaks are spread by
+				// the lookup's blur.
+				const ao = area( q0, corners.xy, corners.zw ).mul( tile * tile );
+				const an = area( q, land( corners.xy ), land( corners.zw ) );
+				const I = varying( ao.div( max( an, ao.mul( 1 / 64 ) ).max( 1e-12 ) ) )
+					.setInterpolation( THREE.InterpolationSamplingType.FLAT, THREE.InterpolationSamplingMode.FIRST );
+
+				const mat = new THREE.NodeMaterial();
+				mat.name = 'caustics splat';
+				// texture v runs down the target in WebGPU: row 0 at the top (clip y = +1)
+				const uvq = q.div( tile );
+				mat.vertexNode = vec4( uvq.x.mul( 2 ).sub( 1 ), float( 1 ).sub( uvq.y.mul( 2 ) ), 0, 1 );
+				const out = [ 0, 0, 0, 0 ].map( ( _, k ) => k === channel + plane ? I : float( 0 ) );
+				mat.fragmentNode = vec4( out[ 0 ], out[ 1 ], out[ 2 ], out[ 3 ] );
+				mat.blending = THREE.CustomBlending;
+				mat.blendEquation = THREE.AddEquation;
+				mat.blendSrc = THREE.OneFactor;
+				mat.blendDst = THREE.OneFactor;
+				mat.blendSrcAlpha = THREE.OneFactor;
+				mat.blendDstAlpha = THREE.OneFactor;
+				mat.depthTest = false;
+				mat.depthWrite = false;
+				mat.side = THREE.DoubleSide;
+				const mesh = new THREE.Mesh( geo, mat );
+				mesh.frustumCulled = false;
+				scene.add( mesh );
+
+			}
 
 		} );
 
