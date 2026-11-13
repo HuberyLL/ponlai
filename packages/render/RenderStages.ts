@@ -40,6 +40,7 @@ import { createExposure, type ExposureTables } from './look/ExposureLook.ts';
 import { createDayWindows, type DayWindowTable } from './look/DayLook.ts';
 import { createAmbientTables, createKeyLift } from './look/AmbientLook.ts';
 import { createHazeTables, type HazeTables } from './look/HazeLook.ts';
+import { createDisplayTables } from './look/DisplayLook.ts';
 import type { Look } from './look/Look.ts';
 import { DAY_PRESETS, type DayPreset, DayCycle, sunRising, duskForce, nightAmbientShare } from './sky/DayCycle.ts';
 import { isParkedWeather, WEATHER_PRESETS, type WeatherName, isWindLevel, type WindLevel, Weather, type TunedField, type WeatherState, deckLight, cloudedShare, type WindChoice } from './sky/Weather.ts';
@@ -768,8 +769,8 @@ export function publishSkyLight( render: RenderParts ) {
 
 /** The sea's waves and detail, then the frame's passes with the passes the entry adds. `look`: the
  * look's tables the sea takes, its detail's strengths and its distant swell (look/Look.ts
- * `SeaLook`). */
-export function createSeaAndPipeline( render: RenderParts, { rainCeiling, extraPasses, look }: { rainCeiling: number; extraPasses: readonly ExtraPass[]; look: Pick<Look, 'sea'> } ) {
+ * `SeaLook`), and the display's, which the frame's passes take (look/DisplayLook.ts). */
+export function createSeaAndPipeline( render: RenderParts, { rainCeiling, extraPasses, look }: { rainCeiling: number; extraPasses: readonly ExtraPass[]; look: Pick<Look, 'sea' | 'display'> } ) {
 
 	const { profiler, DEBUG, quality, renderer, scene, waterScene, rainScene, afterScene, camera, sky, wind, sun, sunShadow } = render;
 	// tidewater's two wave systems at the prevailing heading (Wind.ts `spectrumWind`) and tidewater's
@@ -809,7 +810,7 @@ export function createSeaAndPipeline( render: RenderParts, { rainCeiling, extraP
 			jitterNdc: jitter.uniforms.ndc, opaqueBelow: ( MOTION_CLASS.opaque + MOTION_CLASS.vegetation ) / 2,
 		},
 	} );
-	const pipeline = new Pipeline( renderer, sky, sunShadow, render.rain, postOptionsFromURL( params, quality.post ), quality.taa, extraPasses );
+	const pipeline = new Pipeline( renderer, sky, createDisplayTables( look.display ), sunShadow, render.rain, postOptionsFromURL( params, quality.post ), quality.taa, extraPasses );
 	render.pipeline = pipeline;
 	// the pipeline's scene passes by their typed names, for what registers a draw for later
 	render.latents = pipeline.graph;

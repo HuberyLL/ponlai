@@ -8,9 +8,10 @@ import { settings } from '../Settings.ts';
 //
 //   const gain = tune( 'lighting.thin.gain', 0.8, { min: 0, max: 2 } );          // CPU: gain()
 //   const g = tuneUniform( 'lighting.thin.gain', 0.8, { min: 0, max: 2 } );      // a float uniform
+//   tuneUniformOf( G, 'lighting.thin.gain', 0.8, { min: 0, max: 2 } );           // one built earlier
 //   tuneApply( 'lighting.vegetation.kappa', 0.95, { min: 0.5 }, ( k ) => { u.value = 1 - k * k; } );
 //   export const KEYS = tuneKeys( 'post.exposure', { day: [ ... ], night: { ... } }, ranges );
-//   settings.curve = tuneObject( { ...TONE_CURVE }, { toe: 'post.tone.blackSlope' }, ranges );
+//   settings.curve = tuneObject( { ...curve }, { toe: 'post.tone.blackSlope' }, ranges );
 //   tuneCheck( [ 'post.tone.blackSlope', ... ], () => checkToneCurve( ... ) );    // null or why not
 //
 // - Names are `<line>.<module>.<quantity>` (`post.tone.blackSlope`). A DayKeys table (DayKeys.ts)
@@ -151,6 +152,20 @@ export function tuneUniform( name: string, value: number, options: TuneOptions =
 	if ( ! TUNE_ON ) return makeUniform( value );
 	const entry = register( name, value, options, 'uniform' );
 	const node = makeUniform( entry.info.value );
+	entry.nodes.push( node );
+	return node;
+
+}
+
+/** A tunable number a shader reads through `node`, a float uniform built earlier (one whose place
+ * among the nodes is set as its module loads, before the number is known): sets it to the number
+ * and registers it as `tuneUniform` does; returns `node`. */
+export function tuneUniformOf( node: FloatUniform, name: string, value: number, options: TuneOptions = {} ): FloatUniform {
+
+	node.value = value;
+	if ( ! TUNE_ON ) return node;
+	const entry = register( name, value, options, 'uniform' );
+	node.value = entry.info.value;
 	entry.nodes.push( node );
 	return node;
 

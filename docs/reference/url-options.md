@@ -425,7 +425,7 @@ and none of the island's or the game's.
   the trees' leaves against their atlas: `tree leaves albedo (x)` or `__PONLAI__.setLeafGain( k )`.
   The tone curve's slope at black, the mid grey it shows and the input that shows white: the GUI's
   Tone curve folder (in Post), or `s.pipeline.settings.curve` (read every frame;
-  `packages/render/look/DisplayLook.ts` TONE_CURVE; a set the solve cannot meet keeps the last good
+  `packages/render/look/DisplayLook.ts` `toneCurve`; a set the solve cannot meet keeps the last good
   curve and warns, and only the default set failing throws, on the dev server).
   `fgview=meadowShade` shows the shade's map.
 - The screen-space ambient occlusion (`packages/render/post/GTAO.ts`, on in high: the tier's `ao`

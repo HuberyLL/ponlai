@@ -500,7 +500,7 @@ folder is its layer.
     ([packages/render/look/NeutralLook.ts](packages/render/look/NeutralLook.ts): every gain one,
     every offset zero, no grade, one exposure key for the whole day) and its own modules hold only
     physical constants and the constants of their methods; the island's numbers are the island's
-    data ([packages/island/look/](packages/island/look/)). Nine systems take their tables as an
+    data ([packages/island/look/](packages/island/look/)). Ten systems take their tables as an
     argument where they are created, and the entry hands them the set it installs: the exposure,
     the day's windows and the low key's lift, where the renderer's sky stage creates them
     ([packages/render/look/ExposureLook.ts](packages/render/look/ExposureLook.ts)
@@ -522,13 +522,18 @@ folder is its layer.
     `createAmbientTables`), which the grade's controller and the ambient light's relight read; and
     the sea's detail and distant swell
     ([packages/render/ocean/SeaDetail.ts](packages/render/ocean/SeaDetail.ts),
-    [packages/render/ocean/OceanFFT.ts](packages/render/ocean/OceanFFT.ts)). Two of any of them
+    [packages/render/ocean/OceanFFT.ts](packages/render/ocean/OceanFFT.ts)) and the display's
+    tables, where the same stage creates the frame's passes
+    ([packages/render/look/DisplayLook.ts](packages/render/look/DisplayLook.ts)
+    `createDisplayTables`), which the frame's passes read each frame and build the display chain
+    and the bloom from. Two of any of them
     made from two sets hold their own numbers
     ([tools/verify-look-params.mjs](tools/verify-look-params.mjs)), though on a debug page two
-    exposures, two sets of the day's windows, two winds, two ambient grades or two sets of the
-    haze's tables share their tunables by name, and the shared uniforms, the grade's uniforms and
-    the light table are still one a page (rule 11). The other systems (the display and the sky)
-    take the installed look, not a constructor's argument: the page's entry installs it after the
+    exposures, two sets of the day's windows, two winds, two ambient grades, two sets of the
+    haze's tables or two of the display's share their tunables by name, and the shared uniforms,
+    the grade's uniforms, the display chain's uniforms for the cool share and overcast's
+    highlights, and the light table are still one a page (rule 11). The other system (the sky)
+    takes the installed look, not a constructor's argument: the page's entry installs it after the
     settings and before any module that reads it loads, and each reader takes its numbers once
     as it loads. Installing it after a reader has loaded throws and names that reader, and so
     does installing a second, different set. So a process has one look, and a page cannot hold

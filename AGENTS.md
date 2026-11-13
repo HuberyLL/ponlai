@@ -234,12 +234,13 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   `createAmbientTables`, the lift in the sky
   stage, `createKeyLift`),
   and the display's: contrast, desaturation, white balance, tone curve, base grade, bloom and the
-  rods' colour (`DisplayLook.ts`). The systems whose tables are passed where they are created have
-  no reader here: the sea's detail and distant swell (`ocean/SeaDetail.ts`, `ocean/OceanFFT.ts`),
+  rods' colour (`DisplayLook.ts`: made the same way, from the display's table the stage of the
+  frame's passes hands `createDisplayTables`). The systems whose tables are passed where they are
+  created have no reader here: the sea's detail and distant swell (`ocean/SeaDetail.ts`, `ocean/OceanFFT.ts`),
   the ambient occlusion's floor, the meadow canopy's media and the plants' answer to the wind (the
   shared uniforms, `shared.ts`; the wind's through `weather/Wind.ts` `windResponse`) and the local
   lights' gain (`lighting/LocalLights.ts`); `tools/verify-look-params.mjs` checks them, the
-  exposure, the day's windows, the ambient light's look and the haze's keys.
+  exposure, the day's windows, the ambient light's look, the haze's keys and the display's.
 - `packages/island/look/`: the island's numbers for those tables, one file per system (`Sea.ts`,
   `Day.ts`, `Ambient.ts`, `Exposure.ts`, `Display.ts`, `Haze.ts`, `Sky.ts`, `Occlusion.ts`,
   `LocalLights.ts`, `MeadowCanopy.ts`, `Wind.ts`), numbers and pure

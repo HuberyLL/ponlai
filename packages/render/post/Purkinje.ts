@@ -39,7 +39,7 @@
 //   look, and the night's weight fades it in (`night`, Pipeline's). The rods' light brightens the
 //   frame too.
 // - `strength` is 0.025 at night (`post.purkinje.strength@night`, 0 to 0.05; with the retinal
-//   illuminance, look/DisplayLook.ts PURKINJE); at 0 the shift adds nothing and the night's
+//   illuminance, look/DisplayLook.ts `purkinje`); at 0 the shift adds nothing and the night's
 //   colour is the grade's and the white balance's.
 // - The test mode: nothing the shift reads comes from the meter or from the frame's exposure (the
 //   key and the fill are functions of the clock, the weather and the tuning; the sky's irradiance
@@ -57,14 +57,15 @@
 //   the resolve (taa, taau) leaves it out.
 import { Fn, If, dot, float, inverseSqrt, max, vec3 } from 'three/tsl';
 import type * as THREE from 'three/webgpu';
-import { PURKINJE } from '../look/DisplayLook.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 
 /** The colour's scale to the retinal illuminance of a real night (`purkinjeShift`'s `scale`), from
- * `light`, the luminance of white on open level ground in scene units (see the header). */
-export const purkinjeScale = ( light: F ) => float( PURKINJE.retina ).div( max( light, 1e-12 ) );
+ * `retina`, the retinal illuminance of white on open level ground under the night's light (the
+ * display's tables, look/DisplayLook.ts `purkinje`), and `light`, the luminance of that white in
+ * scene units (see the header). */
+export const purkinjeScale = ( retina: number, light: F ) => float( retina ).div( max( light, 1e-12 ) );
 
 // the receptors' responses from linear Rec.709: the cones' gain arguments 0.33 ( q_i + k_i q_R ) / m_i, then q_R
 // (computed offline from the published tables named above)
