@@ -1,13 +1,36 @@
-// Integrate the rendered HDR solar disk, rather than testing its brightness coefficient.
-// Usage: node tools/render/verify-radiometry.mjs http://127.0.0.1:5190
-// The disk's integral, less the sky behind it, is the displayed share of the key's irradiance
-// (lighting/SunDisc.ts SUN_DISC_RADIANCE, read from the page's tunable) in luminance, within 2 %,
-// with the sun at 32, 60 and 70 degrees. Only the luminance: the disk takes the air's own colour
-// (Atmosphere.ts discTransmittance) and the haze laid over the dome, while the key's hue is a white
-// of its own (look/SkyLook.ts `keyHue`), so the disk's blue reads 10 - 25 % under the key's. Below
-// 30 degrees it is measured and printed but not checked: the disk's transmittance leaves the ozone
-// out and the key's takes it in (about 9 % more light at 10 degrees, 2 - 3 % from 32 up), and with
-// the 2 - 4 % the dome takes off at every height the disk stands about 4 % over the key's share at 10.
+// Checks that the rendered sun disk, integrated over its pixels, gives the displayed share of the key's light.
+//
+// It integrates the HDR solar disk as the sky dome draws it, rather than testing its brightness
+// coefficient. The disk's integral, less the sky behind it, is the displayed share of the key's
+// irradiance (lighting/SunDisc.ts SUN_DISC_RADIANCE, read from the page's tunable) in luminance,
+// within 2 %, with the sun at 32, 60 and 70 degrees, and every value is finite and within half
+// float's range. Only the luminance: the disk takes the air's own colour (Atmosphere.ts
+// discTransmittance) and the haze laid over the dome, while the key's hue is a white of its own
+// (look/SkyLook.ts `keyHue`), so the disk's blue reads 10 - 25 % under the key's. Below 30 degrees
+// it is measured and printed but not checked: the disk's transmittance leaves the ozone out and the
+// key's takes it in (about 9 % more light at 10 degrees, 2 - 3 % from 32 up), and with the 2 - 4 %
+// the dome takes off at every height the disk stands about 4 % over the key's share at 10. Run it
+// after a change to the sun's disk, the sky's radiance or the scene's radiance scale
+// (packages/render/lighting/Radiometry.ts).
+//
+// Usage:
+//   node tools/render/verify-radiometry.mjs [url]
+//
+// Options:
+//   url   the server (default http://127.0.0.1:5190, the dev server); the page loads with `debug`
+//
+// Output: the measurements and the page's errors as JSON on stdout, then a line with the disk's
+// luminance over the key's share at each elevation; with the radiance scale in
+// artifacts/verification/radiometry.json.
+//
+// GPU lock and browser: takes the GPU lock shared (docs/reference/gpu-lock.md; its pixels do not
+// depend on the GPU's load) and opens headless Chrome (CHROME_PATH, else Playwright's Chromium).
+//
+// Cost: a page load and its first 30 frames, then a render per elevation: seconds.
+//
+// Exit codes: 0 every check passes; 1 a check failed or the page logged an error (a failed
+// assertion is thrown, before the JSON is written).
+import '../kit/help.mjs';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from '../kit/gpu-lock.mjs';
 import assert from 'node:assert/strict';

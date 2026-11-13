@@ -1,9 +1,31 @@
-// The test scenes shot, read and checked (scenes.html, app/scenes/): the renderer's small
-// scenes, each at its own views, hours and weathers, as paused pages in the test mode.
+// Shoots, reads and checks the renderer's test scenes as paused pages in the test mode.
 //
+// A test scene (scenes.html, app/scenes/; docs/reference/url-options.md, The test scenes) is a few
+// objects on level ground under the sky or in the open sea, built from the renderer alone, so it
+// loads in a second or two and a whole scene is shot in a minute or two. Run it first after a
+// change to the renderer, before the island is loaded at all: `--check` against the reference
+// answers whether anything moved, and the readings give the scene's radiance, exposure and light.
+//
+// Usage:
 //   node tools/render/scenes.mjs <baseUrl> <outDir> [--scenes ball,sea] [--times a,b] [--views a,b]
 //       [--look neutral|ponlai] [--verify] [--write-ref | --check] [--ref <dir>]
 //       [--q "extra&query"] [--size 1920x1080@2] [--timeout 240000]
+//   node tools/render/scenes.mjs http://127.0.0.1:5190/ artifacts/scenes/run --check
+//
+// Options:
+//   baseUrl       the server (the dev server or a production preview)
+//   outDir        the output folder; the look's folder is made in it
+//   --scenes a,b  the scenes to shoot (default ball,empty,plants)
+//   --times a,b   only these of each scene's times (default every one)
+//   --views a,b   only these of each scene's views (default every one)
+//   --look l      neutral (the renderer's neutral look, the default) or ponlai (the island's look)
+//   --verify      takes every shot three ways, which must agree to the pixel
+//   --check       compares every shot with the reference image of its name
+//   --write-ref   writes the run's shots as the reference (with --verify, only when it passed)
+//   --ref dir     the reference folder (default artifacts/scenes/reference/<look>/, git-ignored)
+//   --q query     extra URL options for every page
+//   --size WxH@s  the viewport in CSS pixels and its pixel ratio (default 1920x1080@2)
+//   --timeout ms  each wait's limit (default 240000)
 //
 // For each scene it opens one page, and for each of the scene's times and views jumps to the time
 // (`__PONLAI__.establishScene`, the first by the load itself), renders a frame at the jump's
@@ -15,24 +37,25 @@
 // The scenes it shoots without `--scenes` are those whose shots repeat to the pixel: `ball`,
 // `empty` and `plants`. `sea` is shot only when `--scenes` names it, and is read by its readings:
 // its shots differ between two loads by a level or so in scattered pixels over the water, so they
-// are not compared with a reference. Named, it takes every option as the others do.
+// are not compared with a reference and `--verify` does not hold for it. Named, it takes every
+// option as the others do.
 //
 // Guarantees:
-// - A shot is a paused page in the test mode (`debug&paused&t=12&quality=high`), taken once the
-//   page's settled signal holds and its image has stopped changing (tools/kit/capture-browser.mjs,
-//   "Readiness by stability"), with the loop stopped. A shot still changing at the cap fails the run.
+// - A shot is a paused page in the test mode (`debug&paused&t=12&quality=high`;
+//   docs/reference/test-mode.md), taken once the page's settled signal holds and its image has
+//   stopped changing (tools/kit/capture-browser.mjs, "Readiness by stability"), with the loop
+//   stopped. A shot still changing at the cap fails the run.
 // - Images are compared by their decoded pixels, exactly: no tolerance anywhere.
-// - `--verify`: the scene's own checks. Every shot is taken three ways, which must agree to the
-//   pixel: on one page in the listed order, on a second page in the reverse order (so each shot
-//   is taken twice, each time after another scene before it), and on a fresh page loaded at that
-//   time. So a shot repeats, and a jump to a time draws what a load of that time draws.
-// - `--check`: every shot must equal the reference image of its name (`--ref`, by default
-//   artifacts/scenes/reference/<look>/); a shot without a reference fails. `--write-ref` writes
-//   this run's shots as the reference instead (with `--verify`, only when the checks passed),
-//   with a `reference.json` in each scene's folder: the commit served, the browser and the size,
-//   so a run that writes some scenes leaves the others' records as they were.
-// - `--look ponlai` loads the scenes under the island's look (`renderLook=ponlai`) instead of
-//   the renderer's neutral one; each look has its own output folder and reference.
+// - `--verify`: every shot is taken on one page in the listed order, on a second page in the
+//   reverse order (so each shot is taken twice, each time after another scene before it), and on a
+//   fresh page loaded at that time. So a shot repeats, and a jump to a time draws what a load of
+//   that time draws.
+// - `--check`: a shot without a reference fails. `--write-ref` writes a `reference.json` in each
+//   scene's folder (the commit served, the browser and the size), so a run that writes some scenes
+//   leaves the others' records as they were. A reference holds for the browser and the size it was
+//   shot with.
+// - `--look ponlai` loads the scenes with `renderLook=ponlai`; each look has its own output folder
+//   and reference.
 //
 // Readings: with the loop stopped on the shot's frame, `scenePage.read()` gives each reading the
 // view's frame holds: its box, the scene's linear radiance there before the display chain
@@ -45,11 +68,19 @@
 //   readings.json                        every reading of the run: scene, time, view, light, readings
 //   readings.tsv                         the same as a table: luminance (opaque, hdr) and code per reading
 //   verify/<scene>/<time>.<view>.<reverse|fresh>.png   a shot of `--verify` that differs from the first
-// stdout: a line per shot, the failures, a summary. Exit codes: 0 passed, 1 a check failed (a
-// difference, a missing reference, an unstable shot, a page error), 2 bad usage.
+// stdout: a line per shot, the failures, a summary.
 //
-// The GPU lock is taken shared and leased from shot to shot (gpu-lock.mjs `leaseGpuLock`): a
-// paused shot's pixels do not depend on what else renders.
+// GPU lock and browser: takes the GPU lock shared and leased from shot to shot
+// (docs/reference/gpu-lock.md; tools/kit/gpu-lock.mjs `leaseGpuLock`), since a paused shot's pixels
+// do not depend on what else renders. It opens the capture tools' headless browser in a profile
+// slot (tools/kit/capture-browser.mjs `launchCapture`).
+//
+// Cost: a second or two per page load, a minute or two per scene; `--verify` takes every shot three
+// times.
+//
+// Exit codes: 0 passed; 1 a check failed (a difference, a missing reference, a shot still
+// changing, a page error); 2 bad usage.
+import '../kit/help.mjs';
 import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';

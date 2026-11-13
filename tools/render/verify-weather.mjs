@@ -1,12 +1,43 @@
-// Integrated weather evidence and contracts. CPU transition tests remain in verify-weather-state.
-// Run against the completed weather debug API, one WebGPU page at a time:
-//   node tools/render/verify-weather.mjs http://127.0.0.1:5190 [--coupling]
-// Its rain preset and the rain parts are parked with the rain (packages/render/sky/Weather.ts PARKED_WEATHER):
-// out of the default checks until the parked weathers are revived; it still runs on a debug build.
-// Its steps wait for the page's rendered frames (tools/kit/page-eval.mjs, "Rendered frames").
-// Overcast's direct light is checked on the key's floor under its closed deck (packages/render/sky/Sky.ts
-// `deckKeyFloor`), only for holding back a share of the clear day's key: the floor's level is a
-// tune (look/SkyLook.ts `keyThroughCloud`), so the bound stays clear of it.
+// Checks on a page that the weathers drive the sky, the light, the air and the scene coherently.
+//
+// It loads a paused debug page at the golden hour from a fixed camera and checks, from the page's
+// readings and pixels: five weather states (clear, fair, cloudy, overcast, rain) that are
+// deterministic and drive a coherent sky, scene and water lighting and air perspective; fog's
+// crops changing the distant sea more than the foreground; rain finite and differentiated between
+// afternoon and night; a live five-second transition interrupted continuously while the day clock
+// stays paused; and twelve repeated changes keeping the GPU's resources bounded. The weather's state
+// on the CPU is checked by tools/render/verify-weather-state.mjs. Run it after a change to how the
+// weather reaches the sky, the light or the air.
+//
+// Usage:
+//   node tools/render/verify-weather.mjs [url] [--coupling]
+//
+// Options:
+//   url          the server (default http://127.0.0.1:5190, the dev server); the page loads with
+//                `debug`, so a production preview works too
+//   --coupling   also checks that the weather reaches the plants' and the rain's wind, the FFT
+//                ocean's amplitude without a rebuild of its spectrum, the draws' visibility and the
+//                materials' moisture, and that the wind advances apart from the day's clock
+//
+// Its rain preset and the rain parts are parked with the rain (packages/render/sky/Weather.ts
+// PARKED_WEATHER): out of the default checks until the parked weathers come back; it still runs.
+// Its steps wait for the page's rendered frames (tools/kit/page-eval.mjs, Rendered frames).
+// Overcast's direct light is checked on the key's floor under its closed deck
+// (packages/render/sky/Sky.ts `deckKeyFloor`), only for holding back a share of the clear day's
+// key: the floor's level is a tune (packages/render/look/SkyLook.ts `keyThroughCloud`), so the
+// bound stays clear of it.
+//
+// Output: the count of checks passed on stdout, or the error on stderr; the report (readings, checks,
+// errors, failed requests) in artifacts/verification/weather/report.json
+// (artifacts/verification/weather-coupling/ with `--coupling`), written in either case.
+//
+// GPU lock and browser: takes the GPU lock shared (docs/reference/gpu-lock.md) and opens headless
+// Chrome (CHROME_PATH, else Playwright's Chromium).
+//
+// Cost: a page load, then a few dozen weather changes and readings on it.
+//
+// Exit codes: 0 every check passes; 1 a check failed, the page logged an error or a request failed.
+import '../kit/help.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';

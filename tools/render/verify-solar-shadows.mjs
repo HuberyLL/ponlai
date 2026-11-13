@@ -1,7 +1,31 @@
-// GPU regression: the sun shadow's disk filter keeps one penumbra width at any caster distance,
-// and receiver planes stay unoccluded at low solar elevation.
-// Needs the Vite dev server: it imports the source modules into the page (tools/kit/dev-server.mjs).
-// Usage: node tools/render/verify-solar-shadows.mjs http://127.0.0.1:5190 [extra query]
+// Checks on the GPU that the sun's shadow keeps one penumbra width and spares receivers at a low sun.
+//
+// It loads a paused page and runs the probes in packages/render/lighting/SolarShadow.ts
+// (`verifySolarShadow`, `verifySolarShadowRamp`): the disk filter of the sun's shadow keeps one
+// penumbra width at any caster distance, and receiver planes stay unoccluded at a low sun. Run it
+// after a change to the sun's shadow or its filter.
+//
+// Usage:
+//   node tools/render/verify-solar-shadows.mjs [url] [query]
+//   node tools/render/verify-solar-shadows.mjs http://127.0.0.1:5190 aa=taa
+//
+// Options:
+//   url     the dev server (default http://127.0.0.1:5190)
+//   query   extra URL options added to the page's `paused&t=12&dpr=1` (default none)
+//
+// Output: the probes' results (their profiles left out) and the page's errors as JSON on stdout;
+// the whole result in artifacts/verification/solar-shadow.json.
+//
+// GPU lock and browser: takes the GPU lock shared (docs/reference/gpu-lock.md; its pixels do not
+// depend on the GPU's load) and opens headless Chrome (CHROME_PATH, else Playwright's Chromium). It
+// imports the source modules into the page, so it needs the dev server: on any other server it
+// stops before the lock (tools/kit/dev-server.mjs).
+//
+// Cost: a page load and its first 80 frames, then the probes: seconds.
+//
+// Exit codes: 0 the probes ran and the page logged no error; 1 a probe threw, the page logged an
+// error, or the url is not the dev server (a failed assertion is thrown).
+import '../kit/help.mjs';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from '../kit/gpu-lock.mjs';
 import { requireDevServer } from '../kit/dev-server.mjs';

@@ -1,237 +1,100 @@
-// Frame profiler: plays a matrix of scenes (running clock, fixed weather, a slow camera orbit) in
-// headless Chrome with an uncapped frame rate (or at 60 Hz with `--vsync`), and reports the frame
-// interval, the GPU time per pass (timestamp queries, labelled by `packages/render/debug/FrameProfiler.ts`
-// through `?profile`), the tick's JS time, hitches with their cause, and the startup. Runs under the machine-wide GPU lock (held
-// exclusively) and first checks that nothing else keeps the GPU busy (full-screen `--display`: once
-// its window is up, by the GPU time of the clients other than its Chrome and WindowServer; see
-// idleCheck): when something still does after `--idle-wait` seconds (20, 60 in reload mode), it measures nothing and exits with 3 (a
-// contended run's frame rates and verdicts prove nothing, and it held the lock for minutes);
-// `--contended` measures anyway and marks the results contended. The machine's load over the whole
-// run (CPU per process group, GPU time per client, about once a second) goes to <out>/load.jsonl
-// (load-timeline.mjs; macOS); each measured slice gets the mean load outside the run over its
-// window, a slice whose outside GPU share exceeds `--idle-threshold` is contended, and a scene
-// with more than a quarter of its slices contended is marked contended (see annotateLoads;
-// `--load-timeline off` turns it off).
+// Measures the frame time of named scenes on a build of the page, per pass, in Chrome.
 //
-//   node tools/render/profile-frame.mjs [url] [--scenes a,b | --scene a] [--w 1920 --h 1080 --scale 2]
-//        [--quality high] [--timestamps on|off|both|auto] [--warmup s] [--seconds 7] [--orbit 3]
-//        [--eval "js"] [--repeat n] [--shots] [--detail] [--raw] [--out dir] [--label name]
-//        [--q "extra=url&options"] [--hooks off] [--world-cache off] [--idle-threshold 15] [--idle-wait s] [--contended]
-//        [--load-timeline off]
-//        [--mode page | reload] [--fresh] [--vsync] [--accept [--target 16.7] [--strict]] [--scales 1,0.9,0.75]
-//        [--scale-settle s] [--drs-store] [--frame-fallback] [--preload-wait 60] [--display [--motion user | orbit | none]]
-//        [--hang 180] [--scale-log] [--unpinned]
-//   node tools/render/profile-frame.mjs --compare urlA urlB [--eval-a "js"] [--eval-b "js"] [--scenes ...]
-//        [--slices 8] [--min-slices n] [--stop-margin x] [--stop-width x] [--slice 1.5] [--settle 1] [--display]
-//        (two pages, alternating slices)
-//   node tools/render/profile-frame.mjs [url] --toggle "js using s and on" [--block 60] [--blocks 8] [--lag 30]
-//   node tools/render/profile-frame.mjs --report <dir>/profile.json     (re-renders its summary.md)
-//   node tools/render/profile-frame.mjs --report <dir> | <dir>/scenes.jsonl  (an unfinished run's, see below)
+// It answers what a frame costs and where the time goes: the frame interval (median, p95, p99), the
+// GPU time per pass (timestamp queries, labelled by `packages/render/debug/FrameProfiler.ts` through
+// `?profile`), the tick's JavaScript time, hitches with their cause, and the startup. It also
+// measures an A/B between two builds (`--compare`) or two states of one page (`--toggle`), judges
+// the 60 fps criterion (`--accept`), and measures pacing on the real display (`--display`). A
+// performance change is measured with it on a production build, before and after. The scenes, the
+// modes, how a run holds the GPU lock and how to read the results: docs/reference/profile-frame.md.
+// The steps for a change: docs/how-to/check-a-change.md.
+//
+// Usage:
+//   node tools/render/profile-frame.mjs [url] [options]
+//   node tools/render/profile-frame.mjs --compare urlA urlB [--eval-a js] [--eval-b js] [options]
+//   node tools/render/profile-frame.mjs [url] --toggle "js using s and on" [options]
+//   node tools/render/profile-frame.mjs [url] --accept [--strict]
+//   node tools/render/profile-frame.mjs --display [--window WxH] [--compare urlA urlB]
+//   node tools/render/profile-frame.mjs --report <dir> | <dir>/profile.json | <dir>/scenes.jsonl
 //   node tools/render/profile-frame.mjs --list
+//   node tools/render/profile-frame.mjs --compare http://127.0.0.1:5191/ http://127.0.0.1:5192/ --scenes sky-fair
 //
-// The reference is a production build (`npm run build && npm run preview`, port 5191, the
-// default url); the dev server works for quick checks. The default viewport is a generic 4K
-// display (1920x1080 CSS at DPR 2). High is timed at its standard by default (packages/render/Quality.ts: 4K
-// output at 1440p's pixel count with MSAA): its render scale pinned at the dynamic rule's baseline
-// for the viewport (`dpr=1.3333333333333333` added to the query at the default; `dpr=1` for
-// `--w 2560 --h 1440 --scale 1`, a 2K display; packages/render/post/RenderScale.ts `dynamicRange`), so
-// profiles and --compare measure the level every trade-off is judged at;
-// `--unpinned` leaves the tier's own rule (a dynamic one steering) (to see where it
-// settles, with --scale-settle and --scale-log). --accept, --display, --scales and a dpr of the
-// url's or --q's own are never pinned. Chrome comes from CHROME_PATH, else the system Chrome, else
-// Playwright's Chromium, with a profile of its own kept between runs (`--profile-dir`), so the
-// world cache below survives. Writes <out>/profile.json and <out>/summary.md (default
-// artifacts/perf/<label>).
+// Options:
+//   url                    the page (default http://127.0.0.1:5191/, `npm run preview`)
+//   --scenes a,b, --scene a  the scenes (default: all but the parked and by-name ones; --list)
+//   --w, --h, --scale      viewport in CSS pixels and its pixel ratio (default 1920, 1080, 2)
+//   --quality name         the tier (default high)
+//   --unpinned             leave high's dynamic render scale unpinned (default: pinned at its baseline)
+//   --timestamps mode      on | off | both | auto (default on; off with --display; auto with --accept)
+//   --warmup s             warm-up per scene (default 1.5; 3 in reload mode)
+//   --seconds s            measured window per scene (default 7; 20 with --display)
+//   --orbit deg/s          the camera's orbit speed (default 3)
+//   --motion kind          user | orbit | none (default user with --display, else orbit)
+//   --mode page|reload     scenes switched in one page, or a page load per scene group (default page)
+//   --fresh                in reload mode, a fresh page load per scene
+//   --vsync                keep Chrome's vsync and 60 Hz limit (implied by --accept and --display)
+//   --accept               the 60 fps verdict per scene; --target ms (default 16.7)
+//   --strict               with --accept, exit 1 on a FAIL
+//   --compare urlA urlB    A/B in alternating slices of two pages
+//   --slices n, --slice s, --settle s  slices per scene, seconds each, settle at a switch (8, 1.5, 1)
+//   --min-slices n         adaptive stop from n slices (default 4 with --display, else --slices: off)
+//   --stop-margin, --stop-width  adaptive stop thresholds (0.1, 0.02 with --display; else 0.2, 0.05)
+//   --toggle js            A/B inside one page; --block, --blocks, --lag (default 60, 8, 30)
+//   --eval js              run in the page per scene; --eval-a, --eval-b on one page of a compare
+//   --q query              extra URL options for every page
+//   --scales a,b,c         repeat the run at each render scale
+//   --scale-settle s       wait for a dynamic scale to hold (default 2 with --display --compare, else 0)
+//   --scale-log            log each dynamic-scale change
+//   --drs-store            load compares and --accept with the remembered scale on (default off)
+//   --frame-fallback       keep the frame pacer's fallback on in compares and --accept (default off)
+//   --display              headed, on the real display, full screen; --window WxH for a window
+//   --contended            measure even when another client keeps the GPU busy
+//   --idle-threshold %     the GPU's idle utilisation (default 15)
+//   --idle-wait s          how long to wait for an idle GPU (default 20; 60 in reload mode)
+//   --load-timeline off    no machine-load timeline (default on)
+//   --preload-wait s       the longest wait for a shared slot to preload in (default 60)
+//   --hang s               a scene with no progress for s seconds is lost (default 180)
+//   --hooks off            leave out ?profile: frame intervals only (default on)
+//   --world-cache off      generate the island as on a first visit (default on)
+//   --profile-dir dir      Chrome's profile (default <os tmpdir>/ponlai-profile-frame-chrome)
+//   --repeat n             run the whole set n times (default 1)
+//   --detail, --raw, --shots  each pass's own time, every frame, a JPEG per scene
+//   --out dir, --label name   the output folder (default artifacts/perf/<label>; label: kind + time)
+//   --report path          render summary.md again from a run's files: no browser, no lock
+//   --list                 print the scenes and exit
 //
-// The exclusive lock covers what is measured, not the setup, and no browser is open while a request
-// queues (two headed runs died in the queue with their window already open): a build this profile
-// has not loaded yet is first loaded once under a shared GPU slot, in a browser opened inside the
-// slot and closed before it is released (`preload`; skipped when no slot frees within
-// `--preload-wait` seconds), so the loads under the lock find the world cache and the shader cache
-// warm, as every run but a build's first always did (a miss generates the island: seconds alone, a
-// minute under a busy CPU). Under the lock: the idle check (which also stands for the first load's),
-// then the browser's launch, each load, each scene's switch, warm-up, scale settle and measured
-// window. The pages' loops stop before the lock is
-// released; the GPU name, the files and the browser's close follow. Several scenes hold it one at a
-// time: between scenes it goes to whoever waits (queued captures) and comes back before the next
-// warm-up, with the pages open and stopped meanwhile (see holdScene). profile.json's `wallSeconds`
-// is the time under the exclusive lock (`lockWaitSeconds`, `totalSeconds`, `preload` beside it).
-// Measured: per-pass GPU times, frame rates and
-// acceptance verdicts within the run-to-run noise of the earlier tool, 4-12 s less held per run.
-// A hang loses one scene, not the run: a scene that shows no progress for `--hang` seconds (180) is
-// recorded as hung (`meta.hung`, summary.md: the step it was at and what each page still did), the
-// browser is closed (killed if still open after 30 s) and opened again, and the run goes on with the
-// scenes not finished; a browser or page that closes or crashes under a scene loses it the same way,
-// as does a scene whose setup or placement throws in the page (a layout `place()` cannot read: the
-// meadow view once ended a whole --compare without a profile.json), and a second lost scene stops
-// the run with the finished scenes written (see guarded).
-// Every finished scene is also appended to <out>/scenes.jsonl as it finishes, and the meta known at
-// the start is written to <out>/meta.json; `--report <dir>` on a folder without a profile.json
-// rebuilds summary.md from them (and load.jsonl) with the same reports, marked unfinished, the
-// scenes missing a variant or pass listed and left out (see unfinishedReport). --report opens no
-// browser and takes no lock.
-// A page paused or pinned during the run stops it the same way: each page's `clockPaused` and
-// `scalePinned` (diagnostics) are read at its load (`?dpr` pins legitimately) and after every slice
-// or measured window, and a change stops the run with the finished scenes written (`meta.spoiled`)
-// and exits 1. (A Space typed for another window reached a headed page and paused it; paused, it
-// renders at its nominal scale and stops steering, and a scene switch leaves the pause alone, so
-// it spoiled every scene after it.)
-// `--scale-log`: each page's dynamic-scale changes and their rules per scene, in the output and in
-// each scene's `scaleLog` (in --compare also each slice's stop: the controller's clock and timers).
+// High is pinned at its standard by default: 4K output at 1440p's pixel count, the render scale at
+// its dynamic rule's baseline for the viewport (`dpr` added to the query). `--accept`, `--display`,
+// `--scales` and a `dpr` in the url or `--q` are never pinned. `--compare` and `--accept` load
+// their pages with `drsStore=off` and `frameFallback=0`, so both sides start alike and hold one
+// rate. A/B decisions rest on GPU time; frame rates for final numbers come from a run with
+// `--timestamps off` or `both`, since timestamp queries change Chrome's pacing.
 //
-// Modes (most of a page load is generating the island, about 10 s; scenes are switched instead):
-// - page (the default): one page load per variant; each scene is set up at runtime through
-//   window.__PONLAI__ as its URL options would load it (weather established at once and wet in
-//   rain, the time preset, the clock from 0, the camera view and its motion; the loop stands still
-//   meanwhile, so no frame mixes the scenes), then warmed up for
-//   `--warmup` seconds (1.5) and until no pipeline was created for a second (a new weather compiles
-//   its pipelines on first use; that compile is reported per scene, outside the measured window).
-// - reload (`--mode reload`): the original method, a fresh page load per group of scenes sharing
-//   a query (all of them with --fresh). `--compare` then alternates A B B A page loads.
-// - compare in page mode: A and B are loaded once each, in two pages of one browser, and measured
-//   in alternating slices (`--slices` 8 in the order B A A B A B B A, `--slice` 1.5 s each) under
-//   the same conditions. One page runs at a time: the other is stopped (no animation frame, no GPU
-//   work; its queued frames and any sky bake drained before the other starts; its camera and
-//   clock wait, and its dynamic scale's clock with them, through the debug hook `dynamicClock`: its
-//   holds and bars do not run out during the other page's slices), since Chrome let one page's
-//   frames starve the other's queue. The page that runs is brought to the front first, headless as
-//   on the display: the two pages are tabs of one window, and a tab behind runs its frames
-//   (Playwright keeps it visible to its page) without their being presented, so it paces otherwise.
-//   With the tab last opened (B) left in front, A/A runs on one build gave B a longer median frame
-//   interval, beyond the 95 % interval: +1.1 to +4.1 ms (7-17 %) with GPU timestamps off, +1.6 ms
-//   with them on, its GPU busy time unchanged (an A/B read a build's gain as a loss).
-//   Each in front, the same A/As came out within their interval, on and off.
-//   Deltas are reported with a 95 % interval from the slices' spread,
-//   beside each page's render scale per scene (high's dynamic scale can settle higher on one side,
-//   which the load-time render in the header does not show). Page errors name their page (A or B).
-//   Adaptive slices: `--slices` is the most a scene takes; from `--min-slices` on (4 with
-//   --display, else equal to --slices: off), a scene stops at the end of a balanced block of four
-//   once its leading delta has its answer (see MIN_SLICES); the summary and each scene's `stop`
-//   give the slices taken and why.
-// - toggle (`--toggle "js"`): A/B inside one page. The expression runs with `s` = window.__PONLAI__
-//   and `on` (false for A, true for B), and is applied every `--block` frames in an A B B A B A A B
-//   pattern after both states were warmed: for example --toggle "s.water.mesh.visible = !on", or
-//   --toggle "s.flags.fastWater = on" for an optimisation that reads a flag of
-//   `packages/render/debug/DebugFlags.ts` (the fastest and most precise A/B: no reload, no drain). Each frame
-//   counts for the state its tick ran in; GPU figures drop the first 2 frames after a change, frame
-//   intervals the first `--lag` (30: headless Chrome queues about two dozen frames, so a change
-//   reaches the rAF interval that much later).
-// - vsync (`--vsync`): Chrome keeps its vsync and frame-rate limit (60 Hz headless), so the frame
-//   interval is what a player sees: 16.7 ms while every frame makes its vblank, 33.3 when one
-//   misses. Uncapped, a GPU-bound scene's p95 is mostly pacing noise (a sky that holds 60 Hz under
-//   vsync showed a p95 of 33.5 ms uncapped); with vsync the queue stays shallow and the intervals
-//   quantise to vblanks.
-// - acceptance (`--accept`, implies --vsync and, unless given, --timestamps auto): a pass or fail
-//   per scene for the 60 fps criterion. From the run without timestamps: the median and the p95
-//   within half a millisecond of `--target` (16.7), and no frame over 25 ms in the measured window
-//   (7 s by default); the p99, the maximum, and the GPU busy time of a run with timestamps are
-//   reported beside the verdict. Other work on the GPU costs frames, so a scene measured while something
-//   else kept the GPU busy (contended: with --contended, or found at a later page load) that fails
-//   is INCONCLUSIVE, unless its own GPU busy time (median, with timestamps) is over the target,
-//   which no idle GPU would make up; one that passes is PASS (contended). Contended means the run
-//   without timestamps was, since its frames are the ones judged. The exit code stays 0 unless
-//   `--strict` is given, which exits 1 on a FAIL.
-//   The run with timestamps decides no verdict on an idle GPU and only turns a contended failure
-//   into FAIL, so `auto` runs it for the scenes that did not pass (FAIL or INCONCLUSIVE), where the
-//   GPU busy time and the passes explain the failure; a run where every scene passes has none
-//   (about half the exclusive hold of `both`). A scene that passed reports no GPU busy time, no
-//   passes and no GPU hitches (its headroom under the frame): `--timestamps both` runs every scene
-//   twice as before, `off` never with timestamps.
-//   Headless 60 Hz does not show how a faster display paces the frames (see --display).
-// - scales (`--scales 1,0.9,0.75`): the run once per render scale (the page's `dpr` option), in one
-//   invocation, with a table of every scene at every scale (for the threshold where a scene holds
-//   60 Hz, and the settle points of a dynamic resolution). The url and `--q` must not set `dpr`
-//   themselves (the page reads the first of a repeated option); a scale above the display's pixel
-//   ratio is capped by the page, and the run warns when the render's ratio differs from the scale.
-// - scale settle (`--scale-settle s`): a tier with a dynamic render scale (high) moves it by the
-//   GPU's frame time; after a scene's warm-up the run waits until it has held for s seconds (at
-//   most 60), so the scene is measured at its settle point. Each scene's results give the scale
-//   its frames were drawn at (median, range and changes) beside the frame times. In --compare each
-//   page settles after its own warm-up: without it, high's scale stepped down from its nominal
-//   inside the first slices of the run's first scene, on both pages (A/A runs on the display).
-//   So `--display --compare` settles for 2 s by default (`--scale-settle 0` turns it off): in three
-//   display A/As without it, both pages' scale stepped down (0.8 -> 0.7) inside their first slice,
-//   at different times, which put a step into one side's measured frames and not the other's; with
-//   2 s, no scale change fell inside a measured slice. It costs about 2-6 s per page per scene
-//   under the exclusive lock. Headless runs keep 0: their A/Bs are judged by the passes, which a
-//   scale step moves on both sides alike.
-// - the remembered scale: high starts from the dynamic scale it last held (`drsStore`, off in an
-//   automated browser anyway); --compare and --accept add `drsStore=off` so neither side of an A/B
-//   (two AA modes or two builds) starts from a scale the other settled at, and `--drs-store` adds
-//   `drsStore=on` instead, to measure a returning load.
-// - the frame rate's fallback: on a faster display the pacer may step from the tier's rate to the next
-//   divisor (72 -> 48 fps on 144 Hz) when the dynamic scale's floor cannot hold it (FramePacer.ts);
-//   --compare and --accept add `frameFallback=0` so both sides hold one rate and stay comparable, and
-//   `--frame-fallback` keeps the fallback on. On the display each scene reports its effective rate
-//   (rendered frames per second) and the share of frames at the fallback, and late frames are judged
-//   against the pace each frame was rendered at.
-// - display (`--display`): the real display, headed. Chrome (the system's, without the switches the
-//   headless runs take) opens full screen (`--kiosk`) at the display's size and pixel ratio with
-//   its own vsync, so a 120 Hz display runs rAF at 120 Hz. The camera is dragged like a player's
-//   (`--motion user`, the default here: drags of 30 to 200 deg/s with pauses, a wheel zoom, a flick,
-//   through Chrome's own input; `orbit` keeps the slow orbit, `none` holds it still) for `--seconds`
-//   (20). Beside the usual figures each scene reports, by display refreshes, the intervals between
-//   the frames the scene rendered and between the frames the compositor presented (a trace of
-//   Chrome's frame pipeline), the share of intervals that change cadence (judder at a steady pace),
-//   and how much the camera's turning speed changes from frame to frame while it turns. Timestamps
-//   default to off, as in a player's page. Headless 60 Hz vsync passed every scene while this display
-//   showed a sixth of the frames 8.3 ms apart and a third of the intervals changing cadence (before
-//   the frame pacer): the headless run does not stand in for a faster display. A window appears on
-//   the screen for the run; keep other pages and animated windows closed (the window server itself
-//   took 15-30 % of the GPU's time during these runs). Full screen hides the other windows, and they
-//   stop drawing: so its idle checks run with the window up and count the other clients only (see
-//   idleCheck). `--window WxH` opens a normal window of that
-//   outer size instead (a player's, with its tab strip and toolbar): the other windows stay on
-//   screen, and a page drawing in one of them (an app's hidden browser pane kept rendering a second
-//   Ponlai page) shares the GPU and lowers high's scale. Full screen covers them, and they drew less:
-//   the app with that pane took a tenth of the GPU beside a window, a hundredth behind full screen.
-//   With `--compare` (page mode) the two pages run in the same interleaved slices as headless, so
-//   the drift between separate headed runs (1-2 ms) cancels: the running page is brought to the
-//   front (a background tab gets no animation frames), and the summary adds the share of late
-//   frames (presented intervals longer than the frame pacer's pace) as a delta over the slices.
-//   One trace spans a scene's slices of both pages (Chrome traces one session at a time, every
-//   page in it), ended early only where an adaptive stop checks the figures so far; a mark per
-//   slice splits it (see startTrace). The run log gives each scene's time over its settles and
-//   slices. The drags run in the measured slices only, each page's on from where its last slice
-//   left them, so the k-th slice of A and of B see the same motion from the same view (they ran
-//   through the settles too, and the order's switches gave each page its own views: 25-35 degrees
-//   apart in an A/A). The screen still changes at every switch, to the other page's view:
-//   expected. A scene switch never shows the scene before: each page switches with its loop
-//   stopped, out of sight, and starts before it comes to the front, so its first frame on screen
-//   is the new scene's (brought to the front first and switched while running, a page showed its
-//   last frame of the scene before and kept drawing that view until the camera was placed: the
-//   screen went back to the previous scene for a moment). Chrome still shows a page that comes to
-//   the front with the surface it kept when the page last went to the background, for about a
-//   frame, before the page's new frames: so a page leaves the front for the last time in a scene
-//   under a cover (opaque, the loading screen's colour), shows that cover when it comes back with
-//   the next scene, and drops it once it has drawn a few frames under it. The cover is up and down
-//   outside the measured windows; on screen it shows for a frame or two at each scene switch, and
-//   once inside a scene (other than the run's last) where the page that ends its slices first
-//   leaves the front. A drag that loses its pointer to an
-//   event the run did not send (the system cursor's, which reaches the headed page) is pressed
-//   again and logged.
-//   Bringing a page to the front gives Chrome the keyboard focus (on macOS), so keys typed for
-//   another window reach it: every page of a --display run stops key events (keydown, keyup,
-//   keypress) on the window in the capture phase, before the page's own listeners. The tool sends
-//   no keys. Pointer and wheel stay open: the drags go through page.mouse, and no incident
-//   involved them.
-// A/B decisions should rest on GPU time (per pass and in total): it is measured per frame on the
-// GPU's timeline and converges in far fewer frames than the frame interval. Frame rates for final
-// numbers come from `--timestamps off` or `both`, since Chrome paces frames differently with
-// timestamp queries on (up to a quarter faster).
+// Output:
+//   stdout: the path of summary.md. stderr: the `[profile]` log of the run.
+//   <out>/profile.json (every figure, with `meta`), <out>/summary.md (the tables and verdicts),
+//   <out>/meta.json and <out>/scenes.jsonl (written as the run goes, for `--report` on an
+//   unfinished run), <out>/load.jsonl (the machine's load once a second, macOS), and with `--shots`
+//   a JPEG per scene.
 //
-// `--eval` runs in the page for every scene, after its camera is placed and before its warm-up,
-// with `s` = window.__PONLAI__: an ablation, for example --eval "s.water.mesh.visible = false".
-// A url's own query options come first, so "http://host/?profile=frames" runs that side without
-// timestamps. `--timestamps both` takes a scene's frame intervals from a run without GPU
-// timestamps (the rate a player sees) and its passes from a run with them. `--hooks off` leaves
-// out ?profile (frame intervals only, as for a build without the profiler). Builds load the island
-// from IndexedDB while its generator is unchanged (older ones only with `?worldCache`, which is
-// added to every url); `--world-cache off` adds `worldCache=off` instead, so the island is
-// generated as on a first visit. Older builds ignore what they do not know, as they ignore the runtime
-// hooks this tool falls back from (it then drives their handles directly). `--shots` saves a JPEG
-// of each scene after its measurement (profile runs, not A/Bs), `--detail` adds each pass's own time and `--raw` every
-// frame.
+// GPU lock and browser:
+//   Takes the GPU lock (docs/reference/gpu-lock.md) alone for what it measures, one scene at a time
+//   (a lease that keeps its place); a build not loaded before is first preloaded under a shared
+//   slot. No browser is open while it queues. It opens Chrome headless, or headed with `--display`,
+//   which needs the display gate. `--report` and `--list` take no lock and open no browser.
+//
+// Cost:
+//   A page load, then per scene a warm-up and the measured window: a default run of six scenes takes
+//   about a minute under the lock; a compare about twice its slices' time per scene.
+//
+// Exit codes:
+//   0  the run finished (acceptance verdicts are written either way without `--strict`)
+//   1  a bad option, a spoiled run (a page paused or pinned during it), `--strict` with a FAIL, no
+//      progress outside a scene, or an unhandled error
+//   3  another client kept the GPU busy past `--idle-wait` (without `--contended`): nothing measured
+//      or the run stopped with the finished scenes written
+
+import '../kit/help.mjs';
 import { chromium } from 'playwright';
 import { existsSync, readlinkSync } from 'node:fs';
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -299,7 +162,7 @@ if ( flags.has( '--list' ) ) {
 
 // --display: Chrome headed and full screen on the real display, with the display's own vsync (a
 // 120 Hz display stays 120 Hz), the camera dragged like a player's (`--motion user`), and the frames
-// the compositor presented read from a trace (see the header)
+// the compositor presented read from a trace (docs/reference/profile-frame.md, Display mode)
 const DISPLAY = flags.has( '--display' );
 // --window WxH (with --display): a normal window of that outer size instead of full screen, as a
 // player's: the other windows stay on screen, and whatever they draw shares the GPU
@@ -336,7 +199,7 @@ const ORDER = [ 0, 1, 1, 0, 1, 0, 0, 1 ];
 const WORLD_CACHE = opt( 'world-cache', 'on' ) !== 'off';
 // --scale-settle s: after a scene's warm-up, wait until a dynamic render scale (high's) has not
 // moved for s seconds (at most 60 s), so the scene is measured at its settle point; 2 by default
-// for --display --compare (see the header), else 0 (off)
+// for --display --compare (docs/reference/profile-frame.md, Scale settle), else 0 (off)
 const SCALE_SETTLE = Number( opt( 'scale-settle', DISPLAY && argv.includes( '--compare' ) ? 2 : 0 ) );
 const PROFILE_DIR = opt( 'profile-dir', path.join( os.tmpdir(), 'ponlai-profile-frame-chrome' ) );
 // the longest wait for a shared GPU slot to preload in (see preload), seconds
@@ -349,7 +212,7 @@ const EXTRA_Q = opt( 'q', '' );
 // a quarter faster (light scenes most, a GPU-bound heavy scene hardly at all), so the frame rate a
 // player sees is the one without them; their per-pass split stays the reference for where the time
 // goes, and A/B deltas in one mode cancel the bias.
-// --accept: the 60 fps criterion per scene (see above), under vsync; frame intervals come from the
+// --accept: the 60 fps criterion per scene (docs/reference/profile-frame.md, Acceptance), under vsync; frame intervals come from the
 // run without timestamps, the GPU busy time from a run with them (by default, `auto`, only of the
 // scenes that did not pass)
 const ACCEPT = flags.has( '--accept' );
@@ -363,7 +226,8 @@ if ( STRICT && ! ACCEPT ) throw new Error( '--strict goes with --accept' );
 const TARGET = Number( opt( 'target', 16.7 ) ), TARGET_SLACK = 0.5, ACCEPT_MAX = 25;
 // (display mode: off, as a player's page runs; high's dynamic resolution keeps its own queries).
 // auto (--accept's default): every scene without timestamps, then the scenes that did not pass
-// again with them, for the GPU busy time that explains a failure (see the header)
+// again with them, for the GPU busy time that explains a failure (docs/reference/profile-frame.md,
+// Acceptance)
 const TIMESTAMP_MODE = opt( 'timestamps', ACCEPT ? 'auto' : DISPLAY ? 'off' : 'on' );
 if ( ! [ 'on', 'off', 'both', 'auto' ].includes( TIMESTAMP_MODE ) ) throw new Error( '--timestamps on | off | both | auto' );
 if ( ACCEPT && TIMESTAMP_MODE === 'on' ) throw new Error( '--accept judges the frame rate a player sees: --timestamps auto (the default), both or off' );
@@ -633,7 +497,7 @@ function acceptance( r, target = TARGET ) {
 	if ( ! ( r.interval.p95 <= limit ) ) reasons.push( `p95 ${ r.interval.p95 }` );
 	if ( r.over25Count > 0 ) reasons.push( `${ r.over25Count } frames over ${ ACCEPT_MAX } ms` );
 	const pass = reasons.length === 0, contended = Boolean( r.contended );
-	// a contended run's failure proves nothing (see the file's header) unless the scene's own GPU
+	// a contended run's failure proves nothing (docs/reference/profile-frame.md, Acceptance) unless the scene's own GPU
 	// work already takes longer than a frame
 	const overBudget = r.gpu?.median > target;
 	if ( ! pass && overBudget ) reasons.push( `gpu busy ${ r.gpu.median } over ${ target }` );
@@ -2143,7 +2007,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 	const gpuIdle = await loadIdle( log );
 	// one after the other (a page running starves the other's queue), each stopped once loaded and
 	// in front while it runs: the two pages are tabs of one window, and a tab behind runs frames
-	// that are not presented, at another pace (see the header)
+	// that are not presented, at another pace (docs/reference/profile-frame.md, A/B comparisons)
 	const loaded = [];
 	for ( const v of [ 0, 1 ] ) {
 

@@ -1,11 +1,36 @@
-// Fixed-camera A/B evidence for the integrated wet surfaces, impact rings and rain streaks.
-// Uses one WebGPU page; coordinate with other GPU probes/benchmarks before running:
-//   node tools/render/verify-weather-effects.mjs http://127.0.0.1:5190
-// Parked with the rain (packages/render/sky/Weather.ts PARKED_WEATHER): out of the default checks until the
-// parked weathers are revived; it still runs against a debug build (the dev server or ?debug).
-// Its steps wait for the page's rendered frames (tools/kit/page-eval.mjs, "Rendered frames"); each
-// capture waits first for the paused page's settled signal (tools/kit/capture-browser.mjs
+// Checks the rain's wet surfaces, impact rings and streaks from a fixed camera by A/B captures.
+//
+// It loads a paused debug page in the rain at the golden hour from fixed views and takes A/B
+// captures with one effect switched at a time, checking that frozen captures are byte-stable with
+// the sky, wind, time and camera unchanged; that the opaque HDR readback changes the surfaces above
+// the tide while the tidal and submerged materials' pixels stay; that isolated rings and sparse
+// streaks change the rendered pixels without flattening or whitening the scene; that the rain
+// follows the night's lighting; and that the low, medium and high presets simulate 16384, 32768
+// and 49152 drops while the toggles keep texture use bounded.
+//
+// Usage:
+//   node tools/render/verify-weather-effects.mjs [url]
+//
+// Options:
+//   url   the server (default http://127.0.0.1:5190, the dev server); the page loads with `debug`
+//
+// Parked with the rain (packages/render/sky/Weather.ts PARKED_WEATHER): out of the default checks
+// until the parked weathers come back; it still runs against a debug build (the dev server or
+// `?debug`). Its steps wait for the page's rendered frames (tools/kit/page-eval.mjs, Rendered frames);
+// each capture waits first for the paused page's settled signal (tools/kit/capture-browser.mjs
 // `waitForSettled`) and fails when it does not hold, so its two frames are the frame the page keeps.
+//
+// Output: the count of checks passed on stdout, or the error on stderr; the captures (PNG, A and B
+// per name) and the report in artifacts/verification/weather-effects/, the report written in
+// either case.
+//
+// GPU lock and browser: takes the GPU lock shared (docs/reference/gpu-lock.md) and opens headless
+// Chrome (CHROME_PATH, else Playwright's Chromium), one page.
+//
+// Cost: a page load per quality tier, and a pair of captures per effect and view.
+//
+// Exit codes: 0 every check passes; 1 a check failed, the page logged an error or a request failed.
+import '../kit/help.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';

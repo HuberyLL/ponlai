@@ -1,43 +1,19 @@
-// Builds TSL shaders to WGSL in node, with no GPU and no browser: three's WGSL node builder (the
-// code three hands to `createShaderModule`) on a WebGPURenderer that is never initialised, for the
-// compute kernels, full-screen passes and materials an entry module returns. It writes each
-// shader to a file, lists each one's bindings and uniforms, and flags any stage that exceeds
-// WebGPU's default limits.
+// Builds TSL shaders to WGSL in node, with no GPU, no browser and no GPU lock.
 //
-// Usage: node tools/render/wgsl-build.mjs <entry> [--out <dir>] [--features <a,b>] [--q "<query>"]
+// It runs three's WGSL node builder (the code three hands to `createShaderModule`) on a
+// WebGPURenderer that is never initialised, for the compute kernels, full-screen passes and
+// materials an entry module returns, writes each shader to a file, lists each one's bindings and
+// uniforms, and flags any stage that exceeds WebGPU's default limits. Use it to see which bindings
+// and uniforms a shader declares (several writes sharing one binding, a storage texture's level
+// dropped, a uv matrix per texture read) and whether one exceeds a limit, with an entry in
+// tools/render/wgsl-build/ for the module, instead of a stub-renderer script of one's own.
 //
-//   <entry>      a module in this repository (a path), or the name of one in tools/render/wgsl-build/:
-//                `fsr3` builds every kernel of packages/render/post/fsr3/ as the page builds them
-//                `ambient-relight` the ambient light's relight and its debug view
-//                (packages/render/lighting/AmbientRelight.ts)
-//                `ambient-materials` the lit materials that read the ambient volume
-//                (packages/render/lighting/AmbientSample.ts)
-//                `meadow` the displacement field's sprites and the meadow's blades
-//                (packages/render/vegetation/Displacement.ts, packages/island/world/Grass.ts)
-//                `plants` the plants that bend in the wind: the bamboo's culms and leaves (its
-//                instanced draws' materials) and the yunpeng's whole and fading draws
-//                (packages/island/world/BambooMaterials.ts, packages/island/world/Yunpeng.ts)
-//                `falling-leaves` the falling leaves' step and prewarm kernels and draw
-//                (packages/island/world/FallingLeaves.ts)
-//                `local-lights` the local lights' clusters kernel and the lit materials that
-//                bind the most (packages/render/lighting/LocalLights.ts)
-//                `haze` the volumetric haze's light kernel and the sky dome's haze
-//                (packages/render/weather/VolumetricHaze.ts)
-//                `night` the moon on the dome, the flare and its visibility, and the
-//                composite's rods' colour (packages/render/sky/NightSky.ts, packages/render/post/LightShafts.ts,
-//                packages/render/post/Purkinje.ts)
-//                `terrain` the island's ground, the stones and the sea floor
-//                (packages/island/materials/TerrainMaterial.ts)
-//                `wave-maps` the caustics' splats at their focal planes (packages/render/ocean/WaveMaps.ts)
-//                `post` the post chain's own passes: the exposure's meter, the bloom's levels
-//                and the local tone's grid and slicing (packages/render/post/Metering.ts, Exposure.ts,
-//                PhysicalBloom.ts, LocalTone.ts)
-//                `clouds` the clouds' panorama, shadow and view kernels (packages/render/sky/Clouds.ts)
-//                `atmosphere` the atmosphere's bakes and slices, the earth shadow's mean and the
-//                sky's radiance (packages/render/sky/Atmosphere.ts)
-//                `sky` the materials that read the clear sky: the environment's panorama bake,
-//                the cloudless sky's irradiance and the dome, fogged, in the scene pass's MRT
-//                (packages/render/sky/Sky.ts)
+// Usage:
+//   node tools/render/wgsl-build.mjs <entry> [--out <dir>] [--features <a,b>] [--q "<query>"]
+//   node tools/render/wgsl-build.mjs ambient-materials --q "flags=ambientVolume:0"
+//
+// Options:
+//   <entry>      a module in this repository (a path), or the name of one in tools/render/wgsl-build/
 //   --out        the output folder (default artifacts/wgsl/<entry name>/); the tool's own files in
 //                it (*.wgsl, bindings.txt, report.json) are replaced, nothing else is touched
 //   --features   the device features three sees (default none: WebGPU core). The page's device
@@ -47,16 +23,46 @@
 //   --q          the page's query (its options, packages/render/Settings.ts, which load knobs read as their
 //                modules load: `aa=`, `quality=`, debug flags); default none
 //
-// The entry is loaded through Vite's SSR loader with the project's config (as the dev server
-// loads the page's modules: TypeScript, `import.meta.env`, the plugins' virtual modules), with the
-// query's options installed first as the page's entry installs them (packages/render/Settings.ts
-// `installSettings`), then the scene's uniforms (packages/render/shared.ts `installShared`), made
-// from the island's look; any browser global a module touches as it loads fails the run. It
-// imports what it builds from `packages/` and three as usual (Vite leaves three to node, so the tool
-// and the entry share one three) and its default export, given `{ renderer }`, returns the
-// shaders (or a promise of them) as `[ name, shader ]` pairs or an object of them, in the order
-// the page first builds them (r186 emits code from node state its builds share: docs/reference/three-behaviour.md,
-// Build order). A shader is:
+// Entries in tools/render/wgsl-build/ (each file's header says what it stands in):
+//   fsr3               every kernel of packages/render/post/fsr3/, by the page's own `Fsr3Upscaler` in a
+//                      frame's order, the reactive-mask generator and the debug view included
+//   ambient-relight    the sky's projection, the relight, its readback and the probes' debug view
+//                      (packages/render/lighting/AmbientRelight.ts)
+//   ambient-materials  the lit materials that read the ambient volume, with it or, under
+//                      `--q "flags=ambientVolume:0"`, without (packages/render/lighting/AmbientSample.ts)
+//   gtao               the ambient occlusion's depth, slices and blur (packages/render/post/GTAO.ts)
+//   meadow             the displacement field's sprites and the blades that read it, from an empty plan
+//                      (packages/render/vegetation/Displacement.ts, packages/island/world/Grass.ts)
+//   plants             the bamboo's culms and leaves and the yunpeng's whole and fading draws
+//                      (packages/island/world/BambooMaterials.ts, packages/island/world/Yunpeng.ts)
+//   falling-leaves     the falling leaves' step and prewarm kernels and draw (packages/island/world/FallingLeaves.ts)
+//   local-lights       the clusters kernel and the lit materials that bind the most with their lookup
+//                      (the terrain's cliff and seabed, the islanders' figure; packages/render/lighting/LocalLights.ts)
+//   haze               the volumetric haze's light kernel and the dome's haze (packages/render/weather/VolumetricHaze.ts)
+//   night              the moon on the dome, the flare and its visibility, the composite's rods' colour
+//                      (packages/render/sky/NightSky.ts, packages/render/post/LightShafts.ts, packages/render/post/Purkinje.ts)
+//   terrain            the island's ground, the stones and the sea floor (packages/island/materials/TerrainMaterial.ts)
+//   wave-maps          the caustics' splats at their four focal planes, each drawn as its grid's two
+//                      halves of triangles (packages/render/ocean/WaveMaps.ts)
+//   post               the exposure's meter, the bloom's levels and the local tone's grid and slicing
+//                      (packages/render/post/Metering.ts, Exposure.ts, PhysicalBloom.ts, LocalTone.ts)
+//   clouds             the panorama's march, shadow and view kernels on the page's atmosphere, with a
+//                      stand-in shape noise and the GPU bakes skipped (packages/render/sky/Clouds.ts)
+//   atmosphere         the bakes, the slices cut from its table, the earth shadow's mean over the
+//                      azimuth and the sky's radiance (packages/render/sky/Atmosphere.ts)
+//   sky                the environment's panorama bake, the cloudless sky's irradiance and the dome,
+//                      fogged, in the scene pass's MRT, the moon's maps stood in empty (packages/render/sky/Sky.ts)
+//
+// The entry's contract. It is loaded through Vite's SSR loader with the project's config (as the
+// dev server loads the page's modules: TypeScript, `import.meta.env`, the plugins' virtual
+// modules), with the query's options installed first as the page's entry installs them
+// (packages/render/Settings.ts `installSettings`), then the scene's uniforms
+// (packages/render/shared.ts `installShared`), made from the island's look; any browser global a
+// module touches as it loads fails the run. It imports what it builds from `packages/` and three as
+// usual (Vite leaves three to node, so the tool and the entry share one three) and hands the
+// island's look to what it makes, as the page's stages do. Its default export, given `{ renderer }`,
+// returns the shaders (or a promise of them) as `[ name, shader ]` pairs or an object of them, in
+// the order the page first builds them (docs/reference/three-behaviour.md, Build order). A shader is:
 //   - a ComputeNode (`Fn( ... )().compute( ... )`): written as <name>.wgsl;
 //   - a NodeMaterial: drawn as a full-screen pass (a QuadMesh, as the frame graph's passes draw);
 //   - `{ material, object, scene, camera, mrt }` (all but material optional): a draw of
@@ -73,25 +79,26 @@
 // a device with those features: the text the page creates its module from when the entry builds
 // what the page builds (same inputs, query and order). What it does not: it does not validate the
 // WGSL (no naga or tint here), so a shader that builds can still fail `createShaderModule` or its
-// pipeline on the device; three's own build errors (a node without a type, a missing input) are
+// pipeline on the device, which is proven on the page (tools/render/verify-first-use.mjs, the
+// console's WebGPU errors); three's own build errors (a node without a type, a missing input) are
 // reported as failures.
 //
-// The listing (bindings.txt; report.json holds the same for a script) gives per stage every
-// binding in the module (group, binding, WGSL name and type, and the resource behind it: a
-// texture's name and, for a storage texture with mips, the level its view binds), each uniform
-// buffer's members (three names a uniform `nodeUniformN` when the code gave it no name: many of
-// those, such as a uv matrix per texture read, are worth a look), the workgroup size and
-// workgroup storage, and the varyings and colour outputs of a draw. The limits checked are
-// WebGPU's defaults, which the page's device has (it requests none above them,
-// `requiredLimits`): sampled textures 16, samplers 16, storage textures 4, storage buffers 8 and
-// uniform buffers 12 per stage, a uniform buffer's 64 KiB, 4 bind groups, a workgroup's 256
-// invocations (256 x 256 x 64) and 16 KiB of workgroup storage, 16 inter-stage variables and 8
-// colour attachments. Counts are what each stage's module declares.
+// Output: <out>/<name>.wgsl (or .vert.wgsl / .frag.wgsl), and the listing in <out>/bindings.txt
+// (<out>/report.json holds the same for a script): per stage every binding in the module (group,
+// binding, WGSL name and type, and the resource behind it: a texture's name and, for a storage
+// texture with mips, the level its view binds), each uniform buffer's members and size (three names
+// a uniform `nodeUniformN` when the code gave it no name), the workgroup size and storage, a draw's
+// varyings and colour outputs, and a warning for each of WebGPU's default limits (LIMITS below) the
+// stage exceeds; counts are what each stage's module declares. On stdout, one line per shader and
+// the totals.
 //
-// Output: <out>/<name>.wgsl (or .vert.wgsl / .frag.wgsl), <out>/bindings.txt, <out>/report.json;
-// stdout one line per shader and the totals. Exit 0 when every shader built within the limits,
-// 1 when one failed to build or exceeds a limit, 2 for a usage error.
-
+// GPU lock and browser: neither. It runs a Vite server in middleware mode to load the entry.
+//
+// Cost: seconds (FSR 3's twenty kernels build in about two).
+//
+// Exit codes: 0 every shader built within the limits; 1 one failed to build or exceeds a limit, the
+// entry failed, or two shaders share a name; 2 a usage error.
+import '../kit/help.mjs';
 import '../kit/qos.mjs';
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, extname, join, relative, resolve } from 'node:path';
@@ -100,7 +107,11 @@ import { ROOT } from '../kit/root.mjs';
 
 const ENTRIES = join( ROOT, 'tools', 'render', 'wgsl-build' );
 
-// WebGPU's default limits (a device that requests none)
+// WebGPU's default limits (a device that requests none), which the page's device has: it requests
+// none above them (`requiredLimits`). Per stage: sampled textures 16, samplers 16, storage textures
+// 4, storage buffers 8 and uniform buffers 12; a uniform buffer's 64 KiB, 4 bind groups, a
+// workgroup's 256 invocations (256 x 256 x 64) and 16 KiB of workgroup storage, 16 inter-stage
+// variables and 8 colour attachments.
 const LIMITS = {
 	sampledTextures: [ 16, 'maxSampledTexturesPerShaderStage' ],
 	samplers: [ 16, 'maxSamplersPerShaderStage' ],

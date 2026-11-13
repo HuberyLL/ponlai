@@ -1,11 +1,30 @@
-// CPU checks of the local lights' clusters (packages/render/lighting/LocalLightClusters.ts, the kernel and the
-// lookup in packages/render/lighting/LocalLights.ts): the frame's sort of the sources in view (the view widened
-// by the refraction's guard band, depth then index, repeatable), every slice's range in it, and a
-// replica of the kernel's boxes and the fragments' lookup in doubles: every fragment, on screen or
-// in the guard band, finds in its cluster every source whose range holds it, a full cluster keeps
-// the nearest sources and counts the rest. Plain node, no GPU:
+// Checks the local lights' clusters on the CPU against a replica of the kernel and the lookup.
+//
+// It covers packages/render/lighting/LocalLightClusters.ts and the kernel and lookup in
+// packages/render/lighting/LocalLights.ts: the frame's sort of the sources in view (the view widened
+// by the refraction's guard band, by depth then index, repeatable), every slice's range in it, and
+// a replica of the kernel's boxes and the fragments' lookup in doubles. Every fragment, on screen or
+// in the guard band, must find in its cluster every source whose range holds it; a full cluster
+// keeps the nearest sources and counts the rest. Run it after a change to the clusters, the kernel
+// or the lookup; it is part of `npm run check`.
+//
+// Usage:
 //   node tools/render/verify-local-lights.mjs [seed]
+//
+// Options:
+//   seed   the seed of the random scenes the checks draw (default 1)
+//
 // The replica mirrors the TSL by hand: a change to the kernel or the lookup changes it too.
+//
+// Output: on stdout, `ok` or `FAIL` per check (a failure with its message), the fragment counts of
+// the lookup check, then the count passed (with the seed) or failed.
+//
+// GPU lock and browser: neither.
+//
+// Cost: seconds, CPU only.
+//
+// Exit codes: 0 every check passes; 1 a check failed.
+import '../kit/help.mjs';
 
 import '../kit/qos.mjs';
 import { GRID, PER_CLUSTER, GUARD, slicesFor, sliceStart, sliceAt, sortInView } from '../../packages/render/lighting/LocalLightClusters.ts';

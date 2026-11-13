@@ -1,15 +1,36 @@
-// GPU probe of three's WebGPU backend (r186): what reallocating a storage buffer costs, for pools
-// that outgrow their capacity (the meadow's, vegetation/VegetationCull.ts). A compute kernel and an
-// instanced draw read and write storage buffers, as the cull's kernels and the grass material do; then:
+// Checks on the GPU that replacing a storage buffer with a larger one builds no new pipeline in three.
+//
+// Pools that outgrow their capacity (the meadow's, packages/render/vegetation/VegetationCull.ts)
+// replace their storage buffers. This probe of three's WebGPU backend runs a compute kernel and an
+// instanced draw that read and write storage buffers, as the cull's kernels and the grass material
+// do, then:
 //   in place   the same buffers rewritten (`needsUpdate`), the dispatch and draw repeated;
 //   realloc    each storage node's `value` replaced by a new, twice as large attribute, the kernel
 //              dispatched and the draw instanced over all of it;
 //   grow       (for the record) a larger array assigned to an existing attribute.
 // For each it counts the pipelines, shader modules and bind groups the GPU device was asked for,
-// and checks the results read back (every element written, every instance drawn).
-// Usage: node tools/render/verify-storage-realloc.mjs [--port 5627]
-// It serves its page from its own Vite server over the repository (no dev server needed), headless,
-// under the shared GPU lock. Exit code 1 when reallocation builds a pipeline or a result is wrong.
+// and checks the results read back (every element written, every instance drawn). Run it again
+// after an upgrade of three (docs/how-to/upgrade-three.md) or a change to how a pool grows
+// (docs/reference/three-behaviour.md, Storage buffers).
+//
+// Usage:
+//   node tools/render/verify-storage-realloc.mjs [--port 5627]
+//
+// Options:
+//   --port n   the port of its own Vite server (default 5627)
+//
+// Output: the steps' counts and results and the page's errors and warnings as JSON on stdout, then
+// `passed` or `FAILED`.
+//
+// GPU lock and browser: takes the GPU lock shared (docs/reference/gpu-lock.md) and opens headless
+// Chrome (CHROME_PATH, else Playwright's Chromium). It serves its own page from a Vite server over
+// the repository on 127.0.0.1 (three alone, without the app's config), so it needs no dev server.
+//
+// Cost: seconds.
+//
+// Exit codes: 0 passed; 1 rewriting in place or reallocating built a pipeline (or reallocating a
+// shader module), a result is wrong, or the page failed.
+import '../kit/help.mjs';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { acquireGpuLock } from '../kit/gpu-lock.mjs';

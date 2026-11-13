@@ -1,57 +1,80 @@
-// First-use pipelines (FU): once the page has loaded (its warm-up and first frames behind it), every
-// step a player or the GUI may take should create no render or compute pipeline, since a frame that
-// creates one stalls on it. The steps: the first pause and the temporal rest it settles into, scene
-// events (a time preset and a jump to clear, paused and running), the wind's levels and headings
-// (`wind`: each level jumped to with a turned heading, then changes over seconds), idle frames, the GUI's
-// exposure offset moved and back, the camera's modes and views,
-// a sweep of the render scale (upscaled and not), a resized window, the time presets and a pause
-// and the rest after it. The rest and the events come first, so the first use of what they draw is
-// counted there. Before them, the load itself is judged as the step `load`: the first frame may
-// build what nothing warmed (the world's materials), but no frame of the 60 after it may create a
-// pipeline synchronously, nor may the first frame's draws into the sun's shadow map (found by their
-// stack: `SunShadow.update`). The map's first redraw comes in the second frame (three builds the map
-// with the first frame's receivers) and created every caster's pipeline there, which the steps
-// after the 60 frames never saw; it now compiles them asynchronously and draws once they exist
-// (packages/render/lighting/SunShadow.ts), and an asynchronous creation does not stall the frame. The steps
-// count every creation, asynchronous ones included. Two steps run only when `--steps` names them, since they reach the parked weathers
-// (packages/render/sky/Weather.ts PARKED_WEATHER): `weather`, every weather jumped to and changing over seconds,
-// and `bolt`, a forced bolt in a storm. Pipelines are counted
-// from WebGPU's device (an init script wraps GPUDevice's create*Pipeline and create*PipelineAsync),
-// so any build can be measured the same way, the reference included; each is listed with its label.
-// The frame graph's `rebuilds` and the temporal resolve's `historyResets`, where the page's
-// diagnostics have them, are reported per step too (both should not move through the scale sweep).
+// Counts the render and compute pipelines a loaded page still creates in each step a player may take.
 //
+// A frame that creates a pipeline stalls on it, so once the page has loaded (its warm-up and first
+// frames behind it) no step a player or the GUI may take should create one (docs/reference/three-behaviour.md,
+// Compiling ahead). Run it after a change that adds a material, a pass or a kernel, or changes
+// when one is built. The frame time itself is measured by tools/render/profile-frame.mjs.
+//
+// Usage:
 //   node tools/render/verify-first-use.mjs --url <base> [--quality high] [--aa msaa,taa,taau,fsr3,off]
-//        [--q "extra&query"] [--steps rest,events,wind,idle,gui,camera,scale,resize,presets,pause] (+ weather,bolt)
-//        [--frames 20] [--out file.json] [--compare ref.json] [--strict] [--fresh]
+//       [--q "extra&query"] [--steps rest,events,wind,idle,gui,camera,scale,resize,presets,pause]
+//       [--frames 20] [--out file.json] [--compare ref.json] [--strict] [--fresh]
+//   node tools/render/verify-first-use.mjs --url http://127.0.0.1:5191/ --aa msaa,taa,taau,off --quality high,medium,low
 //
-// `--quality` and `--aa` take one value or a list: every tier with every mode, each in a fresh page
-// (the output JSON is then `{ runs: [ ... ] }`, with a summary table at the end). The default is
-// high alone: medium and low are parked (packages/render/Quality.ts PARKED_QUALITY), reached by naming them.
-// `--steps` also takes `preset:<name>` and `weather:<name>` (a jump to one preset or weather), so a
-// load with `--q preset=midnight` and `--steps preset:sunrise` checks the switch from night to day.
-// `--compare` reads another run's JSON (the reference build, same options; a run of the same tier
-// and mode, or its only run) and judges every step: PASS when it created no pipeline, or no more
-// than the reference did. `--strict` exits with 1 on a FAIL. Headless (system Chrome through
-// CHROME_PATH, else Playwright's Chromium), under the GPU lock shared with paused captures and
-// probes (no timing is measured).
+// Options:
+//   --url base     the server to load (required): the dev server or a production preview
+//   --quality t    a tier or a list of tiers (default high; medium and low are parked, reached by name)
+//   --aa m         an anti-aliasing mode or a list (default: the page's own mode)
+//   --q query      extra URL options for every page
+//   --steps list   the steps to run, in order (default rest,events,wind,idle,gui,camera,scale,resize,presets,pause);
+//                  also weather, bolt, preset:<name> and weather:<name>
+//   --frames n     the frames each step's counting window waits beyond its fixed 31 (default 20, at least 4)
+//   --out file     writes the results as JSON
+//   --compare f    judges every step against another run's JSON (the reference build, same options)
+//   --strict       exits 1 on a FAIL
+//   --fresh        loads in a throwaway browser profile instead of a capture profile slot
 //
-// The browser runs in a profile slot of the captures (tools/kit/capture-browser.mjs, launchCapture),
-// with this tool's own switches (vsync on), so the island loads from the world cache instead of
-// being generated again (task FU: the loaded page 5-7 s after launch instead of 11-14 s under light
-// sharing; the world's generation takes a minute under a busy CPU). The cache is per slot and per
-// origin, so the first run on a new preview port in a slot still generates. The slot also keeps the
-// browser's GPU shader cache (Dawn's), which cannot hide a first-use pipeline from the counts: they
-// are the page's create*Pipeline calls, made whether the browser then compiles or finds the
-// shader in its cache; only the time a call takes changes. Measured: a fresh profile, a warm slot and a slot with its shader caches wiped
-// counted the same pipelines with the same labels at load and in every step, the resize step's
-// cloud kernels included. `--fresh` loads in a throwaway profile, as the tool did before. The
-// matrix's runs share the one browser (a new page each), so its later pages also load from the
-// cache. What follows the load stays as it was: the 60 frames, every step's seconds of running,
-// the sky's bakes and the counting window of FRAMES + 31 frames are what is measured, not waits to
-// shorten. Each run's `wallMs` keeps the time from its new page to the loaded page, to the end of
-// the 60 frames, per step and in all.
-
+// Steps. The load is judged first, as the step `load`: the first frame may build what nothing
+// warmed (the world's materials), but no frame of the 60 after it may create a pipeline
+// synchronously, nor may the first frame's draws into the sun's shadow map (found by their stack:
+// `SunShadow.update`; packages/render/lighting/SunShadow.ts compiles its casters asynchronously and
+// draws once they exist, and an asynchronous creation does not stall the frame). Then the steps,
+// which count every creation, asynchronous ones included: the first pause and the temporal rest it
+// settles into (`rest`), scene events (`events`: a time preset and a jump to clear, paused and
+// running), the wind's levels and headings (`wind`: each level jumped to with a turned heading,
+// then changes over seconds), idle frames, the GUI's exposure offset moved and back, the camera's
+// modes and views, a sweep of the render scale (upscaled and not), a resized window, the time
+// presets, and a pause and the rest after it. The rest and the events come first, so the first use
+// of what they draw is counted there. `weather` (every weather jumped to and changing over seconds)
+// and `bolt` (a forced bolt in a storm) reach the parked weathers (packages/render/sky/Weather.ts
+// PARKED_WEATHER) and run only when `--steps` names them. `preset:<name>` and `weather:<name>` jump to
+// one preset or weather, so a load with `--q preset=midnight` and `--steps preset:sunrise` checks the
+// switch from night to day. The steps' waits are part of what is measured and stay fixed: the 60
+// frames, every step's seconds of running, the sky's bakes and the counting window.
+//
+// Pipelines are counted from WebGPU's device by the shared tracer (tools/render/pipeline-trace.mjs,
+// installed before the page runs on GPUDevice's create*Pipeline and create*PipelineAsync), so any
+// build can be measured the same way, the reference included; each is listed with its label,
+// frame, material, object and stack. The frame graph's `rebuilds` and the temporal resolve's
+// `historyResets`, where the page's diagnostics have them, are reported per step too (neither
+// should move through the scale sweep).
+//
+// A list in `--quality` or `--aa` runs every tier with every mode, each in a new page of the one
+// browser. `--compare` takes the reference's run of the same tier and mode (or its only run): a
+// step passes when it created no pipeline, or no more than the reference did.
+//
+// Output: on stdout, per run the load's counts and per step the render and compute pipelines (the
+// first 12 listed) with the graph's rebuilds and history resets; with `--compare` a verdict per
+// step; with several runs a summary table. `--out` writes the results (`{ runs: [ ... ] }` for
+// several), each run's `wallMs` with the time to the loaded page, to the end of the 60 frames, per
+// step and in all.
+//
+// GPU lock and browser: takes the GPU lock shared (docs/reference/gpu-lock.md), as paused captures
+// and probes do, since it measures no time. It opens headless Chrome (CHROME_PATH, else
+// Playwright's Chromium) with vsync on, in a profile slot of the captures
+// (tools/kit/capture-browser.mjs `launchCapture`), so the island loads from the world cache. The
+// cache is per slot and per origin: the first run on a new preview port in a slot still generates
+// the island. The slot's shader cache does not change the counts: they are the page's
+// create*Pipeline calls, made whether the browser then compiles or finds the shader in its cache
+// (a fresh profile, a warm slot and a slot with its shader caches wiped counted the same pipelines
+// with the same labels).
+//
+// Cost: a page load per run (from the world cache about half the time of a generating load; the
+// island's generation takes a minute under a busy CPU), then each step's fixed seconds.
+//
+// Exit codes: 0 done; 1 a page error or console error in any run, or with `--strict` a FAIL against
+// the reference (without `--compare`, any step that created a pipeline); 2 no `--url`.
+import '../kit/help.mjs';
 import { chromium } from 'playwright';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';

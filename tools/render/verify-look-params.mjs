@@ -1,127 +1,32 @@
-// Checks that the systems which take their look tables at creation hold the tables they were
-// given: two made from different tables in one process each read their own numbers, and making
-// one leaves another as it was. CPU only, no GPU, a few seconds (the second part loads the page's
-// modules through Vite's SSR loader, as tools/render/verify-extensions.mjs does: TypeScript and
-// `import.meta.env`).
+// Checks that each system which takes its look tables at creation reads its own and moves no other's.
+//
+// It makes each system from the island's look (packages/island/look/IslandLook.ts), the renderer's
+// neutral look (packages/render/look/NeutralLook.ts) and a changed copy of the island's, in one
+// process, and fails when one does not read its own table, when making one moves another's
+// numbers, or when the changed copy does not differ where its table does. In plain node: the
+// exposure (packages/render/look/ExposureLook.ts `createExposure`, and the day cycle that reads
+// it), the day's windows (packages/render/look/DayLook.ts `createDayWindows`), the wind on the
+// plants (packages/render/weather/Wind.ts `windResponse`), the ambient grade's tables and the low
+// key's lift (packages/render/look/AmbientLook.ts `createAmbientTables`, `createKeyLift`), the
+// haze's tables (packages/render/look/HazeLook.ts `createHazeTables`, which the haze's key,
+// packages/render/weather/HazeKeys.ts `hazeKeyAt`, reads), the display's tables
+// (packages/render/look/DisplayLook.ts `createDisplayTables`) and the sky's tables
+// (packages/render/look/SkyLook.ts `createSkyTables`). Through Vite's SSR loader: the shared
+// uniforms (packages/render/shared.ts `createShared`: the ambient occlusion's floor and the meadow
+// canopy's media), the local lights (packages/render/lighting/LocalLights.ts), the sea's detail
+// (packages/render/ocean/SeaDetail.ts), the FFT ocean's distant swell
+// (packages/render/ocean/OceanFFT.ts), the ambient grade's controller
+// (packages/render/lighting/AmbientGrade.ts `createAmbientGrade`) and the bloom
+// (packages/render/post/PhysicalBloom.ts). Each part's guarantees, and what it leaves to a renderer,
+// are written above its code.
+//
+// Run it after a change to how one of these systems is created, and extend it when another system
+// takes its look at creation. It is part of `npm run check`.
+//
+// Usage:
 //   node tools/render/verify-look-params.mjs
 //
-// The exposure (packages/render/look/ExposureLook.ts `createExposure`), in plain node. It makes
-// three exposures: from the island's look (packages/island/look/IslandLook.ts), from the
-// renderer's neutral one (packages/render/look/NeutralLook.ts) and from a copy of the island's whose
-// base exposure is doubled at every elevation, every key's `key` raised by a stop and the night's
-// numbers changed. Guarantees, each a failure (exit 1) when broken:
-// - Each exposure reads its own table: its day, night, night sky, night gain and night lift, its
-//   base exposure at every row's elevation and held beyond the ends, and its keys' elevations and
-//   values (a shared value reading the key it names).
-// - Making the others leaves the island's exposure as it was: its base exposure and its keys for a
-//   frame (`keysAt`) over a grid of elevations, night weights, skies and the rising sun are the same
-//   numbers bit for bit before and after.
-// - The changed copy differs from the island's by exactly its changes: twice the base exposure
-//   everywhere, a stop more in the keys' `key` for every sky (overcast's terms included), the other
-//   keys unchanged.
-// - The day cycle (packages/render/sky/DayCycle.ts) reads the exposure it is given.
-//
-// The day's windows (packages/render/look/DayLook.ts `createDayWindows`), in plain node, made from
-// the island's day table, the neutral one and a copy of the island's with every window moved a
-// degree, the handoff and the moon's key lowered, the clouded daylight's window raised, every depth
-// a stop deeper and the ease half a degree longer. Guarantees, each a failure:
-// - Each set holds its own table's numbers: the handoff's top, the moon key's top, every dusk
-//   window (the moon key's and the handoff's made from the two tops), the clouded daylight's window,
-//   the depths and the ease.
-// - Making the others leaves the island's as it was: every night share of the day cycle (the
-//   display's, the exposure's, the stars', the sky's, the ambient's, the yunpeng's, the clouds'
-//   moonlight, the moon's key) over a grid of elevations, sides, clouded shares and daylights is the
-//   same number bit for bit before and after.
-// - Every share read with the changed copy differs from the island's somewhere, and the neutral
-//   set's somewhere.
-// - The day cycle reads the windows it is given: its handoff and the moon's key gain are its own
-//   set's, and differ under the changed copy.
-//
-// The wind's look (packages/render/weather/Wind.ts `windResponse`), in plain node, made from the
-// island's wind table, the neutral one and a copy of the island's with every number changed.
-// Guarantees, each a failure:
-// - Each response holds its own table's numbers, and the plants' speed by the wind (`plantSpeedOf`)
-//   follows its own table.
-// - Making the others leaves the island's as it was.
-// - A wind made on a response (`Wind`, `createWindUniforms`) sets the plants' speed from that
-//   response at every wind, and the previous frame's uniforms hold the same response.
-//
-// The ambient light's look (packages/render/look/AmbientLook.ts `createAmbientTables`,
-// `createKeyLift`), in plain node, made from the island's ambient table, the neutral one and a copy
-// of the island's with every knob of every row moved, both gains under overcast's deck and the gain
-// on the sun's bounce raised, and the lift's rows and corner moved. Guarantees, each a failure:
-// - Each set holds its own table's numbers: the gain on the sun's bounce, the sun's and the moon's
-//   parts of the land gain under overcast's deck, the grade (setting and rising) at every row's
-//   elevation in every sky alone (the knobs at no grade under a row's changes), held beyond the end
-//   rows, and the knobs at no grade under no sky; the lift's shading at every row's elevation, held
-//   below the first, the key's own elevation well above the last, and none at all from the neutral
-//   set (every elevation shading as itself: its single row's slopes and its corner of no width
-//   divide by nothing).
-// - Making the others leaves the island's as it was: the grade over a grid of elevations, skies and
-//   both sides, and the lift over a grid of elevations, are the same numbers bit for bit before and
-//   after.
-// - The changed copy differs from the island's in every knob and every gain, and in the lift.
-// - The lifted key (packages/render/lighting/KeyLift.ts) follows the lift it is given: its height
-//   and its direction's elevation for a sun key are the lift's shading elevation, the key's own
-//   under the neutral set.
-//
-// The haze's look (packages/render/look/HazeLook.ts `createHazeTables`), in plain node, made from
-// the island's haze table, the neutral one and a copy of the island's with every field of every key
-// moved, every row a degree later, the fog layer's fields where a key holds none, the sea fog, and
-// per sky the kept colour, the gain, the scales, the deck's end of the aerosol layer and the sun's
-// Rayleigh share changed. Guarantees, each a failure:
-// - Each set holds its own table's numbers: every key's fields (its own copy, the table left as it
-//   was written), the rows' elevations and keys, the keys with a shape of their own and the fog
-//   layer each key takes, the fog layer where a key holds none, the sea fog, and per sky the kept
-//   colour, the gain, the scales with the weather's preset haze, the deck's end of the aerosol layer
-//   and the sun's Rayleigh share.
-// - The haze's key (packages/render/weather/HazeKeys.ts `hazeKeyAt`) reads the tables it is given:
-//   under a clear sky alone, at each rising row's elevation and each setting row's that does not
-//   start the night's segment, it is that row's key with its shape, its fog layer and the clear
-//   sky's scales; under a cloudy sky alone, at each clouded setting row's, that row's key with the
-//   cloudy sky's scales; with the day's fog off it holds the table's fog layer where a key holds none; with
-//   the sea fog on, the table's sea fog.
-// - Making the others leaves the island's as it was: the haze's key over a grid of elevations,
-//   sides, skies, winds, rains and fog switches is the same numbers bit for bit before and after.
-// - The changed copy differs from the island's somewhere in every field of the key the look gives
-//   (all but the deck's two shares, which are the weather's), and the neutral set somewhere.
-//
-// The display's look (packages/render/look/DisplayLook.ts `createDisplayTables`), in plain node,
-// made from the island's display table, the neutral one and a copy of the island's with every
-// number moved (every key a degree later, every other number by an eighth). Guarantees, each a
-// failure:
-// - Each set holds its own table's numbers: every field as the table wrote it (the base grade the
-//   table's changes over no grade, each change read back), and each table keyed by the sun and the
-//   weather (the shade's contrast, the desaturation, the white balance, the bloom: DayKeys.ts
-//   `keyed`) read at every key's elevation on both sides, under a full cloud at every clouded key
-//   and at full night is that key's, the clouded day's and the night's values.
-// - Making the others leaves the island's as it was: its table, and every keyed table over a grid of
-//   elevations, nights, clouds and both sides and every other field, the same numbers bit for bit.
-// - The changed copy differs from the island's in every field, and the neutral set somewhere.
-//
-// The sky's look (packages/render/look/SkyLook.ts `createSkyTables`), in plain node, made from the
-// island's sky table, the neutral one and a copy of the island's with every number moved (every row
-// and key a degree later, every other number by an eighth, the clouds' shell written out where a
-// row stands in the cloud model's own). Guarantees, each a failure:
-// - Each set holds its own table's numbers: every field as the table wrote it (a tint at unit
-//   luminance), and each function that reads them at every row of the table that row's numbers: the
-//   light lent to the island (`islandSky`) at every setting row, every clouded row under a full
-//   cloud and every rising row, under no cloud and a full one; the clear shade's and the low key's
-//   rows; the sky's light, the clear day's gain and the thin layer's colours (DayKeys.ts `keyed`) at
-//   every key on both sides, under a full cloud at every clouded key and at full night; the clouds'
-//   rows and base (`cloudBase`) per sky, and the shadow's share the weather's; each store's night
-//   range (`storeNight`) under each sky alone and with no blend; the sea's knee, the key under cloud
-//   and the key's hue's numbers, and the key's hue (`keyHue`) and the moon's (`moonHue`) worked out
-//   from the table.
-// - Making the others leaves the island's as it was: every reading over a grid of elevations, sides,
-//   clouds, nights, skies and transmittances, and every field, the same numbers bit for bit.
-// - The changed copy differs from the island's in every field the look gives (all but the shadow's
-//   share, the weather's), and the neutral set somewhere.
-// - The haze's key reads the sky's tables it is given (weather/HazeKeys.ts `hazeKeyAt`): under each
-//   decked sky alone its aerosol ends at that set's cloud base, the changed set's off the island's.
-// The sky's state for a frame and its bakes (sky/SkyTrack.ts `trackSky`, sky/SkyBake.ts), which
-// read the tables the sky holds (sky/Sky.ts `look`), are not run: they need a renderer and the
-// sky's nodes; the sky stage hands the sky its tables (RenderStages.ts `createSky`).
+// Options: none.
 //
 // Under node the tune table is off (packages/render/debug/Tune.ts `TUNE_ON`), so each system's
 // tunables are its own; on a debug page they share one table by name (ExposureLook.ts's,
@@ -129,35 +34,18 @@
 // headers). The haze's, the display's and the sky's tables load in plain node, so all of their
 // numbers, tunables included, are checked here per table.
 //
-// The other systems that take their tables at creation, through Vite's SSR loader: the shared
-// uniforms (packages/render/shared.ts `createShared`: the ambient occlusion's floor and the meadow
-// canopy's two media), the local lights (packages/render/lighting/
-// LocalLights.ts `LocalLights`: the gain), the sea's detail (packages/render/ocean/SeaDetail.ts:
-// its three strengths), the FFT ocean's distant swell (packages/render/ocean/OceanFFT.ts: every
-// field of it), the wind's look the shared uniforms' wind carries (every field but the limbs'
-// reference speed, a tunable, which the plain node part checks) and the ambient grade's controller
-// (packages/render/lighting/AmbientGrade.ts `createAmbientGrade`, which loads only there: the
-// tables it holds and the grade it writes into the lighting models' uniforms, worked out here from
-// its own tables; its two gains are tunables, so they are read through those tables, which the
-// plain node part checks per table). The ambient light's relight (lighting/AmbientRelight.ts) is
-// not made: it needs a renderer and the probes' volume, and builds its kernel as it is made; it
-// reads the controller's tables, which the stage hands it (RenderStages.ts `createAmbient`). Each
-// is made from the island's
-// look, the neutral one and a copy of the island's with every one of these numbers changed, in
-// that order. Guarantees, each a failure:
-// - Each reads its own table's numbers, equal to the table's and none from another.
-// - Making the others leaves the island's as it was.
-// - The three differ wherever their tables do (the changed copy everywhere).
-// The bloom (packages/render/post/PhysicalBloom.ts, which plain node cannot load), made on the
-// display's tables of the same three looks over a stand-in graph: its uniforms start at its own
-// table's `bloomStart`, not a tunable, so read against the look's table itself; `update` writes its
-// own tables' keys over a few frames (tunables, shared by name here: read against the tables it
-// holds, and for the island's, made first, against the look's table at its last key); the island's
-// readings are unmoved by the others, and the others' starts differ from the island's. The frame's
-// passes (packages/render/post/Pipeline.ts), which read the rest of the display's tables each frame
-// and build the display chain from them (post/PipelineDisplay.ts), are not made: they need a
-// renderer and build their graph as they are made; the stage hands them the tables
-// (RenderStages.ts `createSeaAndPipeline`), whose numbers the plain node part checks.
+// Output: on stdout, a line per part naming what passed with its counts, then the total of
+// assertions; a failed assertion's message and stack on stderr.
+//
+// GPU lock and browser: neither. The second part runs a Vite server in middleware mode (no port)
+// to load the page's modules, as tools/render/verify-extensions.mjs does, for the TypeScript and
+// `import.meta.env`.
+//
+// Cost: about a second, CPU only.
+//
+// Exit codes: 0 every check passes; 1 a check failed (the assertion is thrown) or a module did not
+// load.
+import '../kit/help.mjs';
 import { assert, assertions } from '../kit/assert-count.mjs';
 import { createExposure } from '../../packages/render/look/ExposureLook.ts';
 import { DayCycle, cloudMoonShare, displayNight, eveningHour, exposureNight, morningHour, moonKeyShare, nightAmbientAt, nightAmbientShare, rampIn, skyNight, starNight, yunpengNightShare } from '../../packages/render/sky/DayCycle.ts';
@@ -182,6 +70,24 @@ import { NEUTRAL_LOOK } from '../../packages/render/look/NeutralLook.ts';
 import { ROOT } from '../kit/root.mjs';
 
 const near = ( actual, expected, what, tolerance = 1e-12 ) => assert.ok( Math.abs( actual - expected ) <= tolerance, `${ what }: ${ actual } != ${ expected }` );
+
+// ---- the exposure
+//
+// The exposure (packages/render/look/ExposureLook.ts `createExposure`), in plain node. It makes
+// three exposures: from the island's look (packages/island/look/IslandLook.ts), from the
+// renderer's neutral one (packages/render/look/NeutralLook.ts) and from a copy of the island's whose
+// base exposure is doubled at every elevation, every key's `key` raised by a stop and the night's
+// numbers changed. Guarantees, each a failure (exit 1) when broken:
+// - Each exposure reads its own table: its day, night, night sky, night gain and night lift, its
+//   base exposure at every row's elevation and held beyond the ends, and its keys' elevations and
+//   values (a shared value reading the key it names).
+// - Making the others leaves the island's exposure as it was: its base exposure and its keys for a
+//   frame (`keysAt`) over a grid of elevations, night weights, skies and the rising sun are the same
+//   numbers bit for bit before and after.
+// - The changed copy differs from the island's by exactly its changes: twice the base exposure
+//   everywhere, a stop more in the keys' `key` for every sky (overcast's terms included), the other
+//   keys unchanged.
+// - The day cycle (packages/render/sky/DayCycle.ts) reads the exposure it is given.
 
 // the exposure's part of a look, as createExposure takes it
 const tables = ( look ) => ( { exposure: look.exposure, day: { exposure: look.day.exposure, nightMeterLift: look.day.nightMeterLift, nightExposureGain: look.day.nightExposureGain, nightSkyExposure: look.day.nightSkyExposure } } );
@@ -317,6 +223,22 @@ for ( const hour of [ 3, 7, 12, 18.5 ] ) {
 console.log( `Exposure: three exposures from three tables, each its own (${ before.length } readings), the island's unmoved by the others, the changed copy off by its changes alone, the day cycle reading its own: passed.` );
 
 // ---- the day's windows
+//
+// The day's windows (packages/render/look/DayLook.ts `createDayWindows`), in plain node, made from
+// the island's day table, the neutral one and a copy of the island's with every window moved a
+// degree, the handoff and the moon's key lowered, the clouded daylight's window raised, every depth
+// a stop deeper and the ease half a degree longer. Guarantees, each a failure:
+// - Each set holds its own table's numbers: the handoff's top, the moon key's top, every dusk
+//   window (the moon key's and the handoff's made from the two tops), the clouded daylight's window,
+//   the depths and the ease.
+// - Making the others leaves the island's as it was: every night share of the day cycle (the
+//   display's, the exposure's, the stars', the sky's, the ambient's, the yunpeng's, the clouds'
+//   moonlight, the moon's key) over a grid of elevations, sides, clouded shares and daylights is the
+//   same number bit for bit before and after.
+// - Every share read with the changed copy differs from the island's somewhere, and the neutral
+//   set's somewhere.
+// - The day cycle reads the windows it is given: its handoff and the moon's key gain are its own
+//   set's, and differ under the changed copy.
 
 // the island's day table changed: every window a degree lower, the tops lowered, the clouded
 // daylight's window raised, every depth a stop deeper and the ease half a degree longer
@@ -414,6 +336,15 @@ assert.ok( cycleMoved, 'the day cycle reads the island\'s windows under the chan
 console.log( `Day windows: three sets from three tables, each its own (${ Object.keys( windowNumbers( islandWindows ) ).length } numbers, ${ shareCount } share readings), the island's unmoved by the others, the changed copy and the neutral set off the island's, the day cycle reading its own: passed.` );
 
 // ---- the wind's look
+//
+// The wind's look (packages/render/weather/Wind.ts `windResponse`), in plain node, made from the
+// island's wind table, the neutral one and a copy of the island's with every number changed.
+// Guarantees, each a failure:
+// - Each response holds its own table's numbers, and the plants' speed by the wind (`plantSpeedOf`)
+//   follows its own table.
+// - Making the others leaves the island's as it was.
+// - A wind made on a response (`Wind`, `createWindUniforms`) sets the plants' speed from that
+//   response at every wind, and the previous frame's uniforms hold the same response.
 
 // the island's wind table changed: every number moved
 function changedWind( look ) {
@@ -470,6 +401,25 @@ for ( const k of Object.keys( islandWindBefore ) ) assert.notDeepEqual( response
 console.log( `Wind: three responses from three tables, each its own (${ WIND_SPEEDS.length } plants' speeds each), the island's unmoved by the others, the wind and its previous frame on their own response: passed.` );
 
 // ---- the ambient light's look
+//
+// The ambient light's look (packages/render/look/AmbientLook.ts `createAmbientTables`,
+// `createKeyLift`), in plain node, made from the island's ambient table, the neutral one and a copy
+// of the island's with every knob of every row moved, both gains under overcast's deck and the gain
+// on the sun's bounce raised, and the lift's rows and corner moved. Guarantees, each a failure:
+// - Each set holds its own table's numbers: the gain on the sun's bounce, the sun's and the moon's
+//   parts of the land gain under overcast's deck, the grade (setting and rising) at every row's
+//   elevation in every sky alone (the knobs at no grade under a row's changes), held beyond the end
+//   rows, and the knobs at no grade under no sky; the lift's shading at every row's elevation, held
+//   below the first, the key's own elevation well above the last, and none at all from the neutral
+//   set (every elevation shading as itself: its single row's slopes and its corner of no width
+//   divide by nothing).
+// - Making the others leaves the island's as it was: the grade over a grid of elevations, skies and
+//   both sides, and the lift over a grid of elevations, are the same numbers bit for bit before and
+//   after.
+// - The changed copy differs from the island's in every knob and every gain, and in the lift.
+// - The lifted key (packages/render/lighting/KeyLift.ts) follows the lift it is given: its height
+//   and its direction's elevation for a sun key are the lift's shading elevation, the key's own
+//   under the neutral set.
 
 // the island's ambient table changed: every knob of every row moved (by its column), the gains raised,
 // the lift's rows and corner moved
@@ -590,6 +540,27 @@ const islandSkyWritten = structuredClone( ISLAND_LOOK.sky );
 const islandSkyTables = createSkyTables( ISLAND_LOOK.sky );
 
 // ---- the haze's look
+//
+// The haze's look (packages/render/look/HazeLook.ts `createHazeTables`), in plain node, made from
+// the island's haze table, the neutral one and a copy of the island's with every field of every key
+// moved, every row a degree later, the fog layer's fields where a key holds none, the sea fog, and
+// per sky the kept colour, the gain, the scales, the deck's end of the aerosol layer and the sun's
+// Rayleigh share changed. Guarantees, each a failure:
+// - Each set holds its own table's numbers: every key's fields (its own copy, the table left as it
+//   was written), the rows' elevations and keys, the keys with a shape of their own and the fog
+//   layer each key takes, the fog layer where a key holds none, the sea fog, and per sky the kept
+//   colour, the gain, the scales with the weather's preset haze, the deck's end of the aerosol layer
+//   and the sun's Rayleigh share.
+// - The haze's key (packages/render/weather/HazeKeys.ts `hazeKeyAt`) reads the tables it is given:
+//   under a clear sky alone, at each rising row's elevation and each setting row's that does not
+//   start the night's segment, it is that row's key with its shape, its fog layer and the clear
+//   sky's scales; under a cloudy sky alone, at each clouded setting row's, that row's key with the
+//   cloudy sky's scales; with the day's fog off it holds the table's fog layer where a key holds none; with
+//   the sea fog on, the table's sea fog.
+// - Making the others leaves the island's as it was: the haze's key over a grid of elevations,
+//   sides, skies, winds, rains and fog switches is the same numbers bit for bit before and after.
+// - The changed copy differs from the island's somewhere in every field of the key the look gives
+//   (all but the deck's two shares, which are the weather's), and the neutral set somewhere.
 
 // the island's haze table changed: every field of every key moved, every row a degree later, the
 // fog layer where a key holds none, the sea fog and every per-sky number changed
@@ -761,6 +732,19 @@ for ( const f of HAZE_FIELDS ) islandHazeAfter[ f ].forEach( ( v, i ) => {
 console.log( `Haze: three sets from three tables, each its own, the haze's key on its own tables (${ hazeRows } rows), the island's unmoved by the others (${ hazeNumbers } readings), the changed copy off the island's in every field the look gives: passed.` );
 
 // ---- the display's look
+//
+// The display's look (packages/render/look/DisplayLook.ts `createDisplayTables`), in plain node,
+// made from the island's display table, the neutral one and a copy of the island's with every
+// number moved (every key a degree later, every other number by an eighth). Guarantees, each a
+// failure:
+// - Each set holds its own table's numbers: every field as the table wrote it (the base grade the
+//   table's changes over no grade, each change read back), and each table keyed by the sun and the
+//   weather (the shade's contrast, the desaturation, the white balance, the bloom: DayKeys.ts
+//   `keyed`) read at every key's elevation on both sides, under a full cloud at every clouded key
+//   and at full night is that key's, the clouded day's and the night's values.
+// - Making the others leaves the island's as it was: its table, and every keyed table over a grid of
+//   elevations, nights, clouds and both sides and every other field, the same numbers bit for bit.
+// - The changed copy differs from the island's in every field, and the neutral set somewhere.
 
 // the display's tables keyed by the sun and the weather (DayKeys.ts), and the plain ones
 const DISPLAY_KEYED = [ 'shadeContrast', 'desaturation', 'whiteBalance', 'bloom' ];
@@ -892,6 +876,30 @@ for ( const f of DISPLAY_FIELDS ) islandDisplayAfter[ f ].forEach( ( v, i ) => {
 console.log( `Display: three sets from three tables, each its own (${ displayReads } readings of a table), the island's unmoved by the others (${ displayNumbers } readings), the changed copy off the island's in every field: passed.` );
 
 // ---- the sky's look
+//
+// The sky's look (packages/render/look/SkyLook.ts `createSkyTables`), in plain node, made from the
+// island's sky table, the neutral one and a copy of the island's with every number moved (every row
+// and key a degree later, every other number by an eighth, the clouds' shell written out where a
+// row stands in the cloud model's own). Guarantees, each a failure:
+// - Each set holds its own table's numbers: every field as the table wrote it (a tint at unit
+//   luminance), and each function that reads them at every row of the table that row's numbers: the
+//   light lent to the island (`islandSky`) at every setting row, every clouded row under a full
+//   cloud and every rising row, under no cloud and a full one; the clear shade's and the low key's
+//   rows; the sky's light, the clear day's gain and the thin layer's colours (DayKeys.ts `keyed`) at
+//   every key on both sides, under a full cloud at every clouded key and at full night; the clouds'
+//   rows and base (`cloudBase`) per sky, and the shadow's share the weather's; each store's night
+//   range (`storeNight`) under each sky alone and with no blend; the sea's knee, the key under cloud
+//   and the key's hue's numbers, and the key's hue (`keyHue`) and the moon's (`moonHue`) worked out
+//   from the table.
+// - Making the others leaves the island's as it was: every reading over a grid of elevations, sides,
+//   clouds, nights, skies and transmittances, and every field, the same numbers bit for bit.
+// - The changed copy differs from the island's in every field the look gives (all but the shadow's
+//   share, the weather's), and the neutral set somewhere.
+// - The haze's key reads the sky's tables it is given (weather/HazeKeys.ts `hazeKeyAt`): under each
+//   decked sky alone its aerosol ends at that set's cloud base, the changed set's off the island's.
+// The sky's state for a frame and its bakes (sky/SkyTrack.ts `trackSky`, sky/SkyBake.ts), which
+// read the tables the sky holds (sky/Sky.ts `look`), are not run: they need a renderer and the
+// sky's nodes; the sky stage hands the sky its tables (RenderStages.ts `createSky`).
 
 // the island's sky table changed: every number moved (a row's or a key's elevation a degree later,
 // any other number by an eighth: a set two rows or two keys share moved once), and the clouds' shell
@@ -1166,6 +1174,37 @@ assert.ok( skyHaze > 0, 'no decked sky in the island\'s haze' );
 console.log( `Sky: three sets from three tables, each its own (${ skyReads } readings of a table), the island's unmoved by the others (${ skyNumbers } readings), the changed copy off the island's in every field the look gives, the haze's aerosol top on its own sky's cloud base (${ skyHaze } readings): passed.` );
 
 // ---- the systems that load through Vite's SSR loader
+//
+// The other systems that take their tables at creation, through Vite's SSR loader: the shared
+// uniforms (packages/render/shared.ts `createShared`: the ambient occlusion's floor and the meadow
+// canopy's two media), the local lights (packages/render/lighting/
+// LocalLights.ts `LocalLights`: the gain), the sea's detail (packages/render/ocean/SeaDetail.ts:
+// its three strengths), the FFT ocean's distant swell (packages/render/ocean/OceanFFT.ts: every
+// field of it), the wind's look the shared uniforms' wind carries (every field but the limbs'
+// reference speed, a tunable, which the plain node part checks) and the ambient grade's controller
+// (packages/render/lighting/AmbientGrade.ts `createAmbientGrade`, which loads only there: the
+// tables it holds and the grade it writes into the lighting models' uniforms, worked out here from
+// its own tables; its two gains are tunables, so they are read through those tables, which the
+// plain node part checks per table). The ambient light's relight (lighting/AmbientRelight.ts) is
+// not made: it needs a renderer and the probes' volume, and builds its kernel as it is made; it
+// reads the controller's tables, which the stage hands it (RenderStages.ts `createAmbient`). Each
+// is made from the island's
+// look, the neutral one and a copy of the island's with every one of these numbers changed, in
+// that order. Guarantees, each a failure:
+// - Each reads its own table's numbers, equal to the table's and none from another.
+// - Making the others leaves the island's as it was.
+// - The three differ wherever their tables do (the changed copy everywhere).
+//
+// The bloom (packages/render/post/PhysicalBloom.ts, which plain node cannot load), made on the
+// display's tables of the same three looks over a stand-in graph: its uniforms start at its own
+// table's `bloomStart`, not a tunable, so read against the look's table itself; `update` writes its
+// own tables' keys over a few frames (tunables, shared by name here: read against the tables it
+// holds, and for the island's, made first, against the look's table at its last key); the island's
+// readings are unmoved by the others, and the others' starts differ from the island's. The frame's
+// passes (packages/render/post/Pipeline.ts), which read the rest of the display's tables each frame
+// and build the display chain from them (post/PipelineDisplay.ts), are not made: they need a
+// renderer and build their graph as they are made; the stage hands them the tables
+// (RenderStages.ts `createSeaAndPipeline`), whose numbers the plain node part checks.
 
 // every number a system made from `look` holds, by name, in order
 function systemReadings( made ) {

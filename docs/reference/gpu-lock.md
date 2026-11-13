@@ -97,7 +97,7 @@ still disagree, the cost is a delay, not a deadlock; the cases are in the design
 ## Before a timing run
 
 Keep other pages that render the scene closed. The frame profiler also checks that the GPU is idle
-before it measures, and marks its results contended otherwise (`tools/render/profile-frame.mjs`).
+before it measures, and marks its results contended otherwise (`docs/reference/profile-frame.md`).
 
 ## Long jobs and waiting
 

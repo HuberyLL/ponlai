@@ -1,8 +1,15 @@
-// Checks the renderer's extension points: that a definition of one's own can be registered at each
-// of them without changing any other file, and that the files that own the registries name none
-// of the scene's definitions. CPU only, no GPU, a few seconds (it loads the page's modules through
-// Vite's SSR loader, as tools/render/wgsl-build.mjs does: TypeScript and `import.meta.env`).
+// Checks that a definition of one's own registers at each of the renderer's extension points alone.
+//
+// It registers a plant kind, a kind of local light, an extra pass, scene events and histories of its
+// own, and fails when one needs a change to another file, when a definition without its three
+// declarations (packages/render/Extensions.ts) is accepted, or when a file that owns a registry
+// names one of the scene's definitions. Run it after a change to a registry or a new definition; it
+// is part of `npm run check`.
+//
+// Usage:
 //   node tools/render/verify-extensions.mjs
+//
+// Options: none.
 //
 // Guarantees, each a failure (exit 1) when broken:
 // - The three declarations (packages/render/Extensions.ts): a definition without its cost knob, its stand in
@@ -33,8 +40,17 @@
 // kinds' view's rules at work (debug/Classes.ts builds its answer inside a shader's build: the
 // capture of `flags=classes` compares it).
 //
-// Output: a line per check, then the failures. It takes no options. Exit 0 when everything
-// passes, 1 otherwise or when a module does not load.
+// Output: on stdout, `ok` or `FAIL` per check, a count of checks and failures, then PASS or FAIL
+// with each failure.
+//
+// GPU lock and browser: neither. It loads the page's modules through Vite's SSR loader (a Vite
+// server in middleware mode, listening on no port), as tools/render/wgsl-build.mjs does, for the
+// TypeScript and `import.meta.env`.
+//
+// Cost: a few seconds, CPU only.
+//
+// Exit codes: 0 everything passes; 1 a check failed, a module did not load, or an unknown option.
+import '../kit/help.mjs';
 import '../kit/qos.mjs';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';

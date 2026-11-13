@@ -1,8 +1,32 @@
-// GPU regression: air blockers bend at the water surface and submerged blockers occlude
-// the separate refracted leg; horizontal-floor irradiance preserves transmitted power.
-// Needs the Vite dev server: it imports the source modules into the page (tools/kit/dev-server.mjs).
-// The paused seek's map is read on the page's rendered frames (tools/kit/page-eval.mjs, "Rendered frames").
-// Usage: node tools/render/verify-refracted-sun.mjs http://127.0.0.1:5190
+// Checks on the GPU the sunlight refracted into the water and the shadows cast on its way down.
+//
+// It loads a paused page and runs the probe in packages/render/lighting/RefractedSun.ts
+// (`probeRefractedSun`): blockers in the air bend at the water's surface, submerged blockers occlude
+// the separate refracted leg, and the irradiance on a horizontal floor keeps the transmitted power.
+// It also checks that the page's map has texels of 8 cm or less, and that a paused clock moved by
+// less than the map's angle gate (a capture's seek) still leaves the map drawn at exactly the key
+// light's direction, as a fresh load at that time would; that wait is on the page's rendered frames
+// (tools/kit/page-eval.mjs, Rendered frames). Run it after a change to the refracted sun or its map.
+//
+// Usage:
+//   node tools/render/verify-refracted-sun.mjs [url]
+//
+// Options:
+//   url   the dev server (default http://127.0.0.1:5190)
+//
+// Output: the probe's result, the map's size and the seek's reading, with the page's errors, as
+// JSON on stdout and in artifacts/verification/refracted-sun.json.
+//
+// GPU lock and browser: takes the GPU lock shared (docs/reference/gpu-lock.md; its pixels do not
+// depend on the GPU's load) and opens headless Chrome (CHROME_PATH, else Playwright's Chromium). It
+// imports the source modules into the page, so it needs the dev server: on any other server it
+// stops before the lock (tools/kit/dev-server.mjs).
+//
+// Cost: a page load and its first 80 frames, then the probe: seconds.
+//
+// Exit codes: 0 every check passes; 1 a check failed, the page logged an error, or the url is not
+// the dev server (a failed assertion is thrown).
+import '../kit/help.mjs';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from '../kit/gpu-lock.mjs';
 import { requireDevServer } from '../kit/dev-server.mjs';
