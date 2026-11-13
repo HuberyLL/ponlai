@@ -35,7 +35,7 @@
 // Math's.
 // Pure CPU; Node 22.18+ strips the imported TypeScript.
 // Run: node tools/verify-game.mjs
-import assert from 'node:assert/strict';
+import { assert, assertions } from './assert-count.mjs';
 import { newGame, loadGame } from '../packages/game/sim/Sim.ts';
 import { findPath, goalAt, lineClear } from '../packages/game/sim/path.ts';
 import { act, perceive } from '../packages/game/sim/agent.ts';
@@ -1726,4 +1726,4 @@ const { t } = await import( '../packages/game/ui/i18n/i18n.ts' );
 
 }
 
-console.log( 'verify-game: all checks passed' );
+console.log( `verify-game: all checks passed (${ assertions() } assertions)` );

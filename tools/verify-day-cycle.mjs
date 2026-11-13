@@ -1,6 +1,6 @@
 // Pure CPU checks; Node 22.18+ strips the imported TypeScript without a build or browser.
 // Run: node tools/verify-day-cycle.mjs
-import assert from 'node:assert/strict';
+import { assert, assertions } from './assert-count.mjs';
 import { DayCycle, DAY_PRESETS, NOON_ELEVATION, MOON, cloudMoonShare, displayNight, exposureNight, moonDirection, moonKeyShare, nightAmbientAt, nightAmbientShare, skyNight, starNight, sunElevationAt, morningHour, eveningHour, yunpengNightShare } from '../packages/render/sky/DayCycle.ts';
 import { createDayWindows } from '../packages/render/look/DayLook.ts';
 import { createExposure } from '../packages/render/look/ExposureLook.ts';
@@ -345,4 +345,4 @@ for ( const invalid of [ 0, - 1 ] ) {
 }
 assert.throws( () => cycle.advance( - 1 ), RangeError );
 assert.throws( () => cycle.setPreset( 'missing' ), RangeError );
-console.log( 'Day cycle: wrapping, presets, speed, pause, rollover, the hours of elevations, continuous directions and grade, phase geometry, fixed stars, isolation and validation passed.' );
+console.log( `Day cycle: wrapping, presets, speed, pause, rollover, the hours of elevations, continuous directions and grade, phase geometry, fixed stars, isolation and validation passed (${ assertions() } assertions).` );

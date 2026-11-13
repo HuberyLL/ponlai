@@ -7,7 +7,7 @@
 // gauge) keeps its ink to its exit.
 // Pure CPU; Node 22.18+ strips the imported TypeScript.
 // Run: node tools/verify-ink.mjs
-import assert from 'node:assert/strict';
+import { assert, assertions } from './assert-count.mjs';
 import { inkShares } from '../packages/game/ui/Ink.ts';
 
 const UNIT = 1.2 * 2;
@@ -91,4 +91,4 @@ const barTail = kept( bar, ink( bar, 65, 0 ), 0.8, 0.95 ), dryBarTail = kept( ba
 assert.ok( barTail > 0.6 && barTail > dryBarTail + 0.15, `a gauge keeps its exit (${ barTail.toFixed( 3 ) }; drying, ${ dryBarTail.toFixed( 3 ) })` );
 
 console.log( `ink: the river keeps ${ ( 100 * start ).toFixed( 0 ) } % of its ink at the start and ${ ( 100 * tail ).toFixed( 0 ) } % in its tail; a thin stroke's tail ${ ( 100 * thinTail ).toFixed( 0 ) } %, an icon's stroke ${ ( 100 * iconKept ).toFixed( 1 ) } %, a gauge's tail ${ ( 100 * barTail ).toFixed( 0 ) } % (${ ( 100 * dryBarTail ).toFixed( 0 ) } % drying)` );
-console.log( 'verify-ink: all checks passed' );
+console.log( `verify-ink: all checks passed (${ assertions() } assertions)` );

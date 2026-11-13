@@ -335,9 +335,10 @@ class Pool {
 
 // ------------------------------------------------------------------ reporting
 
-let failures = 0;
+let failures = 0, judged = 0;
 function judge( ok, line ) {
 
+	judged ++;
 	console.log( `${ ok ? 'ok  ' : 'FAIL' } ${ line }` );
 	if ( ! ok ) failures ++;
 
@@ -587,7 +588,7 @@ async function main() {
 		process.exit( 1 );
 
 	}
-	console.log( 'All statistical checks passed.' );
+	console.log( `All ${ judged } statistical checks passed.` );
 	cache.record();
 	process.exit( 0 );
 

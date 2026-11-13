@@ -21,6 +21,8 @@ const MAX_BYTES = 1 << 20;
 
 const git = ( args, input ) => execFileSync( 'git', args, { encoding: 'utf8', maxBuffer: 1 << 30, input } );
 const lines = ( text ) => text.split( '\n' ).filter( Boolean );
+// how many files (index entries, or paths over history) were looked at, for the summary
+let checked = 0;
 
 /** Index entries (all, or only `paths`): why each one fails, if it does. */
 function checkIndex( paths ) {
@@ -34,6 +36,7 @@ function checkIndex( paths ) {
 
 	}
 
+	checked = entries.size;
 	if ( entries.size === 0 ) return [];
 	const list = [ ...entries.keys() ];
 	for ( const record of git( [ 'ls-files', '--eol', '-z', '--', ...list ] ).split( '\0' ).filter( Boolean ) ) {
@@ -73,6 +76,7 @@ function checkHistory() {
 	}
 
 	const objects = lines( git( [ 'rev-list', '--objects', '--all' ] ) ).join( '\n' ) + '\n';
+	checked = objects.split( '\n' ).length - 1;
 	for ( const line of lines( git( [ 'cat-file', '--batch-check=%(objecttype) %(objectsize) %(rest)' ], objects ) ) ) {
 
 		const [ type, size, ...rest ] = line.split( ' ' );
@@ -110,4 +114,4 @@ if ( failed.length > 0 ) {
 
 }
 
-console.log( mode === '--history' ? 'history holds no asset or binary file' : 'no asset or binary file in git' );
+console.log( `${ mode === '--history' ? 'history holds no asset or binary file' : 'no asset or binary file in git' } (${ checked } ${ mode === '--history' ? 'objects' : 'files' } checked)` );

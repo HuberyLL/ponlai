@@ -6,7 +6,7 @@
 //
 // node tools/verify-growth-shape.mjs [--label name] [--seeds 32]
 
-import assert from 'node:assert/strict';
+import { assert, assertions } from './assert-count.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { GROWTH, LandLattice, growLand, nextPiece } from '../packages/island/world/IslandGrowth.ts';
@@ -425,4 +425,4 @@ if ( fails.length ) {
 
 }
 
-console.log( `PASS: solidity ${ LIMITS.solidity.join( '-' ) } (to ${ LIMITS.smallSolidity } up to step ${ LIMITS.smallUntil }), elongation <= ${ LIMITS.elong }, axis share <= ${ LIMITS.axisShare } at steps >= ${ LIMITS.fromStep }; growLand equals single steps; land ${ MARGIN } m inside the lattice at step ${ MAX }` );
+console.log( `PASS: solidity ${ LIMITS.solidity.join( '-' ) } (to ${ LIMITS.smallSolidity } up to step ${ LIMITS.smallUntil }), elongation <= ${ LIMITS.elong }, axis share <= ${ LIMITS.axisShare } at steps >= ${ LIMITS.fromStep }; growLand equals single steps; land ${ MARGIN } m inside the lattice at step ${ MAX } (${ assertions() } assertions)` );

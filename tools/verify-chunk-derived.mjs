@@ -170,9 +170,10 @@ async function main() {
 	const steps = argument( '--steps', '0,8' ).split( ',' ).map( Number );
 	const threads = Number( argument( '--threads', String( Math.max( 1, Math.min( 8, availableParallelism() - 4 ) ) ) ) );
 	const { THREE, SunShadow, RefractedSun, IslandGround } = await loadConsumers();
-	let failures = 0;
+	let failures = 0, checked = 0;
 	const check = ( ok, line ) => {
 
+		checked ++;
 		console.log( `  ${ ok ? 'ok  ' : 'FAIL' } ${ line }` );
 		if ( ! ok ) failures ++;
 
@@ -370,7 +371,7 @@ async function main() {
 		}
 
 	}
-	console.log( failures ? `${ failures } FAILED` : 'all passed' );
+	console.log( failures ? `${ failures } of ${ checked } FAILED` : `all ${ checked } passed` );
 	if ( ! failures ) cache.record();
 	process.exit( failures ? 1 : 0 );
 

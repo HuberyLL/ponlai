@@ -1,6 +1,6 @@
 // CPU-only transition contracts; Node's native TypeScript stripping needs no browser/GPU.
 // Run: node --experimental-strip-types tools/verify-weather-state.mjs
-import assert from 'node:assert/strict';
+import { assert, assertions } from './assert-count.mjs';
 import { Weather, WEATHER_PRESETS, WIND_LEVELS, PREVAILING_HEADING, PARKED_WEATHER, daySkyAt, deckRamp, deckSkyGain, deckSkyGap, overcastDeckLight, withMoon } from '../packages/render/sky/Weather.ts';
 import { moonKeyShare } from '../packages/render/sky/DayCycle.ts';
 import { createDayWindows } from '../packages/render/look/DayLook.ts';
@@ -280,4 +280,4 @@ for ( let i = 0; i < 1000; i ++ ) {
 }
 assert.ok( QUALITY.low.cloudMarch.viewSteps < QUALITY.high.cloudMarch.viewSteps );
 assert.ok( QUALITY.low.rainDrops < QUALITY.high.rainDrops );
-console.log( 'weather state: transition, interruption, pause, presets, heading wrap, wind levels and headings with any sky, auto chain and its wind, the forecast read ahead, moisture, parked weathers out of the chain, lingering showers, the deck light gone by night, the moon gains at its height, ranges and validation passed' );
+console.log( `weather state: transition, interruption, pause, presets, heading wrap, wind levels and headings with any sky, auto chain and its wind, the forecast read ahead, moisture, parked weathers out of the chain, lingering showers, the deck light gone by night, the moon gains at its height, ranges and validation passed (${ assertions() } assertions)` );

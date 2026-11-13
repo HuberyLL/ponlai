@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';
+import { assert, assertions } from './assert-count.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -221,4 +221,4 @@ const s0 = tiles.uniforms.gustScroll.value;
 tiles.update( 0.02, 6 );
 assert.ok( tiles.uniforms.gustScroll.value < s0, 'the gust scroll wrapped' );
 near( turn( s0 / GUST_TILE, tiles.uniforms.gustScroll.value / GUST_TILE ), 0.02 * gustSpeed / GUST_TILE, 1e-9 );
-console.log( 'Wind: pause, advection direction, update cadence, calm ocean bounds in light and gentle winds, the levels\' numbers and fair\'s wind, the plants\' own rates and bands, the sea\'s spectrum wind, the flutter\'s fixed rate and the sway\'s clock, the gusts\' scroll and time, deterministic seek and the previous frame of the vegetation wind (rendered frames, seek, cut, windFreeze, periodic reads of the wrapped clocks) pass.' );
+console.log( `Wind: pause, advection direction, update cadence, calm ocean bounds in light and gentle winds, the levels' numbers and fair's wind, the plants' own rates and bands, the sea's spectrum wind, the flutter's fixed rate and the sway's clock, the gusts' scroll and time, deterministic seek and the previous frame of the vegetation wind (rendered frames, seek, cut, windFreeze, periodic reads of the wrapped clocks) pass (${ assertions() } assertions; ${ sources.length } source files, ${ reads } clock reads).` );
