@@ -1,7 +1,7 @@
 // Weather presets, their blending and the auto-weather chain.
 //
 // Weather presets, their blending and the auto-weather chain. Bad weather dims and desaturates the
-// existing light; it never adds a grey screen veil (docs/explanation/art-direction.md). A weather change moves
+// existing light; it never adds a grey screen veil (docs/design/sea-and-sky.md, The parked weathers). A weather change moves
 // the whole sky from one preset's values to the next's (a front, in time alone: the clouds are one
 // model whose parameters the skies set, Clouds.ts), and the island's lighting follows its
 // progress. No tier or knob alters the weather state (Quality.ts).
@@ -41,7 +41,7 @@
 //
 // Parked weathers (`PARKED_WEATHER`: cloudy, overcast, rain, storm, fog) slowed every line of work
 // down. Cloudy and overcast wait for the clouds' own milestone (a deck's form and its light under it);
-// rain, storm and fog until the game needs them as pressure (docs/explanation/game-design.md). They are
+// rain, storm and fog until the game needs them as pressure (docs/design/game-design.md). They are
 // out of the rotation: the auto chain
 // never reaches them, the production page refuses them (main.ts falls back to fair) and the default
 // checks skip them. Their code stays and keeps compiling; debug builds (the dev server, `?debug`)

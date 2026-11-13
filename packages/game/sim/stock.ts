@@ -2,7 +2,7 @@ import { count } from './items.ts';
 import type { Items, SimState } from './types.ts';
 
 // What the island holds: the items in its buildings' stores (a chest's contents), counted by kind.
-// What an islander carries is their own, not the island's (docs/explanation/ui.md, Resources: the top row counts
+// What an islander carries is their own, not the island's (docs/design/ui.md, Resources: the top row counts
 // the chests and stores, not the bags). A cost is met when the stock holds every kind it names.
 
 /** The island's stock: every building's store, summed by item kind. */

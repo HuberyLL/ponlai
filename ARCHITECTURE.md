@@ -8,8 +8,8 @@ below that level is written where it is owned:
 - What a module does and why: its header comment. `node tools/repo/code-map.mjs [folder]` prints
   each file with the first line of its header, one level below this page's map of the folders.
 - The rules across the layers in full: [Architecture rules](docs/reference/architecture-rules.md).
-- What the game is: [Game design](docs/explanation/game-design.md). What the island looks like:
-  [Art direction](docs/explanation/art-direction.md).
+- What the game is: [Game design](docs/design/game-design.md). What the island looks like:
+  [Art direction](docs/design/art-direction.md).
 
 ## Overview
 

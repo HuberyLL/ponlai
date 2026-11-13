@@ -105,7 +105,7 @@ const ISLAND_SKY_RISING: readonly IslandSkyRow[] = [
 	ISLAND_SKY[ ISLAND_SKY.length - 1 ],
 ];
 
-// Off by default (docs/explanation/art-direction.md, The look: the light keeps the sun's and the sky's own
+// Off by default (docs/design/art-direction.md, The light: the light keeps the sun's and the sky's own
 // balance): with the meadow's own soft light the lifted shade left a shaded clump within a
 // quarter of a lit one and the meadow showed no side the light came from. `flags=clearShade:<k>`
 // (or `true`) brings it back for A/Bs. What it was: the shade clear, never black. Shade is lit by

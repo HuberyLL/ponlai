@@ -2,7 +2,7 @@
 
 This guide gives the steps for adding a material, a new surface such as a stone, a plant or a
 fabric, so that it joins the look with no tuning of its own. It is the lookdev side of keeping
-lookdev and lighting strictly apart. Why it works this way: `docs/explanation/art-direction.md`,
+lookdev and lighting strictly apart. Why it works this way: `docs/design/art-direction.md`,
 How the look is made. Before you write its shader, read
 [three.js and WebGPU behaviour](../reference/three-behaviour.md).
 
@@ -92,5 +92,5 @@ into albedo). Fix the light instead, and recheck every material it touches.
 ## 6. Record a deliberate departure
 
 When the look needs a material outside its real range, write it in
-`docs/explanation/art-direction.md` with the
+`docs/design/art-direction.md` with the
 reason, and in the module's header comment with the measured effect. Keep these few.

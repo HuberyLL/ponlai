@@ -2,7 +2,8 @@
 
 This guide gives the steps for adding a piece of game content to the simulation behind `?game`.
 Why content is registered definitions that the core never names:
-[ARCHITECTURE.md](../../ARCHITECTURE.md), Rules across the layers, rule 7.
+[Rules across the layers](../reference/architecture-rules.md#rule-7-content-is-registered-definitions-the-core-names-none),
+rule 7. What the game is: [Game design](../design/game-design.md).
 
 A piece of content (a resource and what answers it, a kind of place, a building) is a module in
 [packages/game/sim/content/](../../packages/game/sim/content/). It registers its definitions with
@@ -14,7 +15,8 @@ the module's header.
    - a need (`NeedDef`: where it starts, how much it falls a game day);
    - an item with its uses (`ItemDef`);
    - a kind of place (`PlaceKindDef`, derived from the ground and the land:
-     [ARCHITECTURE.md](../../ARCHITECTURE.md), Rules across the layers, rule 5);
+     [Rules across the layers](../reference/architecture-rules.md#rule-5-generic-generation),
+     rule 5);
    - an option at a kind of place (`OptionDef`, with `open`, `start`, `holds` when standing at the
      place is not enough, `during` and `finish`);
    - a kind of building (`BuildingDef`: its footprint, its work, its store).
@@ -23,7 +25,8 @@ the module's header.
    and room first and refusing in its own words. It changes needs through `raiseNeed`. Anything
    others show or keep is an event of [events.ts](../../packages/game/sim/events.ts).
 2. **Its words and looks, where the defaults are not enough** (the defaults:
-   [ARCHITECTURE.md](../../ARCHITECTURE.md), Rules across the layers, rule 9).
+   [Rules across the layers](../reference/architecture-rules.md#rule-9-presentation-by-outcome-and-event-category-with-a-default),
+   rule 9).
    - Words: keys by its id in [zh-CN.json](../../packages/game/ui/i18n/zh-CN.json) (`item`, `unit`,
      `need`, `place`, `doing.do`, `record.need`).
    - A need's icon and colour: [ui/data/needs.ts](../../packages/game/ui/data/needs.ts).

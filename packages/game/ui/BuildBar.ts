@@ -11,8 +11,8 @@ import type { UiShared } from './Shared.ts';
 
 // The build bar: the mallet's two tiers of brush strokes, the groups and their buildings.
 //
-// The build bar (docs/explanation/ui.md, Build bar; the design canvas's BuildNotes and SpeakFlow): opened by the
-// mallet at the bottom right, which toggles it; the speak bar steps aside while it is open. Two
+// The build bar (docs/design/ui.md, Build bar): opened by the mallet at the bottom right,
+// which toggles it; the speak bar steps aside while it is open. Two
 // tiers of brush strokes run leftward from the mallet:
 // - the groups (tier 1), a fixed handful in data/buildings.ts BUILD_GROUPS' order, the recently
 //   placed group (近用) nearest the mallet, the magnifier at the far left;
@@ -25,7 +25,8 @@ import type { UiShared } from './Shared.ts';
 // in view; Esc clears the search, then the choice, then closes; Enter closes and returns to talking.
 // The chosen building lifts with one 金 stroke beneath, and its name, use, cost and hours float
 // above it; a material it lacks shows 朱, here and in the top row (UiShared.shown). A row not yet
-// buildable is faint and cannot be chosen.
+// buildable is faint and cannot be chosen, but still shows its detail on hover (还不能建). The
+// recent group lists what the island has had placed, one of each kind, the latest first.
 //
 // Choosing a building the simulation knows (its row's `kind`) hands it to the placement in the
 // scene (Placement.ts: the ring under the pointer, a click to place); the detail then says how, or

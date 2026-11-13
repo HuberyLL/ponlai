@@ -18,7 +18,7 @@ import { Space } from './Space.ts';
 
 // The islanders' marks: selection ring and tag, alerts, thinking and speech.
 //
-// The islanders' marks (docs/explanation/ui.md, Islanders: selection and alerts; Speaking; Screen and world):
+// The islanders' marks (docs/design/ui.md, Islanders: selection and alerts; Speaking; Screen and world):
 //
 // - Selected (a click on an islander, again or on open ground to let go): a ring at the feet, thick
 //   in front and thin behind, with one 金 stroke beneath its front, and the tag beside them (人旁

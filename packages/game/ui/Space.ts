@@ -3,7 +3,7 @@ import { css } from './dom.ts';
 
 // The interface's elements that stand in the world, laid into the scene by a matrix3d.
 //
-// The interface's elements that stand in the world (docs/explanation/ui.md, Screen and world): the ring at the
+// The interface's elements that stand in the world (docs/design/ui.md, Screen and world): the ring at the
 // feet, the thinking ring, the speech over a head and the player's words in flight. Each is a DOM
 // element laid into the scene through the game's camera: a matrix3d carries its own pixels (x to the
 // right, y down, from its top left corner) through its frame in the world (the point that corner

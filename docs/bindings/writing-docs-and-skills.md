@@ -18,7 +18,7 @@ homes in this repository:
 | Tool manual | `docs/reference/tools.md` (the manuals, and Which tool for which question) and the tool's header; `tools/kit/parity/README.md` documents its folder |
 | Architecture page | `ARCHITECTURE.md`; each rule's full text in `docs/reference/architecture-rules.md`, under the same number |
 | Reference page | `docs/reference/` |
-| Design page | `docs/explanation/` (art direction, game design, game UI) |
+| Design page | `docs/design/` (art direction and its subject pages, game design, game UI) |
 | How-to guide | `docs/how-to/`: one task's steps in this project |
 | Module header | The header comment of each file under `packages/` and `app/` |
 | Third-party sources | `CREDITS.md` |

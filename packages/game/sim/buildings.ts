@@ -18,7 +18,7 @@ import type { BuildingState, SimState, Vec2 } from './types.ts';
 // never reused, so it stays the same across saves and the brain names the place by it (`go`,
 // `do`).
 //
-// The player plans, the islanders build (docs/explanation/game-design.md, "Building"). A placed building is a
+// The player plans, the islanders build (docs/design/game-design.md, "Building"). A placed building is a
 // blueprint: a construction site, the place with its id, which blocks its footprint from the
 // moment it is placed (the islander works beside it, within REACH). Every building, at every
 // stage, offers the options registered at `building` (the work on it: content/build.ts); once

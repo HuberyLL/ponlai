@@ -11,7 +11,7 @@ Ambient volume
 
 Baking lighting into albedo
 : Tuning a material's colour to make up for an error in the light ([Art
-  direction](../explanation/art-direction.md), How the look is made).
+  direction](../design/art-direction.md), How the look is made).
 
 Chunk
 : A 16 m square of the world (`packages/island/world/Chunks.ts`). A chunk's content is a function of
@@ -27,22 +27,22 @@ Grow
 
 Island view
 : The game's own view: the island camera zoomed out over the island, from which the look is judged,
-  as well as close up ([Art direction](../explanation/art-direction.md), The look).
+  as well as close up ([Art direction](../design/art-direction.md), The look).
 
 Kept weathers
 : Clear and fair: the weathers every change must hold in.
 
 Key
 : The one dominant light: the sun by day, the moon by night
-  ([Art direction](../explanation/art-direction.md), Sea, sky and weather).
+  ([Sea and sky](../design/sea-and-sky.md#the-sun)).
 
 Lighting
 : Setting the light and the image for the whole world, by weather and hour ([Art
-  direction](../explanation/art-direction.md), How the look is made).
+  direction](../design/art-direction.md), How the look is made).
 
 Lip
-: The top edge of the cliff, where the meadow meets the stone and its grass hangs over
-  ([Art direction](../explanation/art-direction.md), The island).
+: The top edge of the cliff, where the meadow meets the stone
+  ([The island](../design/island.md#the-rim)).
 
 Lookdev
 : Look development: making each material right on its own: real values checked against the real
@@ -57,7 +57,7 @@ Parked
 
 Piece
 : One piece of land: the island grows one piece at a time from a starting island at the world's
-  centre ([Game design](../explanation/game-design.md), How the island grows).
+  centre ([Game design](../design/game-design.md), How the island grows).
 
 Pre-exposure
 : The scale every writer of the scene's colour and metering light multiplies by and every
@@ -73,11 +73,11 @@ Settled
 
 Stylised realism
 : The island's image: physically based and developed like a photograph, but not aimed at
-  photorealism ([Art direction](../explanation/art-direction.md), How the look is made).
+  photorealism ([Art direction](../design/art-direction.md), How the look is made).
 
 Sward
 : The meadow's grass as one even cover, about 0.5 m tall
-  ([Art direction](../explanation/art-direction.md), The island).
+  ([The island](../design/island.md#the-meadow)).
 
 Temporal modes
 : The anti-aliasing modes that resolve over frames: `taa`, `taau`, `fsr3` and `gt` (the ground
@@ -93,9 +93,10 @@ active one.
 
 Wenyao
 : The flying fish of the old texts, in schools that break from the swell offshore and glide
-  (`packages/island/life/Wenyao.ts`; [Art direction](../explanation/art-direction.md), Life).
+  (`packages/island/life/Wenyao.ts`;
+  [Life and islanders](../design/life-and-islanders.md#the-cast)).
 
 Yunpeng
 : A herb of the old texts: single clumps of straight white stalks far apart on the open meadow,
   which glow softly by night (`packages/island/world/Yunpeng.ts`;
-  [Art direction](../explanation/art-direction.md), The island).
+  [The island](../design/island.md#the-yunpeng)).

@@ -22,17 +22,17 @@ export const SAVE_VERSION = 22;
 export type EntityId = string;
 /** one tick is one game second */
 export const SECONDS_PER_GAME_DAY = 86400;
-/** a year of an islander's life is a game day (docs/explanation/game-design.md, The islanders) */
+/** a year of an islander's life is a game day (docs/design/game-design.md, The islanders) */
 export const SECONDS_PER_YEAR = SECONDS_PER_GAME_DAY;
 /** an adult's walking speed, metres per game second: 1.8 m/s on screen at the game's 24-minute
  * day at 1x (a child and the old walk slower: life.ts `paceOf`) */
 export const WALK_SPEED = 0.9 * 2880 / 86400;
 
-/** the population the island's growth counts from (docs/explanation/game-design.md: a few islanders on a
+/** the population the island's growth counts from (docs/design/game-design.md: a few islanders on a
  * small island) */
 export const POPULATION_START = 3;
 /**
- * The island's growth (docs/explanation/game-design.md, "How the island grows"): the population at which each
+ * The island's growth (docs/design/game-design.md, "How the island grows"): the population at which each
  * piece arrives, the first at index 0. A game-design number, not settled: for now one piece per 2
  * islanders above the starting 3, up to the growth horizon (IslandGrowth.ts GROWTH.maxSteps).
  */

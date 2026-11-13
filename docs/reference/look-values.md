@@ -1,8 +1,9 @@
 # Look values
 
-The island's light, exposure, water and albedo values. Sizes, shapes and the other design values
-stay in the explanation beside what they describe. What each value means for the look and why:
-[Art direction](../explanation/art-direction.md).
+The measured readings of the island's look: light and shade, exposure, water and albedo. Design
+quantities (a size, a height, an angle chosen for the look) stay on the design page beside the
+decision they belong to. What each reading means for the look and why: [Art
+direction](../design/art-direction.md) and the subject pages it lists.
 
 ## Light and shade
 
@@ -16,6 +17,10 @@ stay in the explanation beside what they describe. What each value means for the
 | Contact shade where a culm or a stone meets the ground | any | darker by a tenth at most |
 | Ground among the grass in shade, against no loss of sky | screen-space occlusion on | a quarter to a third darker |
 | A grove's floor, against no loss of sky | screen-space occlusion on | about a fifth darker |
+| A sunlit cliff's shade against its light | clear day, golden hour, sun at 3 degrees | a stop or more under |
+| A cumulus base against its sunlit tops | clear or fair day | about a stop under |
+| The thin layer of fibres against the sky round it | clear or fair day, high sun | lighter by a few hundredths of Oklab L at most |
+| The sky's lightness, sun at 15 degrees against 22 | overcast | little change |
 
 ## Exposure
 
@@ -43,3 +48,5 @@ Linear diffuse albedo of the island's main surfaces.
 | --- | --- |
 | The meadow's blades | about 0.08, a sunlit leaf's |
 | The cliff's stone | about 0.1, darker than real limestone (0.2 to 0.35) on purpose |
+| The grass ground between the blades | about a twentieth above the blades' mean, grained by a scanned ground's value, about +-15 % in all |
+| The bamboo groves' litter | about a third brighter than the grass ground |
