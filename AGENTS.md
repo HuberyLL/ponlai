@@ -46,7 +46,9 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   question). The ones most changes meet:
   - `node tools/serve.mjs dev|preview`: a server for a worktree on a free port.
   - `tools/capture.mjs` (one screenshot), `tools/parity/capture-set.mjs` (a list of views on one
-    warm page, instead of a loop of capture.mjs),
+    warm page, instead of a loop of capture.mjs), `tools/scenes.mjs` (the renderer's small test
+    scenes shot, read and checked against their references in seconds: run it first after a change
+    to the renderer, `docs/how-to/check-a-change.md`),
     `uv run tools/img.py diff|crop|sheet|stats|flicker`
     (image work on captures, instead of a Pillow/NumPy script of one's own).
   - `tools/probe.mjs`: reads values from the page as JSON, instead of a Playwright script of one's
@@ -106,6 +108,13 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   (`Gui.ts`), the frame loop and the render scale (`Frame.ts`), the scene jump (`Scene.ts`) and the
   diagnostics (`Diagnostics.ts`). `window.__PONLAI__` and `window.__THREE_GAME_DIAGNOSTICS__`
   exist only on the dev server or with `?debug` / `?profile`.
+- `scenes.html`, `src/ScenesBoot.ts`, `src/app/scenes/`: the renderer's test scenes, a second page
+  (`?scene=ball|empty`) built from the renderer's stages alone, with no island, sea or game
+  (`ScenePage.ts`; a scene is a module beside it, its type in `TestScene.ts`, the list in
+  `index.ts`). Their files import only the renderer's exits (`tools/verify-layers.mjs`). The page
+  draws with the renderer's neutral look (`renderLook=ponlai` installs the island's, in the entry)
+  and takes the island's inputs from `src/NeutralInputs.ts`: the probes, the bounce's ground and
+  the shore's fields of level open ground. `tools/scenes.mjs` shoots, reads and checks them.
 - `src/Quality.ts`: the quality tiers, every cost knob in one table (high the only active one);
   `src/QualityDetect.ts` takes `?quality` or high (its GPU timing is parked with the lower tiers).
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation, which the entry creates

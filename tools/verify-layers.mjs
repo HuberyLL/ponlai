@@ -40,6 +40,10 @@
 //   name is exported by two exits.
 //   The exits' own tests (the headless and setup ones load in node, the page ones neither await
 //   nor read the page at load) are tools/verify-exits.mjs.
+// - The test scenes: a file under `src/app/scenes/` (the scene page and the scenes it shows) imports
+//   only the renderer's exits, the renderer's lazy exits and the files beside it, by any kind of
+//   import: a scene is built from the renderer alone, and the island's numbers reach its page only
+//   through the entry (src/ScenesBoot.ts).
 // - Each headless exit, the setup exit and every file they load (static imports and re-exports,
 //   `import type` left out) import relative paths only: no package, three.js least of all, so node
 //   and a worker load them as they are.
@@ -81,9 +85,9 @@
 //   and its fixture name, with what those load: the game is played without the look); look/Look.ts
 //   itself may be, through the setup exit, whose settings the game's words read (it reads nothing
 //   while no reader loads),
-//   and no reader is among the files the entry's first module (src/PageSettings.ts) or the
-//   renderer's setup exit loads: the first installs the look and must have run before the first
-//   reader does, and the second is what it installs the look through. The files a file loads are
+//   and no reader is among the files an entry's first module (src/PageSettings.ts, and the scene
+//   page's src/ScenesBoot.ts) or the renderer's setup exit loads: the first installs the look and
+//   must have run before the first reader does, and the second is what it installs the look through. The files a file loads are
 //   its static imports and re-exports followed through relative specifiers, `import type` left
 //   out (it is erased) and dynamic imports too (they load later).
 //
@@ -529,6 +533,24 @@ for ( const from of files ) {
 
 }
 
+// the test scenes: under app/scenes/ a file imports the renderer's exits, its lazy exits and its
+// neighbours only, whatever the kind of import
+const SCENES_DIR = 'app/scenes/';
+const sceneFiles = files.filter( ( f ) => f.startsWith( SCENES_DIR ) );
+if ( sceneFiles.length === 0 ) failures.push( `test scenes: no file under src/${ SCENES_DIR }` );
+for ( const from of sceneFiles ) {
+
+	for ( const { spec } of importKinds( from ) ) {
+
+		const to = resolve( from, spec );
+		if ( ! to || ! ( to in table ) || to.startsWith( SCENES_DIR ) ) continue;
+		if ( exits.get( to )?.layer === 'render' || ( lazy.has( to ) && table[ to ] === 'render' ) ) continue;
+		failures.push( `${ from }: imports ${ to }: a test scene imports only the renderer's exits (${ Object.values( layers.exits.render ).join( ', ' ) }), its lazy exits and the files beside it` );
+
+	}
+
+}
+
 // the headless and setup exits' reach: relative imports only
 const headlessFiles = new Set();
 for ( const [ file, { side } ] of exits ) {
@@ -565,6 +587,10 @@ for ( const f of lookReaders ) if ( workerLoads.has( f ) ) failures.push( `look 
 const entryLoads = loadClosure( 'PageSettings.ts' );
 if ( ! entryLoads.has( LOOK ) ) failures.push( `look check: PageSettings.ts does not load ${ LOOK }: the entry installs the look there` );
 for ( const f of lookReaders ) if ( entryLoads.has( f ) ) failures.push( `look check: PageSettings.ts loads ${ f }, which reads the look before the entry installs it` );
+const SCENES_ENTRY = 'ScenesBoot.ts';
+const scenesEntryLoads = loadClosure( SCENES_ENTRY );
+if ( ! scenesEntryLoads.has( LOOK ) ) failures.push( `look check: ${ SCENES_ENTRY } does not load ${ LOOK }: the scene page's entry installs the look there` );
+for ( const f of lookReaders ) if ( scenesEntryLoads.has( f ) ) failures.push( `look check: ${ SCENES_ENTRY } loads ${ f }, which reads the look before the entry installs it` );
 const SETUP = [ ...exits ].find( ( [ , { side } ] ) => side === 'setup' )?.[ 0 ];
 const setupLoads = SETUP ? loadClosure( SETUP ) : new Set();
 if ( ! SETUP ) failures.push( 'look check: tools/layers.json names no setup exit, through which the entry installs the look' );
@@ -671,7 +697,7 @@ for ( const [ layer, { file, keys } ] of Object.entries( userLists ) ) {
 
 }
 
-console.log( `verify-layers: ${ files.length } files, ${ edges } imports, ${ upward.size } upward (${ KNOWN.length } known), ${ across } across packages, ${ exits.size } exits and ${ lazy.size } lazy, the headless and setup exits' ${ headlessFiles.size } files, chunk worker ${ workerFiles } files, ${ pageHits.length } page globals named (${ Object.keys( PAGE_NEEDS ).length } files allowed), ${ statePairs } writes of another file's state (${ ACROSS.length } across layers), ${ Object.entries( userLists ).map( ( [ l, { keys } ] ) => `${ Object.keys( keys ).length } ${ l }` ).join( ' and ' ) } userData keys declared, ${ exitNameCount } names in the exits, ${ lookReaders.length } readers of the look (none in the chunk worker's ${ workerLoads.size } files, the headless game's ${ headlessLoads.size }, the entry's first ${ entryLoads.size } or the setup exit's ${ setupLoads.size })` );
+console.log( `verify-layers: ${ files.length } files, ${ edges } imports, ${ upward.size } upward (${ KNOWN.length } known), ${ across } across packages, ${ exits.size } exits and ${ lazy.size } lazy, ${ sceneFiles.length } test scene files, the headless and setup exits' ${ headlessFiles.size } files, chunk worker ${ workerFiles } files, ${ pageHits.length } page globals named (${ Object.keys( PAGE_NEEDS ).length } files allowed), ${ statePairs } writes of another file's state (${ ACROSS.length } across layers), ${ Object.entries( userLists ).map( ( [ l, { keys } ] ) => `${ Object.keys( keys ).length } ${ l }` ).join( ' and ' ) } userData keys declared, ${ exitNameCount } names in the exits, ${ lookReaders.length } readers of the look (none in the chunk worker's ${ workerLoads.size } files, the headless game's ${ headlessLoads.size }, the entry's first ${ entryLoads.size }, the scene page's entry's ${ scenesEntryLoads.size } or the setup exit's ${ setupLoads.size })` );
 for ( const [ key, pair ] of [ ...upward ].sort() ) console.log( `  ${ known.has( key ) ? 'known' : 'NEW  ' } ${ pair }: ${ key }` );
 if ( failures.length ) {
 

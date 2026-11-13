@@ -80,6 +80,8 @@ export default defineConfig( {
 		chunkSizeWarningLimit: 1500,
 		// keep third-party licence notices ( /*! ... */ ) in the bundle
 		rolldownOptions: {
+			// the island's page and the test scenes' (src/app/scenes/)
+			input: [ 'index.html', 'scenes.html' ],
 			output: {
 				comments: { legal: true },
 				// A chunk that is no entry of its own holds the code the page and its lazy parts

@@ -433,6 +433,37 @@ file, matched by gate id, entry, view, clip, crop and metric with globs, never c
 `--normal` counts the special weathers (views.mjs's `special` group) apart. The policy's format is
 in the tool's header.
 
+### Test scenes: `tools/scenes.mjs`
+
+`node tools/scenes.mjs <baseUrl> <outDir> [--scenes ball,empty] [--times a,b] [--views a,b]
+[--look neutral|ponlai] [--verify] [--write-ref | --check] [--ref <dir>] [--q "extra&query"]
+[--size 1920x1080@2] [--timeout 240000]` shoots, reads and checks the renderer's test scenes
+(`scenes.html`; `docs/reference/url-options.md`, The test scenes). A scene is a few objects on
+level ground under the sky, built from the renderer alone, so it loads in a second or two and a
+whole scene is shot in well under a minute.
+
+- For each scene it opens one page and reaches each of the scene's times by the scene jump and each
+  view by `scenePage.setView`. The scenes, their views, times and readings are the page's own; the
+  tool names none.
+- A shot is a paused page in the test mode, taken once the page's `settled` signal holds and its
+  image has stopped changing. Images are compared by their decoded pixels, with no tolerance.
+- `--verify` takes every shot three ways, which must agree to the pixel: on one page in the listed
+  order, on a second page in the reverse order, and on a fresh page loaded at that time. A shot
+  repeats, and a jump to a time draws what a load of that time draws.
+- `--check` compares every shot with the reference image of its name; `--write-ref` writes the
+  run's shots as the reference (with `--verify`, only when it passed). The references are in
+  `artifacts/scenes/reference/<look>/` (git-ignored; `--ref` names another folder), with
+  `reference.json`: the commit served, the browser and the size. A reference holds for the browser
+  and the size it was shot with.
+- `--look ponlai` loads the scenes under the island's look; each look has its own output folder
+  and reference.
+- Each shot's JSON holds its readings: per reading the box, the scene's linear radiance there
+  (`opaque` before the air, `hdr` after the composite) and `code`, the shot's mean pixel over the
+  box as a fraction of 255; with them the exposure, the key's direction, colour and elevation and
+  the sky's irradiance. `readings.json` and `readings.tsv` in the output folder gather the run's.
+- It takes the GPU lock shared, leased from shot to shot. Exit 0 passed, 1 a check failed (a
+  difference, a missing reference, a shot still changing, a page error), 2 bad usage.
+
 ### Parked weathers
 
 Cloudy, overcast, rain, storm and fog (`src/sky/Weather.ts` `PARKED_WEATHER`) are out of the
@@ -1133,6 +1164,11 @@ What the islanders do over days of play, how the needs and the stock run, and ho
 from what it perceives: `tools/play-game.mjs` (Other tools), not a loop over the simulation of
 one's own.
 
+Whether a change to the renderer moved what a plain surface shows under the key, the sky and the
+ground's bounce, or what the sky gives through a day, before the island is loaded at all:
+`tools/scenes.mjs --check` (Captures, Test scenes), which shoots the renderer's small scenes in
+seconds. It does not replace the island's captures: it shows no sea, terrain, plants or game.
+
 What WGSL a TSL kernel, pass or material compiles to, which bindings and uniforms each stage
 declares, and whether one exceeds WebGPU's default limits, without a GPU: `tools/wgsl-build.mjs`
 with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script of one's own.
@@ -1317,6 +1353,8 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   shrinks). It also walks the chunk worker's imports (`src/world/chunkWorker.ts`) as the build's
   world generator plugin does (`tools/vite-world-generator.mjs`) and fails on any package import
   the plugin would refuse. Run it after adding a file or an import across folders.
+  Its test scenes check keeps the files under `src/app/scenes/` to the renderer's exits, its lazy
+  exits and each other.
   Its exits check reads the packages' exits from `tools/layers.json` (`exits`: each package's page
   exit and headless exit, and the renderer's setup exit; `lazy`: the modules the page loads on
   demand). An exit holds re-exports of its own package only; an import from one package into

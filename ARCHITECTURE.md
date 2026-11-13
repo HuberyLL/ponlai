@@ -134,6 +134,16 @@ nothing below a host reads the page or the wall clock (the save's timestamp asid
   ([src/Quality.ts](src/Quality.ts)) is the renderer's. It is the only part that touches the
   browser's page: the layers below take the canvas, the settings and the storage from it
   ([tools/verify-layers.mjs](tools/verify-layers.mjs), its page check, keeps them off the page).
+- **The scene page** ([src/app/scenes/](src/app/scenes/), loaded by its own entry
+  [src/ScenesBoot.ts](src/ScenesBoot.ts) from `scenes.html`): a second page, which assembles the
+  renderer alone into small test scenes (a few objects on level ground under the sky). It builds
+  and runs a frame with the same renderer stages as the island's page, and gives the renderer the
+  inputs the island would: the ambient light's probes, the bounce's ground and the shore's fields
+  of level open ground, which the renderer makes itself
+  ([src/NeutralInputs.ts](src/NeutralInputs.ts)). Its files import only the renderer's exits
+  ([tools/verify-layers.mjs](tools/verify-layers.mjs)); it draws with the renderer's neutral look
+  unless its entry is asked for the island's. It mounts the same handles for the tools as the
+  island's page.
 - **The world** ([src/world/](src/world/)): the island generated from its land. The land grows a
   piece at a time; the generator runs in 16 m chunks on a pool of workers, its chunks are cached,
   merged and drawn, and a growth swaps the changed chunks in place. Its kinds (the ground, cliffs,
