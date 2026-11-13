@@ -1472,7 +1472,9 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   windows (`packages/render/look/DayLook.ts` `createDayWindows`), the wind on the plants
   (`packages/render/weather/Wind.ts` `windResponse`), the ambient grade's tables and the low key's
   lift (`packages/render/look/AmbientLook.ts` `createAmbientTables`, `createKeyLift`, and the
-  grade's controller, `packages/render/lighting/AmbientGrade.ts` `createAmbientGrade`), the shared
+  grade's controller, `packages/render/lighting/AmbientGrade.ts` `createAmbientGrade`), the haze's
+  tables (`packages/render/look/HazeLook.ts` `createHazeTables`, which the haze's key,
+  `packages/render/weather/HazeKeys.ts` `hazeKeyAt`, reads), the shared
   uniforms (`packages/render/shared.ts` `createShared`: the ambient occlusion's floor and the meadow
   canopy's media), the local lights (`packages/render/lighting/LocalLights.ts`), the sea's detail
   (`packages/render/ocean/SeaDetail.ts`) and the FFT ocean's distant swell

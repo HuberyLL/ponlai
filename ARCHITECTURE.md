@@ -500,15 +500,19 @@ folder is its layer.
     ([packages/render/look/NeutralLook.ts](packages/render/look/NeutralLook.ts): every gain one,
     every offset zero, no grade, one exposure key for the whole day) and its own modules hold only
     physical constants and the constants of their methods; the island's numbers are the island's
-    data ([packages/island/look/](packages/island/look/)). Eight systems take their tables as an
+    data ([packages/island/look/](packages/island/look/)). Nine systems take their tables as an
     argument where they are created, and the entry hands them the set it installs: the exposure,
     the day's windows and the low key's lift, where the renderer's sky stage creates them
     ([packages/render/look/ExposureLook.ts](packages/render/look/ExposureLook.ts)
     `createExposure`, [packages/render/look/DayLook.ts](packages/render/look/DayLook.ts)
     `createDayWindows`, [packages/render/look/AmbientLook.ts](packages/render/look/AmbientLook.ts)
-    `createKeyLift`), which the sky and the day cycle carry to their readers; the ambient
-    occlusion's floor and the meadow canopy's media, which every material's shader reads, and the
-    wind on the plants, in the shared uniforms
+    `createKeyLift`), which the sky and the day cycle carry to their readers; the haze's keys and
+    what the weather adds to them, also from the sky stage
+    ([packages/render/look/HazeLook.ts](packages/render/look/HazeLook.ts) `createHazeTables`),
+    which the haze's key reads by the hour and the weather
+    ([packages/render/weather/HazeKeys.ts](packages/render/weather/HazeKeys.ts) `hazeKeyAt`); the
+    ambient occlusion's floor and the meadow canopy's media, which every material's shader reads,
+    and the wind on the plants, in the shared uniforms
     ([packages/render/shared.ts](packages/render/shared.ts) `createShared`, the wind's through
     [packages/render/weather/Wind.ts](packages/render/weather/Wind.ts) `windResponse`); the local
     lights' gain
@@ -521,10 +525,10 @@ folder is its layer.
     [packages/render/ocean/OceanFFT.ts](packages/render/ocean/OceanFFT.ts)). Two of any of them
     made from two sets hold their own numbers
     ([tools/verify-look-params.mjs](tools/verify-look-params.mjs)), though on a debug page two
-    exposures, two sets of the day's windows, two winds or two ambient grades share their
-    tunables by name, and the shared uniforms, the grade's uniforms and the light table are still
-    one a page (rule 11). The other systems (the haze, the display and the sky) take the
-    installed look, not a constructor's argument: the page's entry installs it after the
+    exposures, two sets of the day's windows, two winds, two ambient grades or two sets of the
+    haze's tables share their tunables by name, and the shared uniforms, the grade's uniforms and
+    the light table are still one a page (rule 11). The other systems (the display and the sky)
+    take the installed look, not a constructor's argument: the page's entry installs it after the
     settings and before any module that reads it loads, and each reader takes its numbers once
     as it loads. Installing it after a reader has loaded throws and names that reader, and so
     does installing a second, different set. So a process has one look, and a page cannot hold

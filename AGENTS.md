@@ -225,11 +225,13 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   renderer's neutral set, drawn with where nobody installed one (`NeutralLook.ts`), and per system
   the module that reads the installed numbers as it loads, with their tunables and the CPU code
   that reads only them; the shaders and the methods that take them stay in their modules. The
-  sky's (`SkyLook.ts`), the haze's keys (`HazeLook.ts`), the exposure (`ExposureLook.ts`: its keys
+  sky's (`SkyLook.ts`), the exposure (`ExposureLook.ts`: its keys
   and base exposure, made from the tables the sky stage hands `createExposure` rather than read as
-  it loads), the day's windows (`DayLook.ts`: made the same way, from the day's table the sky
-  stage hands `createDayWindows`), the ambient grade and the low key's lift (`AmbientLook.ts`: made
-  the same way, the grade's tables in the light stage, `createAmbientTables`, the lift in the sky
+  it loads), the haze's keys (`HazeLook.ts`: made the same way, from the haze's table the sky stage
+  hands `createHazeTables`), the day's windows (`DayLook.ts`: made the same way, from the day's
+  table the sky stage hands `createDayWindows`), the ambient grade and the low key's lift
+  (`AmbientLook.ts`: made the same way, the grade's tables in the light stage,
+  `createAmbientTables`, the lift in the sky
   stage, `createKeyLift`),
   and the display's: contrast, desaturation, white balance, tone curve, base grade, bloom and the
   rods' colour (`DisplayLook.ts`). The systems whose tables are passed where they are created have
@@ -237,7 +239,7 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   the ambient occlusion's floor, the meadow canopy's media and the plants' answer to the wind (the
   shared uniforms, `shared.ts`; the wind's through `weather/Wind.ts` `windResponse`) and the local
   lights' gain (`lighting/LocalLights.ts`); `tools/verify-look-params.mjs` checks them, the
-  exposure, the day's windows and the ambient light's look.
+  exposure, the day's windows, the ambient light's look and the haze's keys.
 - `packages/island/look/`: the island's numbers for those tables, one file per system (`Sea.ts`,
   `Day.ts`, `Ambient.ts`, `Exposure.ts`, `Display.ts`, `Haze.ts`, `Sky.ts`, `Occlusion.ts`,
   `LocalLights.ts`, `MeadowCanopy.ts`, `Wind.ts`), numbers and pure
