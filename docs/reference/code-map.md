@@ -389,7 +389,8 @@ Captures, profiling, the GPU lock and the probes ([Tools](tools.md)), and:
 
 - `wgsl-build.mjs`: the WGSL build; its entries in `wgsl-build/`.
 - `verify-world-chunks.mjs`, `verify-world-stats.mjs`: the world's chunk checks and statistics, on
-  the node helpers in `world-node.mjs`.
+  the node helpers in `world-node.mjs`; `verify-chunk-derived.mjs`: the chunks' derived products
+  against the builders they stand in for.
 - `play-game.mjs`: the game played headless for days, with a transcript, a timeline and a summary
   of what the islanders did, for a designer or a brain judged offline.
 - `lint/`: the code lint's rules and fixtures ([Tools](tools.md#code-lint)).
