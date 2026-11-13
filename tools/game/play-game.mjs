@@ -94,11 +94,11 @@
 // kinds' rows (a kind without one, the record's default row), and an event of a kind that neither
 // the record notes nor this tool has a line for a line of its own (`[event]`, its kind and what it
 // holds): a new rule shows in the outputs without a change to the tool.
-import '../kit/help.mjs';
+import { headerOf, manualOf } from '../kit/help.mjs';
 import '../kit/qos.mjs';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, writeSync } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { newGame } from '../../packages/game/sim/Sim.ts';
 import { StandInBrain } from '../../packages/game/sim/standin.ts';
 import { progressOf } from '../../packages/game/sim/buildings.ts';
@@ -171,7 +171,15 @@ function parseOptions( argv ) {
 			case '--script': o.script = value() ?? fail( '--script needs a file' ); break;
 			case '--brain': o.brain = value() ?? fail( '--brain needs standin or a module' ); break;
 			case '--out': o.out = value() ?? fail( '--out needs a folder' ); break;
-			case '--help': case '-h': console.log( USAGE ); process.exit( 0 ); break;
+			// `--help` is answered by the kit's help module before this runs; `-h` prints the same manual
+			case '-h': {
+
+				const file = fileURLToPath( import.meta.url );
+				writeSync( 1, manualOf( headerOf( readFileSync( file, 'utf8' ) ), file ) );
+				process.exit( 0 );
+
+			}
+
 			default: fail( `unknown option ${ arg }` );
 
 		}

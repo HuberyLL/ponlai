@@ -124,14 +124,14 @@ import PROJECT from '../project.mjs';
 const SCENE_JUMP = 1;
 /** The worker's GPU slot lease in seconds (--lease; see the header). The worker used to free the
  * slot after every view, so a set behind another session's back-to-back timing runs waited one
- * whole timing run per view (34 views in 57 min, 12 in 53 min, with under 20 s of readiness in
- * each). Why 20 s: a paused view takes 5-7 s alone, so such a set advances about four views per
- * timing run (0, 6, 12, 18 s, then it yields), and still two when three pages share the GPU and a
- * view takes about 18 s; a waiting timing run gets the GPU at most 20 s plus the view in flight
- * after its turn, small against the 3-8 minutes it then holds it, and it already waited for a view
- * in flight (up to 22 s seen). A longer lease gives the set little more (the timing runs still
- * alternate with it) and delays every run of a series by as much. Nobody waiting, the slot is kept
- * for the whole set. */
+ * whole timing run per view: nearly all of such a set's time went to waiting, not to its views.
+ * Why 20 s: a paused view alone takes about a third of the lease, so such a set advances about four
+ * views per timing run before it yields, and still two when three pages share the GPU and a view
+ * takes nearly the whole lease; a waiting timing run gets the GPU at most one lease plus the view in
+ * flight after its turn, small against the minutes it then holds it, and it already waited for a
+ * view in flight (about as long as a lease). A longer lease gives the set little more (the timing
+ * runs still alternate with it) and delays every run of a series by as much. Nobody waiting, the
+ * slot is kept for the whole set. */
 const LEASE = 20;
 
 const args = process.argv.slice( 2 );

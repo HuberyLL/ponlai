@@ -17,8 +17,8 @@
 //   SETTINGS and SETTING_PREFIXES: a new or changed option rewrites it (`--write`), so the table
 //   never drifts from the code.
 // - Every declared option and prefix is also named in the page's prose (a backticked `name`,
-//   `name=...` or `?name...` outside the table and the code blocks), in the group its reader
-//   belongs to: the table lists, the prose explains.
+//   `name=...` or `?name...` outside the table and the code blocks), anywhere in it: the table
+//   lists, the prose explains. Which of the prose's groups names an option is not checked.
 // - Every option the prose writes with a value (a backticked `name=...` or `?name`) is declared, or
 //   starts with a declared prefix: the prose names no option the page does not read.
 // - The page installs the settings before any module that reads them loads: index.html loads

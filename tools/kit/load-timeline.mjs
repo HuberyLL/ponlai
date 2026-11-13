@@ -19,7 +19,7 @@
 // (any other Chrome or Chromium), `kernel` (kernel_task; CPU only, its GPU time counts as rest)
 // and `rest`. The load outside the run is every group but `run` and `windowServer`: WindowServer
 // composites the screen, the run's own window in full-screen `--display` and otherwise a desktop
-// every run shares (counted, its share alone marked nearly every headless slice contended, T36).
+// every run shares (counted, its share alone marked nearly every headless slice contended).
 //
 // The pure parts (grouping, top's parser, the slice marking) are exported for CPU-only tests.
 import { spawn } from 'node:child_process';

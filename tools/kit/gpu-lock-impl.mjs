@@ -73,10 +73,10 @@ import { fileURLToPath } from 'node:url';
 // hold is not bumped, its owner.json goes without the mutex); the scheduling table;
 // PONLAI_GPU_PRIORITY; the default of its mode, normal for shared requests and low for exclusive
 // ones. The defaults are the user's (2026-10-13): timing runs get no special treatment and simply
-// rank below captures and probes. One exception bounds that wait (the user's choice from T33,
+// rank below captures and probes. One exception bounds that wait (the user's choice,
 // 2026-10-13): an exclusive request at its default level ranks normal (source `aged`) once
 // AGE_AFTER_MS (30 min) has passed since its run's first request, keeping its ticket number, so it
-// goes before the normal requests queued after it. Replayed against a logged day (T33's simulation),
+// goes before the normal requests queued after it. Replayed against a logged day (a simulation),
 // it left the day's total agent wait unchanged and ended its one timing run that waited over 30 min;
 // with captures half as frequent again (an overloaded queue) it cut the timing runs' p90 wall clock
 // by over a quarter for 30 % more agent wait. Shorter thresholds or aging per piece rather than per
@@ -1035,7 +1035,7 @@ export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?
 	let mine = await withMutex( () => enqueue( label, ! shared, place, place !== null ? placeStart : null ) );
 	const mode = shared ? 'shared' : 'exclusive';
 	pending = { label, mode, ticket: mine.seq, at: started, level: mine.level, source: mine.source };
-	// the parent pid and the working directory group requests by agent in the log (T33 had to guess)
+	// the parent pid and the working directory group requests by agent in the log (an earlier reading of the log had to guess)
 	logEvent( { ev: 'request', pid: process.pid, ppid: process.ppid, cwd: process.cwd(), label, mode, class: mine.level, source: mine.source, ticket: mine.seq, ...( place !== null ? { place: true } : {} ) } );
 	try {
 

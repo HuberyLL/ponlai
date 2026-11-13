@@ -85,13 +85,12 @@ const band = ( hue: number, width: number, ceiling = 1 ): GradeBand => ( { hue, 
 /** The grade that changes nothing: its table is the identity. The bands sit where the kinds'
  * colours fall in the fair noon views (Oklab hue of their display colours, measured): the meadow
  * and the trees about 120 to 145 degrees, the sea 180 (the shallows) to 220 (the open sea toward
- * the horizon), the sky 230 (low) to 260 (high), the red flowers 20 to 30. Two bands are hues, not
- * kinds: the warm ones from red to yellow (the low sun's light, earth, bark, the flowers), wide, and
- * purple. A table grades colours,
- * not things: the blue flowers share the sky's hue, and only their chroma keeps them out of its
- * band (the noon sky's about 0.05 to 0.08, the flowers' 0.12 to 0.14 in the middle of a swath, its
- * ceiling between: a third to a seventh of the band's weight on the flowers is left, the sky's
- * kept). */
+ * the horizon), the sky 230 (low) to 260 (high), the red flowers 20 to 30 when the meadow drew
+ * them. The meadow draws no flowers now: the `flowers` band stays at their hue and grades whatever
+ * red falls in it. Two bands are hues, not kinds: the warm ones from red to yellow (the low sun's
+ * light, earth, bark), wide, and purple. A table grades colours, not things: the sky band's chroma
+ * ceiling (between the noon sky's chroma, about 0.05 to 0.08, and the blue flowers' 0.12 to 0.14
+ * when they were drawn) keeps a saturated blue that shares the sky's hue out of its band. */
 export const NEUTRAL_GRADE: Readonly<GradeParams> = {
 	contrast: 1, saturation: 1, split: [ 0.45, 0.7 ],
 	shadows: zone(), midtones: zone(), highlights: zone(),

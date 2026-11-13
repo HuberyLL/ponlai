@@ -53,7 +53,8 @@
 //
 // Cost: a fraction of a second.
 //
-// Exit codes: 0 printed; 1 an unknown view or group (an uncaught error); 2 an unknown command.
+// Exit codes: 0 printed; 1 an unknown view, or an unknown group (an uncaught error); 2 an unknown
+// command.
 import '../../kit/help.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -399,6 +400,7 @@ export const viewEval = ( name, crops = VIEWS[ name ].crops ?? [] ) => wrap( VIE
 if ( process.argv[ 1 ] && path.resolve( process.argv[ 1 ] ) === fileURLToPath( import.meta.url ) ) {
 
 	const [ cmd, name ] = process.argv.slice( 2 );
+	if ( [ 'query', 'eval', 'crops' ].includes( cmd ) && ! Object.hasOwn( VIEWS, name ?? '' ) ) { console.error( `views.mjs: unknown view ${ name } (list prints them)` ); process.exit( 1 ); }
 	if ( cmd === 'list' ) console.log( viewNames( name ).join( '\n' ) );
 	else if ( cmd === 'query' ) console.log( VIEWS[ name ].q );
 	else if ( cmd === 'eval' ) console.log( viewEval( name ) );

@@ -85,9 +85,9 @@
 // Cost: a page load per group, then a scene jump per view; a grown world generated cold takes seconds
 // to a minute, from the cache much less.
 //
-// Exit codes: 0 the page was written (failed shots are listed in it and in the summary); 1 a label
-// already used, an unknown view or an unexpected error; 2 a `--base-ref` that is not a commit or that
-// the base URL does not serve.
+// Exit codes: 0 the page was written and every shot taken; 1 a label already used, an unknown view or
+// an unexpected error; 2 a `--base-ref` that is not a commit or that the base URL does not serve; 3
+// the page was written but a shot failed (listed in it and in the summary).
 //
 // A view must not depend on the view before it: placeCamera starts from the page's load state.
 import '../kit/help.mjs';
@@ -703,3 +703,4 @@ ${ rows.map( section ).join( '\n' ) }
 await writeFile( path.join( outDir, 'index.html' ), html );
 const flagged = rows.filter( ( r ) => r.flagged ).length;
 console.log( `${ path.relative( ROOT, path.join( outDir, 'index.html' ) ) }: ${ rows.length } views, ${ flagged } flagged, ${ shots.filter( ( s ) => ! s.ok ).length } failed, ${ seconds.toFixed( 0 ) } s; worlds from the cache on ${ cacheHits } of ${ loads.length } page loads${ Object.keys( refCounts ).length ? `; base references ${ Object.entries( refCounts ).map( ( [ k, v ] ) => `${ v } ${ k }` ).join( ', ' ) }` : '' }${ recheckPairs.length ? `; ${ recheckPairs.length } pairs re-checked` : '' }` );
+if ( shots.some( ( s ) => ! s.ok ) ) process.exitCode = 3;

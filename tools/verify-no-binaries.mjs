@@ -124,7 +124,7 @@ else if ( mode === '--staged' ) {
 
 if ( failed.length > 0 ) {
 
-	console.error( `${ mode === '--history' ? 'history holds' : 'git holds' } ${ failed.length } asset or binary file(s); assets go in public/ and ship as a release (docs/reference/tools.md, Assets):` );
+	console.error( `${ mode === '--history' ? 'history holds' : 'git holds' } ${ failed.length } asset or binary file(s); assets go in public/ and ship as a release (tools/repo/assets.mjs, its header):` );
 	for ( const line of failed ) console.error( `  ${ line }` );
 	process.exit( 1 );
 

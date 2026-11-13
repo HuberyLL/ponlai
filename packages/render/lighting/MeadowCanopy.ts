@@ -9,7 +9,7 @@ type V3 = THREE.Node<'vec3'>;
 //
 // Grass blades are narrower than a sun-shadow texel, so the meadow does not cast into the sun's
 // shadow map: as the sun turns, re-rasterising sub-texel blades reshuffles their whole shadow
-// pattern at every map update. Larger casters (rock, flowers, figures) keep the map.
+// pattern at every map update. Larger casters (rock, figures) keep the map.
 // Shading inside the meadow is instead the light that survives the canopy above a point on its way
 // to the key light, the same at every point of the meadow at one depth: a lawn of even blades
 // darkens evenly toward the ground. A field of gaps once let light through in patches, which from
@@ -51,8 +51,8 @@ export function meadowCanopyLight( depth: F, key: V3 ): F {
 // A tuft's top stands CANOPY_TOP times its height scale above its root (plantGrass). The canopy's
 // depth above the turf is one value for the whole meadow, about the lawn's tuft top: the turf's
 // shade then varies with the sun's height alone. A blade takes this depth scaled by its share of
-// the way down its own tuft (Grass.ts), so its root meets the turf's shade; the flowers, which
-// stand in the sward, take their depth below its top.
+// the way down its own tuft (Grass.ts), so its root meets the turf's shade; a plant that
+// stands in the sward takes its depth below its top (the meadow's flowers did; it draws none now).
 export const CANOPY_TOP = 0.8;
 export const TURF_CANOPY_DEPTH = 0.2;
 

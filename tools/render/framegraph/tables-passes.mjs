@@ -1089,7 +1089,7 @@ export const checks = [
 
 ];
 
-/** A mock of the temporal graph (M6): single-sampled scene with a velocity MRT, an overlay pass
+/** A mock of the temporal graph: single-sampled scene with a velocity MRT, an overlay pass
  * drawing over both with an mrt, the TAA history in two textures, surfaceDepthPrev by a copy. */
 export function declareTemporal() {
 

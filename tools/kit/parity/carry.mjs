@@ -75,7 +75,8 @@
 //
 // Cost: from a git diff (under a second) to a paused set and a few short clips captured.
 //
-// Exit codes: 0 the verdict printed; 2 usage (no `check`, --from or --to) or an error.
+// Exit codes: 0 the verdict printed; 2 usage (no `check`, --from or --to, an unknown argument) or an
+// error.
 import '../help.mjs';
 import { execFileSync, spawn } from 'node:child_process';
 import { constants, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -96,8 +97,8 @@ const { viewNames } = viewTable;
 const WATCH = PROJECT.reference.watch;
 // the spot checks' clips and ground-truth views (the clips table's), each clip's first 16 frames
 export const SPOT = { ...clipTable.CARRY_SPOT, frames: 16 };
-// the ground truth's noise between two captures (m9-veg: crops 1-2 levels, max 4; whole frames max
-// 7 on a few pixels): per image, the largest channel difference and the share of pixels over 2 levels
+// the ground truth's noise between two captures (measured: crops 1-2 levels, max 4; whole frames
+// max 7 on a few pixels): per image, the largest channel difference and the share of pixels over 2 levels
 export const GT_TOLERANCE = { max: 8, over2Share: 0.0005 };
 // a rest entry's whole frame against the paused set's frame of its view (capture-clip's readback
 // against capture-set's screenshot: 1 level on most pixels when both are good)
@@ -303,8 +304,8 @@ export async function planCarry( options ) {
 	}
 
 	// --- A's stored rest captures against A's own paused set (no capture: files only). The paused
-	// check vouches for A's set, not for A's entries: a rest capture that went wrong at A (the F6
-	// proof stored one 132 levels off A's own paused frame of that view) would carry on into every
+	// check vouches for A's set, not for A's entries: a rest capture that went wrong at A (one
+	// was once stored 132 levels off A's own paused frame of that view) would carry on into every
 	// later sha. A rest entry with a whole frame carries only when that frame is A's paused frame of
 	// its view within STORED_TOLERANCE (two capture paths, so not byte-equal: 1 level on most pixels).
 	// Entries without a whole frame (the TAA rest views, the lower tiers) cannot be checked so.
@@ -512,9 +513,12 @@ async function cli( argv ) {
 
 	const o = {};
 	const FLAGS = new Set( [ 'all', 'recheck' ] );
+	const VALUES = new Set( [ 'from', 'to', 'url', 'carry-url', 'root', 'tiers', 'views', 'clips', 'only', 'jobs' ] );
 	for ( let i = 0; i < argv.length; i ++ ) {
 
-		const k = argv[ i ].replace( /^--/, '' );
+		const k = argv[ i ].startsWith( '--' ) ? argv[ i ].slice( 2 ) : null;
+		if ( ! FLAGS.has( k ) && ! VALUES.has( k ) ) { console.error( `carry.mjs check: unknown argument ${ argv[ i ] } (see the file header)` ); process.exit( 2 ); }
+		if ( VALUES.has( k ) && ( i + 1 >= argv.length || argv[ i + 1 ].startsWith( '--' ) ) ) { console.error( `carry.mjs check: ${ argv[ i ] } takes a value` ); process.exit( 2 ); }
 		o[ k ] = FLAGS.has( k ) ? true : argv[ ++ i ];
 
 	}
