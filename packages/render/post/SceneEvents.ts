@@ -20,7 +20,9 @@ import { restEpoch } from './TemporalRest.ts';
 // built on it declares its own where it raises them (the island's growth, the game), so this
 // module names none of theirs. A declaration returns the function that raises its reasons and no
 // others, so a misspelt reason, or one of another declaration, does not compile; a reason
-// declared twice is refused.
+// declared twice is refused. A declaration says only whether a reason cuts, so the reasons only
+// the page raises (the loop's start, a resize, a view jump) are declared among the renderer's,
+// where the rest of what they mean is known.
 // Generic sites only (the page's setters and handlers), never the camera
 // controls' internals: a teleport of the camera that no event covers (a direct assignment from the
 // console, a control's own jump) is caught by Motion.ts's camera-delta detector (more than 8 m,

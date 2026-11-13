@@ -416,7 +416,9 @@ export let displacementField: DisplacementField | null = null;
 
 /** Makes the page's one field over `coverage` m of ground on a side (centred on the world's origin),
  * before anything reads it (`displacementAt`) or declares it on the frame graph; null with
- * `debugFlags.trample = false` at load. */
+ * `debugFlags.trample = false` at load. The frame's passes declare it only if it exists when they
+ * are built (PipelinePasses.ts), so made after them the frame silently has no displacement pass:
+ * the island's trail stage makes it before the renderer's `createSeaAndPipeline`. */
 export function createDisplacementField( coverage: number ): DisplacementField | null {
 
 	if ( displacementField ) throw new Error( 'Displacement: the field is made once' );
