@@ -10,19 +10,18 @@
 // growth, its materials, plants, camera, characters, creatures), game (everything behind `?game`)
 // and app (the page's entry, which assembles the others). A file may import its own layer and the
 // layers below it, never one above: a lower layer defines an interface and the higher one fills
-// it. Which layer a file belongs to is not its folder's name: some files sit in another layer's
-// folder until the files move, so `tools/layers.json` maps every file under `packages/` and `app/` to its layer
-// (`files`). The three lower layers are packages, and each offers two exits (`exits`), files of
-// re-exports only: one for the page (render/index.ts, island/index.ts, game/index.ts) and a headless one
-// for the code that loads without three.js, in the chunk worker and in node (render/data.ts,
+// it. A file's folder is its layer: the three lower layers are packages, each a folder of
+// `packages/` (`packages/render/`, `packages/island/`, `packages/game/`), and the app layer is
+// `app/`. Each package offers two exits (`tools/layers.json`, `exits`), files of re-exports only:
+// one for the page (render/index.ts, island/index.ts, game/index.ts) and a headless one for the code that loads without three.js, in the chunk worker and in node (render/data.ts,
 // island/land.ts, game/sim/index.ts). The renderer has a third, its setup exit (render/setup.ts):
 // what the page needs before the renderer's other modules load (the settings, the look, the quality
 // tiers and the render scale they set), which loads in node too. The modules the page loads on
 // demand are lazy exits (`lazy`): the page exits leave them out, so they keep chunks of their own.
 //
 // Guarantees, each a failure (exit 1) when broken:
-// - Every code file under `packages/` and `app/` (.ts, .mts, .js, .mjs) has a layer in `tools/layers.json`, and
-//   every file named there exists: a new file is placed in a layer when it is added.
+// - Every code file under `packages/` (.ts, .mts, .js, .mjs) is in the folder of one of the three
+//   packages: a new file is placed in a layer by the folder it is added to.
 // - No import goes up a layer, except the pairs of files in KNOWN, which are printed but pass.
 //   KNOWN only shrinks: a pair in it that no longer imports upward fails, so the entry is removed
 //   with the change that removes the import. Imports are read with TypeScript's own pre-processor
@@ -458,17 +457,10 @@ function exportedNames( program, file ) {
 
 const failures = [];
 const layers = JSON.parse( readFileSync( TABLE, 'utf8' ) );
-const table = layers.files;
 const files = CODE_ROOTS.flatMap( ( root ) => walk( path.join( SRC, root ) ) ).sort();
-
-// the table against the files
-for ( const f of files ) if ( ! ( f in table ) ) failures.push( `${ f }: no layer in tools/layers.json` );
-for ( const [ f, layer ] of Object.entries( table ) ) {
-
-	if ( ! files.includes( f ) ) failures.push( `tools/layers.json names ${ f }, which does not exist` );
-	if ( ! ( layer in RANK ) ) failures.push( `tools/layers.json: ${ f } has an unknown layer '${ layer }'` );
-
-}
+// each file's layer, its folder: app/, or the package's folder under packages/
+const table = Object.fromEntries( files.map( ( f ) => [ f, f.startsWith( 'app/' ) ? 'app' : f.split( '/' )[ 1 ] ] ) );
+for ( const [ f, layer ] of Object.entries( table ) ) if ( ! ( layer in RANK ) || layer === 'app' && ! f.startsWith( 'app/' ) ) failures.push( `${ f }: not in the folder of a package (packages/render/, packages/island/, packages/game/)` );
 
 // the imports' direction
 const upward = new Map();

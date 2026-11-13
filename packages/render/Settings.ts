@@ -40,7 +40,7 @@ import type { WeatherName, WindLevel } from './sky/Weather.ts';
 //   What may change on a running page is a named number of the tune table (debug/Tune.ts) or a
 //   handle on `window.__PONLAI__`.
 
-/** The layers of the code (tools/layers.json), lowest first: which one owns an option. */
+/** The layers of the code (its folders: packages/render/, packages/island/, packages/game/, app/), lowest first: which one owns an option. */
 export type SettingLayer = 'render' | 'island' | 'game' | 'app';
 
 export interface SettingSpec {

@@ -27,7 +27,7 @@
 //   parseSettings tests the parser). A usage a tool needs is declared, not changed in the tool.
 //   Queries assembled from separate pieces (profile-frame.mjs's list) are outside this scan.
 // - No option is declared in a layer above the lowest layer whose code reads it (the layers of
-//   tools/layers.json, render lowest, then island, game, app): the owner the table prints is a
+//   code's folders, render lowest, then island, game, app): the owner the table prints is a
 //   layer that reads it. A read is a call `<any>.get( 'name' )`, `.has`, `.getAll` or `.prefixed`
 //   (a prefix), or `numberSetting( 'name', ... )`, in a file under `packages/` or `app/`, comments left out; a
 //   read through a helper of its own (WorldStart.ts `intParam`) is not seen.
@@ -136,7 +136,14 @@ for ( const [ name, token ] of valued ) if ( ! declared( name ) ) failures.push(
 
 // each option's layer against its readers'
 const RANK = { render: 0, island: 1, game: 2, app: 3 };
-const LAYERS = JSON.parse( readFileSync( path.join( ROOT, 'tools', 'layers.json' ), 'utf8' ) ).files;
+// each code file's layer, its folder: app/, or the package's folder under packages/
+const LAYERS = {};
+for ( const root of [ 'packages', 'app' ] ) for ( const f of readdirSync( path.join( ROOT, root ), { recursive: true } ) ) {
+
+	const file = `${ root }/${ f.split( path.sep ).join( '/' ) }`;
+	if ( /\.(ts|mts|js|mjs)$/.test( file ) ) LAYERS[ file ] = root === 'app' ? 'app' : file.split( '/' )[ 1 ];
+
+}
 const lowest = new Map();
 for ( const [ file, layer ] of Object.entries( LAYERS ) ) {
 

@@ -1360,14 +1360,14 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   Its steps' waits are part of what it measures and stay fixed.
 - `tools/verify-layers.mjs` (plain `node`, no options) checks the direction of the imports
   between the code's layers: render, island, game and app, lowest first, a file importing only
-  its own layer and those below. `tools/layers.json` gives every file under `packages/` and `app/`
-  its layer (not its folder's name); a file missing from it, or an upward import not on the tool's
-  list of known ones, fails, and so does a known one that no longer imports upward (the list only
-  shrinks). It also walks the chunk worker's imports (`packages/island/world/chunkWorker.ts`) as the
-  build's world generator plugin does (`tools/vite-world-generator.mjs`) and fails on any package
-  import the plugin would refuse. Run it after adding a file or an import across folders.
-  Its test scenes check keeps the files under `app/scenes/` to the renderer's exits, its lazy
-  exits and each other.
+  its own layer and those below. A file's folder is its layer (`packages/render/`,
+  `packages/island/`, `packages/game/` and `app/`); a file under `packages/` outside the three
+  packages' folders, or an upward import not on the tool's list of known ones, fails, and so does a
+  known one that no longer imports upward (the list only shrinks). It also walks the chunk worker's
+  imports (`packages/island/world/chunkWorker.ts`) as the build's world generator plugin does
+  (`tools/vite-world-generator.mjs`) and fails on any package import the plugin would refuse. Run it
+  after adding a file or an import across folders. Its test scenes check keeps the files under
+  `app/scenes/` to the renderer's exits, its lazy exits and each other.
   Its exits check reads the packages' exits from `tools/layers.json` (`exits`: each package's page
   exit and headless exit, and the renderer's setup exit; `lazy`: the modules the page loads on
   demand). An exit holds re-exports of its own package only; an import from one package into
@@ -1416,7 +1416,7 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   `docs/reference/url-options.md`: the table of every option at the page's end is the one written
   from the declarations (`--write` rewrites it), every declared option is named in the page's
   prose, and every option the prose writes with a value is declared. No option is declared in a
-  layer above the lowest layer whose code reads it (`tools/layers.json`; its header says which
+  layer above the lowest layer whose code reads it (the code's folders; its header says which
   reads it sees), so the table's owner is a layer that reads it. It also checks that the page
   installs the settings before any module that reads them loads (`index.html` loads
   `app/Boot.ts`, which imports `app/PageSettings.ts` before it imports `app/main.ts`
