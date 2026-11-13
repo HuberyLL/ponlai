@@ -3,7 +3,11 @@ dist/
 __pycache__/
 .DS_Store
 artifacts/
-.claude/
+# .claude/ is local but for the public skills: each is a link to skills/<name>, named here
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/diagnosing-nonrepeating-frames
 CLAUDE.local.md
 # The game's assets: public/ is filled from a GitHub release (tools/assets.mjs, assets.lock.json),
 # and no binary file goes into git anywhere else either (tools/verify-no-binaries.mjs)

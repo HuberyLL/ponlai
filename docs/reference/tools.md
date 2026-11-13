@@ -1505,14 +1505,17 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
 - `tools/check.mjs` (`npm run check [-- --full]`) runs the checks every commit passes, one after
   another: the type check, the code lint (`npm run lint`, Code lint), `verify-layers`,
   `verify-exits`, `verify-settings`, `verify-file-size`, `verify-three-internals`,
-  `verify-no-binaries`, `verify-game`, `verify-i18n`, `verify-ink`, `verify-framegraph`,
-  `verify-day-cycle`, `verify-weather-state`, `verify-wind`, `verify-local-lights`,
-  `verify-extensions`, `verify-look-params` and `verify-lint`, then `npm run lint:docs` when a
-  Markdown file is staged. `--full` adds `npm run build`, `verify-world-chunks.mjs` and
-  `verify-chunk-derived.mjs` and always runs the docs' lint. Every check runs even after one
-  failed; it ends with each check's result and time, and exits 1 when any failed. None of them
-  renders or takes the GPU lock. How to use it: `docs/how-to/check-a-change.md`, Run the checks
-  every commit passes.
+  `verify-no-binaries`, `verify-skill-links`, `verify-game`, `verify-i18n`, `verify-ink`,
+  `verify-framegraph`, `verify-day-cycle`, `verify-weather-state`, `verify-wind`,
+  `verify-local-lights`, `verify-extensions`, `verify-look-params` and `verify-lint`, then
+  `npm run lint:docs` when a Markdown file is staged. `--full` adds `npm run build`,
+  `verify-world-chunks.mjs` and `verify-chunk-derived.mjs` and always runs the docs' lint. Every
+  check runs even after one failed; it ends with each check's result and time, and exits 1 when
+  any failed. None of them renders or takes the GPU lock. How to use it:
+  `docs/how-to/check-a-change.md`, Run the checks every commit passes.
+- `tools/verify-skill-links.mjs` (plain `node`, no options) fails on a path git tracks under
+  `.claude/` that is not a symbolic link `.claude/skills/<name>` to `../../skills/<name>` with
+  `skills/<name>/SKILL.md` tracked: the public skills' links are the only tracked files there.
 - `tools/verify-file-size.mjs` (plain `node`, no options) fails on a code file under `packages/` or
   `app/` of more than 1500 lines. The files over the limit when the check was written are listed in
   the tool with their line counts: a listed file fails when it grows past its count, and when it is

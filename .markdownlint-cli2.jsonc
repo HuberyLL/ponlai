@@ -8,6 +8,6 @@
 		"MD024": { "siblings_only": true },
 		"MD060": false
 	},
-	"globs": [ "*.md", "docs/**/*.md", "tools/**/*.md", "!CLAUDE.md", "!CLAUDE.local.md" ],
+	"globs": [ "*.md", "docs/**/*.md", "tools/**/*.md", "skills/**/*.md", "!CLAUDE.md", "!CLAUDE.local.md" ],
 	"ignores": [ "node_modules/**", "public/**", "dist/**", "artifacts/**", ".claude/**" ]
 }
