@@ -47,7 +47,7 @@ Detail lives where it is owned.
   page, not a loop), `tools/render/scenes.mjs` (the renderer's test scenes checked in seconds: run
   it first after a renderer change), `uv run tools/kit/img.py diff|crop|sheet|stats|flicker` (image
   work on captures), `tools/kit/probe.mjs` (page values as JSON), `tools/render/wgsl-build.mjs` (TSL
-  to WGSL in node, no GPU), `tools/profile-frame.mjs` (frame time on a production build), `tools/repo/assets.mjs`
+  to WGSL in node, no GPU), `tools/render/profile-frame.mjs` (frame time on a production build), `tools/repo/assets.mjs`
   (the assets in `public/` against `assets.lock.json`, pulled by dev and build) and
   `tools/verify-*.mjs` (regression probes; after a change to the world's generator, run
   `node tools/island/verify-world-chunks.mjs` before captures). Use them instead of a Pillow, NumPy

@@ -13,7 +13,7 @@
 // with more than a quarter of its slices contended is marked contended (see annotateLoads;
 // `--load-timeline off` turns it off).
 //
-//   node tools/profile-frame.mjs [url] [--scenes a,b | --scene a] [--w 1920 --h 1080 --scale 2]
+//   node tools/render/profile-frame.mjs [url] [--scenes a,b | --scene a] [--w 1920 --h 1080 --scale 2]
 //        [--quality high] [--timestamps on|off|both|auto] [--warmup s] [--seconds 7] [--orbit 3]
 //        [--eval "js"] [--repeat n] [--shots] [--detail] [--raw] [--out dir] [--label name]
 //        [--q "extra=url&options"] [--hooks off] [--world-cache off] [--idle-threshold 15] [--idle-wait s] [--contended]
@@ -21,13 +21,13 @@
 //        [--mode page | reload] [--fresh] [--vsync] [--accept [--target 16.7] [--strict]] [--scales 1,0.9,0.75]
 //        [--scale-settle s] [--drs-store] [--frame-fallback] [--preload-wait 60] [--display [--motion user | orbit | none]]
 //        [--hang 180] [--scale-log] [--unpinned]
-//   node tools/profile-frame.mjs --compare urlA urlB [--eval-a "js"] [--eval-b "js"] [--scenes ...]
+//   node tools/render/profile-frame.mjs --compare urlA urlB [--eval-a "js"] [--eval-b "js"] [--scenes ...]
 //        [--slices 8] [--min-slices n] [--stop-margin x] [--stop-width x] [--slice 1.5] [--settle 1] [--display]
 //        (two pages, alternating slices)
-//   node tools/profile-frame.mjs [url] --toggle "js using s and on" [--block 60] [--blocks 8] [--lag 30]
-//   node tools/profile-frame.mjs --report <dir>/profile.json     (re-renders its summary.md)
-//   node tools/profile-frame.mjs --report <dir> | <dir>/scenes.jsonl  (an unfinished run's, see below)
-//   node tools/profile-frame.mjs --list
+//   node tools/render/profile-frame.mjs [url] --toggle "js using s and on" [--block 60] [--blocks 8] [--lag 30]
+//   node tools/render/profile-frame.mjs --report <dir>/profile.json     (re-renders its summary.md)
+//   node tools/render/profile-frame.mjs --report <dir> | <dir>/scenes.jsonl  (an unfinished run's, see below)
+//   node tools/render/profile-frame.mjs --list
 //
 // The reference is a production build (`npm run build && npm run preview`, port 5191, the
 // default url); the dev server works for quick checks. The default viewport is a generic 4K
@@ -240,11 +240,11 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { withGpuLock, leaseGpuLock, waitForIdleGpu, gpuClients, sampleGpuUtilisation } from './kit/gpu-lock.mjs';
-import { announceHeadedRun, requireDisplayAllowed } from './kit/display-gate.mjs';
-import { QUALITY as QUALITY_TABLE } from '../packages/render/Quality.ts';
-import { dynamicRange, OUTPUT_PIXEL_RATIO_CAP } from '../packages/render/post/RenderScale.ts';
-import { startLoadTimeline, markSlices, windowLoad } from './kit/load-timeline.mjs';
+import { withGpuLock, leaseGpuLock, waitForIdleGpu, gpuClients, sampleGpuUtilisation } from '../kit/gpu-lock.mjs';
+import { announceHeadedRun, requireDisplayAllowed } from '../kit/display-gate.mjs';
+import { QUALITY as QUALITY_TABLE } from '../../packages/render/Quality.ts';
+import { dynamicRange, OUTPUT_PIXEL_RATIO_CAP } from '../../packages/render/post/RenderScale.ts';
+import { startLoadTimeline, markSlices, windowLoad } from '../kit/load-timeline.mjs';
 
 // ------------------------------------------------------------------ options
 

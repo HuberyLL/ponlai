@@ -4,7 +4,7 @@
 // island's bounds and height grid as the camera's ground holds them (`controls.ground`,
 // IslandGround: made from the chunks' meshes in the workers, so the page's meshes and their
 // vertices are never read and a build that simplifies the drawn meshes frames alike), the meadow's
-// flowering plants and its tufts at the cliff's edge, the islander and the sun and moon, so they follow any land, as tools/profile-frame.mjs places its
+// flowering plants and its tufts at the cliff's edge, the islander and the sun and moon, so they follow any land, as tools/render/profile-frame.mjs places its
 // scenes.
 //
 // Groups: `parity` (the views every parity check runs; the default) and `taa` (6 close views for
@@ -231,7 +231,7 @@ const wrap = ( body, crops ) => `(async () => { ${ PRE }\n${ body ?? '' }\n{${ C
 const ISLANDER = 'while ( ! s.characters.centre.lengthSq() ) await new Promise( ( r ) => setTimeout( r, 50 ) ); const c = s.characters.centre;';
 
 export const VIEWS = {
-	// the profiler's scenes (tools/profile-frame.mjs SCENES), paused
+	// the profiler's scenes (tools/render/profile-frame.mjs SCENES), paused
 	'island-fair-noon': { q: 'weather=fair&preset=noon', crops: [ 'meadow-band-70m', 'flowers', 'rim-lip', 'cliff-edge-sea', 'islander-head' ] },
 	// orbit to the island's far side from the sun: the view looks into the low sun (profiler's faceSun)
 	'island-clear-golden': { q: 'weather=clear&preset=golden-hour', eval: 'orbitAround( - s.sky.sunDir.x, - s.sky.sunDir.z );', crops: [ 'rim-lip', 'cliff-edge-sea' ] },

@@ -97,7 +97,7 @@ island mesh's bounds, the meadow's flowering plants and the tufts at the cliff's
 and the sun and moon,
 so they follow any tile layout.
 
-`parity` (the default group, 10 views): the profiler's scenes (`tools/profile-frame.mjs`),
+`parity` (the default group, 10 views): the profiler's scenes (`tools/render/profile-frame.mjs`),
 frozen, plus 7 more. The parked weathers' 5 views (marked *parked* below) are in the table but in
 no group but `special` (see below).
 

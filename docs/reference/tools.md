@@ -914,10 +914,10 @@ dynamic scale under a player's drags, and the display tools' own tests. Everythi
 and tuning included, runs headless. A headed run covers at most 3 scenes, and whoever dispatches
 one tells the user beforehand, as information rather than a question.
 
-## Frame profiler: `tools/profile-frame.mjs`
+## Frame profiler: `tools/render/profile-frame.mjs`
 
 ```text
-node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] [--quality high]
+node tools/render/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] [--quality high]
   [--timestamps on|off|both|auto] [--eval "js"] [--repeat n] [--shots] [--vsync] [--accept [--strict]]
   [--idle-wait s] [--contended] [--load-timeline off] [--hang s] [--scale-log]
   [--scales 1,0.75] [--scale-settle s] [--display [--motion user|orbit|none] [--window WxH]]

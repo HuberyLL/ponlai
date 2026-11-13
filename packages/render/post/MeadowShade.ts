@@ -73,7 +73,7 @@ type M4 = THREE.UniformNode<'mat4', THREE.Matrix4>;
 // same materials read 1. Built with the meadow's shade unless `flags=ssShadow:false`
 // at load (then nothing here differs from the meadow's shade alone); at run time
 // `flags.ssShadow = false` keeps the opaque depth out of the resolve and the receivers read 1, so
-// tools/profile-frame.mjs --toggle "s.flags.ssShadow = on" times it.
+// tools/render/profile-frame.mjs --toggle "s.flags.ssShadow = on" times it.
 export const MEADOW_SHADE = SCENE_SAMPLES === 4 && ! TEMPORAL && debugFlags.meadowShade !== false;
 export const SS_SHADOW = MEADOW_SHADE && debugFlags.ssShadow !== false;
 

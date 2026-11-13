@@ -5,7 +5,7 @@
 //   import { debugFlags } from './DebugFlags.ts';
 //   const mesh = debugFlags.lowPolyGrass ? newGrass : oldGrass;   // or skip a pass, pick a material
 //
-// and tools/profile-frame.mjs flips it every few frames with --toggle "s.flags.lowPolyGrass = on",
+// and tools/render/profile-frame.mjs flips it every few frames with --toggle "s.flags.lowPolyGrass = on",
 // after warming both paths, to A/B it in seconds without a reload. A shader change keeps both
 // materials (or both nodes) built and swaps them on the flag, rather than branching inside one
 // shader, so each side runs its own pipeline. A missing flag reads as undefined: the old path
@@ -29,7 +29,7 @@
 //
 // `shadowWind = false` casts the plants' shadows in their rest pose (vegetation/VegetationShadow.ts) and
 // brings back the sun's map's stepped redraws (lighting/SunShadow.ts); on unless false, the swayed
-// shadows redrawn every frame. Read every frame; its cost: node tools/profile-frame.mjs <url>
+// shadows redrawn every frame. Read every frame; its cost: node tools/render/profile-frame.mjs <url>
 // --toggle "s.flags.shadowWind = on".
 //
 // `windFreeze = true` holds the vegetation's wind while the scene clock runs (Wind.ts): the plants

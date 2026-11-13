@@ -34,7 +34,7 @@ import { cameraMode } from './CameraViews.ts';
 // bearings ahead of the camera of the frame that first sees them (Lightning.ts), the storm sea
 // places its window there (StormSea.ts). (The art-review page only: under ?game the game owns the
 // clock.)
-// The options form `{ weather?, preset?, hour?, time? }` (tools/profile-frame.mjs) sets what it
+// The options form `{ weather?, preset?, hour?, time? }` (tools/render/profile-frame.mjs) sets what it
 // names, keeps the rest and the camera, and clears the leftovers all the same.
 // `__PONLAI__.sceneJump` (1) marks a page that keeps this contract: tools/island/parity/capture-set.mjs
 // captures a set in one page only where it is set (older builds' establishScene takes only the

@@ -68,7 +68,7 @@ const TOOLS_KNOWN = [
 	// a mock renderer with the members graph/Compile.ts builds through
 	'render/framegraph/tables-warm.mjs',
 	'render/pipeline-trace.mjs',
-	'profile-frame.mjs',
+	'render/profile-frame.mjs',
 	'render/verify-frame-graph-gpu.mjs',
 	'render/verify-storage-realloc.mjs',
 	'render/wgsl-build.mjs',

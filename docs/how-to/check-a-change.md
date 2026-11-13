@@ -66,7 +66,7 @@ statistics (`tools/island/capture-growth.mjs`), not by pixel difference.
 
 ## Measure a performance change
 
-Use `tools/profile-frame.mjs`; what its readings mean is in `docs/reference/tools.md`, Frame
+Use `tools/render/profile-frame.mjs`; what its readings mean is in `docs/reference/tools.md`, Frame
 profiler. A change is judged at high's standard (`AGENTS.md`, Rules for every change).
 
 1. Measure on a production build, under the GPU lock: the scene matrix at the default generic

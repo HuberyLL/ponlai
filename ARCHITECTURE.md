@@ -722,8 +722,8 @@ folder is its layer.
     about which part grew, and each part grows a little with every change that fits in the frame,
     until the next one does not and nobody can say what to cut. The table and its check do not
     exist yet, and neither the passes nor the registered definitions name their system: today
-    [tools/profile-frame.mjs](tools/profile-frame.mjs) holds the frame as a whole to the standard
-    and reports each pass's GPU time, and a change reports the passes it grew.
+    [tools/render/profile-frame.mjs](tools/render/profile-frame.mjs) holds the frame as a whole to
+    the standard and reports each pass's GPU time, and a change reports the passes it grew.
 22. **Detail follows the screen, by one rule.** Everything drawn in numbers or at a distance takes
     its detail from how much of the screen it covers, not from a distance chosen per kind:
     - a kind declares its levels by the size its parts have on screen, and one standard gives the
