@@ -154,9 +154,10 @@ to 22 are not in use.
   and whoever shows or keeps it listens.
 - **3. Outside input is checked once, at the entrance:** every brain's tool and player command is
   checked against its schema before any rule runs.
-- **4. Determinism and path independence:** the world, its growth, the simulation, the weather and
-  every integrated state are functions of the land, the seeds, the scene clock and the calls made,
-  and a history-dependent effect is cleared by a jump, converges or is frozen in the test mode.
+- **4. Determinism and path independence:** the world, its growth, the simulation, the weather, the
+  wind and every integrated state are functions of the land, the seeds, the scene clock, the weather
+  and the calls made, and a history-dependent effect is cleared by a jump, converges or is frozen in
+  the test mode.
 - **5. Generic generation:** everything placed on or fitted to the island derives from the land and
   fixed-seed fields, never from coordinates placed by hand.
 - **6. The game stays headless:** the game's rules and session reach neither three.js nor the DOM.

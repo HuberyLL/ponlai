@@ -12,7 +12,7 @@ homes in this repository:
 
 | Kind | Here |
 | --- | --- |
-| Rules file | The root `AGENTS.md` (the index and the rules every change follows) and one in `packages/render/`, `packages/island/`, `packages/game/` and `tools/` (the rules of that folder alone); a `CLAUDE.md` beside each imports it, and the root's keeps Claude-only notes |
+| Rules file | The root `AGENTS.md` (the index and the rules every change follows) and one in `packages/render/`, `packages/island/` and `tools/` (the rules of that folder alone); a `CLAUDE.md` beside each imports it, and the root's keeps Claude-only notes |
 | Skill | `skills/<name>/` (`SKILL.md`, `background.md`, reference files) |
 | Binding | `docs/bindings/<name>.md` |
 | Tool manual | The tool's header, printed by `--help`; `docs/reference/tools.md` indexes the tools by question; `tools/kit/parity/README.md` documents its folder |

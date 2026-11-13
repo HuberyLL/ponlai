@@ -138,7 +138,8 @@ After a bug, a review's finding or a failed check, prefer in this order:
 2. Make it impossible in the types ("make illegal states unrepresentable").
 3. A lint rule, with a fixture of the bad line and the good lines beside it.
 4. A check (a verify tool or a test) that reproduces the failure.
-5. Only then text, naming the mistake it came from and "judgement" as what enforces it.
+5. Only then text: one line in the rules file; what enforces it ("judgement" when nothing does)
+   and the mistake it came from are recorded where the binding says.
 
 Then place the check where it runs:
 
