@@ -42,9 +42,9 @@ every change follows, what to read before a task, and the folders. Detail lives 
   code, this file's size; `npm run lint:links` adds web links. In-page keys:
   `docs/reference/tools.md`, Page.
 - Tools are in `tools/`, their manual in `docs/reference/tools.md` (Which tool for which question).
-  Most changes meet: `node tools/serve.mjs dev|preview` (a server for a worktree on a free port),
+  Most changes meet: `node tools/serve.mjs dev|preview` (a worktree's server on a free port),
   `tools/capture.mjs` (one screenshot), `tools/parity/capture-set.mjs` (views on one warm page,
-  not a loop of capture.mjs), `tools/scenes.mjs` (the renderer's test scenes checked in seconds: run
+  not a loop), `tools/scenes.mjs` (the renderer's test scenes checked in seconds: run
   it first after a renderer change), `uv run tools/img.py diff|crop|sheet|stats|flicker` (image work
   on captures), `tools/probe.mjs` (page values as JSON), `tools/wgsl-build.mjs` (TSL to WGSL in
   node, no GPU), `tools/profile-frame.mjs` (frame time on a production build), `tools/assets.mjs`
@@ -73,41 +73,42 @@ every change follows, what to read before a task, and the folders. Detail lives 
 ## Rules for every change
 
 "Enforced by" names a code lint rule (`ponlai/…`), a `tools/verify-*.mjs` check (its bare name), a
-command, or judgement. "Came from" is the mistake that led to the rule; "none on record" means the
-rule guards a stated convention.
+command, or judgement. "Came from" is the mistake that led to the rule; a dash means none is on
+record and the rule guards a stated convention.
 
 | Rule | Enforced by | Came from |
 | --- | --- | --- |
-| Lookdev and lighting are kept strictly apart (`docs/explanation/art-direction.md`, How the look is made); a new material follows `docs/how-to/add-material.md`. | judgement | a material tuned to the light broke when it changed (`ARCHITECTURE.md`, rule 16) |
-| Shaders are TSL only, never WGSL or GLSL strings; a helper called from several places is `Fn( ... ).setLayout( ... )`, one shader function. | `ponlai/tsl-only`; the helpers: judgement | none on record |
+| Lookdev and lighting are kept strictly apart (`docs/explanation/art-direction.md`, How the look is made); a new material follows `docs/how-to/add-material.md`. | judgement | - |
+| Shaders are TSL only, never WGSL or GLSL strings; a helper called from several places is `Fn( ... ).setLayout( ... )`, one shader function. | `ponlai/tsl-only`; the helpers: judgement | - |
 | Simulation and generation are deterministic and path-independent: the world, its growth, the weather, the wind and every integrated state are functions of the land, seeds, scene clock and weather, never of the path or thread count; a grown page or a scene jump holds what a fresh load holds (`ARCHITECTURE.md`, rule 4). | `verify-world-chunks`, `verify-growth-swap`, `verify-scene-jump`, parity captures | a cliff wall's exposure kept state across calls (`Chunks.ts`) |
 | What changes the scene reads the scene clock or its step, never the wall clock (`ARCHITECTURE.md`, rule 17). | `ponlai/scene-clock` | the sky's irradiance read-back waited on a wall-clock gate |
 | A history-dependent effect is cleared by a scene jump, converges on a still scene or is frozen or off in the test mode, and is compared within a tolerance (`ARCHITECTURE.md`, rule 4). | `verify-scene-jump`; parity tolerance | a history that outlived a jump (`ARCHITECTURE.md`, rule 15) |
-| The test mode is a paused page under MSAA, shot once `settled` holds; a paused frame repeats exactly and equals a fresh load's. A new history-dependent effect keeps `settled` false until converged and obeys the test mode's switch (`docs/how-to/check-a-change.md`). | parity MSAA sets, `verify-scene-jump`, `verify-growth-swap` | captures that did not repeat (`ARCHITECTURE.md`, rule 18) |
+| The test mode is a paused page under MSAA, shot once `settled` holds; a paused frame repeats exactly and equals a fresh load's. A new history-dependent effect keeps `settled` false until converged and obeys the test mode's switch (`docs/how-to/check-a-change.md`). | parity MSAA sets, `verify-scene-jump`, `verify-growth-swap` | - |
 | What is generated for the island or fitted to the land derives from the land's footprint, the island's SDF and fixed-seed fields, never hand-placed coordinates; counts follow the coast or the area (`ARCHITECTURE.md`, rule 5). | judgement | the shore's stones came from one running stream along the coast (`Stones.ts`) |
 | The world is built in chunks: a chunk's content is a function of its window, border data is bit-identical in both chunks, the chunks merge in their own order (`Chunks.ts`, `ChunkMerge.ts`). | `verify-world-chunks`, `ponlai/chunk-normals` | the rim's skirt and the world took normals from a chunk's own triangles |
 | The island grows in place: a Grow swaps the changed chunks in one frame, and what depends on the land's shape joins the swap (`Growth.ts`). | `verify-growth-swap` | a stale shore on a grown page (`ARCHITECTURE.md`, rule 15) |
-| A swap never builds a pipeline; one that needs one is a bug (`Growth.ts`). | `verify-growth-swap`, `verify-first-use` | none on record |
+| A swap never builds a pipeline; one that needs one is a bug (`Growth.ts`). | `verify-growth-swap`, `verify-first-use` | - |
 | Changes hold in the kept weathers (clear, fair) and on high (4K output: 1920x1080 CSS pixels at DPR 2) only; parked weathers (`sky/Weather.ts` `PARKED_WEATHER`) and tiers (`Quality.ts` `PARKED_QUALITY`) need no support but keep compiling and loading by name (`?weather=`, `?quality=`); default checks skip them. | `npm run typecheck`; judgement | the parked tiers slowed every line of work down (`Quality.ts`) |
-| Changes are judged at high's standard: 4K output at 60 fps with MSAA 4x, about 14 ms of GPU time a frame at the baseline (`Quality.ts`; `docs/reference/tools.md`, Frame profiler). | `profile-frame` | the frame grew a little with each change that fitted (`ARCHITECTURE.md`, rule 21) |
-| Quality tiers change the cost, never the mood (weather, clock, lighting). High at 4K output is the reference image, the only active tier and every module's default; a load knob is read once, so a change of tier reloads (`Quality.ts`). | judgement | none on record |
+| Changes are judged at high's standard: 4K output at 60 fps with MSAA 4x, about 14 ms of GPU time a frame at the baseline (`Quality.ts`; `docs/reference/tools.md`, Frame profiler). | `profile-frame`, a measurement run by hand | - |
+| Quality tiers change the cost, never the mood (weather, clock, lighting). High at 4K output is the reference image, the only active tier and every module's default; a load knob is read once, so a change of tier reloads (`Quality.ts`). | judgement | - |
 | Code that differs by anti-aliasing mode reads `post/Antialiasing.ts`'s exports, never the tier. | judgement | the depth resolve read four samples from a target of two |
 | A layer imports only from layers below, a package only through its exits (a newly needed name is added there); a `userData` key is on its layer's list (`ARCHITECTURE.md`, rules 10, 11). | `verify-layers`, `verify-exits` | a module that worked as it loaded made import order part of the program |
 | A URL option is declared in `Settings.ts` and read through it only (`ARCHITECTURE.md`, rule 14). | `verify-settings`, `verify-layers` | fifteen modules read the address their own way |
-| The renderer, the island and the game's rules never touch the browser's globals; they are given what they need (`ARCHITECTURE.md`, rule 13). | `verify-layers` | none on record |
+| The renderer, the island and the game's rules never touch the browser's globals; they are given what they need (`ARCHITECTURE.md`, rule 13). | `verify-layers` (named globals only); other routes: judgement | - |
 | A plant kind, a kind of local light or an extra pass declares its cost knob, its test-mode stand and how it follows the growth (`Extensions.ts`). | `verify-extensions` | an effect that forgot one (`ARCHITECTURE.md`, rule 18) |
-| three's internals are reached only in `packages/render/three/`; an upgrade of three follows `docs/how-to/upgrade-three.md`. | `verify-three-internals` | none on record |
-| A file adapted from another project opens with a `/*! ... */` notice (project, copyright line, licence), its licence text beside it (`ocean/tidewater.LICENSE.txt`). Public-domain code (CC0, Unlicense), and a technique borrowed without code, is credited in a comment where used. | judgement | none on record |
-| `CREDITS.md` lists every third-party source (adapted code, assets with source, author, licence and processing, techniques) but npm dependencies (the build collects theirs in `dist/licenses/`); other shipped licence text goes in `vite.config.ts` `LICENCE_FILES`. No reference images in git, no unlicensed third-party art. | judgement | none on record |
-| No asset in git: what the page loads lives in the git-ignored `public/`, loads through `import.meta.env.BASE_URL`, ships in a GitHub release (`assets-v<N>`, never changed once published) pinned by `assets.lock.json`, the new lock in the commit whose code needs it; nothing binary or over 1 MiB is committed (`docs/reference/tools.md`, Assets). | `verify-no-binaries` | binary assets were kept in git |
-| Machine details (hardware, user names, local paths) stay out of the repository; measurements are relative. | judgement | none on record |
-| Comments and docs state what was measured and found, never cite the git-ignored `artifacts/` notes, plans or reports, or internal task and milestone names (a tool's output folder may be named). | judgement | none on record |
-| Code style follows three.js (mrdoob): tabs, spaces inside parentheses and brackets, English comments that explain why. | judgement | none on record |
-| Game UI (what the player sees in `?game`, mockups too) is built with the `threejs-game-ui-designer` skill when the agent has it, to read as a game's, not a product's. | judgement | none on record |
-| A visual change is compared against captures from before it, crops included, and the measured differences reported (`docs/how-to/check-a-change.md`). | judgement | none on record |
-| A performance change is measured with `profile-frame` on a production build under the GPU lock, before and after, contended runs reported as such. | judgement | none on record |
-| `npm run lint:docs` passes before a commit that changes Markdown. | `npm run check` (on staged Markdown) | none on record |
-| Commits follow [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): summary` (lower case, imperative, no full stop, header at most 100 characters), a body saying why. Types: `feat`, `fix`, `perf`, `refactor`, `style`, `test`, `docs`, `build`, `ci`, `chore`, `revert`; the optional scope names the section changed (`ocean`, `world`, `ai`); a breaking change takes `!` or a `BREAKING CHANGE:` footer. | judgement | none on record |
+| three's internals are reached only in `packages/render/three/`; an upgrade of three follows `docs/how-to/upgrade-three.md`. | `verify-three-internals` | - |
+| A file adapted from another project opens with a `/*! ... */` notice (project, copyright line, licence), its licence text beside it (`ocean/tidewater.LICENSE.txt`). Public-domain code (CC0, Unlicense) needs no notice; it and a technique borrowed without code are credited in a comment where used. | judgement | - |
+| `CREDITS.md` lists every third-party source (adapted code, assets with source, author, licence and processing, techniques) but npm dependencies (the build collects theirs in `dist/licenses/`); other shipped licence text goes in `vite.config.ts` `LICENCE_FILES`. No reference images in git, no unlicensed third-party art. | judgement | - |
+| No asset in git: what the page loads lives in the git-ignored `public/`, loads through `import.meta.env.BASE_URL`, ships in a GitHub release (`assets-v<N>`, never changed once published) pinned by `assets.lock.json`, the new lock in the commit whose code needs it; nothing binary or over 1 MiB is committed (`docs/reference/tools.md`, Assets). | `verify-no-binaries`; the rest: judgement | binary assets were kept in git |
+| Machine details (hardware, user names, local paths) stay out of the repository; measurements are relative. | judgement | - |
+| Comments and docs state what was measured and found, never cite the git-ignored `artifacts/` notes, plans or reports, or internal task and milestone names (a tool's output folder may be named). | judgement | - |
+| Code style follows three.js (mrdoob): tabs, spaces inside parentheses and brackets, English comments that explain why. | judgement | - |
+| No player-facing string is written in code; the words are in `packages/game/ui/i18n/`. | `verify-i18n` | the interface's Chinese was written inline across a dozen modules |
+| Game UI (what the player sees in `?game`, mockups too) is built with the `threejs-game-ui-designer` skill when the agent has it, to read as a game's, not a product's. | judgement | - |
+| A visual change is compared against captures from before it, crops included, and the measured differences reported (`docs/how-to/check-a-change.md`). | judgement | - |
+| A performance change is measured with `profile-frame` on a production build under the GPU lock, before and after, contended runs reported as such. | judgement | - |
+| `npm run lint:docs` passes before a commit that changes Markdown. | `npm run check` (on staged Markdown) | - |
+| Commits follow [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): summary` (lower case, imperative, no full stop, header at most 100 characters), a body saying why. Types: `feat`, `fix`, `perf`, `refactor`, `style`, `test`, `docs`, `build`, `ci`, `chore`, `revert`; the optional scope names the section changed (`ocean`, `world`, `ai`); a breaking change takes `!` or a `BREAKING CHANGE:` footer. | judgement | - |
 
 Shader, pass and GPU rules; the name in brackets is their section of
 `docs/reference/three-behaviour.md`.
@@ -115,36 +116,36 @@ Shader, pass and GPU rules; the name in brackets is their section of
 | Rule | Enforced by | Came from |
 | --- | --- | --- |
 | Write TSL's `mix`, `step`, `smoothstep` in the function form (Method forms of mix, step and smoothstep). | `ponlai/tsl-method-order` | fsr3's kernel bias took `.mix` out of order |
-| New frame work is a pass on the frame graph, targets and reads declared, never an `rtt()` in a material or a call around the graph (Frame work on the graph). | `ponlai/pass-on-graph`, `verify-framegraph` | the display chain's composite, sharpen and blur used `rtt()` or `convertToTexture()` |
-| A texture's history is declared on the graph; what a frame reads from the one before advances once per frame (The frame before). | `ponlai/history-on-graph`, `verify-framegraph` | none on record |
+| New frame work is a pass on the frame graph, targets and reads declared, never an `rtt()` in a material or a call around the graph (Frame work on the graph). | `ponlai/pass-on-graph`, `verify-framegraph`; the reads: judgement | the display chain's composite, sharpen and blur used `rtt()` or `convertToTexture()` |
+| A texture's history is declared on the graph; what a frame reads from the one before advances once per frame (The frame before). | `ponlai/history-on-graph`, `verify-framegraph`; the rest: judgement | - |
 | Attributes changed once per event keep static usage with update ranges (Attribute usage). | `ponlai/no-dynamic-draw` | the lightning re-uploaded whole buffers every draw |
-| Timestamp queries have one owner, `post/DynamicResolution.ts` (Timestamps). | `ponlai/timestamp-owner` | none on record |
-| Vegetation is found by `userData.vegetation`, never `alphaToCoverage` (`vegetation/Coverage.ts`). | `ponlai/vegetation-tag` | the sun's shadow keyed its filter on `alphaToCoverage` |
-| `positionGeometry` for the undisplaced position (The displaced position). | judgement | none on record |
+| Timestamp queries have one owner at a time (Timestamps). | `ponlai/timestamp-owner` | - |
+| Vegetation is found by `userData.vegetation`, never `alphaToCoverage` (Vegetation's cut-outs). | `ponlai/vegetation-tag` | the sun's shadow keyed its filter on `alphaToCoverage` |
+| `positionGeometry` for the undisplaced position (The displaced position). | judgement | - |
 | `select()` chooses between values built before it (select() of large operands). | judgement | the water's position, built in a branch, drew nothing |
 | Implicit samples and derivatives in uniform control flow (Uniform control flow). | judgement | a shadow filter's derivatives inside a select |
-| Nested loops are one `Loop()` (Nested loops). | judgement | none on record |
-| A laid-out helper takes its uniforms as arguments (Shader functions). | judgement | a helper got another material's uniform names |
+| Nested loops are one `Loop()` (Nested loops). | judgement | - |
+| A laid-out helper that reads uniforms can take another kernel's uniform names when two compute kernels using it are built (Shader functions). | judgement | met porting FSR 3's kernels (`fsr3/Common.ts`) |
 | A branch reaching a varying is a laid-out `Fn` (Inline functions and varyings). | judgement | the meadow passed sixteen varyings |
-| Several attachments: the `outputStruct` itself (Several attachments). | judgement | `struct member m0 not found` |
-| Bit-identical depth takes `@invariant` (Bit-identical depth). | judgement | met building the vegetation prepass |
-| Screen uv, NDC and depth conventions (Screen conventions). | judgement | none on record |
-| A full-screen pass takes the scene camera as uniforms (A full-screen pass's camera). | judgement | none on record |
-| Multisampled depth by `textureLoad` (Multisampled depth). | judgement | none on record |
+| Several attachments: the `outputStruct` itself (Several attachments). | judgement | an `outputStruct` from inside an `Fn`: `struct member m0 not found` |
+| Bit-identical depth takes `@invariant` (Bit-identical depth). | judgement | the vegetation prepass's depth test failed a few samples |
+| Screen uv, NDC and depth conventions (Screen conventions). | judgement | - |
+| A full-screen pass takes the scene camera as uniforms (A full-screen pass's camera). | judgement | - |
+| Multisampled depth by `textureLoad` (Multisampled depth). | judgement | - |
 | 1 or 4 samples (Sample counts). | judgement | the depth resolve read samples a target of two lacked |
-| A sampled `DepthTexture` has a render target (Depth textures). | judgement | met building the sun's shadow |
-| Shadow passes keep `alphaTest`, `alphaMap`, not `map` (Shadow passes). | judgement | none on record |
-| Temporal modes: velocity, MRT blends, unjittered projection, scene events (Temporal modes). | judgement | none on record |
-| Byte comparisons hold between equal draw splits only (Split draws). | judgement | a mesh per chunk moved 1 % of pixels |
+| A sampled `DepthTexture` has a render target (Depth textures). | judgement | met when the sun's shadow map was stepped |
+| Shadow passes keep `alphaTest`, `alphaMap`, not `map` (Shadow passes). | judgement | - |
+| Temporal modes: velocity, MRT blends, unjittered projection, scene events (Temporal modes). | judgement | - |
+| Byte comparisons hold between equal draw splits only (Split draws). | judgement | a mesh per chunk moved 1 % of pixels (`World.ts`) |
 | Draws compile ahead through the graph's warm-up (Compiling ahead). | `verify-first-use`, `verify-frame-graph-gpu` | the sun map's first redraw stalled on its pipelines |
 | The order materials first build in is part of the image (Build order). | parity captures, `verify-scene-jump` | the first lit receiver emitted other code |
-| A one-time render waits for its warm-up (Draws skipped while compiling). | `verify-first-use` | none on record |
-| Compute kernels are sized from something fixed (Compute kernels). | judgement | none on record |
-| Storage buffers grow by a new attribute (Storage buffers). | `verify-storage-realloc` | none on record |
-| Instanced kinds keep a fixed capacity (Instance matrices). | `verify-growth-swap` | none on record |
-| An index rewritten in place is a `Uint32Array` (Index buffers). | `verify-growth-swap` | none on record |
-| Raw WebGPU work follows `post/SubmitBatch.ts` (Submits and encoders). | judgement | none on record |
-| The water takes no more textures, no history; a mesh under the sea or tall or offshore tells the water (`ocean/Water.ts`). | judgement | none on record |
+| A one-time render waits for its warm-up (Draws skipped while compiling). | `verify-first-use` | - |
+| Compute kernels are sized from something fixed (Compute kernels). | judgement | - |
+| Storage buffers grow by a new attribute (Storage buffers). | `verify-storage-realloc` | - |
+| Instanced kinds keep a fixed capacity (Instance matrices). | `verify-growth-swap` | - |
+| An index rewritten in place is a `Uint32Array` (Index buffers). | `verify-growth-swap` | - |
+| Raw WebGPU work follows `post/SubmitBatch.ts` (Submits and encoders). | judgement | - |
+| The water takes no more textures, no history; a mesh under the sea or tall or offshore tells the water (The water's textures). | judgement | - |
 
 ## Adding a rule
 
@@ -157,8 +158,9 @@ meets it.
 
 ## Before a task, read
 
-- Before you write or change TSL, a shader, a compute kernel or a pass of the frame graph, you must
-  read `docs/reference/three-behaviour.md`: most of what it lists fails without an error.
+- Before you write or change TSL, a shader, a compute kernel, a pass of the frame graph, a GPU
+  buffer, instancing or raw WebGPU work, you must read `docs/reference/three-behaviour.md`: most of
+  what it lists fails without an error.
 - A pass, a plant kind or a local
   light: `docs/how-to/add-to-the-renderer.md`. A material: `docs/how-to/add-material.md`.
 - The world's generator: `packages/island/world/Chunks.ts`'s header. Something that depends on the
@@ -181,5 +183,5 @@ meets it.
 - `packages/game/`: the game behind `?game`: the headless simulation (`sim/`), session, save, view
   and interface (`ui/`).
 - `tools/`: checks, captures, probes, profiling, the GPU lock, the code lint (`tools/lint/`).
-- `docs/`: the documentation by kind (`docs/README.md`). `public/` (git-ignored): the assets
-  `assets.lock.json` pins. File by file: `docs/reference/code-map.md`.
+- `docs/`: the documentation by kind (`docs/README.md`). `public/` (git-ignored): the assets. File
+  by file: `docs/reference/code-map.md`.

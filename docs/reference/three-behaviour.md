@@ -62,8 +62,7 @@ A helper called from several places is `Fn( ... ).setLayout( ... )`, so it compi
 function.
 
 **r186.** A laid-out helper that reads uniforms can be emitted with another kernel's uniform
-names when two compute kernels that use it are built: pass the uniforms in as the helper's
-arguments.
+names when two compute kernels that use it are built.
 
 Check: `tools/wgsl-build.mjs`; the byte comparison of the parity captures.
 
@@ -139,6 +138,24 @@ shadow builds and filters).
 
 Shadow passes keep `alphaTest` and `alphaMap` but not `map`. The vegetation draws before the
 terrain (`renderOrder = -1`). See `vegetation/LeafTexture.ts` and `vegetation/Material.ts`.
+
+Check: none; judgement.
+
+### Vegetation's cut-outs
+
+The vegetation's cut-outs are alpha to coverage under MSAA only. Find vegetation materials by
+`userData.vegetation`, never by `alphaToCoverage`, which is off without multisampling
+(`vegetation/Coverage.ts`, `post/Antialiasing.ts`).
+
+Check: the lint rule `ponlai/vegetation-tag`.
+
+### The water's textures
+
+The water's fragment stage already samples 14 of the 16 textures WebGPU guarantees, so the water
+samples neither the target it draws into nor a history or a reactive input: what the resolve needs
+from it goes out through its velocity. A new mesh under the water, a swimmer, or a tall or offshore
+opaque object tells the water (`ocean/Water.ts`;
+[Add a material](../how-to/add-material.md#3-light-it-as-every-other-surface)).
 
 Check: none; judgement.
 

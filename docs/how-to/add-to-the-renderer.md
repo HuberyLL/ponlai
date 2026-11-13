@@ -4,7 +4,8 @@ This guide gives the steps for adding a plant kind, a kind of local light or an 
 frame to the renderer, and for declaring the scene events and histories that come with them. The
 renderer names none of these: each is a definition registered at one of its extension points, from
 the layer that owns it (the island, or a test scene). Why it works this way:
-[ARCHITECTURE.md](../../ARCHITECTURE.md), Rules across the layers, rule 18.
+[ARCHITECTURE.md](../../ARCHITECTURE.md), Rules across the layers, rule 18. Before you write a
+shader or a pass, read [three.js and WebGPU behaviour](../reference/three-behaviour.md).
 
 ## Before you start
 

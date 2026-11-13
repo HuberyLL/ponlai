@@ -42,8 +42,9 @@ exits (`ARCHITECTURE.md`, rule 11; `tools/layers.json`, `tools/verify-layers.mjs
   (the game is loaded on demand);
 - the headless ones, free of three.js, for the chunk worker and node: `packages/render/data.ts`,
   `packages/island/land.ts` and `packages/game/sim/index.ts`;
-- the renderer's setup exit, `packages/render/setup.ts`: the settings, the look's types and the
-  quality tiers, which the page installs before the renderer loads.
+- the renderer's setup exit, `packages/render/setup.ts`: the settings and the quality tiers, which
+  the page installs before the renderer's other modules load, and the look's types and the
+  renderer's neutral set (`NEUTRAL_LOOK`), which the page picks from.
 
 The modules loaded on demand are lazy exits.
 
