@@ -609,10 +609,10 @@ exits 1). Its window on the default view, `--elev 22 --weather clear`, is 13.8 -
 15.3, within 10 %): run it so before merging a change to the sky's light, the haze or the ambient
 light, and a change that moves it on purpose restates the window here.
 
-## WGSL builds: `tools/wgsl-build.mjs`
+## WGSL builds: `tools/render/wgsl-build.mjs`
 
-`node tools/wgsl-build.mjs <entry> [--out dir] [--features a,b] [--q query]` builds TSL shaders to
-WGSL in node, with no GPU, no browser and no GPU lock: three's WGSL node builder on a WebGPURenderer
+`node tools/render/wgsl-build.mjs <entry> [--out dir] [--features a,b] [--q query]` builds TSL
+shaders to WGSL in node, with no GPU, no browser and no GPU lock: three's WGSL node builder on a WebGPURenderer
 that is never initialised. The entry is a module that returns the shaders to build (compute kernels,
 full-screen passes as a NodeMaterial, draws as `{ material, object, scene, camera, mrt }`, `mrt`
 the pass's MRT a scene material draws into), in the order
@@ -620,7 +620,7 @@ the page first builds them; the tool loads it through Vite's SSR loader with the
 so it imports the page's modules as the dev server serves them, and `--q` sets the `location.search`
 their load knobs read. The entries hand the island's look to what they make, as the page's stages
 do, so the shaders hold the numbers the island's page builds with. Entries
-live in `tools/wgsl-build/` (`fsr3`: every kernel of
+live in `tools/render/wgsl-build/` (`fsr3`: every kernel of
 `packages/render/post/fsr3/`, built by the page's own `Fsr3Upscaler` in a frame's order, the
 reactive-mask generator and the debug view included; `ambient-relight`: the sky's projection, the
 relight, its readback and the probes' debug view, `packages/render/lighting/AmbientRelight.ts`;
@@ -1183,8 +1183,8 @@ readings, not checked to the pixel. It does not replace the island's captures: i
 terrain, island plants or game.
 
 What WGSL a TSL kernel, pass or material compiles to, which bindings and uniforms each stage
-declares, and whether one exceeds WebGPU's default limits, without a GPU: `tools/wgsl-build.mjs`
-with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script of one's own.
+declares, and whether one exceeds WebGPU's default limits, without a GPU: `tools/render/wgsl-build.mjs`
+with an entry in `tools/render/wgsl-build/` for the module, not a stub-renderer script of one's own.
 
 ## Code lint
 
@@ -1281,7 +1281,7 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   its pose's distance); it fails on any zoom anchor that found no ground or a drift
   of the point under the cursor of 0.5 px or more. Run it after a change to the island camera or
   its ground (`packages/island/camera/`).
-- `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs`, `verify-wind.mjs` and `verify-game.mjs`
+- `tools/render/verify-day-cycle.mjs`, `verify-weather-state.mjs`, `verify-wind.mjs` and `verify-game.mjs`
   are CPU-only (plain `node`). `verify-game.mjs` checks the game's simulation: the clock, the
   ground and a path, a body walking to a point, a save round trip, a brain's late answer, and the
   first prototype's rules (needs, thirst off, the bag, fishing, the chest placed as a blueprint and
@@ -1403,7 +1403,7 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   place and replaced by larger ones (a storage node's new `value`), under a compute kernel and an
   instanced draw, counting the pipelines, shader modules and bind groups the device creates and
   checking the results. Run it again after a three upgrade.
-- `tools/verify-framegraph.mjs` checks the frame graph's compiler and runtime on the CPU (plain
+- `tools/render/verify-framegraph.mjs` checks the frame graph's compiler and runtime on the CPU (plain
   `node`); `tools/verify-frame-graph-gpu.mjs` checks three's cache-key patches (with plain
   materials, and with the app's vegetation and spray drawn by a fresh renderer under a shadow
   pass and their pass's MRT, both ways round) and the motion vectors' blends on the GPU;
@@ -1462,7 +1462,7 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   on an `await` or a page global (`location`, the storage, `document`, `window`, `navigator`, the
   animation frame callbacks, `Worker`, `indexedDB`, `fetch`) in the code that runs as the module
   loads. Run it after a change to what an exit loads.
-- `tools/verify-extensions.mjs` (plain `node`, no options; it loads the page's modules through
+- `tools/render/verify-extensions.mjs` (plain `node`, no options; it loads the page's modules through
   Vite's SSR loader, a few seconds) checks the renderer's extension points. It registers a plant
   kind, a kind of local light, an extra pass, scene events and histories of its own and fails
   when one needs a change elsewhere, when a definition without its three declarations
@@ -1470,7 +1470,7 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   pipeline declares. It also searches the code of the registries' owner files (comments left out)
   for the names of the scene's definitions, listed per file in the tool. Run it after a change to a
   registry or a new definition.
-- `tools/verify-look-params.mjs` (plain `node`, no options; it loads part of the page's modules
+- `tools/render/verify-look-params.mjs` (plain `node`, no options; it loads part of the page's modules
   through Vite's SSR loader, about a second) checks the systems that take their look tables at
   creation: the exposure (`packages/render/look/ExposureLook.ts` `createExposure`), the day's
   windows (`packages/render/look/DayLook.ts` `createDayWindows`), the wind on the plants

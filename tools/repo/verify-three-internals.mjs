@@ -66,12 +66,12 @@ const SRC_KNOWN = [];
 const TOOLS_KNOWN = [
 	'dusk-grid.mjs',
 	// a mock renderer with the members graph/Compile.ts builds through
-	'framegraph/tables-warm.mjs',
+	'render/framegraph/tables-warm.mjs',
 	'pipeline-trace.mjs',
 	'profile-frame.mjs',
 	'verify-frame-graph-gpu.mjs',
 	'verify-storage-realloc.mjs',
-	'wgsl-build.mjs',
+	'render/wgsl-build.mjs',
 ];
 
 const options = { verbose: false, fingerprints: false };

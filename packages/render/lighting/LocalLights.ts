@@ -39,7 +39,7 @@ import { checkDeclarations, type Declarations } from '../Extensions.ts';
 // (VegetationLighting `scale`) dims only the ambient terms, not these lights.
 //
 // The clusters (their constants and the CPU sort in LocalLightClusters.ts, which node checks:
-// tools/verify-local-lights.mjs). The main camera's view is cut into GRID.x x GRID.y screen tiles
+// tools/render/verify-local-lights.mjs). The main camera's view is cut into GRID.x x GRID.y screen tiles
 // (TILE px at the 2K baseline, 2560 x 1440) times GRID.z depth slices; the grid is fixed whatever the render's
 // size, so the dynamic resolution never rebuilds the kernel or changes its dispatch. A fragment
 // finds its cluster from its world position, through the main camera's view and unjittered
@@ -102,7 +102,7 @@ const SOFT = 1;
 // (The art gain over the sources' own intensity is the look's (look/Look.ts `LocalLightsLook`): the
 // registry takes its table as an argument where the renderer's stage makes it (RenderStages.ts
 // `createLight`), so two registries made from two tables hold their own gain
-// (tools/verify-look-params.mjs), and this module holds none.)
+// (tools/render/verify-look-params.mjs), and this module holds none.)
 
 type V3 = THREE.Node<'vec3'>;
 type F = THREE.Node<'float'>;

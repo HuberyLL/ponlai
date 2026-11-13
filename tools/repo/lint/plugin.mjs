@@ -91,7 +91,7 @@ const tslOnly = selectorRule(
 		'MemberExpression[computed=false][object.name="TSL"][property.name=/^(wgsl|glsl|js|code)$/]',
 		'MemberExpression[computed=false][object.property.name="TSL"][property.name=/^(wgsl|glsl|js|code)$/]',
 	],
-	'Shaders are written in TSL only: no WGSL or GLSL in strings (wgslFn, glslFn, nativeFn, wgsl, glsl, js, code, CodeNode, FunctionNode). Write the code as TSL nodes; a helper called from several places is `Fn( ... ).setLayout( ... )`, so it compiles to one shader function. `node tools/wgsl-build.mjs` shows the WGSL a TSL material or kernel compiles to. Why: AGENTS.md, Rules for every change.',
+	'Shaders are written in TSL only: no WGSL or GLSL in strings (wgslFn, glslFn, nativeFn, wgsl, glsl, js, code, CodeNode, FunctionNode). Write the code as TSL nodes; a helper called from several places is `Fn( ... ).setLayout( ... )`, so it compiles to one shader function. `node tools/render/wgsl-build.mjs` shows the WGSL a TSL material or kernel compiles to. Why: AGENTS.md, Rules for every change.',
 );
 
 // ---- history-on-graph

@@ -35,7 +35,7 @@ import { checkDeclarations, type Declarations } from '../Extensions.ts';
 //   on the default vegetation material, which the registry's maker hands in), so it can be placed,
 //   lit, shadowed and measured before its art exists.
 // The registry reads its kinds in the order registered and never by name
-// (tools/verify-extensions.mjs registers a kind of its own in node and searches this file, the
+// (tools/render/verify-extensions.mjs registers a kind of its own in node and searches this file, the
 // registry's owner, for the kinds' names; it does not search the files that read the registry).
 
 /** A preparation step yields nothing (a slice ends) or a promise (wait for it: a worker, a compile). */

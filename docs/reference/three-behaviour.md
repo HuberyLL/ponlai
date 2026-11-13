@@ -29,8 +29,8 @@ mix( a, b, t ), `x.step( edge )` is step( edge, x ) and `x.smoothstep( low, high
 smoothstep( low, high, x ). Write the function form, imported from `three/tsl`
 (`post/fsr3/Upsample.ts`, the comment on `ffxLerp`).
 
-Check: the lint rule `ponlai/tsl-method-order`; `tools/wgsl-build.mjs` and the byte comparison of
-the parity captures across an upgrade.
+Check: the lint rule `ponlai/tsl-method-order`; `tools/render/wgsl-build.mjs` and the byte
+comparison of the parity captures across an upgrade.
 
 ### select() of large operands
 
@@ -71,7 +71,7 @@ the rain's materials under taa; `vegetation/VegetationLighting.ts`; `lighting/Lo
 `shadeLocalLights`). A material built twice, in two target layouts, meets it too
 (`post/Motion.ts`).
 
-Check: `tools/wgsl-build.mjs`; the byte comparison of the parity captures.
+Check: `tools/render/wgsl-build.mjs`; the byte comparison of the parity captures.
 
 ### Inline functions and varyings
 
@@ -82,7 +82,7 @@ whose result reaches a varying is a `Fn( ... ).setLayout( ... )` that takes its 
 arguments (`packages/island/world/Grass.ts` builds its blade's vertex from plain nodes for this
 reason).
 
-Check: `tools/wgsl-build.mjs` reports a stage over WebGPU's limits.
+Check: `tools/render/wgsl-build.mjs` reports a stage over WebGPU's limits.
 
 ### Several attachments
 
@@ -100,7 +100,7 @@ which three does not emit; the vegetation's depth prepass adds it
 (`vegetation/VegetationPrepass.ts`). A material that instances from storage buffers holds the
 placed position in a `toVar` (`vegetation/VegetationCull.ts`).
 
-Check: `tools/wgsl-build.mjs` (the prepass's vertex shader); the byte comparison of the parity
+Check: `tools/render/wgsl-build.mjs` (the prepass's vertex shader); the byte comparison of the parity
 captures.
 
 ## Screen and passes
@@ -174,7 +174,7 @@ never an `rtt()` inside another pass's material, and never a call around the gra
 (`post/Pipeline.ts`).
 
 Check: the lint rule `ponlai/pass-on-graph` (`rtt()`, `convertToTexture()`);
-`tools/verify-framegraph.mjs` (the declarations); the reads need judgement.
+`tools/render/verify-framegraph.mjs` (the declarations); the reads need judgement.
 
 ### The frame before
 
@@ -184,7 +184,7 @@ history is declared on the graph: a ping-pong resource read through `previous()`
 `copyToPersistent` (single-sampled, same size class and format), never a `copyTextureToTexture` of
 its own around the graph (`post/graph/GraphCompiler.ts`).
 
-Check: the lint rule `ponlai/history-on-graph`; `tools/verify-framegraph.mjs`.
+Check: the lint rule `ponlai/history-on-graph`; `tools/render/verify-framegraph.mjs`.
 
 ### Temporal modes
 

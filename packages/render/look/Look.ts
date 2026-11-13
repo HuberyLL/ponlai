@@ -12,7 +12,7 @@ import type { SwellParams } from '../ocean/OceanSpectrum.ts';
 // renderer's stages; a tool hands the set it wants to what it creates.
 //
 // No module holds a look: every system takes its tables as an argument where it is created, so two
-// made from two sets in one process hold their own numbers (tools/verify-look-params.mjs): the
+// made from two sets in one process hold their own numbers (tools/render/verify-look-params.mjs): the
 // exposure, the day's windows, the low key's lift and the sky's tables, where the renderer's sky
 // stage creates them (ExposureLook.ts `createExposure`, DayLook.ts `createDayWindows`,
 // AmbientLook.ts `createKeyLift`, SkyLook.ts `createSkyTables`, which the sky's state for a frame,

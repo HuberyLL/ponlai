@@ -124,7 +124,7 @@ distance. A kind with those has a `root` of its own.
 
 ## Check the registration
 
-1. Run `npm run check`. Its `tools/verify-extensions.mjs` registers definitions of its own at
+1. Run `npm run check`. Its `tools/render/verify-extensions.mjs` registers definitions of its own at
    every point, checks that one without its declarations is refused, and searches the
    registries' owners for the names of the island's definitions: a registry that names a kind
    fails it.

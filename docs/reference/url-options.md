@@ -447,7 +447,7 @@ and none of the island's or the game's.
   sources touching one cluster), `overflowed` (clusters with more than `perCluster`, whose farthest
   are dropped), `clusterBytes` and `tableBytes`; `__PONLAI__.localLights.sources` lists every
   source, and `__PONLAI__.yunpengSites()` where the yunpeng's clumps stand on the current land ( x,
-  z, size per clump) with their lights. `node tools/verify-local-lights.mjs [seed]` checks the
+  z, size per clump) with their lights. `node tools/render/verify-local-lights.mjs [seed]` checks the
   clusters' CPU sort, slices and lookup (plain `node`).
 - Under the temporal modes `flags.mv.camera` / `object` = false leave a source out of the motion
   vectors, `flags.jitter = false` the jitter, `s.taaCut( reason )` cuts the history and

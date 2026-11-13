@@ -561,8 +561,8 @@ folder is its layer.
     `createDisplayTables`), which the frame's passes read each frame and build the display chain
     and the bloom from. Two of any of them
     made from two sets hold their own numbers
-    ([tools/verify-look-params.mjs](tools/verify-look-params.mjs)), though on a debug page two
-    exposures, two sets of the day's windows, two winds, two ambient grades, two sets of the
+    ([tools/render/verify-look-params.mjs](tools/render/verify-look-params.mjs)), though on a debug
+    page two exposures, two sets of the day's windows, two winds, two ambient grades, two sets of the
     haze's tables, two of the display's or two of the sky's share their tunables by name, and the
     shared uniforms, the grade's uniforms, the display chain's uniforms for the cool share and
     overcast's highlights, and the light table are still one a page (rule 11). No module holds a
@@ -683,11 +683,11 @@ folder is its layer.
     (`createFrameStages`), where its order belongs. *Why:* a new effect that forgot one of the three
     showed only later, as a capture that did not repeat, a frame time that crept or a grown page
     that differed from a fresh load; and a renderer that names the island's plants cannot draw
-    another scene. [tools/verify-extensions.mjs](tools/verify-extensions.mjs) registers definitions
-    of its own and searches the registries' owners for the names of the island's. It searches the
-    owners only, not the files that read a registry, and matches a name as a whole word, so not
-    inside a compound identifier (`grassLod`); a registration's `cost` is checked as a quality
-    table field by the types alone, not when the page runs.
+    another scene. [tools/render/verify-extensions.mjs](tools/render/verify-extensions.mjs)
+    registers definitions of its own and searches the registries' owners for the names of the
+    island's. It searches the owners only, not the files that read a registry, and matches a name as
+    a whole word, so not inside a compound identifier (`grassLod`); a registration's `cost` is
+    checked as a quality table field by the types alone, not when the page runs.
 19. **A source file stays under 1500 lines.** A file that passes it is split by what its parts are
     (a table of the look, the kernels of one effect, the passes of one stage), never by halving.
     The files over the limit when the rule was written are listed in the check and may only

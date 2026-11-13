@@ -97,7 +97,7 @@ import type { WindLook } from '../look/Look.ts';
 // The wrapped clocks may differ by a wrap between the two: every shader reads them only through
 // functions periodic in their wrap (`wave` at whole cycles per CLOCK_PERIOD, of `clock` and `plantClock` alike, `flutterWave` of `clock`, `plantWave`
 // of `plantClock` at rates rounded to whole cycles per CLOCK_PERIOD, the gust noise's period over GUST_TILE and GUST_TIME_PERIOD), so the difference of the two poses is the frame's motion alone
-// (tools/verify-wind.mjs checks the sources).
+// (tools/render/verify-wind.mjs checks the sources).
 // The URL option `windView` shows this field and every plant's answer to it, and
 // `__PONLAI__.windProbe` measures them (packages/render/debug/WindView.ts, WindProbe.ts; docs/reference/url-options.md).
 // `debugFlags.windFreeze = true` holds the vegetation's wind (its clocks and gust scroll, previous
@@ -149,7 +149,7 @@ export const GUST_TRAVEL = 1.8;
 // `WindLook`). The wind takes them where it is created, not as this module loads: `windResponse`
 // makes them from a look's table, `createWindUniforms` carries them in both of the vegetation's
 // wind states (`response`), and every function here reads them from the state or the response it
-// is given, so two winds made from two tables hold their own (tools/verify-look-params.mjs). The
+// is given, so two winds made from two tables hold their own (tools/render/verify-look-params.mjs). The
 // numbers reach the shaders as literals, as before.
 // The gust q's mean (`gustAt`): the gust noise is symmetric about 0, so q about 1/2.
 export const GUST_MEAN = 0.5;
@@ -225,7 +225,7 @@ export type WindState = ReturnType<typeof vegetationWind>;
 /** A wind state's values as two vec4s, ( direction, breeze, clock ) and ( gust scroll, gust time,
  * plant clock, plants' speed ), and the state read back from two such nodes with the wind's
  * `response`: a debug kernel's per-step wind (packages/island/debug/WindProbe.ts), so the scrolls
- * stay read here alone (tools/verify-wind.mjs). */
+ * stay read here alone (tools/render/verify-wind.mjs). */
 export const WIND_STATE_VEC4S = 2;
 export function packWindState( state: WindState ): number[] {
 

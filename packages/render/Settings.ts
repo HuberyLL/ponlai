@@ -19,7 +19,7 @@ import type { WeatherName, WindLevel } from './sky/Weather.ts';
 // - Where nobody installed them (node under the tools, Vite's server-side loads, a worker), every
 //   option reads as absent: each reader takes its own default, as on a page without the option, and
 //   nothing throws. A tool that builds what a page with options builds installs them first
-//   (`installSettings( parseSettings( query ) )`: tools/wgsl-build.mjs `--q`).
+//   (`installSettings( parseSettings( query ) )`: tools/render/wgsl-build.mjs `--q`).
 // - They are installed once, and before any read: a second install throws, and so does an install
 //   after a module read an option (it took the default, whatever the address says), naming the
 //   first option read and where. The look (look/Look.ts) and the scene's uniforms (shared.ts) keep

@@ -33,8 +33,8 @@ r186, each with the check that sees it.
    mirrored copy), and update the entry. Print the new fingerprints with `--fingerprints` and record
    each only after reading the code it covers. Repeat until the check passes.
 4. Run `npm run typecheck` and `npm run build`.
-5. Compare the shader code: build the WGSL with `tools/wgsl-build.mjs` on the old version and the
-   new one (`docs/reference/tools.md`, WGSL builds), and note which shaders changed and why.
+5. Compare the shader code: build the WGSL with `tools/render/wgsl-build.mjs` on the old version and
+   the new one (`docs/reference/tools.md`, WGSL builds), and note which shaders changed and why.
 6. Run the checks that need no GPU: `npm run check -- --full`.
 7. Run the GPU checks that compare two paths of the same code, which must still pass byte for byte:
    the scene jump (`tools/verify-scene-jump.mjs`) and the growth swap

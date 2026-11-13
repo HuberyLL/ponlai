@@ -44,7 +44,7 @@ A tool is written to these rules:
   - the URL options, declared in `packages/render/Settings.ts` and listed in
     `docs/reference/url-options.md`. A tool sets the page's state through them (`--q`); a node tool
     that loads the modules installs them as the page does
-    (`installSettings( parseSettings( query ) )`, `tools/wgsl-build.mjs` `--q`);
+    (`installSettings( parseSettings( query ) )`, `tools/render/wgsl-build.mjs` `--q`);
   - the handles the page mounts on `window` on debug pages: `__PONLAI__` (the page's parts and its
     controls), `__PONLAI_WORLD__` (`ready` and `ms`, set as the world starts:
     `app/WorldBoot.ts`) and, with `?profile`, `__PONLAI_PROFILE__` (the frame profiler's readings);
@@ -59,7 +59,7 @@ A tool is written to these rules:
   it wants, as the page's stages do: the island's (`ISLAND_LOOK`,
   `packages/island/look/IslandLook.ts`) for the numbers the island's page draws with, such as
   `createExposure( ISLAND_LOOK )` or `createDayWindows( ISLAND_LOOK.day )`
-  (`tools/verify-day-cycle.mjs`).
+  (`tools/render/verify-day-cycle.mjs`).
 - CPU-heavy node tools import `qos.mjs` first. Python tools declare their dependencies inline (PEP
   723) and run with `uv run`; image metrics come from `parity/pixels.py`.
 - Tools are shared by every session's worktrees. A tool change goes to main promptly, and the

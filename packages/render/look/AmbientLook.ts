@@ -9,7 +9,7 @@ import type { AmbientColumn, AmbientKnobs, AmbientLook, AmbientRowLook } from '.
 // (look/ExposureLook.ts), they are taken as an argument where the renderer's stages create them
 // (RenderStages.ts: the tables in `createLight`, for the grade's controller and the ambient light's
 // relight; the lift in `createSky`, which the sky carries beside the key's direction), so two made
-// from two tables hold their own numbers (tools/verify-look-params.mjs) and this module holds none
+// from two tables hold their own numbers (tools/render/verify-look-params.mjs) and this module holds none
 // at module level: only the knobs' and the columns' names and the knobs at no grade, which no look
 // changes. The land's floor under cloud is the sky's (look/SkyLook.ts `keyThroughCloud`). Each
 // module's header says what its numbers do on screen.

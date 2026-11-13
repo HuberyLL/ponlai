@@ -62,7 +62,7 @@ The modules loaded on demand are lazy exits.
 - `FetchAsset.ts`: fetches the assets.
 - `Extensions.ts`: the three declarations every definition registered with the renderer states (a
   plant kind, a kind of local light, an extra pass: its cost knob, its stand in the test mode, how
-  it follows the land's growth; `tools/verify-extensions.mjs`).
+  it follows the land's growth; `tools/render/verify-extensions.mjs`).
 - `UserData.ts`: the `userData` keys the renderer sets or reads (`tools/repo/verify-layers.mjs`).
 - `NeutralInputs.ts`: the island's inputs for the test scenes: the probes, the bounce's ground and
   the shore's fields of level open ground or of the open sea far from any shore.
@@ -176,7 +176,7 @@ code that reads only them (the shaders and the methods that take them stay in th
   `shared.ts`; the wind's through `weather/Wind.ts` `windResponse`) and the local lights' gain
   (`lighting/LocalLights.ts`).
 
-`tools/verify-look-params.mjs` checks the passed tables, the exposure, the day's windows, the
+`tools/render/verify-look-params.mjs` checks the passed tables, the exposure, the day's windows, the
 ambient light's look, the haze's keys, the display's and the sky's.
 
 ### `post/`
@@ -218,7 +218,7 @@ The frame's passes and tidewater's display chain:
 The frame graph:
 
 - `GraphCompiler.ts`: its declarations and compiler, pure TypeScript
-  (`tools/verify-framegraph.mjs`).
+  (`tools/render/verify-framegraph.mjs`).
 - `FrameGraph.ts`, `Compile.ts`: its runtime and its warm-up.
 - `AttachmentOps.ts`: the derived attachment ops.
 - `DebugView.ts`: the debug view (`fgview`).
