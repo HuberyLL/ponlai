@@ -353,7 +353,7 @@ export function nightAmbientShare( elevation: number, rising: boolean, cloud: nu
 	return clear + ( nightAmbientAt( elevation ) - clear ) * cloud;
 
 }
-/** The yunpeng's share of the night (their glow and the local lights: main.ts), at the sun's
+/** The yunpeng's share of the night (their glow and the local lights, set from it by the island), at the sun's
  * `elevation` (degrees), `rising` or setting, under a clouded share `cloud`: the night ambient's
  * own form (`nightAmbientShare`) over windows of its own (DUSK_WINDOWS.yunpeng), so the lamps keep
  * their coming in whatever the ambient's windows become. */
@@ -388,7 +388,7 @@ export function cloudMoonShare( elevation: number, rising: boolean, cloud: numbe
  * `moonShare`); `deck`, the deck's light in the haze (HazeKeys.ts `deck`); `exposureNight`, the
  * night weight the exposure's keys take (`exposureNight`), and `displayNight`, the one the tone,
  * the grade and the bloom take (`displayNight`; both read in post/Pipeline.ts `updateDisplay`); `yunpeng`, the yunpeng's glow and its lights'
- * share, and `localLights`, the local lights' strength (main.ts); `stars`, the stars' share in the
+ * share, and `localLights`, the local lights' strength (RenderStages.ts `lightNight`); `stars`, the stars' share in the
  * drawn sky (SkyTrack.ts `starVisibility`: `nightVisibility` times `starNight`; no bake holds them,
  * so the land takes none of their light). The twilight's, each a weight on
  * the sun's light (1 when not forced): `sun`, the sun's part of the key (Sky.ts `keyColor`);

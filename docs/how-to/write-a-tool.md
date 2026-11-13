@@ -36,6 +36,23 @@ A tool is written to these rules:
   before whenever the page did not tick after the state was set. Rendered frames wait for the state
   the next tick applies; a still, converged image is still waited for by `settled` (the Readiness
   rule above), never by a count of frames of either kind.
+- A tool is white-box: it may import any layer's modules and run scripts in the page
+  (`ARCHITECTURE.md`, rule 10). It does not reach into three.js's internals of its own: it calls
+  the renderer's functions in `packages/render/three/`, and the few tools that still reach in are
+  listed in `tools/verify-three-internals.mjs` (`TOOLS_KNOWN`), a list that only shrinks.
+- A tool meets the page through three agreements only, so a change on either side keeps them:
+  - the URL options, declared in `packages/render/Settings.ts` and listed in
+    `docs/reference/url-options.md`. A tool sets the page's state through them (`--q`); a node tool
+    that loads the modules installs them as the page does
+    (`installSettings( parseSettings( query ) )`, `tools/wgsl-build.mjs` `--q`);
+  - the handles the page mounts on `window` on debug pages: `__PONLAI__` (the page's parts and its
+    controls), `__PONLAI_WORLD__` (`ready` and `ms`, set as the world starts:
+    `app/WorldBoot.ts`) and, with `?profile`, `__PONLAI_PROFILE__` (the frame profiler's readings);
+  - `__THREE_GAME_DIAGNOSTICS__.settled`, true once a paused frame is final
+    (`packages/render/post/Settled.ts`; `docs/reference/tools.md`, Page).
+
+  The scene page mounts the same handles (`app/scenes/ScenePage.ts`). A tool that needs more of
+  the page adds it to one of the three, never a global of its own.
 - Expensive results that depend only on the commit, the tool and the browser are stored and
   reused through `parity/reference.mjs`; record in the key everything that changes them.
 - A node tool that imports a module of `packages/` that reads the look (anything that reaches

@@ -26,10 +26,18 @@ silently.
 
 ## 3. Light it as every other surface
 
-A lit material is built on the island's lighting model, so the same light reaches it as every
+A lit material is built on the renderer's lighting model, so the same light reaches it as every
 other surface. The modules named below are in `packages/render/lighting/`, `packages/render/ocean/`
-and `packages/render/post/`; each
-header comment says more.
+and `packages/render/post/`; each header comment says more.
+
+Put the material in its layer first (`ARCHITECTURE.md`, rules 10 and 11). A material any scene
+could use (a generic ground, the rain's wet film) is the renderer's, in
+`packages/render/materials/`, and imports the lighting modules directly. A material of this
+island (its terrain, a plant kind, an islander's fabric) is the island's, in
+`packages/island/materials/` or beside the kind it draws, and takes the lighting model only
+through the renderer's exit, `packages/render/index.ts`; a name it needs that the exit lacks is
+added to the exit. Either way the numbers chosen for the look come from the look's readers
+(`packages/render/look/`), never written into the material (`ARCHITECTURE.md`, rule 16).
 
 1. Build the material on `GroundBounceLightingModel`, or read its uniforms (`AmbientGrade.ts`).
 2. Take the ambient diffuse through the lighting model's `ambient` (`AmbientSample.ts`), never the
@@ -54,8 +62,8 @@ If the mesh can reach under the sea or stands high, tell the water (`Water.ts`, 
 - What swims in the upper water (a fish) is marked instead (`markSwimmer`), and its material adds
   `Water.ts` `swimmerSway` to its position.
 - The water reflects only what lies inside `Water.reflectionBounds`: anything opaque placed off the
-  island or above 3 m grows that box through `Water.hold` (the game's props do: main.ts
-  `holdOpaque`).
+  island or above 3 m grows that box through `Water.hold` (the game's props do, through the
+  island's `holdOpaque` in `packages/island/IslandStages.ts`).
 
 ## 4. Place it and judge the whole frame
 

@@ -132,7 +132,7 @@ try {
 	// the three declarations
 	const { checkDeclarations } = await load( 'Extensions.ts' );
 	check( 'a declared definition is accepted', thrown( () => checkDeclarations( 'verify', 'whole', DECLARED ) ) === null );
-	check( 'a held definition is accepted', thrown( () => checkDeclarations( 'verify', 'held', { cost: 'grassBlades', testMode: { held: 'off', by: 'the tool', settled: 'nothing' }, land: { follower: 'the tool' } } ) ) === null );
+	check( 'a held definition is accepted', thrown( () => checkDeclarations( 'verify', 'held', { cost: 'ao', testMode: { held: 'off', by: 'the tool', settled: 'nothing' }, land: { follower: 'the tool' } } ) ) === null );
 	for ( const key of [ 'cost', 'testMode', 'land' ] ) {
 
 		const e = thrown( () => checkDeclarations( 'verify', 'partial', { ...DECLARED, [ key ]: undefined } ) );

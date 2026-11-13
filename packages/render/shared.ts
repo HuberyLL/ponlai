@@ -65,7 +65,7 @@ export const createShared = () => ( {
 	// `seaScale`), the sky's light in the water (`skyIrradianceSource`) and the sea's reflection of the
 	// sky, never the land's own sky light, the sky drawn or its meter (lighting/AmbientRelight.ts
 	// `lowSunSkyLift`); 1 from its top up and under cloud.
-	// Whatever else reads `skyIrradianceSource` takes it too: the rain's light (main.ts
+	// Whatever else reads `skyIrradianceSource` takes it too: the rain's light (RenderStages.ts
 	// `rain.setLightNode`), the storm's spray (StormSea's `sky`) and its whitecaps (ocean/Water.ts).
 	// Those draw only under rain and storm, which count as overcast (1), so only through a front from
 	// a clear or fair sky into them under a low sun, by the share of the clear sky left

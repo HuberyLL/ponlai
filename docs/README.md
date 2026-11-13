@@ -11,6 +11,8 @@ Steps for one task.
 - [Add a material](how-to/add-material.md)
 - [Add game content](how-to/add-game-content.md): a need, an item, a place, an option or a
   building in the game's simulation.
+- [Add to the renderer](how-to/add-to-the-renderer.md): a plant kind, a kind of local light or an
+  extra pass of the frame, with its scene events and histories.
 - [Check a change](how-to/check-a-change.md): the small scenes, a visual change, a performance
   change, a new history-dependent effect, something that depends on the land's shape.
 - [Upgrade three.js](how-to/upgrade-three.md): move to another version of three.js, with the
