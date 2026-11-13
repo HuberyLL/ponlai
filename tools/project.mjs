@@ -2,10 +2,10 @@
 // of this project: the globals the page mounts and its loading screen (`docs/how-to/write-a-tool.md`
 // gives the page's agreements), the dev server's address and the capture's default query, what a
 // stored reference depends on and what may carry it over, where the views' and clips' tables are,
-// where the scene's options are listed, and the module that adds the pipeline tracer to a page's
-// eval. A kit tool imports this file and nothing else outside tools/kit/ (tools/repo/verify-kit.mjs
-// checks that, and that no page global is named in the kit). Paths are written from the
-// repository's root.
+// where the scene's options are listed, the module that adds the pipeline tracer to a page's eval,
+// what the disk clean ages out and the servers serve.mjs starts. A kit tool imports this file and
+// nothing else outside tools/kit/ (tools/repo/verify-kit.mjs checks that, and that no page global
+// is named in the kit). Paths are written from the repository's root.
 export default Object.freeze( {
 
 	page: Object.freeze( {
@@ -63,5 +63,35 @@ export default Object.freeze( {
 
 	// the module whose installScript() gives an eval's `pipelines` (tools/kit/page-eval.mjs)
 	pipelines: 'tools/render/pipeline-trace.mjs',
+
+	// what the disk clean reads (tools/kit/storage.mjs)
+	storage: Object.freeze( {
+		// the folders under artifacts/ that hold the tasks' and the tools' output: their bulk files
+		// and reference stores age out
+		folders: Object.freeze( [ 'plans', 'archive', 'captures', 'perf', 'verification', 'crops', 'parity' ] ),
+		// what the project's tools leave in the system's temp folder: run folders, by the prefix of
+		// their names, removed a day after their last change, and browser profiles, kept but trimmed
+		// as the capture profiles are (both profile-frame's)
+		temp: Object.freeze( {
+			runs: Object.freeze( [ 'ponlai-profile-frame-' ] ),
+			profiles: Object.freeze( [ 'ponlai-profile-frame-chrome' ] ),
+		} ),
+	} ),
+
+	// the servers tools/kit/serve.mjs starts
+	serve: Object.freeze( {
+		// the command that builds what a preview serves
+		build: Object.freeze( [ 'npm', 'run', 'build' ] ),
+		// vite's command per mode: serve.mjs adds the host, the port and --strictPort, and waits for
+		// vite's `Local:` line
+		vite: Object.freeze( { dev: 'npx vite', preview: 'npx vite preview' } ),
+		// the ports a server takes, the first free one from the first to the last
+		ports: Object.freeze( [ 6400, 6499 ] ),
+		// where `--sha` puts a commit's detached worktree, in the main checkout
+		worktrees: '.claude/worktrees',
+		// the module whose prepareCheckout() fills a commit's worktree with what git does not hold,
+		// once its dependencies are in
+		prepare: 'tools/repo/serve-checkout.mjs',
+	} ),
 
 } );
