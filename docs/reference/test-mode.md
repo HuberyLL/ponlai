@@ -70,4 +70,4 @@ waited behind it.
 The bound changes how many frames a second a paused page draws, never what it draws: the parity
 views and the probe readings are the same bytes with and without it. A running page, and a paused
 one with `testMode=0`, is not bounded. A held frame is an animation frame on which the page does not
-tick (`docs/how-to/write-a-tool.md`, on waiting for rendered frames).
+tick (`docs/bindings/writing-tools-and-checks.md`, Build, on waiting for rendered frames).

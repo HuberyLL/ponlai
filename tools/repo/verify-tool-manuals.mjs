@@ -1,8 +1,8 @@
 // Checks that every entry tool carries its manual in its header and answers `--help` from it at once.
 //
 // A tool's manual is its header, so an agent or a new contributor learns the tool from the tool in
-// one cheap call (docs/how-to/write-a-tool.md gives the header's form). Run it after adding or
-// changing a tool; it is part of `npm run check` (tools/check.mjs).
+// one cheap call (docs/bindings/writing-tools-and-checks.md, Manual, gives the header's form). Run
+// it after adding or changing a tool; it is part of `npm run check` (tools/check.mjs).
 //
 // Usage:
 //   node tools/repo/verify-tool-manuals.mjs [file...]

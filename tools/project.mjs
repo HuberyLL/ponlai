@@ -1,11 +1,11 @@
 // The project's values that the generic tools in tools/kit/ read, so that a kit tool names no part
-// of this project: the globals the page mounts and its loading screen (`docs/how-to/write-a-tool.md`
-// gives the page's agreements), the dev server's address and the capture's default query, what a
-// stored reference depends on and what may carry it over, where the views' and clips' tables are,
-// where the scene's options are listed, the module that adds the pipeline tracer to a page's eval,
-// what the disk clean ages out and the servers serve.mjs starts. A kit tool imports this file and
-// nothing else outside tools/kit/ (tools/repo/verify-kit.mjs checks that, and that no page global
-// is named in the kit). Paths are written from the repository's root.
+// of this project: the globals the page mounts and its loading screen (the page's agreements:
+// docs/bindings/writing-tools-and-checks.md, Build), the dev server's address and the capture's
+// default query, what a stored reference depends on and what may carry it over, where the views'
+// and clips' tables are, where the scene's options are listed, the module that adds the pipeline
+// tracer to a page's eval, what the disk clean ages out and the servers serve.mjs starts. A kit
+// tool imports this file and nothing else outside tools/kit/ (tools/repo/verify-kit.mjs checks
+// that, and that no page global is named in the kit). Paths are written from the repository's root.
 export default Object.freeze( {
 
 	page: Object.freeze( {

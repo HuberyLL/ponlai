@@ -13,7 +13,9 @@ uv run tools/kit/img.py --help             # a Python tool, the same way
 on every tool, the GPU tools included. A manual says what question the tool answers, how to call
 it, what it prints and writes, whether it takes the GPU lock or opens a browser, its rough cost and
 what each exit code means. `tools/repo/verify-tool-manuals.mjs` checks every entry tool against
-these rules, and that this page names it. `docs/how-to/write-a-tool.md` says how to add one.
+these rules, and that this page names it. How to add one: the skill
+[writing-tools-and-checks](../../skills/writing-tools-and-checks/SKILL.md) and its
+[binding](../bindings/writing-tools-and-checks.md).
 
 The concepts several tools share have reference pages of their own:
 

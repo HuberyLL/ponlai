@@ -68,8 +68,9 @@ Detail lives where it is owned.
 
 - Before writing a script, look for the tool that answers the question (`docs/reference/tools.md`,
   the index of the tools); if one almost fits, add an option to it.
-- A script needed a second time, or by another task, becomes a tool (`docs/how-to/write-a-tool.md`).
-  A truly one-off script stays in the task's artifacts folder.
+- A script needed a second time, or by another task, becomes a tool
+  (`skills/writing-tools-and-checks/SKILL.md`). A truly one-off script stays in the task's
+  artifacts folder.
 - Never start a GPU tool to see its options: it queues for the lock and renders. Read its header.
 
 ## Rules for every change
@@ -171,8 +172,9 @@ meets it.
 - Gameplay: `docs/design/game-design.md`; game content: `docs/how-to/add-game-content.md`;
   game UI: `docs/design/ui.md`. The look: `docs/design/art-direction.md`,
   `docs/reference/look-values.md`.
-- A tool: `docs/how-to/write-a-tool.md`. three.js: `docs/how-to/upgrade-three.md`. A commit:
-  `docs/how-to/check-a-change.md`. A file: `node tools/repo/code-map.mjs`.
+- A tool or a check: `skills/writing-tools-and-checks/SKILL.md`. three.js:
+  `docs/how-to/upgrade-three.md`. A commit: `docs/how-to/check-a-change.md`. A file:
+  `node tools/repo/code-map.mjs`.
 
 ## Map
 
