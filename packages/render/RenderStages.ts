@@ -38,6 +38,7 @@ import * as THREE from 'three/webgpu';
 import { Sky } from './sky/Sky.ts';
 import { createExposure, type ExposureTables } from './look/ExposureLook.ts';
 import { createDayWindows, type DayWindowTable } from './look/DayLook.ts';
+import { createAmbientTables, createKeyLift } from './look/AmbientLook.ts';
 import type { Look } from './look/Look.ts';
 import { DAY_PRESETS, type DayPreset, DayCycle, sunRising, duskForce, nightAmbientShare } from './sky/DayCycle.ts';
 import { isParkedWeather, WEATHER_PRESETS, type WeatherName, isWindLevel, type WindLevel, Weather, type TunedField, type WeatherState, deckLight, cloudedShare, type WindChoice } from './sky/Weather.ts';
@@ -90,7 +91,7 @@ import { watchPipelines } from './post/Settled.ts';
 import { MOON_GLINT_RADIUS, SCENE_RADIANCE_SCALE } from './lighting/Radiometry.ts';
 import { SUN_GLINT_DISC } from './lighting/SunDisc.ts';
 import { debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
-import { ambientGrade } from './lighting/AmbientGrade.ts';
+import { createAmbientGrade, type AmbientGrade } from './lighting/AmbientGrade.ts';
 import { updateLeafLight } from './vegetation/LeafLight.ts';
 import { prepassScene, installVegetationPrepass } from './vegetation/VegetationPrepass.ts';
 import { opaquePrepassScene, installOpaquePrepass } from './post/OpaquePrepass.ts';
@@ -215,6 +216,8 @@ export interface RenderParts extends RenderHost {
 	sun: THREE.DirectionalLight;
 	sunShadow: SunShadow;
 	localLights: LocalLights;
+	/** the ambient grade's controller, made from the look's tables (`createLight`) */
+	ambientGrade: AmbientGrade;
 	history: SceneHistory;
 	invalidateSunShadow: () => void;
 	shadowDirection: THREE.Vector3;
@@ -366,12 +369,13 @@ export function createScenes( render: RenderParts, { viewport, dpr }: { viewport
 /**
  * The scene the page loads (`sceneOptions`), the sky, the day and the weather, the wind, the rain
  * and the sky's quality knobs. `seaFog` and `dayFog` start the deep sea fog and the day's fog layer
- * on. `look`: the look's tables the exposure and the day's windows are made from
- * (look/ExposureLook.ts `createExposure`, look/DayLook.ts `createDayWindows`), which the sky carries
- * to the day, the grade, the frame's passes and the night's readers (`sky.exposure`,
- * `sky.dayWindows`).
+ * on. `look`: the look's tables the exposure, the day's windows and the low key's lift are made
+ * from (look/ExposureLook.ts `createExposure`, look/DayLook.ts `createDayWindows`,
+ * look/AmbientLook.ts `createKeyLift`), which the sky carries to the day, the grade, the frame's
+ * passes, the night's readers and the key's lifted direction (`sky.exposure`, `sky.dayWindows`,
+ * `sky.keyLift`).
  */
-export function createSky( render: RenderParts, { scene: loaded, seaFog, dayFog, look }: { scene: SceneOptions; seaFog: boolean; dayFog: boolean; look: ExposureTables & { day: DayWindowTable } } ) {
+export function createSky( render: RenderParts, { scene: loaded, seaFog, dayFog, look }: { scene: SceneOptions; seaFog: boolean; dayFog: boolean; look: ExposureTables & { day: DayWindowTable } & Pick<Look, 'ambient'> } ) {
 
 	const { quality, renderer } = render;
 
@@ -379,7 +383,8 @@ export function createSky( render: RenderParts, { scene: loaded, seaFog, dayFog,
 
 	const exposure = createExposure( look );
 	const dayWindows = createDayWindows( look.day );
-	const sky = new Sky( renderer, { exposure, dayWindows, elevation: 32, azimuth: - 8 } );
+	const keyLift = createKeyLift( look.ambient.keyLift );
+	const sky = new Sky( renderer, { exposure, dayWindows, keyLift, elevation: 32, azimuth: - 8 } );
 	render.sky = sky;
 	sky.setEnvironmentSource( quality.environmentSource );
 	staged( render ).loaded = loaded;
@@ -427,8 +432,10 @@ export function createSky( render: RenderParts, { scene: loaded, seaFog, dayFog,
 }
 
 /** The sky's runtime quality, the environment's fill, the sun's light and its shadow map. `look`:
- * the look's tables the local lights take (lighting/LocalLights.ts `createLocalLights`). */
-export function createLight( render: RenderParts, { look }: { look: LocalLightsTables } ) {
+ * the look's tables the local lights and the ambient grade take (lighting/LocalLights.ts
+ * `createLocalLights`; look/AmbientLook.ts `createAmbientTables`, lighting/AmbientGrade.ts
+ * `createAmbientGrade`, whose tables the ambient light's relight reads too: `createAmbient`). */
+export function createLight( render: RenderParts, { look }: { look: LocalLightsTables & Pick<Look, 'ambient'> } ) {
 
 	const { qualityTier, quality, scene, sky, dayCycle } = render;
 	const { loaded } = staged( render );
@@ -436,6 +443,9 @@ export function createLight( render: RenderParts, { look }: { look: LocalLightsT
 	render.applyEnvironmentFill = applyEnvironmentFill;
 	// the local lights' registry, which the island's kinds of light join (LocalLights.ts)
 	render.localLights = createLocalLights( look );
+	// the ambient grade's controller, which the frame writes into the lighting models' uniforms
+	// (lighting/AmbientGrade.ts)
+	render.ambientGrade = createAmbientGrade( createAmbientTables( look.ambient ) );
 
 	render.skyElapsed = 0;
 	render.lastSkyTime = render.simTime;
@@ -605,9 +615,9 @@ export function createEnvironment( render: RenderParts ) {
 		sun.intensity = 1;
 		sun.position.copy( sky.keyDir ).multiplyScalar( 120 ).add( sun.target.position );
 		shared.sunDir.value.copy( sky.keyDir );
-		updateKeyLift( sky.keyDir, sky.keyIsMoon );
+		updateKeyLift( sky.keyLift, sky.keyDir, sky.keyIsMoon );
 		keyGlint.radius.value = sky.keyIsMoon ? MOON_GLINT_RADIUS : SUN_GLINT_DISC;
-		liftedKeyDirection( sky.keyDir, sky.keyIsMoon, shadowDirection );
+		liftedKeyDirection( sky.keyLift, sky.keyDir, sky.keyIsMoon, shadowDirection );
 		shared.sunColor.value.set( sun.color.r, sun.color.g, sun.color.b );
 		keyChroma.value = sky.keyIsMoon ? 0 : 1;
 		const cosI = Math.max( sky.keyDir.y, 0 );
@@ -890,7 +900,7 @@ export function createAmbient( render: RenderParts, { ambientData, world }: { am
 	const ambient = new AmbientVolume( renderer, ambientData );
 	render.ambient = ambient;
 	installAmbientVolume( ambient );
-	const ambientRelight = new AmbientRelight( { renderer, volume: ambient, shared, sky: ambientSky, weights: () => sky.environmentWeights(), cloud: ( position ) => sky.keyDirectVisibility( position ), seaCloud: ( position ) => sky.cloudVisibility( position ), keyHeight: () => liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), dayWindows: sky.dayWindows, sunElevation: () => sky.elevation, rising: () => sky.rising, clouded: () => cloudedShare( weather.skyMix ), overcast: () => weather.skyMix[ 3 ] ?? 0, moon: () => ( { elevation: sky.moonElevation, skyShare: sky.moonSkyShare } ) } );
+	const ambientRelight = new AmbientRelight( { renderer, volume: ambient, shared, sky: ambientSky, weights: () => sky.environmentWeights(), cloud: ( position ) => sky.keyDirectVisibility( position ), seaCloud: ( position ) => sky.cloudVisibility( position ), keyHeight: () => liftedKeyHeight( sky.keyLift, sky.keyDir, sky.keyIsMoon ), dayWindows: sky.dayWindows, grade: render.ambientGrade.tables, sunElevation: () => sky.elevation, rising: () => sky.rising, clouded: () => cloudedShare( weather.skyMix ), overcast: () => weather.skyMix[ 3 ] ?? 0, moon: () => ( { elevation: sky.moonElevation, skyShare: sky.moonSkyShare } ) } );
 	render.ambientRelight = ambientRelight;
 	// the environment's own harmonics, which the specular's relight divides by (AmbientSample.ts)
 	installEnvironmentHarmonics( ambientRelight );
@@ -1106,7 +1116,7 @@ export interface FrameStages {
  */
 export function createFrameStages( render: RenderParts, host: FrameHost ): FrameStages {
 
-	const { DEBUG, renderer, submitBatch, scene, waterScene, rainScene, afterScene, camera, sky, dayCycle, weather, wind, lighting, applyEnvironmentFill, sun, sunShadow, shadowDirection, prepareHaze, prepareSkyState, publishLighting, retuneSky, fft, waveMaps, pipeline, groundBounce, shoreWaves, ambientRelight, refractedSun, stormSea } = render;
+	const { DEBUG, renderer, submitBatch, scene, waterScene, rainScene, afterScene, camera, sky, dayCycle, weather, wind, lighting, applyEnvironmentFill, sun, sunShadow, shadowDirection, prepareHaze, prepareSkyState, publishLighting, retuneSky, fft, waveMaps, pipeline, groundBounce, shoreWaves, ambientRelight, ambientGrade, refractedSun, stormSea } = render;
 	const S = pipeline.settings;
 	render.shadowElapsed = 0;
 	// The temporal resolve's per-frame inputs (TemporalAA.ts): what besides the camera, the clock and the

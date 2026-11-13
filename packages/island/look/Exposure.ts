@@ -123,7 +123,7 @@ export const EXPOSURE: ExposureLook = {
 	// The share of a clear sky's light the overcast deck lets through onto the land by night: the
 	// open land's illuminance under overcast against a clear sky's with a key at the moon's height,
 	// measured on our island with the deck in its night form (sky/CloudModel.ts MOON_DECK_GLOW, the whole
-	// deck seen) and the moon's fixed land gain (look/AmbientLook.ts OVERCAST_MOON_LAND), the
+	// deck seen) and the moon's fixed land gain (look/Ambient.ts `overcastMoonLand`), the
 	// form the night draws. So in scene units an overcast night lies log2( 1 / 0.72 ), about 0.47
 	// stops, under a clear one. The day's deck form reads about 0.79 by the same measure; the night
 	// never takes it.

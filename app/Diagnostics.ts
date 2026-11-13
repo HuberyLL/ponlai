@@ -2,7 +2,7 @@
 // 30 frames, and `window.__PONLAI__`, the scene's handles for the capture and profiling tools and
 // the console. Both exist only on the dev server or with `?debug` / `?profile`.
 import * as THREE from 'three/webgpu';
-import { type GradeChanges, DynamicResolution, shared, ambientGrade, liftedKeyDirection, debugFlags, tuneApi, AA_MODE, AA_SOURCE, motionState, taaCut, motionCheck, jitter, restEpoch, preExposure, renderEvent, gtaoUniforms, type RenderParts } from '../packages/render/index.ts';
+import { type GradeChanges, DynamicResolution, shared, liftedKeyDirection, debugFlags, tuneApi, AA_MODE, AA_SOURCE, motionState, taaCut, motionCheck, jitter, restEpoch, preExposure, renderEvent, gtaoUniforms, type RenderParts } from '../packages/render/index.ts';
 import type { QualityProfile } from '../packages/render/setup.ts';
 import { soilUniforms, setGroundGain, MEADOW_EXTENT, swardField, type IslandParts } from '../packages/island/index.ts';
 import type { PageParts } from './Page.ts';
@@ -113,7 +113,7 @@ export function createDiagnostics( render: RenderParts, island: IslandParts, pag
 			quality: qualityTier,
 			weather: weather.target,
 			// the ambient grade's values (lighting/AmbientGrade.ts) and whether the GUI overrides them
-			ambient: { ...ambientGrade.current, override: ambientGrade.override },
+			ambient: { ...render.ambientGrade.current, override: render.ambientGrade.override },
 			weatherProgress: + weather.progress.toFixed( 3 ),
 			rain: + sky.weather.rain.toFixed( 3 ),
 			wetness: + shared.wetness.value.toFixed( 3 ),
@@ -153,9 +153,9 @@ export function exposeDebugHandles( render: RenderParts, island: IslandParts, pa
 
 	if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, waveMaps, water: render.water, pipeline, shared, refractedSun, groundBounce,
 		// the direction the surfaces take the key's light from, the low key's lift included (lighting/KeyLift.ts)
-		keyShading: () => liftedKeyDirection( sky.keyDir, sky.keyIsMoon, new THREE.Vector3() ),
+		keyShading: () => liftedKeyDirection( sky.keyLift, sky.keyDir, sky.keyIsMoon, new THREE.Vector3() ),
 		// the ambient grade (lighting/AmbientGrade.ts): `current`, `table`, `override` and `manual`
-		ambient: ambientGrade,
+		ambient: render.ambientGrade,
 		// the local lights (lighting/LocalLights.ts): `sources`, `gain`, `enabled`, `info()` (a promise: the
 		// sources in view, the fullest cluster, the clusters that overflowed)
 		localLights: render.localLights,

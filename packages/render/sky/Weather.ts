@@ -46,8 +46,8 @@
 // still reach every preset, so captures, probes and a later revival can use them. Under their deck
 // rain, storm and fog take what overcast's share takes, counting as overcast in `skyMix`: the level air and the sky
 // gain (DECK_SKY_GAIN, the water's), the land's own gains under overcast
-// (lighting/AmbientRelight.ts OVERCAST_LAND_UNIT, look/AmbientLook.ts OVERCAST_LAND for the
-// sun's part and OVERCAST_MOON_LAND for the moon's),
+// (lighting/AmbientRelight.ts OVERCAST_LAND_UNIT, the look's ambient `overcastLand` for the
+// sun's part and `overcastMoonLand` for the moon's: look/AmbientLook.ts),
 // overcast's sky shape (weather/VolumetricHaze.ts) and the exposure by the sky with overcast's key
 // (post/Exposure.ts), and the land takes the key through their clouds' shadow as it does under
 // overcast.
@@ -99,8 +99,8 @@ export function withMoon( sun: number, moon: number, share: number ): number {
  * the setting sun under the deck lit in the beam's red and then fell dark within half a degree,
  * while the sky and the sea, which the frame's exposure meters, kept their light: the land flashed
  * at the horizon and then dropped. Below it the land under the deck keeps the deck's diffuse light
- * alone (the sky's light on it, the sun's part of the land gain lighting/AmbientGrade.ts
- * OVERCAST_LAND), which does not break at
+ * alone (the sky's light on it, the sun's part of the land gain, look/AmbientLook.ts
+ * `overcastLand`), which does not break at
  * the horizon. The moon's part of the floor keeps its own (`withMoon`). */
 export function overcastFloorSun( elevation: number ): number {
 
@@ -144,8 +144,8 @@ export function deckLight( elevation: number, clouded: number, overcast: number 
  * stops under the deck and the sea dark under it. It comes in with the deck's light (`deckLight`).
  * It is the water's alone: under either deck the land's sky light takes a gain of its own in its
  * place, by the deck's light (under overcast lighting/AmbientRelight.ts OVERCAST_LAND_UNIT times the
- * weather's land gain, its sun's part look/AmbientLook.ts OVERCAST_LAND and its moon's
- * OVERCAST_MOON_LAND; under
+ * weather's land gain, its sun's part look/AmbientLook.ts `overcastLand` and its moon's
+ * `overcastMoonLand`; under
  * a cloudy deck AmbientRelight.ts CLOUDY_LAND), and the water keeps this, whichever reads it (the
  * water drawn, the sea's bounce onto the land). */
 export const DECK_SKY_GAIN = 3;
@@ -330,8 +330,8 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // enough that its disc does not show (SkyDome.ts `domeColour`): the land under it is even, its sky the
 // deck's own glow about the sun's place, which the land takes with the rest of the sky
 // (lighting/AmbientRelight.ts OVERCAST_LAND_UNIT, CLOUDY_LAND; under overcast the key's bounce
-// takes the weather's land gain too, its sun's part look/AmbientLook.ts OVERCAST_LAND, its
-// moon's OVERCAST_MOON_LAND) and the water by
+// takes the weather's land gain too, its sun's part look/AmbientLook.ts `overcastLand`, its
+// moon's `overcastMoonLand`) and the water by
 // DECK_SKY_GAIN; exposed by the sky (post/Exposure.ts). A sky's own light by day may stand at a
 // level of the weather's (`daySky`, `daySkyExponent`), on the light the sun gives the sky alone
 // (`daySkyAt`). Overcast's stands at 0.092 at 18 degrees with an exponent of 1.15, on the closed

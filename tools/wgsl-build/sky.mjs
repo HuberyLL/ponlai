@@ -10,6 +10,7 @@ import * as THREE from 'three/webgpu';
 import { Sky } from '../../packages/render/sky/Sky.ts';
 import { createExposure } from '../../packages/render/look/ExposureLook.ts';
 import { createDayWindows } from '../../packages/render/look/DayLook.ts';
+import { createKeyLift } from '../../packages/render/look/AmbientLook.ts';
 import { installedLook } from '../../packages/render/look/Look.ts';
 import { VolumetricHaze } from '../../packages/render/weather/VolumetricHaze.ts';
 import { sceneMRT } from '../../packages/render/post/Motion.ts';
@@ -29,7 +30,7 @@ export default function ( { renderer } ) {
 	try {
 
 		// the exposure from the look the build installed, as the page's sky stage makes it
-		sky = new Sky( renderer, { exposure: createExposure( installedLook() ), dayWindows: createDayWindows( installedLook().day ) } );
+		sky = new Sky( renderer, { exposure: createExposure( installedLook() ), dayWindows: createDayWindows( installedLook().day ), keyLift: createKeyLift( installedLook().ambient.keyLift ) } );
 
 	} finally {
 

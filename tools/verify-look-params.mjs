@@ -45,9 +45,28 @@
 // - Making the others leaves the island's as it was.
 // - A wind made on a response (`Wind`, `createWindUniforms`) sets the plants' speed from that
 //   response at every wind, and the previous frame's uniforms hold the same response.
+//
+// The ambient light's look (packages/render/look/AmbientLook.ts `createAmbientTables`,
+// `createKeyLift`), in plain node, made from the island's ambient table, the neutral one and a copy
+// of the island's with every knob of every row moved, both gains under overcast's deck and the gain
+// on the sun's bounce raised, and the lift's rows and corner moved. Guarantees, each a failure:
+// - Each set holds its own table's numbers: the gain on the sun's bounce, the sun's and the moon's
+//   parts of the land gain under overcast's deck, the grade (setting and rising) at every row's
+//   elevation in every sky alone (the knobs at no grade under a row's changes), held beyond the end
+//   rows, and the knobs at no grade under no sky; the lift's shading at every row's elevation, held
+//   below the first, the key's own elevation well above the last, and none at all from the neutral
+//   set (every elevation shading as itself: its single row's slopes and its corner of no width
+//   divide by nothing).
+// - Making the others leaves the island's as it was: the grade over a grid of elevations, skies and
+//   both sides, and the lift over a grid of elevations, are the same numbers bit for bit before and
+//   after.
+// - The changed copy differs from the island's in every knob and every gain, and in the lift.
+// - The lifted key (packages/render/lighting/KeyLift.ts) follows the lift it is given: its height
+//   and its direction's elevation for a sun key are the lift's shading elevation, the key's own
+//   under the neutral set.
 // Under node the tune table is off (packages/render/debug/Tune.ts `TUNE_ON`), so each system's
 // tunables are its own; on a debug page they share one table by name (ExposureLook.ts's,
-// DayLook.ts's and Wind.ts's headers).
+// DayLook.ts's, Wind.ts's and AmbientLook.ts's headers).
 //
 // The other systems that take their tables at creation, through Vite's SSR loader with the
 // island's look installed (so a number that came from the installed look instead of the table
@@ -55,8 +74,15 @@
 // occlusion's floor and the meadow canopy's two media), the local lights (packages/render/lighting/
 // LocalLights.ts `LocalLights`: the gain), the sea's detail (packages/render/ocean/SeaDetail.ts:
 // its three strengths), the FFT ocean's distant swell (packages/render/ocean/OceanFFT.ts: every
-// field of it) and the wind's look the shared uniforms' wind carries (every field but the limbs'
-// reference speed, a tunable, which the plain node part checks). Each is made from the island's
+// field of it), the wind's look the shared uniforms' wind carries (every field but the limbs'
+// reference speed, a tunable, which the plain node part checks) and the ambient grade's controller
+// (packages/render/lighting/AmbientGrade.ts `createAmbientGrade`, which loads only there: the
+// tables it holds and the grade it writes into the lighting models' uniforms, worked out here from
+// its own tables; its two gains are tunables, so they are read through those tables, which the
+// plain node part checks per table). The ambient light's relight (lighting/AmbientRelight.ts) is
+// not made: it needs a renderer and the probes' volume, and builds its kernel as it is made; it
+// reads the controller's tables, which the stage hands it (RenderStages.ts `createAmbient`). Each
+// is made from the island's
 // look, the neutral one and a copy of the island's with every one of these numbers changed, in
 // that order. Guarantees, each a failure:
 // - Each reads its own table's numbers, equal to the table's and none from another.
@@ -68,6 +94,9 @@ import { createExposure } from '../packages/render/look/ExposureLook.ts';
 import { DayCycle, cloudMoonShare, displayNight, eveningHour, exposureNight, morningHour, moonKeyShare, nightAmbientAt, nightAmbientShare, rampIn, skyNight, starNight, yunpengNightShare } from '../packages/render/sky/DayCycle.ts';
 import { createDayWindows } from '../packages/render/look/DayLook.ts';
 import { Wind, createWindUniforms, plantSpeedOf, windResponse } from '../packages/render/weather/Wind.ts';
+import { AMBIENT_COLUMNS, AMBIENT_KNOBS, DEFAULT_KNOBS, createAmbientTables, createKeyLift } from '../packages/render/look/AmbientLook.ts';
+import { liftedKeyDirection, liftedKeyHeight } from '../packages/render/lighting/KeyLift.ts';
+import * as THREE from 'three/webgpu';
 import { ISLAND_LOOK } from '../packages/island/look/IslandLook.ts';
 import { NEUTRAL_LOOK } from '../packages/render/look/NeutralLook.ts';
 
@@ -359,6 +388,121 @@ for ( const k of Object.keys( islandWindBefore ) ) assert.notDeepEqual( response
 
 console.log( `Wind: three responses from three tables, each its own (${ WIND_SPEEDS.length } plants' speeds each), the island's unmoved by the others, the wind and its previous frame on their own response: passed.` );
 
+// ---- the ambient light's look
+
+// the island's ambient table changed: every knob of every row moved (by its column), the gains raised,
+// the lift's rows and corner moved
+function changedAmbient( look ) {
+
+	const a = look.ambient;
+	const row = ( r ) => ( { at: r.at, ...Object.fromEntries( AMBIENT_COLUMNS.map( ( column, c ) => [ column, Object.fromEntries( AMBIENT_KNOBS.map( ( k ) => [ k, ( r[ column ]?.[ k ] ?? DEFAULT_KNOBS[ k ] ) + 0.125 * ( c + 1 ) ] ) ) ] ) ) } );
+	return {
+		grade: a.grade.map( row ),
+		gradeRising: a.gradeRising.map( row ),
+		sunBounceGain: a.sunBounceGain * 2,
+		overcastLand: a.overcastLand + 0.25,
+		overcastMoonLand: a.overcastMoonLand + 0.25,
+		keyLift: { rows: a.keyLift.rows.map( ( r ) => ( { at: r.at + 1, shading: r.shading + 2 } ) ), join: a.keyLift.join + 0.5 },
+	};
+
+}
+
+const ONE_SKY = AMBIENT_COLUMNS.map( ( _, c ) => AMBIENT_COLUMNS.map( ( __, d ) => ( c === d ? 1 : 0 ) ) );
+const AMBIENT_SKIES = [ ...ONE_SKY, [ 0.4, 0.1, 0.3, 0.2 ] ];
+const LIFT_ELEVATIONS = [];
+for ( let e = - 30; e <= 60; e += 0.125 ) LIFT_ELEVATIONS.push( e );
+// every number a set gives over the grid, in order: its gains, the grade, the lift
+function ambientReadings( tables, lift ) {
+
+	const out = [ tables.sunBounceGain(), tables.overcastLand(), tables.overcastMoonLand ];
+	const knobs = { ...DEFAULT_KNOBS };
+	for ( const e of ELEVATIONS ) for ( const sky of AMBIENT_SKIES ) for ( const rising of [ false, true ] ) {
+
+		tables.evaluate( e, sky, knobs, rising );
+		for ( const k of AMBIENT_KNOBS ) out.push( knobs[ k ] );
+
+	}
+	for ( const e of LIFT_ELEVATIONS ) out.push( lift( e ) );
+	return out;
+
+}
+
+// each set reads its own table
+function ownAmbient( tables, lift, table, name ) {
+
+	assert.equal( tables.sunBounceGain(), table.sunBounceGain, `${ name } ambient: sunBounceGain` );
+	assert.equal( tables.overcastLand(), table.overcastLand, `${ name } ambient: overcastLand` );
+	assert.equal( tables.overcastMoonLand, table.overcastMoonLand, `${ name } ambient: overcastMoonLand` );
+	const knobs = { ...DEFAULT_KNOBS };
+	for ( const [ side, rows, rising ] of [ [ 'grade', table.grade, false ], [ 'gradeRising', table.gradeRising, true ] ] ) {
+
+		const at = ( r, e, label ) => AMBIENT_COLUMNS.forEach( ( column, c ) => {
+
+			tables.evaluate( e, ONE_SKY[ c ], knobs, rising );
+			for ( const k of AMBIENT_KNOBS ) assert.equal( knobs[ k ], r[ column ]?.[ k ] ?? DEFAULT_KNOBS[ k ], `${ name } ambient: ${ side } ${ label } ${ column } ${ k }` );
+
+		} );
+		for ( const r of rows ) at( r, r.at, `at ${ r.at }` );
+		at( rows[ 0 ], rows[ 0 ].at + 10, 'held above' );
+		at( rows[ rows.length - 1 ], rows[ rows.length - 1 ].at - 10, 'held below' );
+		tables.evaluate( 10, [ 0, 0, 0, 0 ], knobs, rising );
+		for ( const k of AMBIENT_KNOBS ) assert.equal( knobs[ k ], DEFAULT_KNOBS[ k ], `${ name } ambient: ${ side } under no sky, ${ k }` );
+
+	}
+	const rows = table.keyLift.rows, last = rows[ rows.length - 1 ];
+	for ( const r of rows ) assert.equal( lift( r.at ), r.at >= last.shading + table.keyLift.join ? r.at : r.shading, `${ name } lift: at ${ r.at }` );
+	assert.equal( lift( rows[ 0 ].at - 5 ), rows[ 0 ].shading, `${ name } lift: held below` );
+	for ( const e of [ 30, 45, 60, 89 ] ) assert.equal( lift( e ), e, `${ name } lift: the key's own at ${ e }` );
+
+}
+
+const ambientLooks = { island: ISLAND_LOOK.ambient, neutral: NEUTRAL_LOOK.ambient, changed: changedAmbient( ISLAND_LOOK ) };
+const makeAmbient = ( table ) => ( { tables: createAmbientTables( table ), lift: createKeyLift( table.keyLift ) } );
+const islandAmbient = makeAmbient( ambientLooks.island );
+const islandAmbientBefore = ambientReadings( islandAmbient.tables, islandAmbient.lift );
+const ambients = { island: islandAmbient, neutral: makeAmbient( ambientLooks.neutral ), changed: makeAmbient( ambientLooks.changed ) };
+for ( const [ name, { tables, lift } ] of Object.entries( ambients ) ) ownAmbient( tables, lift, ambientLooks[ name ], name );
+ambientReadings( islandAmbient.tables, islandAmbient.lift ).forEach( ( v, i ) => assert.ok( Object.is( v, islandAmbientBefore[ i ] ), `the island's ambient reading ${ i } moved: ${ islandAmbientBefore[ i ] } -> ${ v }` ) );
+// the neutral set lifts nothing: every elevation shades as itself
+for ( const e of LIFT_ELEVATIONS ) assert.equal( ambients.neutral.lift( e ), e, `neutral lift: at ${ e }` );
+// the changed copy differs from the island's in every knob, every gain and the lift
+{
+
+	const knobs = { ...DEFAULT_KNOBS }, island = { ...DEFAULT_KNOBS };
+	for ( const k of AMBIENT_KNOBS ) {
+
+		const moved = ELEVATIONS.some( ( e ) => AMBIENT_SKIES.some( ( sky ) => {
+
+			ambients.changed.tables.evaluate( e, sky, knobs );
+			islandAmbient.tables.evaluate( e, sky, island );
+			return knobs[ k ] !== island[ k ];
+
+		} ) );
+		assert.ok( moved, `changed ambient: ${ k } reads as the island's` );
+
+	}
+	for ( const g of [ 'sunBounceGain', 'overcastLand' ] ) assert.notEqual( ambients.changed.tables[ g ](), islandAmbient.tables[ g ](), `changed ambient: ${ g } reads as the island's` );
+	assert.notEqual( ambients.changed.tables.overcastMoonLand, islandAmbient.tables.overcastMoonLand, 'changed ambient: overcastMoonLand reads as the island\'s' );
+	assert.ok( LIFT_ELEVATIONS.some( ( e ) => ambients.changed.lift( e ) !== islandAmbient.lift( e ) ), 'changed lift reads as the island\'s' );
+
+}
+// the lifted key follows the lift it is given: a sun key's height and direction take its shading
+let liftedKeys = 0;
+for ( const [ name, { lift } ] of Object.entries( ambients ) ) for ( const e of [ 0.5, 3, 5.5, 6.5, 10, 14, 20, 45 ] ) {
+
+	const r = THREE.MathUtils.degToRad( e ), key = new THREE.Vector3( Math.cos( r ) * 0.6, Math.sin( r ), Math.cos( r ) * 0.8 );
+	const shading = lift( THREE.MathUtils.radToDeg( Math.atan2( key.y, Math.hypot( key.x, key.z ) ) ) );
+	near( liftedKeyHeight( lift, key ), Math.sin( THREE.MathUtils.degToRad( shading ) ), `${ name } lifted key: height at ${ e }` );
+	const d = liftedKeyDirection( lift, key, false, new THREE.Vector3() );
+	near( THREE.MathUtils.radToDeg( Math.atan2( d.y, Math.hypot( d.x, d.z ) ) ), shading, `${ name } lifted key: elevation at ${ e }`, 1e-9 );
+	if ( name === 'neutral' ) assert.ok( d.equals( key ), `neutral lifted key: moved at ${ e }` );
+	liftedKeys ++;
+
+}
+assert.ok( [ 0.5, 3, 5.5 ].every( ( e ) => islandAmbient.lift( e ) !== e ), 'the island\'s lift lifts a low sun' );
+
+console.log( `Ambient light: three sets from three tables, each its own (${ islandAmbientBefore.length } readings), the island's unmoved by the others, the changed copy off the island's in every knob, gain and the lift, the neutral set lifting nothing, the lifted key on its own lift (${ liftedKeys } keys): passed.` );
+
 // ---- the systems that load through Vite's SSR loader
 
 // every number a system made from `look` holds, by name, in order
@@ -424,6 +568,7 @@ function changedSystems( look ) {
 	for ( const k of Object.keys( out.sea.detail ) ) out.sea.detail[ k ] += 0.5;
 	for ( const k of Object.keys( out.sea.swell ) ) out.sea.swell[ k ] += 1;
 	out.wind = changedWind( look );
+	out.ambient = changedAmbient( look );
 	return out;
 
 }
@@ -435,7 +580,7 @@ const server = await createServer( {
 	server: { middlewareMode: true, hmr: false, ws: false, watch: null },
 	optimizeDeps: { noDiscovery: true, include: [] },
 } );
-let systems = 0;
+let systems = 0, grades = 0;
 try {
 
 	const load = ( file ) => server.ssrLoadModule( `/${ file }` );
@@ -446,6 +591,9 @@ try {
 	const { LocalLights } = await load( 'packages/render/lighting/LocalLights.ts' );
 	const { SeaDetail } = await load( 'packages/render/ocean/SeaDetail.ts' );
 	const { OceanFFT } = await load( 'packages/render/ocean/OceanFFT.ts' );
+	const { createAmbientTables: ssrAmbientTables } = await load( 'packages/render/look/AmbientLook.ts' );
+	const { createAmbientGrade, ambient } = await load( 'packages/render/lighting/AmbientGrade.ts' );
+	const { overcastDeckLight, withMoon } = await load( 'packages/render/sky/Weather.ts' );
 	const make = ( look ) => {
 
 		const shared = createShared( look );
@@ -480,9 +628,52 @@ try {
 	}
 	systems = Object.keys( islandBefore ).length;
 
+	// The ambient grade's controller: made on each look's tables, it holds them, its table is theirs
+	// (the moon's part of the key's bounce from the rows at the moon's height) and the uniforms it
+	// writes are its own table's, with its own gains (the gains read through its tables: tunables,
+	// shared by name here).
+	const GRADE_INPUTS = [ [ 45, [ 1, 0, 0, 0 ], false, 20, 0 ], [ 4, [ 0, 0.5, 0, 0.5 ], false, 18, 0.2 ], [ - 1, [ 0, 0, 0.3, 0.7 ], true, 25, 0.6 ], [ - 12, [ 0, 0, 0, 1 ], false, 30, 1 ], [ 12, [ 0.2, 0.2, 0.3, 0.3 ], true, 16, 0 ] ];
+	const gradeReadings = ( grade ) => GRADE_INPUTS.map( ( input ) => {
+
+		grade.update( ...input );
+		return { table: { ...grade.table }, uniforms: Object.fromEntries( AMBIENT_KNOBS.map( ( k ) => [ k, ambient[ k ].value ] ) ) };
+
+	} );
+	// what a controller on `tables` writes, worked out from them (lighting/AmbientGrade.ts `update`)
+	const gradeWanted = ( tables ) => GRADE_INPUTS.map( ( [ elevation, weights, rising, moonElevation, moonShare ] ) => {
+
+		const table = tables.evaluate( elevation, weights, { ...DEFAULT_KNOBS }, rising );
+		table.sunBounce = withMoon( table.sunBounce, tables.evaluate( moonElevation, weights, { ...DEFAULT_KNOBS } ).sunBounce, moonShare );
+		const uniforms = Object.fromEntries( AMBIENT_KNOBS.map( ( k ) => [ k, table[ k ] ] ) );
+		const land = tables.overcastLand(), moon = tables.overcastMoonLand, overcast = weights[ 3 ] ?? 0;
+		uniforms.sunBounce *= tables.sunBounceGain();
+		uniforms.sunBounce *= moon === 1
+			? 1 + ( land - 1 ) * ( overcast * withMoon( overcastDeckLight( elevation ), 0, moonShare ) )
+			: 1 + ( moon - 1 ) * ( overcast * withMoon( overcastDeckLight( elevation ) * ( land - 1 ) / ( moon - 1 ), overcastDeckLight( moonElevation ), moonShare ) );
+		return { table, uniforms };
+
+	} );
+	const gradeTables = Object.fromEntries( Object.entries( looks ).map( ( [ name, look ] ) => [ name, ssrAmbientTables( look.ambient ) ] ) );
+	const islandGrade = createAmbientGrade( gradeTables.island );
+	const islandGradeBefore = gradeReadings( islandGrade );
+	const gradeMade = { island: islandGrade, neutral: createAmbientGrade( gradeTables.neutral ), changed: createAmbientGrade( gradeTables.changed ) };
+	const gradeRead = {};
+	for ( const [ name, grade ] of Object.entries( gradeMade ) ) {
+
+		assert.equal( grade.tables, gradeTables[ name ], `${ name } grade: the tables it holds` );
+		gradeRead[ name ] = gradeReadings( grade );
+		assert.deepEqual( gradeRead[ name ], gradeWanted( gradeTables[ name ] ), `${ name } grade: the table and the uniforms it writes` );
+
+	}
+	assert.deepEqual( gradeReadings( islandGrade ), islandGradeBefore, 'the island\'s grade moved' );
+	assert.notDeepEqual( gradeRead.changed.map( ( r ) => r.table ), islandGradeBefore.map( ( r ) => r.table ), 'changed grade: reads as the island\'s' );
+	assert.notDeepEqual( gradeRead.neutral.map( ( r ) => r.table ), islandGradeBefore.map( ( r ) => r.table ), 'neutral grade: reads as the island\'s' );
+	grades = GRADE_INPUTS.length;
+
 } finally {
 
 	await server.close();
 
 }
 console.log( `Shared uniforms (the wind's look among them), local lights, sea detail and swell: three of each from three tables, each its own (${ systems } numbers), the island's unmoved by the others: passed.` );
+console.log( `Ambient grade: three controllers on three tables, each holding and writing its own (${ grades } frames), the island's unmoved by the others: passed.` );

@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import { cameraViewMatrix, uniform, vec3, vec4 } from 'three/tsl';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { MOON, moonDirection } from '../sky/DayCycle.ts';
-import { keyLiftShading as shading } from '../look/AmbientLook.ts';
+import type { KeyLiftShading } from '../look/AmbientLook.ts';
 
 type V3 = THREE.Node<'vec3'>;
 
@@ -16,7 +16,7 @@ type V3 = THREE.Node<'vec3'>;
 // times their casters' height. So the shading direction's elevation never falls
 // below 14 degrees: it follows the key down to there, its corner rounded over a degree either side
 // (`join`), holds at 14 while the key sinks to 6, climbs to 18 over the next degree (the golden
-// hour, from the key at about 5.5: a monotone cubic over KEY_LIFT's rows, one degree wide, so no
+// hour, from the key at about 5.5: a monotone cubic over the lift's rows, one degree wide, so no
 // step shows and no frame jumps) and holds at 18 down to the horizon, at the key's own azimuth.
 // The shading elevation is a function of the key's elevation alone, so a time of day and a weather
 // give one direction whichever way the clock ran, mornings as evenings.
@@ -61,8 +61,11 @@ type V3 = THREE.Node<'vec3'>;
 // `liftedKeyDirection`, the same direction in world space.
 // Off with `flags=keyLift:false` (at run time from the next publish of the lighting): the sun's
 // lift only, the moon stays where it stands. Ours.
-// The rows and the shading elevation they give (KEY_LIFT, `keyLiftShading`) are
-// look/AmbientLook.ts's; this file keeps the lifted direction and its uniforms.
+// The rows and the shading elevation they give are a look's, made into the lift where the
+// renderer's sky stage creates it (look/AmbientLook.ts `createKeyLift`, RenderStages.ts
+// `createSky`); the sky carries it beside the key's direction (`Sky.keyLift`), and every function
+// here that turns a key into its lifted direction takes it as its first argument. This file keeps
+// the lifted direction and its uniforms, which no look changes.
 
 const scale = uniform( 1 ), up = uniform( 0 ), side = uniform( 0 );
 // the moon's direction (world, unit; DayCycle `moonDirection`), on the CPU and for the shaders,
@@ -70,9 +73,9 @@ const scale = uniform( 1 ), up = uniform( 0 ), side = uniform( 0 );
 const MOON_SHADE = moonDirection( new THREE.Vector3() );
 const moonShade = uniform( MOON_SHADE.clone() );
 
-// how the key's world direction is lifted: under the sun its elevation and the lifted one (radians);
-// under the moon its own direction (MOON_SHADE); neither where nothing lifts it
-function lifted( key: THREE.Vector3, moon: boolean ): { elevation: number; lifted: number; lift: boolean; moon: boolean } {
+// how the key's world direction is lifted by the lift `shading`: under the sun its elevation and the
+// lifted one (radians); under the moon its own direction (MOON_SHADE); neither where nothing lifts it
+function lifted( shading: KeyLiftShading, key: THREE.Vector3, moon: boolean ): { elevation: number; lifted: number; lift: boolean; moon: boolean } {
 
 	const across = Math.hypot( key.x, key.z );
 	const elevation = THREE.MathUtils.radToDeg( Math.atan2( key.y, across ) );
@@ -84,21 +87,21 @@ function lifted( key: THREE.Vector3, moon: boolean ): { elevation: number; lifte
 }
 
 /** The sine of the elevation the surfaces take the key's light from under the key's world
- * direction `key` (the moon's if `moon`): the cosine level ground takes (the ambient volume's key
- * bounce, AmbientRelight.ts). None from a key below the
- * horizon, which lights no level ground. */
-export function liftedKeyHeight( key: THREE.Vector3, moon = false ): number {
+ * direction `key` (the moon's if `moon`) and the lift `shading` (Sky.ts `keyLift`): the cosine
+ * level ground takes (the ambient volume's key bounce, AmbientRelight.ts). None from a key below
+ * the horizon, which lights no level ground. */
+export function liftedKeyHeight( shading: KeyLiftShading, key: THREE.Vector3, moon = false ): number {
 
-	return key.y > 0 ? Math.sin( lifted( key, moon ).lifted ) : 0;
+	return key.y > 0 ? Math.sin( lifted( shading, key, moon ).lifted ) : 0;
 
 }
 
-/** The key's world direction `key` (the moon's if `moon`) lifted, into `target`: the direction the
- * surfaces take its light from and the sun's map is drawn along (main.ts, SunShadow.ts); `key`
- * itself where nothing lifts it. */
-export function liftedKeyDirection( key: THREE.Vector3, moon: boolean, target: THREE.Vector3 ): THREE.Vector3 {
+/** The key's world direction `key` (the moon's if `moon`) lifted by the lift `shading` (Sky.ts
+ * `keyLift`), into `target`: the direction the surfaces take its light from and the sun's map is
+ * drawn along (main.ts, SunShadow.ts); `key` itself where nothing lifts it. */
+export function liftedKeyDirection( shading: KeyLiftShading, key: THREE.Vector3, moon: boolean, target: THREE.Vector3 ): THREE.Vector3 {
 
-	const { lifted: l, lift, moon: fixed } = lifted( key, moon );
+	const { lifted: l, lift, moon: fixed } = lifted( shading, key, moon );
 	if ( fixed ) return target.copy( MOON_SHADE );
 	if ( ! lift ) return target.copy( key );
 	const across = Math.cos( l ) / Math.hypot( key.x, key.z );
@@ -106,11 +109,12 @@ export function liftedKeyDirection( key: THREE.Vector3, moon: boolean, target: T
 
 }
 
-/** Sets the lift for the key's world direction, the moon's if `moon` (RenderStages.ts `publishLighting`). */
-export function updateKeyLift( key: THREE.Vector3, moon = false ): void {
+/** Sets the lift for the key's world direction, the moon's if `moon`, by the lift `shading` (Sky.ts
+ * `keyLift`; RenderStages.ts `publishLighting`). */
+export function updateKeyLift( shading: KeyLiftShading, key: THREE.Vector3, moon = false ): void {
 
 	moonShade.value.copy( moonDirection( MOON_SHADE ) );
-	const { elevation: e, lifted: l, lift, moon: fixed } = lifted( key, moon );
+	const { elevation: e, lifted: l, lift, moon: fixed } = lifted( shading, key, moon );
 	if ( fixed ) {
 
 		scale.value = 0;

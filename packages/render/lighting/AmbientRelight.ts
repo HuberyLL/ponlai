@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { Fn, Loop, clamp, cos, exp2, float, instanceIndex, int, ivec2, ivec3, log2, luminance as luma, max, mix, round, select, sin, smoothstep, storage, texture, textureLoad, textureStore, uint, uniform, uvec3, vec3, vec4 } from 'three/tsl';
-import { OVERCAST_LAND, OVERCAST_MOON_LAND } from '../look/AmbientLook.ts';
+import type { AmbientTables } from '../look/AmbientLook.ts';
 import { ambient, overcastLandWeight } from './AmbientGrade.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tune, tuneKeys, tuneUniform } from '../debug/Tune.ts';
@@ -244,9 +244,9 @@ const BOUNCE_GAIN = 9.4;
  * from -1 degrees up, with the deck's gains over it (`update`): the deck's own, which the water
  * takes too (sky/Weather.ts DECK_SKY_GAIN, by `deckLight`: a cloudy deck's from a sun of 3 degrees,
  * whole by 6, overcast's at every sun until the twilight), or under overcast the land's gain in its
- * place (OVERCAST_LAND_UNIT times the weather's land gain: its sun's part, AmbientGrade.ts
- * OVERCAST_LAND, and its moon's, OVERCAST_MOON_LAND). A clouded sky sets the exposure by
- * its own light (post/Exposure.ts), so these set the land against the sky, and the deck's gain the
+ * place (OVERCAST_LAND_UNIT times the weather's land gain: its sun's part, the grade's tables'
+ * `overcastLand`, and its moon's, `overcastMoonLand`: look/AmbientLook.ts). A clouded sky sets
+ * the exposure by its own light (post/Exposure.ts), so these set the land against the sky, and the deck's gain the
  * water too. It returns to 3.5 over the clouded sky's window of the night (DayCycle.ts,
  * the day windows' `dusk.sky.clouded`, from 2 degrees down to -6), on the slope the sky's light under cloud
  * passes to the night's by (the blue hour's light is the night's sky's, which the day's keys do
@@ -348,7 +348,7 @@ export function lowSunSkyLift( elevation: number, clouded: number ): number {
 
 }
 /** The land's sky gain under overcast's deck per unit of the weather's (the sun's part of the
- * weather's land gain, look/AmbientLook.ts OVERCAST_LAND; the moon's, OVERCAST_MOON_LAND): what
+ * weather's land gain, look/AmbientLook.ts `overcastLand`; the moon's, `overcastMoonLand`): what
  * makes the land under the deck take, per unit of the bake's sky light, what a clear day's land
  * takes in the same place, the structure of the two skies' light being otherwise unlike (the sky's
  * harmonics' window, which takes another share of a deck's light off level ground than of a clear
@@ -378,7 +378,7 @@ const OVERCAST_LAND_UNIT = 1.55;
 /** The land's sky gain under a cloudy deck, in place of the deck's (sky/Weather.ts DECK_SKY_GAIN,
  * which the water keeps), by cloudy's share and its deck's light (sky/Weather.ts `deckRamp`, whole
  * from 6 degrees): on the sky's light only, the sun's bounce under a cloudy deck taking no weather
- * gain, unlike overcast's (look/AmbientLook.ts OVERCAST_LAND), as a cloudy deck's land takes its
+ * gain, unlike overcast's (look/AmbientLook.ts `overcastLand`), as a cloudy deck's land takes its
  * key through the gaps. It sets the land's light against the sky's: a higher gain lifts the meadow
  * and, through the exposure that meters both, darkens the sky over it in the frame; and it sets a
  * gap's lit meadow against a clear day's under the same sun. It is set together with the cloudy
@@ -562,6 +562,10 @@ export interface AmbientRelightOptions {
 	/** the day's windows (look/DayLook.ts `createDayWindows`): where the probes' cloudy sky keys
 	 * stand and the moon's key's share under overcast's deck */
 	dayWindows: DayWindows;
+	/** the ambient grade's tables (look/AmbientLook.ts `createAmbientTables`, the grade's controller's:
+	 * AmbientGrade.ts `tables`): the weather's land gains under overcast's deck, the sun's part and the
+	 * moon's */
+	grade: AmbientTables;
 	/** the sun's own elevation, degrees (the key's direction is the moon's by night) */
 	sunElevation: () => number;
 	// whether the sun climbs (DayCycle.ts `sunRising`)
@@ -570,8 +574,8 @@ export interface AmbientRelightOptions {
 	 * (DayKeys.ts `keyed`), for the probes' sky gain. */
 	clouded: () => number;
 	/** Overcast's share of the sky (sky/Weather.ts `skyMix`, a parked sky counting as overcast), for
-	 * the land's own sky gain under its deck (OVERCAST_LAND_UNIT, the sun's part AmbientGrade.ts
-	 * OVERCAST_LAND, the moon's OVERCAST_MOON_LAND), in place of the deck's: the share
+	 * the land's own sky gain under its deck (OVERCAST_LAND_UNIT, the sun's part `grade.overcastLand`,
+	 * the moon's `grade.overcastMoonLand`), in place of the deck's: the share
 	 * AmbientGrade.ts `update` takes for the key's bounce. */
 	overcast: () => number;
 	/** The moon's height (degrees) and its share of the moonlit sky (Sky.ts `moonElevation`,
@@ -587,6 +591,7 @@ export class AmbientRelight {
 	private readonly weights: () => { a: number; b: number; blend: number };
 	private readonly keyHeight: () => number;
 	private readonly dayWindows: DayWindows;
+	private readonly grade: AmbientTables;
 	private readonly probeSky: DayKeys<{ skyGain: number }>;
 	private readonly probeSkyMoon: DayKeys<{ skyGain: number }>;
 	private readonly sunElevation: () => number;
@@ -620,7 +625,7 @@ export class AmbientRelight {
 	 * shown or settled frame may light the island with it (app/Frame.ts's reveal and settled signal wait) */
 	ready = false;
 
-	constructor( { renderer, volume, shared, sky, weights, cloud, seaCloud, keyHeight, dayWindows, sunElevation, rising, clouded, overcast, moon }: AmbientRelightOptions ) {
+	constructor( { renderer, volume, shared, sky, weights, cloud, seaCloud, keyHeight, dayWindows, grade, sunElevation, rising, clouded, overcast, moon }: AmbientRelightOptions ) {
 
 		this.renderer = renderer;
 		this.volume = volume;
@@ -629,6 +634,7 @@ export class AmbientRelight {
 		this.weights = weights;
 		this.keyHeight = keyHeight;
 		this.dayWindows = dayWindows;
+		this.grade = grade;
 		const keys = probeSkyKeys( dayWindows );
 		this.probeSky = keys.probeSky;
 		this.probeSkyMoon = keys.probeSkyMoon;
@@ -675,11 +681,11 @@ export class AmbientRelight {
 		const overcast = this.overcast(), deckSky = deckSkyGain( elevation, clouded, overcast );
 		// (the land's own gain under overcast's deck in place of the deck's, by overcast's deck light:
 		// the unit's times the weather's)
-		// (the sun's part takes the weather's gain, OVERCAST_LAND; the moon's its own,
-		// OVERCAST_MOON_LAND)
+		// (the sun's part takes the weather's gain, `overcastLand`; the moon's its own,
+		// `overcastMoonLand`)
 		const landSkyAt = ( e: number, deck: number, gain: number ) => deck + ( OVERCAST_LAND_UNIT * gain - deck ) * overcastLandWeight( e, overcast )
 			+ ( CLOUDY_LAND() - deck ) * ( clouded - overcast ) * deckRamp( e );
-		const landSky = landSkyAt( elevation, deckSky, OVERCAST_LAND() );
+		const landSky = landSkyAt( elevation, deckSky, this.grade.overcastLand() );
 		// the deck's gains lift the day's sky light: they stand for the light the deck takes from the
 		// sun, which leaves with it, and from the moon, at its height (below)
 		const day = keyed( this.probeSky, elevation, 0, _probeSky, clouded, this.rising() ).skyGain;
@@ -689,7 +695,7 @@ export class AmbientRelight {
 		// `withMoon`).
 		const moon = this.moon();
 		const moonDay = keyed( this.probeSkyMoon, moon.elevation, 0, _probeMoon, clouded, false ).skyGain;
-		const moonLand = landSkyAt( moon.elevation, deckSkyGain( moon.elevation, clouded, overcast ), OVERCAST_MOON_LAND );
+		const moonLand = landSkyAt( moon.elevation, deckSkyGain( moon.elevation, clouded, overcast ), this.grade.overcastMoonLand );
 		// (under overcast's closed deck, on its share, the land's goes from the deck's gain on the
 		// day's keys, held below the golden key at its value, to the moon's at its height as the moon's
 		// key comes in: see `probeSky`)

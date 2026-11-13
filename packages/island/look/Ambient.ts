@@ -1,7 +1,7 @@
 import type { AmbientLook, AmbientRowLook } from '../../render/setup.ts';
 
 // The island's environment-light look (packages/island/look/: the island's numbers for the renderer's
-// look tables, look/Look.ts; look/AmbientLook.ts reads these): the ambient grade's table by the
+// look tables, look/Look.ts; look/AmbientLook.ts makes the grade's tables and the lift from these): the ambient grade's table by the
 // sun's elevation and the weather's skies, with the gains under overcast's deck, and the low key's
 // lift. lighting/AmbientGrade.ts's and lighting/KeyLift.ts's headers say what the numbers do on
 // screen. A row spells only its changes over the knobs at no grade (look/AmbientLook.ts
@@ -56,7 +56,7 @@ export const AMBIENT: AmbientLook = {
 	// same place: AmbientRelight.ts OVERCAST_LAND_UNIT), its bounce with it, by overcast's share and its
 	// deck's light (`overcastLandWeight`), and on the key's bounce per unit of the table's (`update`),
 	// by overcast's share and the deck's light at the sun's height (the moon's at its own height takes
-	// OVERCAST_MOON_LAND). It is not the land's whole ambient light under the deck over a clear day's:
+	// `overcastMoonLand`). It is not the land's whole ambient light under the deck over a clear day's:
 	// that ratio also holds the bake's ratio of the two skies and the sun's bounce's share of the
 	// light. 1 leaves the land as the sky and the table give it. At 1.35, with overcast's dimmer day
 	// sky (Weather.ts `daySky` 0.074), on lit open ground (a white card's light, the brighter half of
@@ -65,7 +65,7 @@ export const AMBIENT: AmbientLook = {
 	// times it, the direct light making 0.82 of it with the sun 22 degrees up and 0.81 at 15. Tunable:
 	// `lighting.relight.overcastLand`.
 	overcastLand: 1.35,
-	// The moon's part of the weather's land gain under overcast's deck (OVERCAST_LAND is the sun's):
+	// The moon's part of the weather's land gain under overcast's deck (`overcastLand` is the sun's):
 	// the moonlit land's sky light and the moon's bounce under the deck.
 	overcastMoonLand: 1.75,
 	// the low key's lift (lighting/KeyLift.ts): the shading direction's elevation at the sun key's

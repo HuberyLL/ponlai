@@ -3,7 +3,7 @@ import { negateOnBackSide, normalView, normalViewGeometry, positionViewDirection
 import { floorOcclusion, screenAOAt } from '../post/GTAO.ts';
 import { ambientEnvironment, ambientVolumeOn, specularOcclusion, type AmbientReceiver } from './AmbientSample.ts';
 import { meterAmbient } from './MeterLight.ts';
-import { AMBIENT_KNOBS, DEFAULT_KNOBS as D, OVERCAST_LAND, OVERCAST_MOON_LAND, evaluateAmbient, sunBounceGain, type AmbientKnobs } from '../look/AmbientLook.ts';
+import { AMBIENT_KNOBS, DEFAULT_KNOBS as D, type AmbientKnobs, type AmbientTables } from '../look/AmbientLook.ts';
 import { overcastDeckLight, withMoon } from '../sky/Weather.ts';
 
 // The ambient grade: one table of knobs on the island's ambient light, per sun elevation and per
@@ -38,7 +38,7 @@ import { overcastDeckLight, withMoon } from '../sky/Weather.ts';
 // (DayCycle.ts `displayNight`, look/ExposureLook.ts `dawn`), and under it the night's full
 // reflection of a bright, saturated sky lit the rock's ledges and the leaves cyan (at -8 degrees
 // the cliff's brightest tenth L 0.33, C 0.11 with it, 0.19, 0.03 without), so the rising sun's rows
-// (AMBIENT_GRADE_RISING) hold the clear and the fair sky's reflection at 0.1 from -2.6 down to
+// (the table's `gradeRising`) hold the clear and the fair sky's reflection at 0.1 from -2.6 down to
 // -12, where the display's night is whole again (DayCycle.ts `displayNight`), and give it back to
 // the night's by -13. A return from -7 still lit the rock's edges from -9 to -7 degrees (on the
 // island view their brightest tenth C 0.083 to 0.085 at -9 and -8, 0.066 or less held). What blue
@@ -71,8 +71,8 @@ import { overcastDeckLight, withMoon } from '../sky/Weather.ts';
 //
 // Overcast is a dark grey sky with the sun still shining (Weather.ts): its sun's bounce takes a
 // third of clear's, times the sun's part of the weather's land gain under its deck
-// (OVERCAST_LAND, which its sky light takes too: AmbientRelight.ts); the moon's key
-// takes a part of its own (OVERCAST_MOON_LAND) at its own height, so the night's bounce under the
+// (the tables' `overcastLand`, which its sky light takes too: AmbientRelight.ts); the moon's key
+// takes a part of its own (`overcastMoonLand`) at its own height, so the night's bounce under the
 // deck takes that whole.
 // Under a cloud's shadow the open ground beside a grove reads 1.2 to 1.8 times its shade inside the
 // grove's shadow; under overcast a grove's floor reads about 0.6 to 0.7 of the open ground.
@@ -109,19 +109,21 @@ import { overcastDeckLight, withMoon } from '../sky/Weather.ts';
 // The GUI's Ambient folder shows the values and, with `override`, replaces the table's output with
 // its sliders for live tuning; debug builds expose the controller as `__PONLAI__.ambient` and its
 // values in the diagnostics.
-// The table, its knobs and its gains under the deck (AMBIENT_GRADE, OVERCAST_LAND) are
-// look/AmbientLook.ts's; this file keeps the uniforms, the controller that writes them and the
-// lighting models' use of them.
+// The table, its knobs and its gains under the deck are a look's, made into the grade's tables
+// where the renderer's light stage creates the controller (look/AmbientLook.ts
+// `createAmbientTables`, RenderStages.ts `createLight`), so the controller reads the tables it was
+// given; this file keeps the uniforms, the controller that writes them and the lighting models' use
+// of them.
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 
-/** The weight of the weather's land gain under overcast (OVERCAST_LAND) on the land's sky light
- * (AmbientRelight.ts) at a light's `elevation` (degrees), of which overcast's share is `overcast`
+/** The weight of the weather's land gain under overcast (look/AmbientLook.ts `overcastLand`) on
+ * the land's sky light (AmbientRelight.ts) at a light's `elevation` (degrees), of which overcast's share is `overcast`
  * (sky/Weather.ts `skyMix`, a parked sky counting as overcast): the share times its deck's light
  * (sky/Weather.ts `overcastDeckLight`: at every sun by day, gone by -6 degrees), taken at the sun's
  * height and at the moon's for their parts of the sky's light. The key's bounce takes the same at
- * the key's two heights, each with its own part (`update`, OVERCAST_MOON_LAND). */
+ * the key's two heights, each with its own part (`update`, `overcastMoonLand`). */
 export function overcastLandWeight( elevation: number, overcast: number ): number {
 
 	return overcast * overcastDeckLight( elevation );
@@ -136,7 +138,7 @@ export const ambient = {
 	directionality: uniform( D.directionality ),
 	aoStrength: uniform( 1 ),
 	/** The land's sky gains under a deck over the sky's bake (sky/Weather.ts `deckSkyGain`, the land's
-	 * own under overcast: AmbientRelight.ts OVERCAST_LAND_UNIT times OVERCAST_LAND), which the volume
+	 * own under overcast: AmbientRelight.ts OVERCAST_LAND_UNIT times the tables' `overcastLand`), which the volume
 	 * carries: the environment's diffuse takes them where it stands in for the volume (a material
 	 * built without a receiver, which by default is the sea floor: materials/TerrainMaterial.ts; and
 	 * the volume's share under the water), so the ground under the water keeps the land's light (its
@@ -154,43 +156,61 @@ export const ambient = {
 const _moonRow = { ...D } as AmbientKnobs;
 
 /** The grade's controller: the values it wrote last, and the GUI's override. */
-export const ambientGrade = {
+export interface AmbientGrade {
+	/** The tables it reads (look/AmbientLook.ts `createAmbientTables`). */
+	readonly tables: AmbientTables;
 	/** The values in the uniforms. */
-	current: { ...D } as AmbientKnobs,
+	readonly current: AmbientKnobs;
 	/** While on, `manual` replaces the table's output. */
-	override: false,
-	manual: { ...D } as AmbientKnobs,
+	override: boolean;
+	readonly manual: AmbientKnobs;
 	/** The table's output (whatever the override) at the last update. */
-	table: { ...D } as AmbientKnobs,
+	readonly table: AmbientKnobs;
 	/** Once a frame: the sun's elevation (degrees), the weather's column weights (Weather `skyMix`),
 	 * whether the sun is rising, and the moon's elevation (degrees) and its share of the key (Sky.ts
 	 * `moonElevation`, `moonKeyShare`). */
-	update( elevation: number, weights: readonly number[], rising: boolean, moonElevation: number, moonShare: number ): void {
+	update( elevation: number, weights: readonly number[], rising: boolean, moonElevation: number, moonShare: number ): void;
+}
 
-		evaluateAmbient( elevation, weights, this.table, rising );
-		// the key's bounce: the moon's part takes the rows at the moon's height, on the evening's side
-		this.table.sunBounce = withMoon( this.table.sunBounce, evaluateAmbient( moonElevation, weights, _moonRow ).sunBounce, moonShare );
-		Object.assign( this.current, this.override ? this.manual : this.table );
-		for ( const key of AMBIENT_KNOBS ) ambient[ key ].value = this.current[ key ];
-		ambient.sunBounce.value *= sunBounceGain();
-		// the weather's land gain under overcast's deck (OVERCAST_LAND), the override's value too: the
-		// moon's part of the key at the moon's height, as the bounce's rows above
-		// (the sun's part by its own gain over the moon's, OVERCAST_MOON_LAND: exactly the moon's term
-		// where the sun's deck light is gone)
-		// (A look whose moon's part is no gain, 1, leaves no ratio to take. This is the expression
-		// below in the limit of the moon's part going to 1: the moon's term goes to 0 and the sun's
-		// keeps its own gain, so the two paths meet there with no step.)
-		if ( OVERCAST_MOON_LAND === 1 ) {
+/** The grade's controller on the grade's `tables`, made by the renderer's light stage
+ * (RenderStages.ts `createLight`): it writes the uniforms above, which every lighting model reads. */
+export function createAmbientGrade( tables: AmbientTables ): AmbientGrade {
 
-			ambient.sunBounce.value *= 1 + ( OVERCAST_LAND() - 1 ) * ( ( weights[ 3 ] ?? 0 ) * withMoon( overcastDeckLight( elevation ), 0, moonShare ) );
-			return;
+	const { evaluate, sunBounceGain, overcastLand, overcastMoonLand } = tables;
+	return {
+		tables,
+		current: { ...D },
+		override: false,
+		manual: { ...D },
+		table: { ...D },
+		update( elevation, weights, rising, moonElevation, moonShare ) {
 
-		}
-		const sunPart = ( OVERCAST_LAND() - 1 ) / ( OVERCAST_MOON_LAND - 1 );
-		ambient.sunBounce.value *= 1 + ( OVERCAST_MOON_LAND - 1 ) * ( ( weights[ 3 ] ?? 0 ) * withMoon( overcastDeckLight( elevation ) * sunPart, overcastDeckLight( moonElevation ), moonShare ) );
+			evaluate( elevation, weights, this.table, rising );
+			// the key's bounce: the moon's part takes the rows at the moon's height, on the evening's side
+			this.table.sunBounce = withMoon( this.table.sunBounce, evaluate( moonElevation, weights, _moonRow ).sunBounce, moonShare );
+			Object.assign( this.current, this.override ? this.manual : this.table );
+			for ( const key of AMBIENT_KNOBS ) ambient[ key ].value = this.current[ key ];
+			ambient.sunBounce.value *= sunBounceGain();
+			// the weather's land gain under overcast's deck (`overcastLand`), the override's value too:
+			// the moon's part of the key at the moon's height, as the bounce's rows above
+			// (the sun's part by its own gain over the moon's, `overcastMoonLand`: exactly the moon's
+			// term where the sun's deck light is gone)
+			// (A look whose moon's part is no gain, 1, leaves no ratio to take. This is the expression
+			// below in the limit of the moon's part going to 1: the moon's term goes to 0 and the sun's
+			// keeps its own gain, so the two paths meet there with no step.)
+			if ( overcastMoonLand === 1 ) {
 
-	},
-};
+				ambient.sunBounce.value *= 1 + ( overcastLand() - 1 ) * ( ( weights[ 3 ] ?? 0 ) * withMoon( overcastDeckLight( elevation ), 0, moonShare ) );
+				return;
+
+			}
+			const sunPart = ( overcastLand() - 1 ) / ( overcastMoonLand - 1 );
+			ambient.sunBounce.value *= 1 + ( overcastMoonLand - 1 ) * ( ( weights[ 3 ] ?? 0 ) * withMoon( overcastDeckLight( elevation ) * sunPart, overcastDeckLight( moonElevation ), moonShare ) );
+
+		},
+	};
+
+}
 
 /** The ambient occlusion `ao` at the grade's strength, mix( 1, ao, k ), written so that k = 1 gives
  * ao exactly (a lerp's ao - 1 rounds). */

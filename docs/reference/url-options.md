@@ -318,7 +318,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   moon's sky's own `lighting.relight.moon.skyGain@low` and `@high`, its golden and cloudy keys the
   day's), the sun's part of the weather's gain under overcast's deck on the land's ambient light,
   its sky light and the key's bounce alike (per unit, not the land's whole light over a clear day's;
-  the moon's part is fixed: `packages/render/look/AmbientLook.ts` OVERCAST_LAND, OVERCAST_MOON_LAND)
+  the moon's part is fixed: the look's ambient `overcastLand`, `overcastMoonLand`,
+  `packages/render/look/AmbientLook.ts`)
   `lighting.relight.overcastLand` (1 to 2), a low
   sun's lift of the sky's light on what it lights `lighting.relight.lowSun` (stops; `lowSunFloor`,
   `lowSunFloorFull`, `lowSunFrom`, `lowSunTo` its sun heights:
