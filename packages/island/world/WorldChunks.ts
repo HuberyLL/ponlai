@@ -114,6 +114,7 @@ export function loadWorld( options: WorldOptions = {}, load: LoadOptions = {} ):
 /** The chunks of `options`' land, generated (or read from the cache, or taken from `from`). */
 export function generateVersion( options: WorldOptions = {}, { cache = true, pivot, progress, threads: wanted, from, clock }: LoadOptions = {} ): Promise<Generated> {
 
+	// eslint-disable-next-line ponlai/scene-clock -- the load's timings, a readout
 	const t0 = performance.now();
 	const { worldSeed = 1, step = 0, contactOcclusion = true, canopyShade = CANOPY_SHADE } = options;
 	const generator = cache ? WORLD_GENERATOR_HASH : null;
@@ -133,6 +134,7 @@ export function generateVersion( options: WorldOptions = {}, { cache = true, piv
 		const steps = new Map<string, string>();
 		let hits = 0, built = 0, buildMs = 0, reused = 0;
 		const marks: Record<string, number> = {};
+		// eslint-disable-next-line ponlai/scene-clock -- the load's timings, a readout
 		const mark = ( name: string ) => { marks[ name ] = Math.round( performance.now() - t0 ); };
 
 		const fail = ( error: unknown ) => {
@@ -192,6 +194,7 @@ export function generateVersion( options: WorldOptions = {}, { cache = true, piv
 			resolve( {
 				version: { step, land: land!, chunks: ordered, steps, reused },
 				cache: generator === null ? 'off' : landCache === 'error' ? 'error' : read === records ? 'hit' : read === 0 ? 'miss' : 'partial',
+				// eslint-disable-next-line ponlai/scene-clock -- the load's timings, a readout
 				hits: read, ms: performance.now() - t0, marks, built, buildMs,
 			} );
 
@@ -272,6 +275,7 @@ export function generateVersion( options: WorldOptions = {}, { cache = true, piv
 			// loop and leave the load pending for ever: it rejects the load instead
 			slot.worker.onmessage = ( e: MessageEvent<ChunkReply> ) => {
 
+				// eslint-disable-next-line ponlai/scene-clock -- the time the page spent on a chunk's reply, charged to the growth's log
 				const t = performance.now();
 				try {
 
@@ -282,6 +286,7 @@ export function generateVersion( options: WorldOptions = {}, { cache = true, piv
 					fail( error );
 
 				}
+				// eslint-disable-next-line ponlai/scene-clock -- the time the page spent on a chunk's reply, charged to the growth's log
 				clock?.( performance.now() - t );
 
 			};

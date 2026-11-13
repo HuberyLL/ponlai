@@ -5,12 +5,14 @@
 //   npm run check -- --full       also the production build and the world's chunk checks (minutes)
 //
 // The commit-time list, in order (cheap and wide first, so a broken type fails before the rest):
-// the type check, the direction of imports between the layers, the packages' exits and the page
+// the type check, the code lint (`npm run lint`: the project's rules as ESLint rules,
+// eslint.config.mjs), the direction of imports between the layers, the packages' exits and the page
 // check (verify-layers), the exits' loading (verify-exits),
 // the page's settings against their docs (verify-settings), the files' size (verify-file-size), the three.js internals the code reaches into (verify-three-internals), no
 // binary in git (verify-no-binaries, every file in the index), then the CPU regression tools (the
 // game's simulation, its words, the ink, the frame graph's compiler, the day cycle, the weather's
-// state, the wind, the local lights, the renderer's extension points, the look tables passed at creation), and the docs' lint (`npm run lint:docs`) when a Markdown file
+// state, the wind, the local lights, the renderer's extension points, the look tables passed at creation, the
+// code lint's own rules against their fixtures), and the docs' lint (`npm run lint:docs`) when a Markdown file
 // is staged. `--full` adds `npm run build` and `tools/verify-world-chunks.mjs`, which take minutes,
 // and runs the docs' lint whatever is staged. Each check runs to its end even after another failed,
 // so one run lists every failure; its output goes to the terminal as it comes.
@@ -53,6 +55,7 @@ function markdownStaged() {
 
 const checks = [
 	[ 'typecheck', npm( 'typecheck' ) ],
+	[ 'lint', npm( 'lint' ) ],
 	[ 'verify-layers', node( 'verify-layers.mjs' ) ],
 	[ 'verify-exits', node( 'verify-exits.mjs' ) ],
 	[ 'verify-settings', node( 'verify-settings.mjs' ) ],
@@ -69,6 +72,7 @@ const checks = [
 	[ 'verify-local-lights', node( 'verify-local-lights.mjs' ) ],
 	[ 'verify-extensions', node( 'verify-extensions.mjs' ) ],
 	[ 'verify-look-params', node( 'verify-look-params.mjs' ) ],
+	[ 'verify-lint', node( 'verify-lint.mjs' ) ],
 ];
 if ( full || markdownStaged() ) checks.push( [ 'lint:docs', npm( 'lint:docs' ) ] );
 if ( full ) checks.push( [ 'build', npm( 'build' ) ], [ 'verify-world-chunks', node( 'verify-world-chunks.mjs' ) ] );

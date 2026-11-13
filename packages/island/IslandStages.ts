@@ -255,6 +255,7 @@ export function awaitWorld( render: RenderParts, island: IslandParts, { worldJob
 
 	worldProgress.show = ( text ) => setStatus( `Generating the island…${ text }` );
 	worldProgress.show( worldProgress.text );
+	// eslint-disable-next-line ponlai/scene-clock -- the world's load time, logged
 	staged( island ).t0 = performance.now();
 	// a failed world must not leave the loading screen saying it is still generating
 	return worldJob.catch( ( error: unknown ) => {
@@ -505,6 +506,7 @@ export function createGrowth( render: RenderParts, island: IslandParts, { landOp
 	const { t0, measureLand, setLand, showWindArrows, vegetation, setLocalSources, holdPlants, setSunCasters } = staged( island );
 	const { poseIslandView, holdsFraming, followFraming } = framing;
 
+	// eslint-disable-next-line ponlai/scene-clock -- the world's load time, logged
 	console.info( `world: ${ worldCache.hits } of ${ worldCache.chunks + 1 } records from the cache (${ worldCache.cache })`, data.timings, 'triangles', world.triangles, 'in', Math.round( performance.now() - t0 ), 'ms' );
 
 	// The island grows in place (Growth.ts): the next piece is generated ahead, and a Grow (the GUI's

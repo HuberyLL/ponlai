@@ -510,6 +510,7 @@ export class SunShadow {
 		} else if ( turned >= this.step ) {
 
 			// the current map becomes the previous one, with its projection
+			// eslint-disable-next-line ponlai/history-on-graph -- the sun's map array is three's shadow, drawn outside the frame graph (three/ShadowPass.ts): the current step becomes the previous one the cross-fade reads
 			renderer.copyTextureToTexture( this.maps.depthTexture!, this.maps.depthTexture!, this.currentLayer, this.toPreviousLayer );
 			shadowCoordinateMatrix( shadow, this.previousCoordinate );
 			this.draw( renderer, scene, camera, node, map, keyDir );
@@ -558,6 +559,7 @@ export class SunShadow {
 		// receiver reads the array. This is what ShadowNode.updateBefore would do with the flag.
 		this.render( renderer, scene, camera, node, keyDir );
 		if ( this.maps.width !== map.width || this.maps.height !== map.height ) this.maps.setSize( map.width, map.height, 2 );
+		// eslint-disable-next-line ponlai/history-on-graph -- the sun's map array is three's shadow, drawn outside the frame graph (three/ShadowPass.ts): the map just drawn goes into the current step's layer
 		renderer.copyTextureToTexture( map.depthTexture!, this.maps.depthTexture!, null, this.toCurrentLayer );
 		this.currentLayer.max.set( map.width, map.height, CURRENT + 1 );
 		this.mapSize.value.set( map.width, map.height );

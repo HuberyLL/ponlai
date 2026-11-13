@@ -431,10 +431,12 @@ export function startLoop( render: RenderParts, island: IslandParts, page: PageP
 	// few frames in (SunShadow). And the ambient light: its volume holds zeros until its first relight,
 	// once the sky has been projected (AmbientRelight `ready`).
 	const REVEAL_WAIT = 3000;
+	// eslint-disable-next-line ponlai/scene-clock -- the loading screen's longest wait: when it lifts, not what is drawn
 	const revealAt = performance.now() + REVEAL_WAIT;
 	const reveal = () => {
 
 		const waiting = ! island.approachWritten || sunShadow.draws === 0 || ! ambientRelight.ready || ( page.detector !== null && ( page.detector.pending || ( page.detector.result !== null && page.detector.result.tier !== qualityTier ) ) ) || ( page.game !== null && ! page.game.ready() ) || dynamicResolution !== null && dynamicResolution.settling && ( page.gpuTimer !== null || profiler?.timestamps === true ) &&
+			// eslint-disable-next-line ponlai/scene-clock -- the loading screen's longest wait: when it lifts, not what is drawn
 			! render.paused && ! resolution.full && performance.now() < revealAt;
 		if ( waiting ) setTimeout( reveal, 50 );
 		else {
@@ -479,7 +481,9 @@ export function createLoopControls( render: RenderParts, page: PageParts ) {
 			if ( ! loop.running ) return;
 			loop.running = false;
 			animation.stop();
+			// eslint-disable-next-line ponlai/scene-clock -- the timeout of the wait for the sky's bakes, not a scene state
 			const until = performance.now() + 2000;
+			// eslint-disable-next-line ponlai/scene-clock -- the timeout of the wait for the sky's bakes, not a scene state
 			while ( sky.busy && performance.now() < until ) await new Promise( ( resolve ) => setTimeout( resolve, 10 ) );
 			await gpuQueue.onSubmittedWorkDone();
 
@@ -544,9 +548,11 @@ export function createLoopControls( render: RenderParts, page: PageParts ) {
 		// answers; a map is not expected to take seconds, so a hang is reported rather than waited out)
 		const settleSkyReadback = async (): Promise<void> => {
 
+			// eslint-disable-next-line ponlai/scene-clock -- the timeout of the wait for the irradiance readback, not a scene state
 			const start = performance.now();
 			while ( sky.readbacks > 0 ) {
 
+				// eslint-disable-next-line ponlai/scene-clock -- the timeout of the wait for the irradiance readback, not a scene state
 				if ( performance.now() - start > 10000 ) throw new Error( 'loop.step: the sky irradiance readback did not land within 10 s' );
 				await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
@@ -555,6 +561,7 @@ export function createLoopControls( render: RenderParts, page: PageParts ) {
 		};
 		await settleSkyReadback();
 		stages.restartCadences();
+		// eslint-disable-next-line ponlai/scene-clock -- a stepped clip's base timestamp: its frames' deltas are exactly dt (see the header)
 		const t0 = Math.round( performance.now() );
 		try {
 

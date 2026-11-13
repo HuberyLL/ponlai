@@ -159,6 +159,7 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 		// (a mesh off the view's layer, a caster of the sun's map alone, draws no depth there)
 		if ( ! mesh.isMesh || mesh.userData.prepassCopy || Array.isArray( mesh.material ) || ! mesh.layers.isEnabled( 0 ) ) return false;
 		const material = mesh.material as THREE.Material;
+		// eslint-disable-next-line ponlai/vegetation-tag -- known violation: under MSAA the vegetation's meshes are found by alpha to coverage; the tag should find the same ones (the comment above), not proven on the CPU, left for a decision
 		return TEMPORAL ? material.userData.vegetation === true : material.alphaToCoverage === true || patched.has( material );
 
 	};

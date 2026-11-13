@@ -65,6 +65,7 @@ export function readSave( json: string | null ): SaveFile | null {
 /** A game as a save's JSON, written now. */
 export function writeSave( sim: SimState, record: RecordSave ): string {
 
+	// eslint-disable-next-line ponlai/scene-clock -- the save's time stamp, shown to the player; play does not read it
 	const save: SaveFile = { version: SAVE_VERSION, savedAt: Date.now(), sim, record };
 	return JSON.stringify( save );
 

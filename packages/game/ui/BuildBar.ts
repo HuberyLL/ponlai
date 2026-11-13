@@ -293,6 +293,7 @@ export class BuildBar {
 
 	private readonly onWheel = ( e: WheelEvent ): void => {
 
+		// eslint-disable-next-line ponlai/scene-clock -- the wheel's repeat limit, in the player's time
 		const now = performance.now();
 		if ( now - this.wheelAt < 120 ) return;
 		const d = Math.abs( e.deltaX ) > Math.abs( e.deltaY ) ? e.deltaX : e.deltaY;

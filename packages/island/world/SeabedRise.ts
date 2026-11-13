@@ -206,8 +206,11 @@ export class SeabedRise {
 		}
 		if ( this.writing ) {
 
+			// eslint-disable-next-line ponlai/scene-clock -- the time budget of a frame's writes: how many it makes, not their result
 			const t = performance.now(), until = t + BUDGET;
+			// eslint-disable-next-line ponlai/scene-clock -- the time budget of a frame's writes: how many it makes, not their result
 			while ( performance.now() < until ) if ( this.writing.next().done ) { this.writing = null; break; }
+			// eslint-disable-next-line ponlai/scene-clock -- the writes' time, a readout
 			const ms = performance.now() - t;
 			this.writeMs += ms;
 			s.frameMs = Math.max( s.frameMs, + ms.toFixed( 3 ) );
@@ -219,8 +222,10 @@ export class SeabedRise {
 
 	private drain( steps: Generator<void, void> ): void {
 
+		// eslint-disable-next-line ponlai/scene-clock -- the writes' time, a readout
 		const t = performance.now();
 		while ( ! steps.next().done );
+		// eslint-disable-next-line ponlai/scene-clock -- the writes' time, a readout
 		this.state.ms = + ( performance.now() - t ).toFixed( 3 );
 
 	}

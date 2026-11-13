@@ -292,6 +292,7 @@ export function createRenderer( render: RenderParts, host: RenderHost ) {
 	// (`gpuTimer=off` leaves them out: it then steers by the frame intervals, as where they are missing).
 	const gpuTiming = ( profiler?.timestamps ?? false ) || ( 'dynamic' in quality.render && params.get( 'gpuTimer' ) !== 'off' );
 	render.gpuTiming = gpuTiming;
+	// eslint-disable-next-line ponlai/timestamp-owner -- the renderer is created here: the option only turns the queries on, and DynamicResolution.ts reads them
 	const renderer = new THREE.WebGPURenderer( { antialias: false, powerPreference: 'high-performance', trackTimestamp: gpuTiming } );
 	render.renderer = renderer;
 	if ( profiler ) renderer.inspector = profiler;
