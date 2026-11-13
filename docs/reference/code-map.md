@@ -29,7 +29,7 @@ layers, a folder each: the page (`app/`), the game (`packages/game/`), the islan
   `scenes/index.ts` the list, and each scene is a module beside them. Their files import only the
   renderer's exits (`tools/repo/verify-layers.mjs`). The page draws with the renderer's neutral look
   (`renderLook=ponlai` picks the island's, in the entry, which hands the look to the page) and
-  takes the island's inputs from `packages/render/NeutralInputs.ts`. `tools/scenes.mjs` shoots,
+  takes the island's inputs from `packages/render/NeutralInputs.ts`. `tools/render/scenes.mjs` shoots,
   reads and checks them.
 
 ## The packages' exits

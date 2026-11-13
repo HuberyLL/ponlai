@@ -41,6 +41,6 @@ export default Object.freeze( {
 	tables: Object.freeze( { views: 'tools/island/parity/views.mjs', clips: 'tools/island/parity/clips.mjs' } ),
 
 	// the module whose installScript() gives an eval's `pipelines` (tools/kit/page-eval.mjs)
-	pipelines: 'tools/pipeline-trace.mjs',
+	pipelines: 'tools/render/pipeline-trace.mjs',
 
 } );

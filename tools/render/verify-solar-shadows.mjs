@@ -1,10 +1,10 @@
 // GPU regression: the sun shadow's disk filter keeps one penumbra width at any caster distance,
 // and receiver planes stay unoccluded at low solar elevation.
 // Needs the Vite dev server: it imports the source modules into the page (tools/kit/dev-server.mjs).
-// Usage: node tools/verify-solar-shadows.mjs http://127.0.0.1:5190 [extra query]
+// Usage: node tools/render/verify-solar-shadows.mjs http://127.0.0.1:5190 [extra query]
 import { chromium } from 'playwright';
-import { acquireGpuLock } from './kit/gpu-lock.mjs';
-import { requireDevServer } from './kit/dev-server.mjs';
+import { acquireGpuLock } from '../kit/gpu-lock.mjs';
+import { requireDevServer } from '../kit/dev-server.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 

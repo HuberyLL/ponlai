@@ -1,6 +1,6 @@
 // GPU probe of the frame graph's compile path (packages/render/post/graph/Compile.ts, packages/render/three/ThreePatches.ts) and its
 // warm-up. Needs the dev server (it imports src modules into the page):
-//   node tools/verify-frame-graph-gpu.mjs http://127.0.0.1:5190
+//   node tools/render/verify-frame-graph-gpu.mjs http://127.0.0.1:5190
 //
 // 1. MRT cache keys, on fresh renderers in a bare page. One material is drawn into a single
 //    target without an MRT and into a two-attachment target with mrt( { output, velocity } ), in
@@ -44,8 +44,8 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { acquireGpuLock } from './kit/gpu-lock.mjs';
-import { requireDevServer } from './kit/dev-server.mjs';
+import { acquireGpuLock } from '../kit/gpu-lock.mjs';
+import { requireDevServer } from '../kit/dev-server.mjs';
 
 const base = ( process.argv[ 2 ] || 'http://127.0.0.1:5190' ).replace( /\/$/, '' );
 await requireDevServer( process.argv[ 2 ] || 'http://127.0.0.1:5190', 'verify-frame-graph-gpu' );

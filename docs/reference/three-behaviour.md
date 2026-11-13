@@ -138,7 +138,7 @@ Check: the byte comparison of the parity captures.
 declared multisampled and cannot be sampled with a comparison: give it a render target. three
 picks one sampler type per depth texture per material (`lighting/SolarShadow.ts`).
 
-Check: the byte comparison of the parity captures; `tools/verify-solar-shadows.mjs` (the sun's
+Check: the byte comparison of the parity captures; `tools/render/verify-solar-shadows.mjs` (the sun's
 shadow builds and filters).
 
 ### Shadow passes
@@ -205,7 +205,7 @@ Under the temporal modes:
 A new site that changes the scene in a way its frames do not show (a seek, a jump, a new scene, a
 control that retunes a paused frame) raises a scene event (`post/SceneEvents.ts`).
 
-Check: `tools/verify-frame-graph-gpu.mjs` (the layouts); the rest needs judgement.
+Check: `tools/render/verify-frame-graph-gpu.mjs` (the layouts); the rest needs judgement.
 
 ### Split draws
 
@@ -237,7 +237,7 @@ A render three makes of its own that cannot be compiled before its first frame (
 built with the first receiver) compiles by rendering it once with asynchronous pipelines
 (`compileByRendering`, `lighting/SunShadow.ts`).
 
-Check: `tools/verify-frame-graph-gpu.mjs`, `tools/verify-first-use.mjs`.
+Check: `tools/render/verify-frame-graph-gpu.mjs`, `tools/render/verify-first-use.mjs`.
 
 ### Build order
 
@@ -258,7 +258,7 @@ jump (`tools/island/verify-scene-jump.mjs`).
 word (`Pipelines.isReady`), so a one-time render such as a bake waits for the warm-up that compiles
 it (`sky/Sky.ts` `warm`, `post/graph/Compile.ts` `compileByRendering`).
 
-Check: `tools/verify-first-use.mjs`; the byte comparison of the parity captures.
+Check: `tools/render/verify-first-use.mjs`; the byte comparison of the parity captures.
 
 ### Compute kernels
 
@@ -278,7 +278,7 @@ Check: none; judgement.
 pipeline, compute or render, because the shaders declare runtime-sized arrays
 (`vegetation/VegetationCull.ts`).
 
-Check: `tools/verify-storage-realloc.mjs`.
+Check: `tools/render/verify-storage-realloc.mjs`.
 
 ### Instance matrices
 

@@ -7,13 +7,13 @@
 //   grow       (for the record) a larger array assigned to an existing attribute.
 // For each it counts the pipelines, shader modules and bind groups the GPU device was asked for,
 // and checks the results read back (every element written, every instance drawn).
-// Usage: node tools/verify-storage-realloc.mjs [--port 5627]
+// Usage: node tools/render/verify-storage-realloc.mjs [--port 5627]
 // It serves its page from its own Vite server over the repository (no dev server needed), headless,
 // under the shared GPU lock. Exit code 1 when reallocation builds a pipeline or a result is wrong.
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
-import { fileURLToPath } from 'node:url';
-import { acquireGpuLock } from './kit/gpu-lock.mjs';
+import { acquireGpuLock } from '../kit/gpu-lock.mjs';
+import { ROOT } from '../kit/root.mjs';
 
 const argument = ( name, fallback ) => {
 
@@ -156,7 +156,7 @@ window.result = run().catch( ( e ) => ( { failure: String( e && e.stack || e ) }
 </script></body></html>`;
 
 await acquireGpuLock( 'verify-storage-realloc', { shared: true } );
-const root = fileURLToPath( new URL( '..', import.meta.url ) );
+const root = ROOT + '/';
 const server = await createServer( {
 	root, configFile: false, logLevel: 'error',
 	// three alone (the app's entry needs the app's Vite config, which this page does not)

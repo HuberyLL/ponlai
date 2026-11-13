@@ -27,15 +27,15 @@ Check a fingerprint against these first.
   (`docs/reference/tools.md`, Test mode).
 - Serve the checkout with `node tools/kit/serve.mjs dev`; `--sha <rev>` serves another commit for a
   before-and-after.
-- The cheapest reproduction is a test scene of the renderer (`tools/scenes.mjs`, its header). Each
-  run loads its pages fresh, so a loop counts k of n. Take the first run as the reference of the
+- The cheapest reproduction is a test scene of the renderer (`tools/render/scenes.mjs`, its header).
+  Each run loads its pages fresh, so a loop counts k of n. Take the first run as the reference of the
   others:
 
   ```sh
   node tools/kit/job.mjs start --wait -- node tools/kit/gpu-lock.mjs run --shared -- \
-    node tools/scenes.mjs <url> <out>/1 --scenes sea --times clear-noon
+    node tools/render/scenes.mjs <url> <out>/1 --scenes sea --times clear-noon
   node tools/kit/job.mjs start --wait -- node tools/kit/gpu-lock.mjs run --shared -- \
-    node tools/scenes.mjs <url> <out>/<i> --scenes sea --times clear-noon --check --ref <out>/1/neutral
+    node tools/render/scenes.mjs <url> <out>/<i> --scenes sea --times clear-noon --check --ref <out>/1/neutral
   ```
 
 - `--verify` tells a page that does not repeat itself from fresh loads that differ: it shoots each

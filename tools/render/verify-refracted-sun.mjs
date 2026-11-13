@@ -2,11 +2,11 @@
 // the separate refracted leg; horizontal-floor irradiance preserves transmitted power.
 // Needs the Vite dev server: it imports the source modules into the page (tools/kit/dev-server.mjs).
 // The paused seek's map is read on the page's rendered frames (tools/kit/page-eval.mjs, "Rendered frames").
-// Usage: node tools/verify-refracted-sun.mjs http://127.0.0.1:5190
+// Usage: node tools/render/verify-refracted-sun.mjs http://127.0.0.1:5190
 import { chromium } from 'playwright';
-import { acquireGpuLock } from './kit/gpu-lock.mjs';
-import { requireDevServer } from './kit/dev-server.mjs';
-import { installWaitFrames } from './kit/page-eval.mjs';
+import { acquireGpuLock } from '../kit/gpu-lock.mjs';
+import { requireDevServer } from '../kit/dev-server.mjs';
+import { installWaitFrames } from '../kit/page-eval.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 

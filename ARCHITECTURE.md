@@ -627,8 +627,8 @@ folder is its layer.
 
     *Why:* each of these was once two conventions that met in a factor nobody could name; a value's
     unit is otherwise known only to whoever wrote it.
-    [tools/verify-radiometry.mjs](tools/verify-radiometry.mjs) checks the light's scale on the page;
-    a new lit material follows [docs/how-to/add-material.md](docs/how-to/add-material.md).
+    [tools/render/verify-radiometry.mjs](tools/render/verify-radiometry.mjs) checks the light's
+    scale on the page; a new lit material follows [docs/how-to/add-material.md](docs/how-to/add-material.md).
 18. **One registered definition adds one thing.** The renderer is extended at named points, each a
     registry its owner reads in the order registered and never by name (rule 7, on the rendering
     side). The steps for each: [docs/how-to/add-to-the-renderer.md](docs/how-to/add-to-the-renderer.md).

@@ -1,13 +1,13 @@
 // Integrated day/night checks and fixed-camera evidence. One WebGPU page stays open throughout.
 // Run after the dynamic-sky debug API is installed:
-//   node tools/verify-dynamic-sky.mjs http://127.0.0.1:5190
+//   node tools/render/verify-dynamic-sky.mjs http://127.0.0.1:5190
 // Its steps wait for the page's rendered frames (tools/kit/page-eval.mjs, "Rendered frames").
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
-import { acquireGpuLock } from './kit/gpu-lock.mjs';
-import { DAY_PRESETS } from '../packages/render/sky/DayCycle.ts';
-import { renderedFrames } from './kit/page-eval.mjs';
+import { acquireGpuLock } from '../kit/gpu-lock.mjs';
+import { DAY_PRESETS } from '../../packages/render/sky/DayCycle.ts';
+import { renderedFrames } from '../kit/page-eval.mjs';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const out = 'artifacts/verification/dynamic-sky';

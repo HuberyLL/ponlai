@@ -1,6 +1,6 @@
 """Compare matched sky/weather captures without changing the source pixels.
 
-Usage: python3 tools/compare-sky-captures.py before.png after.png --out DIR \
+Usage: python3 tools/render/compare-sky-captures.py before.png after.png --out DIR \
     [--view overview|horizon|clouds]
 Requires Pillow and NumPy. The cameras must match; image dimensions need only be equal.
 Metrics use displayed RGB values in [0, 255], not scene-linear radiance.

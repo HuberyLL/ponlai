@@ -4,7 +4,7 @@
 // open sky, or the open sea over a level floor, and whatever the scene places there (plant kinds
 // among it, drawn with the registry's default plant). It declares what it tests, its views, the
 // hours and weathers it is shot at and the readings taken of it, so a tool shoots and reads it
-// without knowing the scene (tools/scenes.mjs).
+// without knowing the scene (tools/render/scenes.mjs).
 //
 // Rules:
 // - A scene imports the renderer through its exits only (render/index.ts, render/setup.ts, render/data.ts),

@@ -5,13 +5,13 @@
 // over the handoff it turns from the one to the other (DayCycle `keyDir`, which Sky.ts takes).
 // Each sample is read after a rendered frame of its clock (tools/kit/page-eval.mjs, "Rendered frames").
 // Run against the dev server:
-// node tools/verify-celestial-handoff.mjs http://127.0.0.1:5190
+// node tools/render/verify-celestial-handoff.mjs http://127.0.0.1:5190
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { acquireGpuLock } from './kit/gpu-lock.mjs';
-import { installWaitFrames } from './kit/page-eval.mjs';
-import { createDayWindows } from '../packages/render/look/DayLook.ts';
-import { ISLAND_LOOK } from '../packages/island/look/IslandLook.ts';
+import { acquireGpuLock } from '../kit/gpu-lock.mjs';
+import { installWaitFrames } from '../kit/page-eval.mjs';
+import { createDayWindows } from '../../packages/render/look/DayLook.ts';
+import { ISLAND_LOOK } from '../../packages/island/look/IslandLook.ts';
 import { mkdir, writeFile } from 'node:fs/promises';
 
 // the island's day windows, which the page's day cycle takes (RenderStages.ts `createSky`)

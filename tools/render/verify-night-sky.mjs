@@ -1,6 +1,6 @@
 // GPU checks and fixed evidence for moon phases, stable stars, and the daylight fade.
 // Run after the stage-three Sky hooks are installed; keep other GPU tabs closed:
-//   node tools/verify-night-sky.mjs http://127.0.0.1:5190
+//   node tools/render/verify-night-sky.mjs http://127.0.0.1:5190
 // Its steps wait for the page's rendered frames (tools/kit/page-eval.mjs, "Rendered frames"); the paired
 // screenshots wait for the page's settled signal (capture-browser.mjs `waitForSettled`), so a pair
 // that differs is the page's nondeterminism, not a frame shot before a bake or compile had landed.
@@ -16,11 +16,11 @@
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
-import { acquireGpuLock } from './kit/gpu-lock.mjs';
-import { eveningHour } from '../packages/render/sky/DayCycle.ts';
-import { MOON_ANGULAR_RADIUS } from '../packages/render/sky/NightSky.ts';
-import { renderedFrames } from './kit/page-eval.mjs';
-import { waitForSettled } from './kit/capture-browser.mjs';
+import { acquireGpuLock } from '../kit/gpu-lock.mjs';
+import { eveningHour } from '../../packages/render/sky/DayCycle.ts';
+import { MOON_ANGULAR_RADIUS } from '../../packages/render/sky/NightSky.ts';
+import { renderedFrames } from '../kit/page-eval.mjs';
+import { waitForSettled } from '../kit/capture-browser.mjs';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const out = 'artifacts/verification/night-sky';

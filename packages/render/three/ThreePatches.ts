@@ -23,7 +23,7 @@ import { missing } from './Internals.ts';
 // textures, and a key read then would miss the build's cache entry (leaking it) or evict another
 // layout's. (A render object never changes its build: three makes a new one when its key changes.)
 //
-// `tools/verify-frame-graph-gpu.mjs` checks the patches (both orders of an MRT and a plain draw, a
+// `tools/render/verify-frame-graph-gpu.mjs` checks the patches (both orders of an MRT and a plain draw, a
 // swapped layout). On another three revision, or a renderer without the members they patch, they
 // throw, naming the entry of `three-internals.json` (Internals.ts `missing`): re-check them on a
 // three upgrade (docs/how-to/upgrade-three.md).

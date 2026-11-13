@@ -1,7 +1,7 @@
 // The test scenes shot, read and checked (scenes.html, app/scenes/): the renderer's small
 // scenes, each at its own views, hours and weathers, as paused pages in the test mode.
 //
-//   node tools/scenes.mjs <baseUrl> <outDir> [--scenes ball,sea] [--times a,b] [--views a,b]
+//   node tools/render/scenes.mjs <baseUrl> <outDir> [--scenes ball,sea] [--times a,b] [--views a,b]
 //       [--look neutral|ponlai] [--verify] [--write-ref | --check] [--ref <dir>]
 //       [--q "extra&query"] [--size 1920x1080@2] [--timeout 240000]
 //
@@ -53,9 +53,9 @@
 import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { leaseGpuLock, releaseGpuLock } from './kit/gpu-lock.mjs';
-import { launchCapture, waitForScene, waitForSettled, waitForStable, decodePng, compareFrames, samePixels } from './kit/capture-browser.mjs';
-import { renderedFrames } from './kit/page-eval.mjs';
+import { leaseGpuLock, releaseGpuLock } from '../kit/gpu-lock.mjs';
+import { launchCapture, waitForScene, waitForSettled, waitForStable, decodePng, compareFrames, samePixels } from '../kit/capture-browser.mjs';
+import { renderedFrames } from '../kit/page-eval.mjs';
 
 const argv = process.argv.slice( 2 );
 const flags = new Set( [ 'verify', 'write-ref', 'check' ] );

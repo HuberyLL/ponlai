@@ -67,10 +67,10 @@ const TOOLS_KNOWN = [
 	'island/dusk-grid.mjs',
 	// a mock renderer with the members graph/Compile.ts builds through
 	'render/framegraph/tables-warm.mjs',
-	'pipeline-trace.mjs',
+	'render/pipeline-trace.mjs',
 	'profile-frame.mjs',
-	'verify-frame-graph-gpu.mjs',
-	'verify-storage-realloc.mjs',
+	'render/verify-frame-graph-gpu.mjs',
+	'render/verify-storage-realloc.mjs',
 	'render/wgsl-build.mjs',
 ];
 

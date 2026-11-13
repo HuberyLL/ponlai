@@ -52,7 +52,7 @@ A layer above the renderer imports everything below through the renderer's exit,
    On the island this is `createVegetation` in `packages/island/IslandStages.ts`; on the scene
    page a scene returns its kinds from `build()` as `plants`, and `app/scenes/ScenePage.ts` adds
    them. A kind added after `placeVegetation` throws.
-3. Check it on the plant patch: `node tools/scenes.mjs <baseUrl> <outDir> --scenes plants`
+3. Check it on the plant patch: `node tools/render/scenes.mjs <baseUrl> <outDir> --scenes plants`
    (`docs/how-to/check-a-change.md`, Run the small scenes first).
 
 A kind drawn with the default plant (`packages/render/vegetation/DefaultPlant.ts`) is a merged

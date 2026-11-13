@@ -21,7 +21,7 @@
 // The frame graph's `rebuilds` and the temporal resolve's `historyResets`, where the page's
 // diagnostics have them, are reported per step too (both should not move through the scale sweep).
 //
-//   node tools/verify-first-use.mjs --url <base> [--quality high] [--aa msaa,taa,taau,fsr3,off]
+//   node tools/render/verify-first-use.mjs --url <base> [--quality high] [--aa msaa,taa,taau,fsr3,off]
 //        [--q "extra&query"] [--steps rest,events,wind,idle,gui,camera,scale,resize,presets,pause] (+ weather,bolt)
 //        [--frames 20] [--out file.json] [--compare ref.json] [--strict] [--fresh]
 //
@@ -55,10 +55,10 @@
 import { chromium } from 'playwright';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { acquireGpuLock } from './kit/gpu-lock.mjs';
-import { launchCapture } from './kit/capture-browser.mjs';
+import { acquireGpuLock } from '../kit/gpu-lock.mjs';
+import { launchCapture } from '../kit/capture-browser.mjs';
 import { installScript } from './pipeline-trace.mjs';
-import { installWaitFrames } from './kit/page-eval.mjs';
+import { installWaitFrames } from '../kit/page-eval.mjs';
 
 const args = process.argv.slice( 2 );
 const opt = ( name, fallback = null ) => {
@@ -70,7 +70,7 @@ const opt = ( name, fallback = null ) => {
 const base = opt( 'url' );
 if ( ! base ) {
 
-	console.error( 'usage: node tools/verify-first-use.mjs --url <base> [--quality tier] [--aa mode] [--q extra] [--steps list] [--frames n] [--out file] [--compare ref.json] [--strict] [--fresh]' );
+	console.error( 'usage: node tools/render/verify-first-use.mjs --url <base> [--quality tier] [--aa mode] [--q extra] [--steps list] [--frames n] [--out file] [--compare ref.json] [--strict] [--fresh]' );
 	process.exit( 2 );
 
 }
@@ -86,7 +86,7 @@ const FRESH = args.includes( '--fresh' );
 const VIEWPORT = { width: 1280, height: 800 };
 
 // Counts every pipeline the page asks WebGPU for, from its first one: the shared tracer
-// (tools/pipeline-trace.mjs, probes' `pipelines`) installed before the page runs, on GPUDevice's
+// (tools/render/pipeline-trace.mjs, probes' `pipelines`) installed before the page runs, on GPUDevice's
 // prototype, so each is listed with its label and frame, and with its material, object, target and
 // the app's stack once `__PONLAI__` exists.
 const COUNTER = installScript( { early: true } );

@@ -46,7 +46,7 @@ r186, each with the check that sees it.
    reference sets.
 9. Check the pipelines: the count the page creates (`diagnostics.pipelines`,
    `packages/render/debug/PipelineCounter.ts`), that no player step creates one
-   (`tools/verify-first-use.mjs`), and that a growth swap creates none
+   (`tools/render/verify-first-use.mjs`), and that a growth swap creates none
    (`tools/island/verify-growth-swap.mjs`).
 10. Measure the frame time before and after the upgrade (`docs/how-to/check-a-change.md`, Measure a
     performance change).

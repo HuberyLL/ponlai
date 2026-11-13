@@ -248,7 +248,7 @@ packages, into `dist/licenses/`.
   - `packages/render/sky/Clouds.ts`: the light of up to four point sources inside the cloud (an
     inverse-square core times an exponential reach) added inside the front-to-back march, from
     `CloudRaymarch.shader`, ported from HLSL to TSL.
-  - `tools/bake-rainbow-table.mjs`: a port of `VolumetricClouds/Sky/RainbowTable.cs` to
+  - `tools/render/bake-rainbow-table.mjs`: a port of `VolumetricClouds/Sky/RainbowTable.cs` to
     JavaScript (Airy theory per wavelength and drop size, primary and secondary bows with
     Fresnel, a Marshall-Palmer drop spectrum, CIE 1931 to linear sRGB, the solar disc). It
     generates `packages/render/sky/RainbowTable.data.ts`, 512 RGB entries over 0 - 64 degrees from

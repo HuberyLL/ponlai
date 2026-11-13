@@ -1,7 +1,7 @@
 // GPU regression checks for the shared atmosphere, lighting and camera-relative solar disk.
-// Run against the dev server: node tools/verify-sky.mjs http://127.0.0.1:5190
+// Run against the dev server: node tools/render/verify-sky.mjs http://127.0.0.1:5190
 import { chromium } from 'playwright';
-import { acquireGpuLock } from './kit/gpu-lock.mjs';
+import { acquireGpuLock } from '../kit/gpu-lock.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 

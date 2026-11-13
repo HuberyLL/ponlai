@@ -435,9 +435,9 @@ file, matched by gate id, entry, view, clip, crop and metric with globs, never c
 `--normal` counts the special weathers (views.mjs's `special` group) apart. The policy's format is
 in the tool's header.
 
-### Test scenes: `tools/scenes.mjs`
+### Test scenes: `tools/render/scenes.mjs`
 
-`node tools/scenes.mjs <baseUrl> <outDir> [--scenes ball,sea] [--times a,b] [--views a,b]
+`node tools/render/scenes.mjs <baseUrl> <outDir> [--scenes ball,sea] [--times a,b] [--views a,b]
 [--look neutral|ponlai] [--verify] [--write-ref | --check] [--ref <dir>] [--q "extra&query"]
 [--size 1920x1080@2] [--timeout 240000]` shoots, reads and checks the renderer's test scenes
 (`scenes.html`; `docs/reference/url-options.md`, The test scenes). A scene is a few objects on
@@ -536,8 +536,8 @@ compare two freshly loaded pages (a grown page against a fresh `grow=1` page) in
   --eval "P.setWeather( 'storm', 0 )" --frames 120 --eval "pipelines.since( window.m )"`. Each
   entry has its kind, label, material and object (name and type), target (texture names or
   `canvas`, attachments, depth, sample count), frame and the first 6 app frames of its stack
-  (`tools/pipeline-trace.mjs`, shared with verify-first-use; installed at the first `mark()`, so
-  earlier pipelines are not listed, nor wrappers of one's own needed);
+  (`tools/render/pipeline-trace.mjs`, shared with verify-first-use; installed at the first `mark()`,
+  so earlier pipelines are not listed, nor wrappers of one's own needed);
 - the game: `--q "debug&game" --eval "P.game.sim.state.villagers[ 0 ]"`;
 - frame time: `--exclusive --q "debug" --frames 300 --eval "D.frameMs"` (profile-frame for A/B).
 - the light in linear radiance over boxes: `--q "debug&paused&flags=lightOnly" --frames 60
@@ -665,7 +665,7 @@ It does not validate the WGSL (no naga or tint): it reports three's own build er
 what three generated (the bindings a kernel declares, such as several writes sharing one binding
 or a storage texture's level dropped, the uniforms it reads, such as a uv matrix per texture read,
 and the limits), while a module's or a pipeline's creation is still proven on the page
-(`tools/verify-first-use.mjs`, the console's WebGPU errors).
+(`tools/render/verify-first-use.mjs`, the console's WebGPU errors).
 
 ## GPU lock
 
@@ -1180,10 +1180,10 @@ one's own.
 
 Whether a change to the renderer moved what a plain surface shows under the key, the sky and the
 ground's bounce, what the sky gives through a day or a plant kind drawn with the default plant,
-before the island is loaded at all: `tools/scenes.mjs --check` (Captures, Test scenes), which
+before the island is loaded at all: `tools/render/scenes.mjs --check` (Captures, Test scenes), which
 shoots the renderer's small scenes in seconds. What the open sea's water gives (its colour, the far
-sea against the sky, the glitter, the wind's levels): `tools/scenes.mjs --scenes sea`, read by its
-readings, not checked to the pixel. It does not replace the island's captures: it shows no shore,
+sea against the sky, the glitter, the wind's levels): `tools/render/scenes.mjs --scenes sea`, read
+by its readings, not checked to the pixel. It does not replace the island's captures: it shows no shore,
 terrain, island plants or game.
 
 What WGSL a TSL kernel, pass or material compiles to, which bindings and uniforms each stage
@@ -1400,17 +1400,17 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   in the main checkout's `artifacts/verify-cache/` (git-ignored), shared by every worktree, so a
   pass proven on a branch counts on its merge; delete the folder to forget them all. The helper is
   `tools/island/verify-cache.mjs`.
-- `tools/verify-storage-realloc.mjs` (GPU, headless, shared lock; it serves its own page from a
-  Vite server over the repository) checks what three's WebGPU backend does with storage buffers,
+- `tools/render/verify-storage-realloc.mjs` (GPU, headless, shared lock; it serves its own page from
+  a Vite server over the repository) checks what three's WebGPU backend does with storage buffers,
   for pools that outgrow their capacity (the meadow's, `vegetation/VegetationCull.ts`): rewritten in
   place and replaced by larger ones (a storage node's new `value`), under a compute kernel and an
   instanced draw, counting the pipelines, shader modules and bind groups the device creates and
   checking the results. Run it again after a three upgrade.
 - `tools/render/verify-framegraph.mjs` checks the frame graph's compiler and runtime on the CPU (plain
-  `node`); `tools/verify-frame-graph-gpu.mjs` checks three's cache-key patches (with plain
+  `node`); `tools/render/verify-frame-graph-gpu.mjs` checks three's cache-key patches (with plain
   materials, and with the app's vegetation and spray drawn by a fresh renderer under a shadow
   pass and their pass's MRT, both ways round) and the motion vectors' blends on the GPU;
-  `tools/verify-first-use.mjs` counts the pipelines any step still creates after the warm-up
+  `tools/render/verify-first-use.mjs` counts the pipelines any step still creates after the warm-up
   (`--aa msaa,taa,taau,off --quality high,medium,low` runs the whole matrix, a page per run, the
   parked tiers included; its `wind` step jumps to each wind level and heading and changes them over
   seconds; its `weather` and `bolt` steps reach the parked weathers and run only when `--steps`
@@ -1547,10 +1547,10 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   loading screen, the dev server's address and the default query, what a stored reference depends
   on, where the views' and clips' tables are, and the module that adds the pipeline tracer to an
   eval. Its summary says how many files and imports it checked.
-- `tools/benchmark-lighting.mjs` A/B-times two builds.
+- `tools/render/benchmark-lighting.mjs` A/B-times two builds.
 - `tools/island/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit
   (`uv run --with pillow --with numpy`), `tools/island/build-ground-textures.py` the meadow ground's
   from two Poly Haven scans (the same way). `tools/island/build-star-catalog.mjs` and
   `tools/island/build-milky-way.py` rebuild the night sky's data in `public/sky/` from the raw catalogue
   and map (each file says where to get them and how to run it).
-  `tools/bake-rainbow-table.mjs` generates `packages/render/sky/RainbowTable.data.ts`.
+  `tools/render/bake-rainbow-table.mjs` generates `packages/render/sky/RainbowTable.data.ts`.

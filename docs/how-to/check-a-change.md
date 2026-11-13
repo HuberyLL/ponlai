@@ -38,12 +38,12 @@ take minutes.
    vegetation's registry, material and shadows. Skip them for a change to the island's generator,
    materials or plant kinds, or the game, which they do not show. The open sea's scene gives
    readings, not a check to the pixel: for a change to the sea's water and waves, run
-   `node tools/scenes.mjs <baseUrl> <outDir> --scenes sea` before and after it and read the two
+   `node tools/render/scenes.mjs <baseUrl> <outDir> --scenes sea` before and after it and read the two
    `readings.tsv` side by side.
 2. Before the change, write the references on a server of the commit the change starts from:
-   `node tools/scenes.mjs <baseUrl> <outDir> --verify --write-ref`. Without `--scenes` it takes
+   `node tools/render/scenes.mjs <baseUrl> <outDir> --verify --write-ref`. Without `--scenes` it takes
    the scenes whose shots repeat to the pixel, so not the sea's.
-3. After the change, run `node tools/scenes.mjs <baseUrl> <outDir> --verify --check`. A refactor
+3. After the change, run `node tools/render/scenes.mjs <baseUrl> <outDir> --verify --check`. A refactor
    passes with every shot equal to its reference. A change that is meant to move the picture
    fails the check: read `readings.tsv` of the two runs side by side, look at the shots that
    differ, and write the references again once the differences are the intended ones.

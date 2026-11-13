@@ -1,5 +1,5 @@
 // Which pipelines an action built, and for what: the page-side tracer that tools/kit/page-eval.mjs puts
-// in every probe's and capture's scope as `pipelines`, and that tools/verify-first-use.mjs counts
+// in every probe's and capture's scope as `pipelines`, and that tools/render/verify-first-use.mjs counts
 // with. The page itself only keeps the total (`P.pipelines.total`, packages/render/debug/PipelineCounter.ts);
 // when it moves across an action, agents used to wrap the backend again in a script of their own to
 // learn what was built. This is that wrapper, once, tool-side (the page's code stays as it is).

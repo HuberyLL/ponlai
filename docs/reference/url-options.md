@@ -388,8 +388,8 @@ and none of the island's or the game's.
   `window.__THREE_GAME_DIAGNOSTICS__` with its `settled`. `__PONLAI__.scenePage` holds the scene's
   own: its `views`, `times` (each a name and the query that reaches it) and `readings`,
   `setView( name )`, and `read()`, which gives every reading the frame holds (the scene's linear
-  radiance over its box, the exposure, the key and the sky's irradiance). `tools/scenes.mjs` shoots
-  and reads them (`docs/reference/tools.md`, Test scenes).
+  radiance over its box, the exposure, the key and the sky's irradiance). `tools/render/scenes.mjs`
+  shoots and reads them (`docs/reference/tools.md`, Test scenes).
 
 ## Ambient light, occlusion and other views
 
