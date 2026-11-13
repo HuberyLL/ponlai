@@ -34,32 +34,33 @@
 // (its content included) whose result differs between engines, and its own exp and log against
 // Math's.
 // Pure CPU; Node 22.18+ strips the imported TypeScript.
-// Run: node tools/verify-game.mjs
-import { assert, assertions } from './assert-count.mjs';
-import { newGame, loadGame } from '../packages/game/sim/Sim.ts';
-import { findPath, goalAt, lineClear } from '../packages/game/sim/path.ts';
-import { act, perceive } from '../packages/game/sim/agent.ts';
-import { HUNGRY_WORDS, StandInBrain, THANKS_WORDS } from '../packages/game/sim/standin.ts';
-import { EARSHOT, NOTICED_KEPT, PERSON_REACH } from '../packages/game/sim/people.ts';
-import { BAG_CAPACITY, bagOf, bring, count, room, transfer } from '../packages/game/sim/items.ts';
-import { raiseNeed, startNeeds } from '../packages/game/sim/needs.ts';
-import { placesAt } from '../packages/game/sim/places.ts';
-import { progressOf, stageOf, storeOf } from '../packages/game/sim/buildings.ts';
-import { optionsAt, register } from '../packages/game/sim/registry.ts';
-import { FISH_SATIETY, FISH_SECONDS, SATIETY_PER_DAY } from '../packages/game/sim/content/food.ts';
-import { HYDRATION_PER_DAY } from '../packages/game/sim/content/water.ts';
-import { CHEST_WORK } from '../packages/game/sim/content/chest.ts';
-import { FOLLOW_GAP } from '../packages/game/sim/content/person.ts';
-import { GROWTH_STEPS, POPULATION_START, SECONDS_PER_GAME_DAY, SECONDS_PER_YEAR, WALK_SPEED, piecesFor } from '../packages/game/sim/types.ts';
-import { ageOf, drawLifespan } from '../packages/game/sim/life.ts';
-import { clockText, minuteOf, tickAt, timeOf } from '../packages/game/sim/clock.ts';
-import { ACTIONS } from '../packages/game/sim/actions.ts';
-import { SAVE_VERSION, readSave, savedPieces, writeSave } from '../packages/game/save.ts';
-import { Chronicle } from '../packages/game/Chronicle.ts';
-import { Session } from '../packages/game/Session.ts';
-import { shortfall, stockOf } from '../packages/game/sim/stock.ts';
-import { cellsWithin, shoreMask } from '../packages/game/sim/ground.ts';
-import { exp, log, planar } from '../packages/game/sim/maths.ts';
+// Run: node tools/game/verify-game.mjs
+import { assert, assertions } from '../assert-count.mjs';
+import { ROOT } from '../kit/root.mjs';
+import { newGame, loadGame } from '../../packages/game/sim/Sim.ts';
+import { findPath, goalAt, lineClear } from '../../packages/game/sim/path.ts';
+import { act, perceive } from '../../packages/game/sim/agent.ts';
+import { HUNGRY_WORDS, StandInBrain, THANKS_WORDS } from '../../packages/game/sim/standin.ts';
+import { EARSHOT, NOTICED_KEPT, PERSON_REACH } from '../../packages/game/sim/people.ts';
+import { BAG_CAPACITY, bagOf, bring, count, room, transfer } from '../../packages/game/sim/items.ts';
+import { raiseNeed, startNeeds } from '../../packages/game/sim/needs.ts';
+import { placesAt } from '../../packages/game/sim/places.ts';
+import { progressOf, stageOf, storeOf } from '../../packages/game/sim/buildings.ts';
+import { optionsAt, register } from '../../packages/game/sim/registry.ts';
+import { FISH_SATIETY, FISH_SECONDS, SATIETY_PER_DAY } from '../../packages/game/sim/content/food.ts';
+import { HYDRATION_PER_DAY } from '../../packages/game/sim/content/water.ts';
+import { CHEST_WORK } from '../../packages/game/sim/content/chest.ts';
+import { FOLLOW_GAP } from '../../packages/game/sim/content/person.ts';
+import { GROWTH_STEPS, POPULATION_START, SECONDS_PER_GAME_DAY, SECONDS_PER_YEAR, WALK_SPEED, piecesFor } from '../../packages/game/sim/types.ts';
+import { ageOf, drawLifespan } from '../../packages/game/sim/life.ts';
+import { clockText, minuteOf, tickAt, timeOf } from '../../packages/game/sim/clock.ts';
+import { ACTIONS } from '../../packages/game/sim/actions.ts';
+import { SAVE_VERSION, readSave, savedPieces, writeSave } from '../../packages/game/save.ts';
+import { Chronicle } from '../../packages/game/Chronicle.ts';
+import { Session } from '../../packages/game/Session.ts';
+import { shortfall, stockOf } from '../../packages/game/sim/stock.ts';
+import { cellsWithin, shoreMask } from '../../packages/game/sim/ground.ts';
+import { exp, log, planar } from '../../packages/game/sim/maths.ts';
 import { readdirSync, readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { importCatalogues, input, inputAt } from './game-fixture.mjs';
@@ -1475,11 +1476,11 @@ function buildChest( sim ) {
 // sim/content/ registers is written as a string in the rules outside it (the stand-in brain plays
 // the content, as any brain does, and may).
 importCatalogues();
-const { recordKind } = await import( '../packages/game/ui/data/record.ts' );
-const { needLook, needName } = await import( '../packages/game/ui/data/needs.ts' );
-const { RESOURCES, withItems } = await import( '../packages/game/ui/data/resources.ts' );
-const { doingWords } = await import( '../packages/game/ui/data/words.ts' );
-const { t } = await import( '../packages/game/ui/i18n/i18n.ts' );
+const { recordKind } = await import( '../../packages/game/ui/data/record.ts' );
+const { needLook, needName } = await import( '../../packages/game/ui/data/needs.ts' );
+const { RESOURCES, withItems } = await import( '../../packages/game/ui/data/resources.ts' );
+const { doingWords } = await import( '../../packages/game/ui/data/words.ts' );
+const { t } = await import( '../../packages/game/ui/i18n/i18n.ts' );
 {
 
 	const WARMTH_PER_DAY = 48, EMBER_WARMTH = 30, KINDLE_SECONDS = 600, HEARTH_REACH = 1.5;
@@ -1637,7 +1638,7 @@ const { t } = await import( '../packages/game/ui/i18n/i18n.ts' );
 	const literals = ( file, keep ) => {
 
 		const found = [];
-		const source = ts.createSourceFile( file, readFileSync( new URL( `../${ file }`, import.meta.url ), 'utf8' ), ts.ScriptTarget.ESNext, true );
+		const source = ts.createSourceFile( file, readFileSync( `${ ROOT }/${ file }`, 'utf8' ), ts.ScriptTarget.ESNext, true );
 		const visit = ( node ) => {
 
 			if ( keep( node ) ) found.push( keep( node ) );
@@ -1648,7 +1649,7 @@ const { t } = await import( '../packages/game/ui/i18n/i18n.ts' );
 		return found;
 
 	};
-	const contentFiles = readdirSync( new URL( '../packages/game/sim/content/', import.meta.url ) ).filter( ( f ) => f.endsWith( '.ts' ) ).map( ( f ) => `packages/game/sim/content/${ f }` );
+	const contentFiles = readdirSync( new URL( '../../packages/game/sim/content/', import.meta.url ) ).filter( ( f ) => f.endsWith( '.ts' ) ).map( ( f ) => `packages/game/sim/content/${ f }` );
 	const ids = new Set( contentFiles.flatMap( ( f ) => literals( f, ( n ) => {
 
 		if ( ts.isPropertyAssignment( n ) && n.name.getText() === 'id' && ts.isStringLiteral( n.initializer ) ) return n.initializer.text;
@@ -1660,7 +1661,7 @@ const { t } = await import( '../packages/game/ui/i18n/i18n.ts' );
 	assert.ok( [ 'satiety', 'fish', 'eat', 'shore', 'chest', 'give' ].every( ( id ) => ids.has( id ) ), 'the content\'s ids are found' );
 	const METHODS = new Set( [ 'take' ] );
 	const words = ( text ) => text.split( /[^A-Za-z0-9_]+/ ).filter( ( w ) => ids.has( w ) );
-	const core = readdirSync( new URL( '../packages/game/sim/', import.meta.url ) ).filter( ( f ) => f.endsWith( '.ts' ) && f !== 'standin.ts' ).map( ( f ) => `packages/game/sim/${ f }` )
+	const core = readdirSync( new URL( '../../packages/game/sim/', import.meta.url ) ).filter( ( f ) => f.endsWith( '.ts' ) && f !== 'standin.ts' ).map( ( f ) => `packages/game/sim/${ f }` )
 		.concat( 'packages/game/Session.ts', 'packages/game/save.ts', 'packages/game/Chronicle.ts' );
 	for ( const file of core ) {
 
@@ -1698,12 +1699,12 @@ const { t } = await import( '../packages/game/ui/i18n/i18n.ts' );
 	// they call (Ages.ts): any use of
 	// Math but a listed exact function, and any ** (TypeScript strips the comments and types first,
 	// so a // inside a string or a type cannot hide or fake one)
-	const ts_ = ( dir ) => readdirSync( new URL( `../${ dir }`, import.meta.url ) ).filter( ( f ) => f.endsWith( '.ts' ) ).map( ( f ) => `${ dir }${ f }` );
+	const ts_ = ( dir ) => readdirSync( `${ ROOT }/${ dir }` ).filter( ( f ) => f.endsWith( '.ts' ) ).map( ( f ) => `${ dir }${ f }` );
 	const files = ts_( 'packages/game/sim/' ).concat( ts_( 'packages/game/sim/content/' ), 'packages/island/characters/Ages.ts' );
 	const exact = /\bMath\b(?!\.(?:sqrt|floor|ceil|round|trunc|abs|min|max|sign|fround|imul|clz32|PI|SQRT2|SQRT1_2)\b)/;
 	for ( const file of files ) {
 
-		const code = ts.transpileModule( readFileSync( new URL( `../${ file }`, import.meta.url ), 'utf8' ), { compilerOptions: { target: ts.ScriptTarget.ESNext, removeComments: true } } ).outputText;
+		const code = ts.transpileModule( readFileSync( `${ ROOT }/${ file }`, 'utf8' ), { compilerOptions: { target: ts.ScriptTarget.ESNext, removeComments: true } } ).outputText;
 		assert.ok( ! exact.test( code ), `${ file } uses Math beyond its exact functions: ${ code.match( new RegExp( `.*${ exact.source }.*` ) )?.[ 0 ].trim() }` );
 		assert.ok( ! code.includes( '**' ), `${ file } uses the ** operator` );
 

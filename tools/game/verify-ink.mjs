@@ -6,9 +6,9 @@
 // and dries toward its exit, more on a broad stroke than on a thin one; a stroke told not to dry (a
 // gauge) keeps its ink to its exit.
 // Pure CPU; Node 22.18+ strips the imported TypeScript.
-// Run: node tools/verify-ink.mjs
-import { assert, assertions } from './assert-count.mjs';
-import { inkShares } from '../packages/game/ui/Ink.ts';
+// Run: node tools/game/verify-ink.mjs
+import { assert, assertions } from '../assert-count.mjs';
+import { inkShares } from '../../packages/game/ui/Ink.ts';
 
 const UNIT = 1.2 * 2;
 

@@ -16,7 +16,7 @@ import type { EntityId, IslandInput } from './sim/types.ts';
 // its listeners, the player's commands checked at the entrance, the leader's words as each
 // listener hears them, the island's growth asked of a host, and the save of the simulation with its
 // record (save.ts). The page's game (Game.ts) hosts it beside the view, the
-// interface, the scene events and the autosave; tools/play-game.mjs hosts it headless, so a run in
+// interface, the scene events and the autosave; tools/game/play-game.mjs hosts it headless, so a run in
 // node plays the game the page plays, with nothing copied. No three.js or DOM: node runs it by
 // stripping types, as it runs sim/.
 //

@@ -57,11 +57,11 @@ From the bottom up:
      ([packages/game/ui/](packages/game/ui/), spec in
      [docs/explanation/ui.md](docs/explanation/ui.md)), and it keeps the autosave and the debug
      panel;
-   - the play tool ([tools/play-game.mjs](tools/play-game.mjs)), which plays the same session
+   - the play tool ([tools/game/play-game.mjs](tools/game/play-game.mjs)), which plays the same session
      headless for days with any brain and writes a transcript, a timeline and a summary, for a
      designer or for judging a brain offline;
-   - the checks ([tools/verify-game.mjs](tools/verify-game.mjs)), which drive the rules and the
-     session directly.
+   - the checks ([tools/game/verify-game.mjs](tools/game/verify-game.mjs)), which drive the rules
+     and the session directly.
 
 What each owns: the rules own what is (the state) and decide what happened (the events); the
 session owns the order in which the world is told and what is saved; a host owns only the
@@ -308,7 +308,7 @@ folder is its layer.
    ([docs/explanation/game-design.md](docs/explanation/game-design.md), Actions). With content
    written into the core, each new resource touched the tick, the perception, the bag rules and the
    interface, and every later system would have multiplied that work.
-   [tools/verify-game.mjs](tools/verify-game.mjs) keeps the
+   [tools/game/verify-game.mjs](tools/game/verify-game.mjs) keeps the
    rule: it registers content of its own, plays it with no change elsewhere, and fails on a content
    id written in the core as a string, a word of a template, a property's name or a key.
    The steps for adding a piece of content:
@@ -342,7 +342,7 @@ folder is its layer.
    - a default resource in the top row, for an item without one;
    - the play tool's `[event]` line, for an event kind nothing else shows.
 
-   Player-facing words stay in the catalogues ([tools/verify-i18n.mjs](tools/verify-i18n.mjs)).
+   Player-facing words stay in the catalogues ([tools/game/verify-i18n.mjs](tools/game/verify-i18n.mjs)).
    *Why:* a presentation written per piece of content needs a change in every part for every new
    resource. One written per category shows anything the rules can make on the day it is added,
    and art then replaces the defaults one at a time.

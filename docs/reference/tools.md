@@ -1171,7 +1171,7 @@ Which assets a commit runs with, whether `public/` matches them, and how to publ
 them: `tools/repo/assets.mjs` (Assets), never a file committed to git.
 
 What the islanders do over days of play, how the needs and the stock run, and how a brain plays
-from what it perceives: `tools/play-game.mjs` (Other tools), not a loop over the simulation of
+from what it perceives: `tools/game/play-game.mjs` (Other tools), not a loop over the simulation of
 one's own.
 
 Whether a change to the renderer moved what a plain surface shows under the key, the sky and the
@@ -1298,8 +1298,8 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   of place and of building with their options, registered by the check alone, played, perceived,
   recorded, saved and shown with the presentation's defaults, then taken away, and no content id
   written as a string in the core: ARCHITECTURE.md, rule 7); its island is in
-  `tools/game-fixture.mjs`.
-- `tools/play-game.mjs [--days 5] [--seed 1] [--hour 8] [--pieces 0] [--grow] [--population 0]
+  `tools/game/game-fixture.mjs`.
+- `tools/game/play-game.mjs [--days 5] [--seed 1] [--hour 8] [--pieces 0] [--grow] [--population 0]
   [--place kind[@x,z]]... [--script file.json] [--brain standin|<module>] [--latency 90]
   [--thoughts] [--out dir]` (plain `node`) plays the game headless in the page's own session
   (`packages/game/Session.ts`, nothing copied from the page: a frame of one tick at a time, a growth
@@ -1326,15 +1326,15 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   longer, so the timing never depends on the wall clock. With the stand-in the same options write
   the same files byte for byte. Five game days of the stand-in take about two seconds; a run with a
   language-model brain goes through `tools/job.mjs`. The options and guarantees are in its header.
-- `tools/verify-i18n.mjs [--strict] [--list]` (plain `node`) checks the game interface's words:
+- `tools/game/verify-i18n.mjs [--strict] [--list]` (plain `node`) checks the game interface's words:
   it fails on Chinese written in `packages/` or `app/` outside the catalogues
   (`packages/game/ui/i18n/`; the content it allows, the islanders' names and the debug panel's
   placeholder lines, is listed in the tool) and on an empty source string, and reports how far each
   other catalogue has drifted from `zh-CN.json`: keys missing (shown in Chinese), keys the source no
   longer has, values naming `{{values}}` the source does not give. `--strict` fails on the drift
   too; `--list` names every drifted key. Run it after a change to the interface's text.
-- `tools/verify-ink.mjs` (plain `node`) checks the interface's ink (`packages/game/ui/Ink.ts`) on
-  strokes drawn as the page draws them, at high's scale: the same stroke and seed ink the same; it
+- `tools/game/verify-ink.mjs` (plain `node`) checks the interface's ink (`packages/game/ui/Ink.ts`)
+  on strokes drawn as the page draws them, at high's scale: the same stroke and seed ink the same; it
   never adds ink or reaches past the outline; a short stroke keeps its ink; a long one keeps its
   first press and dries toward its exit, a thin one less than a broad one; a gauge told not to dry
   keeps its exit.

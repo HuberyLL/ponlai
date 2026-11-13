@@ -344,7 +344,7 @@ The game behind `?game`:
 - `Session.ts`: the session, headless. It runs the simulation with its record, hands the
   simulation's events to its listeners, checks the player's commands, keeps the leader's words as
   heard and the save, and asks the page's `world/Growth.ts` for the island's growth by the
-  population. `tools/play-game.mjs` runs the same session in node.
+  population. `tools/game/play-game.mjs` runs the same session in node.
 - `save.ts`: the save: one slot, the simulation's state and the record, versioned; a save of
   another version is set aside and a new game started. The world's start reads its piece count.
 - `Chronicle.ts`: the record of what happened, the events' first listener.
@@ -376,9 +376,9 @@ The player's interface (`GameUi.ts`; its spec: `docs/explanation/ui.md`):
   its own (buildings, resources, the needs' looks, weather kinds, the record's kinds, the words for
   the simulation's states).
 - `i18n/`: its words in i18next catalogues (`zh-CN.json` the source, `en.json` an unmaintained
-  snapshot). No player-facing string is written in code (`tools/verify-i18n.mjs`).
+  snapshot). No player-facing string is written in code (`tools/game/verify-i18n.mjs`).
 - `Icons.ts`: the brush icons; `Brush.ts`: strokes; `Ink.ts`: the ink of the long ones, drawn by
-  `InkPath.ts` (`tools/verify-ink.mjs`).
+  `InkPath.ts` (`tools/game/verify-ink.mjs`).
 - `Space.ts`: what it lays into the scene in the camera's perspective (the words over the
   islanders and in flight).
 - `Palette.ts`: the palette; `ui.css`: the styles; `fonts/`: the licences of its fonts (our own

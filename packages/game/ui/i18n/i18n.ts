@@ -26,7 +26,7 @@ import { settings } from '../../../render/setup.ts';
 //   with `lookup`, which falls back to the id where the catalogue has no row.
 // - Interpolation is not HTML-escaped: the interface sets text, never markup.
 //
-// Rules: no player-facing string is written in code outside these files (tools/verify-i18n.mjs
+// Rules: no player-facing string is written in code outside these files (tools/game/verify-i18n.mjs
 // fails on a Chinese literal elsewhere and reports where en.json has drifted from zh-CN.json). A
 // call costs a few microseconds, so per-frame code calls `t` only when what it says changed, and
 // fixed words are taken once.

@@ -38,10 +38,10 @@ the module's header.
    ([save.ts](../../packages/game/save.ts)). A new need is in every body, and a new kind of building
    is in the buildings' state.
 4. **The checks.**
-   - `node tools/verify-game.mjs`: the rules, with the new content's asserts beside today's; its
+   - `node tools/game/verify-game.mjs`: the rules, with the new content's asserts beside today's; its
      own content check, with the core naming none; and the exact maths of the rules and the content.
-   - `node tools/verify-i18n.mjs` and `npm run typecheck`.
-   - A run of `tools/play-game.mjs` with the stand-in brain. Its transcript, timeline and summary
+   - `node tools/game/verify-i18n.mjs` and `npm run typecheck`.
+   - A run of `tools/game/play-game.mjs` with the stand-in brain. Its transcript, timeline and summary
      show the content played, moved between bags and noted, with nothing in the tool named for it.
      A change that should leave today's game as it was compares the tool's outputs before and
      after, byte for byte.

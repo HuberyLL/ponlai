@@ -279,7 +279,7 @@ from a board, it is said here.
   panel's Interface › language) loads the page in English; the language is read once at load. The
   islanders' names and what people say (the placeholder days, the hearing brain's lines) are
   content, not catalogue words. The English page is laid out with the Chinese page's measures and
-  letter spacing, untuned. `tools/verify-i18n.mjs` fails on Chinese written in code outside the
+  letter spacing, untuned. `tools/game/verify-i18n.mjs` fails on Chinese written in code outside the
   catalogues and reports how far `en.json` has drifted.
 - **Focus**: the keyboard's focus is shown as the pointer's hover is (精白, the stroke beneath),
   never a frame. The record takes the focus itself on opening (not its ×, which Space would press)
@@ -297,7 +297,7 @@ from a board, it is said here.
   not dry (its ends say the value and the whole). The ring at the feet is an ensō: it starts at its
   front left and goes round the back, so its dry tail falls on its heavy near side. The style is the
   one chosen from samples (dry from halfway, three quarters dry at the exit, the edge drunk in, the
-  gaps "more"); `tools/verify-ink.mjs` checks it.
+  gaps "more"); `tools/game/verify-ink.mjs` checks it.
 - **Not yet**: the placement of any building but the chest, a player's save or load control or a
   sign that the game was saved, a thought started by hearing for the stand-in,
   and everything Scope now leaves out.

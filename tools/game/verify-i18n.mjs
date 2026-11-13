@@ -10,12 +10,12 @@
 // snapshot not maintained while the game is in development (`--strict` fails on it too, for when
 // a language is). `--list` prints every drifted key.
 // Pure CPU; reads the sources with TypeScript's parser.
-// Run: node tools/verify-i18n.mjs [--strict] [--list]
+// Run: node tools/game/verify-i18n.mjs [--strict] [--list]
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import ts from 'typescript';
+import { ROOT } from '../kit/root.mjs';
 
-const ROOT = new URL( '..', import.meta.url ).pathname;
 const CATALOGUES = join( ROOT, 'packages/game/ui/i18n' );
 const SOURCE = 'zh-CN';
 const strict = process.argv.includes( '--strict' ), list = process.argv.includes( '--list' );

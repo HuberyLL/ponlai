@@ -4,7 +4,7 @@
 // in the interface's words (play-game.mjs, verify-game.mjs).
 import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
-import { growLand } from '../packages/island/world/IslandGrowth.ts';
+import { growLand } from '../../packages/island/world/IslandGrowth.ts';
 
 /** The island grown by `step` pieces after the starting island (seed 1). */
 export function inputAt( step ) {

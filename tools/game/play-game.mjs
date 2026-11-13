@@ -2,14 +2,14 @@
 // without a browser and a brain can be judged offline on the same island, the same day clock and
 // the same record the page keeps. Pure CPU; Node 22.18+ strips the imported TypeScript.
 //
-//   node tools/play-game.mjs [--days 5] [--seed 1] [--hour 8] [--pieces 0] [--grow]
+//   node tools/game/play-game.mjs [--days 5] [--seed 1] [--hour 8] [--pieces 0] [--grow]
 //     [--population 0] [--place kind[@x,z]]... [--script file.json] [--brain standin|<module>]
 //     [--latency 90] [--thoughts] [--out dir]
 //
 //   --days N        game days to play (default 5; a fraction plays part of one)
 //   --seed S        the game's seed (SimState.seed: the islanders, their lifespans, the catches)
 //   --hour H        the whole hour the game starts at (default 8, the page's)
-//   --pieces P      the island grown by P pieces (tools/game-fixture.mjs `inputAt`, land seed 1)
+//   --pieces P      the island grown by P pieces (tools/game/game-fixture.mjs `inputAt`, land seed 1)
 //   --grow          when the population reaches a step (Sim.growthDue), the next piece arrives at
 //                   once, as the page's swap hands it back (Session.setIsland of
 //                   `inputAt( pieces + 1 )`)
@@ -78,35 +78,35 @@
 // kinds' rows (a kind without one, the record's default row), and an event of a kind that neither
 // the record notes nor this tool has a line for a line of its own (`[event]`, its kind and what it
 // holds): a new rule shows in the outputs without a change to the tool.
-import './qos.mjs';
+import '../qos.mjs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { newGame } from '../packages/game/sim/Sim.ts';
-import { StandInBrain } from '../packages/game/sim/standin.ts';
-import { progressOf } from '../packages/game/sim/buildings.ts';
-import { buildingKind, buildingKinds } from '../packages/game/sim/registry.ts';
-import { Session } from '../packages/game/Session.ts';
-import { RECORDED } from '../packages/game/Chronicle.ts';
-import { stockOf } from '../packages/game/sim/stock.ts';
-import { clockText, tickAt, timeOf } from '../packages/game/sim/clock.ts';
-import { ageOf } from '../packages/game/sim/life.ts';
-import { SECONDS_PER_GAME_DAY } from '../packages/game/sim/types.ts';
+import { pathToFileURL } from 'node:url';
+import { newGame } from '../../packages/game/sim/Sim.ts';
+import { StandInBrain } from '../../packages/game/sim/standin.ts';
+import { progressOf } from '../../packages/game/sim/buildings.ts';
+import { buildingKind, buildingKinds } from '../../packages/game/sim/registry.ts';
+import { Session } from '../../packages/game/Session.ts';
+import { RECORDED } from '../../packages/game/Chronicle.ts';
+import { stockOf } from '../../packages/game/sim/stock.ts';
+import { clockText, tickAt, timeOf } from '../../packages/game/sim/clock.ts';
+import { ageOf } from '../../packages/game/sim/life.ts';
+import { SECONDS_PER_GAME_DAY } from '../../packages/game/sim/types.ts';
 import { importCatalogues, inputAt } from './game-fixture.mjs';
+import { ROOT } from '../kit/root.mjs';
 
 // The record's lines in the interface's words (packages/game/ui/data/record.ts, its catalogue
 // i18n/zh-CN.json): the page's bundler imports a catalogue as JSON, node as a module whose default
 // export it is.
 importCatalogues();
-const { recordKind } = await import( '../packages/game/ui/data/record.ts' );
-const { BUILDINGS } = await import( '../packages/game/ui/data/buildings.ts' );
-const { t } = await import( '../packages/game/ui/i18n/i18n.ts' );
+const { recordKind } = await import( '../../packages/game/ui/data/record.ts' );
+const { BUILDINGS } = await import( '../../packages/game/ui/data/buildings.ts' );
+const { t } = await import( '../../packages/game/ui/i18n/i18n.ts' );
 
 const HOUR = 3600;
 // rejected answers in a row that end the run
 const MAX_FAILURES = 10;
-const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
-const USAGE = 'usage: node tools/play-game.mjs [--days 5] [--seed 1] [--hour 8] [--pieces 0] [--grow] [--population 0] [--place kind[@x,z]]... [--script file.json] [--brain standin|<module>] [--latency 90] [--thoughts] [--out dir] (see the header)';
+const USAGE = 'usage: node tools/game/play-game.mjs [--days 5] [--seed 1] [--hour 8] [--pieces 0] [--grow] [--population 0] [--place kind[@x,z]]... [--script file.json] [--brain standin|<module>] [--latency 90] [--thoughts] [--out dir] (see the header)';
 
 function fail( message ) {
 
@@ -717,7 +717,7 @@ writeFileSync( path.join( out, 'record.json' ), JSON.stringify( record.save(), n
 if ( options.thoughts ) writeFileSync( path.join( out, 'thoughts.jsonl' ), thoughts.map( ( t ) => JSON.stringify( t ) + '\n' ).join( '' ) );
 
 // the transcript, day by day
-const command = [ 'node tools/play-game.mjs', `--days ${ options.days }`, `--seed ${ options.seed }`, `--hour ${ options.hour }`, `--pieces ${ options.pieces }`,
+const command = [ 'node tools/game/play-game.mjs', `--days ${ options.days }`, `--seed ${ options.seed }`, `--hour ${ options.hour }`, `--pieces ${ options.pieces }`,
 	options.grow ? '--grow' : '', options.population ? `--population ${ options.population }` : '', ...options.place.map( ( p ) => `--place ${ p.text }` ),
 	options.script ? `--script ${ options.script }` : '', `--brain ${ options.brain }`, `--latency ${ options.latency }` ].filter( Boolean ).join( ' ' );
 const md = [
