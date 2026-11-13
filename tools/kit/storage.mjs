@@ -1,48 +1,64 @@
-// Disk space: what the tools and agents leave behind, removed by age and held under a cap.
+// Reports and removes what the tools and agents leave on disk, by age and under a size cap.
 //
-// usage: node tools/kit/storage.mjs [report|clean] [--days 2] [--cap 50] [--floor 12] [--auto]
-// - `report` (the default) prints what each kind holds and what `clean` would remove; nothing is
-//   deleted. `clean` removes it. `clean --auto` does so only if the last clean is 6 h old: job.mjs
-//   starts it that way in the background (`autoClean`), so cleaning needs nobody to remember it.
-//   Its output goes to `artifacts/.storage/clean.log`.
+// Captures, clip frames and references would otherwise fill the disk with frames read once: in a
+// week the captures, clip frames and references of the anti-aliasing and island work reached
+// hundreds of GB, almost all PNG frames read once by the task that made them. The reports keep the
+// numbers, and the reference store recaptures a commit on demand; two days covers a task and the
+// one that builds on it. Nobody runs the clean by hand: tools/kit/job.mjs starts `clean --auto` in
+// the background on every command, and it runs when the last clean is 6 h old.
+//
+// Usage:
+//   node tools/kit/storage.mjs [report] [--days 2] [--cap 50] [--floor 12]
+//   node tools/kit/storage.mjs clean [--days 2] [--cap 50] [--floor 12] [--auto]
+//
+// Options:
+//   report      prints what each kind holds and what `clean` would remove; deletes nothing (the default)
+//   clean       removes it
+//   --days n    the age after which bulk files, unused references and idle profiles go (default 2)
+//   --cap n     the GB that bulk files and dead references may hold past the age rule (default 50)
+//   --floor n   the cap never removes anything younger than n hours (default 12)
+//   --auto      with clean: only if the last clean is 6 h old (job.mjs's background run)
 //
 // What it removes, in the main checkout (git's common directory, where every worktree's tools write
 // their artifacts) and the temp folders:
-// - bulk: images and videos of 256 KB or more (captures, clip frames, crops: .png .jpg .jpeg
-//   .webm .mp4 .mov .exr .raw .rgba .bin) and browser profiles left in a task folder, under
-//   the folders of artifacts/ the configuration lists (tools/project.mjs `storage.folders`), once
-//   older than --days. Reports, JSON and small images stay, and so does every image a report or
-//   page links to (a path in a .md or .html file under those folders, read relative to that file,
-//   the checkout or artifacts/): what the user reviews keeps its pictures, while clip frames and
-//   capture sets nobody links go. Other artifacts folders are never read. artifacts/captures, where
-//   one-off screenshots land (some of them shown or posted), keeps its images 7 days and stays
+// - bulk: images and videos of 256 KB or more (captures, clip frames, crops: .png .jpg .jpeg .webm
+//   .mp4 .mov .exr .raw .rgba .bin) and browser profiles left in a task folder, under the folders of
+//   artifacts/ the configuration lists (tools/project.mjs `storage.folders`), once older than
+//   --days. Reports, JSON and small images stay, and so does every image a report or page links to
+//   (a path in a .md or .html file under those folders, read relative to that file, the checkout
+//   or artifacts/): what the user reviews keeps its pictures. Other artifacts folders are never
+//   read. artifacts/captures, where one-off screenshots land, keeps its images 7 days and stays
 //   outside the cap.
 // - references: a commit's folder in a reference store (a folder named by a full sha under those
 //   folders, such as artifacts/parity; tools/kit/reference.mjs). Kept while its commit is live: the
-//   HEAD of a worktree or the tip of a local branch committed to in the last 7 days, or the commit
+//   HEAD of a worktree, the tip of a local branch committed to in the last 7 days, or the commit
 //   such a branch shares with main (it compares against it). Otherwise removed once nothing in it
-//   changed for --days. `.replaced/` and `.verify/` inside a live store go after a day (safe to
-//   delete, reference.mjs).
-// - profiles: the warm browser profiles (capture-browser.mjs: safe to delete). A browser build's
-//   folder or a named profile idle for --days goes whole. A slot idle for 6 h whose caches passed
-//   512 MB loses them (IndexedDB: the island's cache, one entry per origin, so per preview port; the
-//   HTTP and code caches): its next load is cold, its captures the same. The shader caches stay. A
-//   slot is trimmed under its own lock (`<n>.lock`, the slots' protocol), so a capture takes another
-//   meanwhile. The project's browser profiles in the temp folder (`storage.temp.profiles`:
-//   profile-frame's) are trimmed the same way when no Chrome runs in them.
+//   changed for --days. `.replaced/` and `.verify/` inside a live store go after a day.
+// - profiles: the warm browser profiles (tools/kit/capture-browser.mjs; safe to delete). A browser
+//   build's folder or a named profile idle for --days goes whole. A slot idle for 6 h whose caches
+//   passed 512 MB loses them (IndexedDB, the HTTP and code caches): its next load is cold, its
+//   captures the same. The shader caches stay. A slot is trimmed under its own lock (`<n>.lock`),
+//   so a capture takes another slot meanwhile. The project's browser profiles in the temp folder
+//   (`storage.temp.profiles`: profile-frame's) are trimmed the same way when no Chrome runs in them.
 // - temp: what killed processes left in the temp folder over a day ago: Playwright's profiles and
-//   artifacts, the project's run folders (`storage.temp.runs`: profile-frame's), Instruments recordings (instruments*.ktrace, written by
-//   xctrace), pip's unpack and build folders.
+//   artifacts, the project's run folders (`storage.temp.runs`: profile-frame's), Instruments
+//   recordings (instruments*.ktrace, written by xctrace), pip's unpack and build folders.
 // - sessions: Claude Code's temp folders for this checkout and its worktrees (agent outputs,
 //   scratchpads), a session's once it has been idle for 3 days.
 // The cap: past the age rule, bulk files and references that are not live are removed oldest first
 // while they hold more than --cap GB, never one younger than --floor hours. A folder under
-// artifacts with a `.keep` file is never touched (a set a later task needs beyond the window).
+// artifacts with a `.keep` file is never touched: put one in a set a later task needs.
 //
-// Why: in a week the captures, clip frames and references of the anti-aliasing and island work
-// reached hundreds of GB, almost all PNG frames read once by the task that made them; the reports
-// keep the numbers, and the reference store recaptures a commit on demand. Two days covers a task
-// and the one that builds on it.
+// Output: the rules in force, a table per kind (held, to remove, kept), the total, the count of
+// images kept because a report links them and the last clean. `clean` then prints what it freed
+// and writes artifacts/.storage/last-clean.json; the background clean appends its output to
+// artifacts/.storage/clean.log (both in the main checkout). One clean runs at a time
+// (artifacts/.storage/clean.lock); a second prints `another clean is running`.
+//
+// GPU lock and browser: neither. Cost: seconds (it walks artifacts/ and the temp folders).
+//
+// Exit codes: 0 done; 1 a clean that failed to remove some files; 2 an unknown command or option.
+import './help.mjs';
 import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
 import os from 'node:os';

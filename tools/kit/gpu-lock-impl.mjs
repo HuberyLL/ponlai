@@ -1,3 +1,42 @@
+// The GPU lock's implementation: the machine-wide queue every tool that renders the scene in a browser waits in.
+//
+// Tools import the entry, tools/kit/gpu-lock.mjs, which loads this file (its own worktree's copy or
+// the main checkout's, whichever declares the higher LOCK_VERSION) and runs its CLI; the commands and
+// their options are in that entry's header, and the rules a caller meets (modes, slots, levels, the
+// queue, ageing, the scheduling table) in docs/reference/gpu-lock.md. The lock's design (its files,
+// the rules between copies of this file, the log and the estimate) is the comment below the imports.
+//
+// Usage:
+//   node tools/kit/gpu-lock-impl.mjs <command> ...     (the same commands as tools/kit/gpu-lock.mjs, this copy only)
+//   PONLAI_GPU_LOCK_IMPL=local node tools/kit/gpu-lock.mjs <command> ...   (the entry, forced to this worktree's copy)
+//
+// Options: those of tools/kit/gpu-lock.mjs.
+//
+// The module's use:
+//   import { withGpuLock, acquireGpuLock } from './gpu-lock.mjs';
+//   await withGpuLock( 'profile island', async () => { ... } );           // held while fn runs
+//   await acquireGpuLock( 'capture overview' );                           // held until this process exits
+//   await acquireGpuLock( 'probe', { shared: true } );                    // shared with other probes
+//   await leaseGpuLock( 'capture v', { shared: true, budget: 20000 } );   // kept from the last piece of work, or yielded to a waiter
+//   await leaseGpuLock( 'profile', { keepPlace: true } );                 // exclusive: yields to a waiter ranked before it, asks again in its old place
+//   lockState();                                                          // holders and queue in turn, with levels (job.mjs)
+//
+// Output, cost and exit codes: as tools/kit/gpu-lock.mjs's. GPU lock and browser: it is the lock;
+// it opens no browser.
+//
+// A change to the lock goes here, bumps LOCK_VERSION here and in the stand-in
+// (tools/gpu-lock-impl.mjs), and keeps the exports and the CLI additive, since another worktree's
+// entry may load this file.
+import './help.mjs';
+import { appPolicy } from './qos.mjs'; // first: every tool that takes the lock runs with the application policy
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, unlinkSync, writeFileSync, statSync } from 'node:fs';
+import { execFile, execFileSync, spawn } from 'node:child_process';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// The lock's design.
+//
 // A machine-wide lock for everything that renders the scene in a browser (captures, profiles,
 // GPU probes). Frame times are only meaningful one browser at a time: two pages sharing the GPU
 // each measure the other's work, and parallel sessions or agents cannot see each other's browsers.
@@ -128,22 +167,6 @@
 // that re-exports this file and declares the same LOCK_VERSION (version 5 is the move), so those
 // copies run this lock too. Bump the stand-in's LOCK_VERSION with this one.
 //
-//   import { withGpuLock, acquireGpuLock } from './gpu-lock.mjs';
-//   await withGpuLock( 'profile island', async () => { ... } );           // held while fn runs
-//   await acquireGpuLock( 'capture overview' );                           // held until this process exits
-//   await acquireGpuLock( 'probe', { shared: true } );                    // shared with other probes
-//   await leaseGpuLock( 'capture v', { shared: true, budget: 20000 } );   // kept from the last piece of work, or yielded to a waiter
-//   await leaseGpuLock( 'profile', { keepPlace: true } );                 // exclusive: yields to a waiter ranked before it, asks again in its old place
-//   lockState();                                                          // holders and queue in turn, with levels (job.mjs)
-//
-//   node tools/kit/gpu-lock.mjs run [--shared] [--label name] [--timeout seconds] -- <command ...>
-//   node tools/kit/gpu-lock.mjs status                 (the owner, the holders, the queue in turn with each request's level and eta, the exclusive requests)
-//   node tools/kit/gpu-lock.mjs eta [--shared|--exclusive] [--level l] [--pid p] [--json]   (estimated start of a request made now, or of a ticket)
-//   node tools/kit/gpu-lock.mjs prio                   (the scheduling table, and every holder's and ticket's level with its source)
-//   node tools/kit/gpu-lock.mjs prio set <match> <level> [--for 90m] [--note text] | prio clear <match> | prio bump <pid|#ticket> <level>
-//   node tools/kit/gpu-lock.mjs gpu [--seconds 3]      (the GPU's utilisation and its busiest processes, macOS)
-//   node tools/kit/gpu-lock.mjs log [--since 2h] [--by class|label] [--top 5] [--json]   (waits and holds, from the log)
-//
 // The lock keeps a history, so how long anyone waited is measured rather than guessed: every request,
 // grant, release, timeout and abandoned request is one JSON line appended to `ponlai-gpu.lock.log.jsonl`
 // next to the lock (t, ev, pid, label, mode, class, ticket, waitMs / holdMs, reason). A line is
@@ -200,12 +223,6 @@
 // Importing this module raises the process to the application scheduling policy on macOS
 // (tools/kit/qos.mjs: agent-started processes otherwise starve on a busy machine), so every tool that
 // takes the lock does; `run` starts its command with that policy too.
-import { appPolicy } from './qos.mjs'; // first: every tool that takes the lock runs with the application policy
-import { appendFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, unlinkSync, writeFileSync, statSync } from 'node:fs';
-import { execFile, execFileSync, spawn } from 'node:child_process';
-import os from 'node:os';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 // The user's temporary folder. On macOS it is asked of the system rather than read from TMPDIR,
 // which a sandboxed session may point elsewhere, and its runs would then not see each other's lock.
@@ -237,13 +254,13 @@ const SEQ = `${ LOCK_DIR }.seq`;
 const MUTEX = `${ LOCK_DIR }.mutex`;
 const LOG = `${ LOCK_DIR }.log.jsonl`;
 const LOG_OLD = `${ LOCK_DIR }.log.1.jsonl`;
-/** The scheduling table (see the header): { entries: [ { match, level, until?, note? } ] }. */
+/** The scheduling table (see the design comment above): { entries: [ { match, level, until?, note? } ] }. */
 export const TABLE = `${ LOCK_DIR }.priorities.json`;
 const LOG_CAP = 4 << 20; // ~20k events, days of busy use
 const POLL_MS = 500;
 /** How many shared holders may render at once (each requester reads its own environment). */
 export const SLOTS = Math.max( 1, Math.floor( Number( process.env.PONLAI_GPU_SLOTS ) ) || 2 );
-/** The levels, highest first (see the header); 0-3 name them too. */
+/** The levels, highest first (see the design comment above); 0-3 name them too. */
 export const LEVELS = [ 'urgent', 'high', 'normal', 'low' ];
 /** A level from its name or number, or null. */
 export function parseLevel( value ) {
@@ -254,13 +271,13 @@ export function parseLevel( value ) {
 
 }
 // PONLAI_GPU_PRIORITY's level (null when unset or not a level); children inherit it. Sessions leave
-// it unset: the scheduling table is how levels are set (see the header).
+// it unset: the scheduling table is how levels are set (see the design comment above).
 const ENV_LEVEL = parseLevel( process.env.PONLAI_GPU_PRIORITY );
 /** The level a request has unless a bump, the table or its environment says otherwise: shared
- * requests normal, exclusive ones low (see the header). */
+ * requests normal, exclusive ones low (see the design comment above). */
 export const defaultLevel = ( t ) => t.mode === 'exclusive' ? 'low' : 'normal';
 // How long an exclusive request at its default level waits, from its run's first request, before it
-// ranks normal (see the header). PONLAI_GPU_LOCK_AGE_S overrides it for the lock's own tests only.
+// ranks normal (see the design comment above). PONLAI_GPU_LOCK_AGE_S overrides it for the lock's own tests only.
 const AGE_AFTER_MS = 30 * 60e3;
 export const AGE_MS = Number( process.env.PONLAI_GPU_LOCK_AGE_S ) > 0 ? Number( process.env.PONLAI_GPU_LOCK_AGE_S ) * 1000 : AGE_AFTER_MS;
 /** When a request would age (ms since the epoch), or Infinity: an exclusive ticket or holder of a copy
@@ -276,7 +293,7 @@ let holding = null; // this process's own hold while it lasts: { label, mode, ti
 let leasing = 0; // the budget (ms) of the leaseGpuLock request under way, recorded on its hold for the estimate
 let bumped = null; // a level `prio bump` gave this process (on its ticket or its hold); kept for its later requests
 
-// One event on the log (see the header). Never throws.
+// One event on the log (see the design comment above). Never throws.
 function logEvent( event ) {
 
 	try {
@@ -356,7 +373,7 @@ function checkoutOf( dir ) {
 	}
 
 }
-// This process's session names, which the table's entries match (see the header): the names of the
+// This process's session names, which the table's entries match (see the design comment above): the names of the
 // checkouts holding the script it runs and its working directory, and that directory's own name. A
 // tool run by its absolute path from another directory is still found by its worktree's name, and
 // the main checkout's name names only requests from the main checkout.
@@ -391,7 +408,7 @@ function tableEntry( t, table, now ) {
  * (defaultLevel), or normal (source `aged`) for an exclusive one AGE_MS after its run's first
  * request (agesAt), so the level depends on `now`. A ticket or holder of an older copy (no `levels`) always takes its mode's default
  * (source `older copy`): neither the table nor a bump moves it, since that copy ranks it by its own
- * rules and a level only this copy knows would make the two wait for each other (see the header). */
+ * rules and a level only this copy knows would make the two wait for each other (see the design comment above). */
 export function levelOf( t, table = readTable(), now = Date.now() ) {
 
 	if ( ! t.levels ) return { level: defaultLevel( t ), source: 'older copy' };
@@ -417,7 +434,7 @@ const withLevel = ( t, table, now ) => {
 /** A request's place among the levels, 0 (urgent) .. 3 (low). */
 export const levelRank = ( t ) => LEVELS.indexOf( t.level ?? levelOf( t, [] ).level );
 
-// What a request of this process records so that every requester can rank it (see the header).
+// What a request of this process records so that every requester can rank it (see the design comment above).
 function requestInputs() {
 
 	return { levels: true, cwd: process.cwd(), session: SESSION, ...( ENV_LEVEL ? { env: ENV_LEVEL } : {} ), ...( bumped ? { bump: bumped } : {} ) };
@@ -508,7 +525,7 @@ function queued( now = Date.now() ) {
 
 }
 
-// What a ticket tells the copies from before the levels (see the header) so that they order it as
+// What a ticket tells the copies from before the levels (see the design comment above) so that they order it as
 // this copy does, as far as they can. They know two classes (`priority`): normal tickets first in,
 // first out, then low ones until their `promoteAt`. Those from shared first also let a shared request
 // (`sharedFirst`) pass an exclusive one before its cap (`capAt`) and hold shared ones back after it.
@@ -666,7 +683,7 @@ function holdingAncestor() {
 
 }
 
-// Takes the slot of a shared holder above this process over (see the header); false when that
+// Takes the slot of a shared holder above this process over (see the design comment above); false when that
 // holder has left or handed its slot on meanwhile. Call inside the mutex.
 function takeOverSlot( ancestor, label, reason = 'handed' ) {
 
@@ -1000,7 +1017,7 @@ export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?
 	}
 	installRelease();
 	const started = Date.now();
-	// a shared request below a shared holder takes that holder's slot over (see the header)
+	// a shared request below a shared holder takes that holder's slot over (see the design comment above)
 	if ( ancestor && await withMutex( () => takeOverSlot( ancestor, label ) ) ) {
 
 		depth = 1;
@@ -1792,7 +1809,7 @@ async function prioCommand( rest, opt, show ) {
 			const what = file === OWNER ? 'the exclusive hold' : file.startsWith( QUEUE ) ? `ticket #${ record.seq }` : 'the shared hold';
 			const who = `${ what } of pid ${ record.pid } ("${ record.label }")`;
 			// an older copy ranks its requests by its own rules: a level only this copy knows would make
-			// the two wait for each other (see the header)
+			// the two wait for each other (see the design comment above)
 			if ( ! record.levels ) return { error: `${ who } comes from an older copy of the lock, which does not read levels; it keeps its mode's default here too, since raising it in this copy only would leave the two copies waiting for each other` };
 			// an exclusive holder has the GPU to itself, and its owner.json is removed without the mutex
 			// when it ends, so a write could race that; the bump would only matter for its next request

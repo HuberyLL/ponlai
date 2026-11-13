@@ -1,118 +1,119 @@
-// Full-resolution captures of the running dev server (or a preview build) for visual review.
-//   node tools/kit/capture.mjs [name] [--w 1600 --h 900] [--q "query"] [--eval js|@file]... [--eval-ready js|@file]... [--verbose] [--exclusive]
-//                          [--wait-for "js expression"] [--frames n --every k] [--timeout 60000]
-//                          [--stable-min 1] [--stable-every 2] [--stable-repeats 1] [--stable-tolerance 0:5000|exact]
-//                          [--stable-patience 40] [--stable-cap 120] [--stable-trace] [--ready-frames n] [--wait ms] [--settle ms]
-//   node tools/kit/capture.mjs --worker --url <base> [--w --h --scale --timeout, the options above] [--page-per-view] [--ready-reads] [--lease 20]
-// Writes artifacts/captures/<name>.png and prints the page's console errors and diagnostics.
-// The browser runs in a persistent profile slot and a paused capture (MSAA or off) is taken once its
-// image has stopped changing (tools/kit/capture-browser.mjs, "readiness by stability"): after the evals, the
-// floor's frames (--stable-min) and the loading screen gone, the page's settled signal is waited for
-// with the loop running (up to --timeout; past it the JSON's `ready.settled` keeps the signal's
-// `settle` block and stdout prints "unsettled"), then the image is grabbed every
-// --stable-every frames, with the loop stopped for each grab, and shot once --stable-repeats
-// comparisons in a row found it unchanged; after --stable-patience frames a comparison with at most
-// <pixels> pixels differing by more than <level> (--stable-tolerance) counts too, and after
-// --stable-cap frames the page is shot anyway (printed as unstable). The JSON's `ready` records it
-// (status exact|tolerance|capped, frames waited, comparisons, the largest difference, per
-// comparison its pixel counts; --stable-trace adds each grab's PNG hash). --ready-frames n waits for
-// n rendered frames instead, as a running (not paused) capture does (60). --wait and --settle (ms)
-// add fixed delays before and after the floor. The frame loop is stopped (the GPU queue drained)
-// for the shot, which is the compositor's image PNG-encoded for speed (the pixels of Playwright's
-// screenshot, not its bytes: compare captures by decoded pixels; tools/kit/capture-browser.mjs).
-// --wait-for polls the expression in the page (up to 60 s) once it is up (before the stability wait) and captures once it
-// is truthy (e.g. a temporal resolve's convergence flag). --frames n captures n frames, k rendered
-// frames apart (default 1): <name>.png, then <name>.f1.png ... <name>.f<n-1>.png; the loop runs
-// between them and stops for each shot.
-// --timeout (ms) bounds each wait for the page (its load, its readiness, a screenshot);
-// raise it when other pages keep the GPU busy. The JSON holds the page's `window.__PONLAI_CROPS__`
-// (tools/island/parity/views.mjs) as `crops` when it is set, and the profile slot it ran in (`slot`).
-// --eval js|@file may be given more than once: each runs in the page in order, awaited, once
-// `__PONLAI__` and the diagnostics exist (before the floor's frames and the readiness wait: on a
-// fresh load that is before the sun's map has drawn, so an eval that measures the frame belongs in
-// --eval-ready), with probe's forms and scope (tools/kit/page-eval.mjs:
-// an expression, a function or statements with a `return`, `await` in all three; `P`, `D`,
-// `frames( n )`, `sleep( ms )`, `until( fn, timeoutMs )`, so an eval waits with `await until( ...
-// )` instead of a polling loop of its own). The JSON records each as `evals: [ { eval, value } |
-// { eval, error } ]` (`eval` as given, the value serialised as probe's) and stdout prints them; an
-// eval that throws fails the shot (exit 1, as probe's), which is still taken and written.
-// --eval-ready js|@file (repeatable, the same forms) runs once the page is ready, with the loop
-// stopped on the frame the shot then takes: for readings of that frame (a render target read
-// back, the diagnostics). It reads; one that changes the scene or renders changes the shot. The
-// JSON records them as `readyEvals` (stdout as `eval-ready`), a throw failing the shot as above.
-// Under --frames n they run once, before the first frame.
-// tools/kit/parity/capture-set.mjs runs the view's own eval first (same forms, not recorded: a throw
-// fails the view), then any given after its `--` (which then take a page per view: Worker, below).
-// The GPU lock is taken once the page has its world (see "The slot after the world" below; the
-// load's goto waits for the DOM, not the load event, which waits for the gate).
-// A paused capture takes the GPU lock shared (its pixels do not depend on what else renders);
-// a running one, or --exclusive, takes it to itself, since its frame times are reported too.
-// A paused page of the temporal modes (aa=taa|taau|fsr3|gt) shows its rest image once that has
-// converged (packages/render/post/TemporalRest.ts): once up the rest is started over (its epoch: what the
-// evals changed need not be in its key) and the capture waits for `diag.taa.converged` and the
-// settled signal (a rest that converged before the page was quiet is started over), stops the
-// loop on the held rest and shoots it, with no image comparison (the --stable-* options do not
-// apply; `ready.status` is `converged`). With `tier.taa.restSequence=0` there is no rest and no
-// settled signal: the page is compared for stability like an MSAA one.
+// Takes one screenshot of the running dev server or a preview build, with the page's diagnostics.
 //
-// Worker (--worker): one page for many views, driven by tools/kit/parity/capture-set.mjs over the IPC
-// channel it opens (one page per set). The worker asks for a view, captures it,
-// reports and asks again, until told it is done; the first view is a fresh load of
-// `<url>?<query>`, each later one is reached in place by the exact scene jump:
-// `await __PONLAI__.establishScene( <the view's query> )`, the loop started, one frame rendered at
-// the jump's camera, then the view's evals and everything above, as after a load (app/main.ts:
-// the frame then equals a fresh load's, byte for byte wherever the fresh load repeats). Only
-// load-time options (quality, aa, size and dpr, the debug switches) need a new page, and every view
-// of a set shares them.
-// - Capability: the page must say it keeps that contract (`__PONLAI__.sceneJump === SCENE_JUMP`);
-//   older builds have an `establishScene` that takes only an options form and leaves state behind,
-//   so on them (and with --page-per-view) the worker stops after its first view, and capture-set
-//   starts a fresh worker per view: a page per view, as before.
+// It answers what one view looks like now: a capture for the eye, or one to compare against another
+// by decoded pixels (tools/kit/img.py). For many views, or a before and after set, use
+// tools/kit/parity/capture-set.mjs, which drives this tool as a worker on one warm page; for values
+// rather than pixels, tools/kit/probe.mjs. It needs Playwright's Chromium once (`npx playwright
+// install chromium`), or `CHROME_PATH` set to a WebGPU-capable Chrome. The browser and its profile
+// slots: tools/kit/capture-browser.mjs.
+//
+// Usage:
+//   node tools/kit/capture.mjs [name] [--url base] [--q query] [--w 1600 --h 900 --scale 1]
+//       [--eval js|@file]... [--eval-ready js|@file]... [--wait-for js] [--frames n --every k]
+//       [--timeout 60000] [--stable-* ...] [--ready-frames n] [--wait ms] [--settle ms]
+//       [--samples n] [--exclusive] [--verbose]
+//   node tools/kit/capture.mjs --worker --url base [the options above] [--page-per-view] [--ready-reads] [--lease 20]
+//   node tools/kit/capture.mjs overview --q "paused&t=12&dpr=1" --eval-ready "D.exposure"
+//
+// Options:
+//   name                  the file name under artifacts/captures/ (default `shot`)
+//   --url base            the server (default http://127.0.0.1:5190/, the dev server)
+//   --q query             the page's query (default `paused&t=12&dpr=1`; docs/reference/url-options.md)
+//   --w, --h, --scale     the viewport in CSS pixels and its device pixel ratio (1600, 900, 1)
+//   --eval js|@file       a step run once the page is up, before readiness; repeatable
+//   --eval-ready js|@file a step run once the page is ready, on the frame the shot takes; repeatable
+//   --wait-for js         waits, up to 60 s, until the expression is truthy, before readiness
+//   --frames n --every k  n shots k rendered frames apart (1, 1)
+//   --timeout ms          each wait's limit: the load, readiness, a shot (60000)
+//   --stable-min n        rendered frames before the first comparison (1)
+//   --stable-every n      frames between grabs (2)
+//   --stable-repeats n    unchanged comparisons in a row that make the image stable (1)
+//   --stable-patience n   frames after which --stable-tolerance counts too (40)
+//   --stable-tolerance t  `<level>:<pixels>`: at most pixels differing by more than level (0:5000);
+//                         `exact` turns it off
+//   --stable-cap n        frames after which the page is shot anyway, marked capped (120)
+//   --stable-trace        records each grab's PNG hash
+//   --ready-frames n      waits for n rendered frames instead of stability (a running page: 60)
+//   --wait, --settle ms   fixed delays before and after the floor's frames (0, 0)
+//   --samples n           diagnostics read n times, a second apart (1)
+//   --exclusive           takes the GPU lock alone even for a paused page
+//   --verbose             records every console line, not only errors and warnings
+//   --worker              capture-set's worker (below); --page-per-view, --ready-reads, --lease s
+//
+// Readiness. Every capture waits until the page is up (`__PONLAI__` and the diagnostics exist, the
+// floor's frames rendered, the loading screen's fade finished: a shot during the fade has the screen
+// blended over the frame). A paused page (MSAA or off) then waits for its `settled` signal with the
+// loop running (docs/reference/test-mode.md; past --timeout it goes on and prints `unsettled`) and
+// is shot once its image stops changing: grabbed every --stable-every frames, with the loop stopped
+// for each grab, and shot once --stable-repeats comparisons in a row found it unchanged, with
+// --stable-patience and --stable-cap as above. A paused page of a temporal mode
+// (aa=taa|taau|fsr3|gt) is not compared: its rest image is started over once the page is up (what
+// the evals changed need not be in its key), and it is shot once the rest has converged
+// (`diag.taa.converged`) and `settled` holds (packages/render/post/TemporalRest.ts; the --stable-*
+// options do not apply; with `tier.taa.restSequence=0` there is no rest and the page is compared
+// like an MSAA one). A running page waits --ready-frames. The rule and its evidence:
+// tools/kit/capture-browser.mjs, "readiness by stability". The frame loop is stopped (the GPU queue
+// drained) for the shot, which is the compositor's image PNG-encoded for speed: the pixels of
+// Playwright's screenshot, not its bytes, so compare captures by decoded pixels. Under --frames n
+// the loop runs between the shots and stops for each.
+//
+// Evals. --eval and --eval-ready take probe's forms and scope (tools/kit/page-eval.mjs: an
+// expression, a function or statements with a `return`, `await` in all three; `P`, `D`,
+// `frames( n )`, `sleep( ms )`, `until( fn, timeoutMs )`), so an eval waits with `await until( ...
+// )` instead of a polling loop. --eval runs in order once the page is up, before the floor's frames
+// and readiness: on a fresh load that is before the sun's map has drawn, so it sets the view up.
+// --eval-ready runs once the page is ready, with the loop stopped on the frame the shot then takes:
+// for readings of that frame (a render target read back, the diagnostics). It reads; one that
+// changes the scene or renders changes the shot. Under --frames n it runs once, before the first.
+// An eval that throws fails the capture, which is still shot and written.
+//
+// Worker (--worker): one page for many views, driven by capture-set over the IPC channel it opens.
+// The worker asks for a view, captures it, reports and asks again until told it is done. The first
+// view is a fresh load of `<url>?<query>`; each later one is reached in place by the exact scene
+// jump (`await __PONLAI__.establishScene( <query> )`, the loop started, one frame rendered at the
+// jump's camera), then the view's own eval (a throw fails the view) and everything above, as after a
+// load: the frame then equals a fresh load's (app/main.ts). Only load-time options (quality, aa,
+// size and dpr, the debug switches) need a new page, and every view of a set shares them.
+// - Capability: the page must keep that contract (`__PONLAI__.sceneJump === SCENE_JUMP`); on an
+//   older build, and with --page-per-view, the worker stops after its first view and capture-set
+//   starts a fresh worker per view.
 // - Evals the jump does not undo: the jump resets the scene's options and camera, not GUI or console
-//   changes (app/main.ts), so a view whose message says `last` (capture-set: an eval of its own
-//   that is not a views.mjs view's) ends its page after its shot, and the next view loads fresh.
-//   --eval and --eval-ready run on every view and may leave such changes too: with either, a page
-//   per view, unless `--ready-reads` says the --eval-ready steps only read the frame (a render
-//   target read back, the diagnostics: tools/island/colour-rows.mjs `shoot --warm`), which leaves the
-//   page as the jump found it; --eval still takes a page per view.
-// - The GPU lock's slot is leased (gpu-lock.mjs `leaseGpuLock`): the worker keeps it from one view
-//   to the next, and gives it up before a view only when it has held it for --lease seconds (20) and
-//   a request ranked before its next one waits for it (an exclusive request, or a shared one when
-//   every slot is taken); it then queues again like any request. It frees the slot whenever it has no next view
-//   (the set's end, a failed view, a page per view). It used to free the slot after every view, so a
-//   set behind another session's back-to-back timing runs waited one whole timing run per view (34
-//   views in 57 min, 12 in 53 min, with under 20 s of readiness in each). Why 20 s: a paused view
-//   takes 5-7 s alone, so such a set advances about four views per timing run (0, 6, 12, 18 s, then
-//   it yields), and still two when three pages share the GPU and a view takes about 18 s; a waiting
-//   timing run gets the GPU at most 20 s plus the view in flight after its turn, small against the
-//   3-8 minutes it then holds it, and it already waited for a view in flight (up to 22 s seen). A
-//   longer lease gives the set little more (the timing runs still alternate with it) and delays every
-//   run of a series by as much. --lease 0 frees the slot after every view, as before. Nobody waiting,
-//   the slot is kept for the whole set. The lease changes when views run, never what they render.
-// - The slot after the world: a load takes its slot only once the page has its world. Up to then the
-//   page's GPU use is held back: an init script gates `GPUAdapter.requestDevice`, so the page
-//   starts its world, then waits in
-//   the renderer's start with no device, no render, no compile; the tool waits, without a slot,
-//   for `window.__PONLAI_WORLD__.ready` (packages/island/world/WorldStart.ts, debug pages), then takes the slot
-//   and opens the gate, and the page sets up the sky, textures and pipelines, renders and is shot
-//   under it as before. It used to take the slot before the load, so on a grown island a load held a
-//   shared slot through its CPU world generation (7-35 s cold on a grown island) with the GPU nearly idle. The production
-//   bundle starts the world after the quality choice (a top-level await, which once requested the
-//   adapter), and the gate stays on the device. The cost: the GPU set-up no longer overlaps the
-//   world's generation, so a load takes that much longer from end to end. The world wait has its
-//   own deadline (five times --timeout); a page without the marker (an older build) takes the slot
-//   once it asks for its device, so its world is generated under the slot as before. The JSON's
-//   `page.worldMs` is the load's time to its world. A jump has no load and is unchanged.
-// - A view that fails (a timeout, a page or console error, a crash, no answer within the view's
-//   deadline: three times --timeout plus a minute) ends the worker: the page is not trusted after
-//   it. capture-set retries that view (--retries) and the views still to come on a fresh page.
-//   The worker tells capture-set when the view holds its GPU slot (`locked`): capture-set's own
-//   watchdog for a silent page counts from there, so a long wait for the lock is not a hang.
-//   A view that fails during the world's generation sends its failed `shot` with no `locked` before it.
-// - Each view's files go straight to the path capture-set names (`<out>.png`, `.json`, `.f<i>.png`);
-//   the JSON adds `page`: the visit's index on the page, `load` or `jump`, the view before, the wait
-//   for the GPU lock (`lockKept` when the slot was kept from the view before) and the time from then
-//   to the written shot (ms), and the page's memory then (JS heap, DOM nodes, listeners, renderer.info's geometries and textures).
+//   changes, so a view whose message says `last` ends its page after its shot. --eval takes a page
+//   per view, and so does --eval-ready unless `--ready-reads` says those steps only read the frame
+//   (tools/island/colour-rows.mjs `shoot --warm`).
+// - The GPU slot is leased (`leaseGpuLock`): the worker keeps it from one view to the next and gives
+//   it up before a view only when it has held it for --lease seconds (20) and a request ranked
+//   before its next one waits for it; it then queues again. It frees the slot whenever it has no
+//   next view. --lease 0 frees it after every view. The lease changes when views run, never what
+//   they render.
+// - A view that fails (a timeout, a page or console error, a crash, no answer within three times
+//   --timeout plus a minute) ends the worker: the page is not trusted after it, and capture-set
+//   retries the view on a fresh page. The worker says when the view holds its GPU slot (`locked`),
+//   so capture-set's watchdog does not count a long wait for the lock as a hang.
+//
+// Output: artifacts/captures/<name>.png (and <name>.f1.png ... under --frames) and <name>.json: the
+// url, viewport, browser, profile `slot`, `ready` (status exact|tolerance|capped|converged, frames
+// waited, comparisons, the largest difference, the settled signal's block), the diagnostics
+// samples and `diag`, the adapter, `evals` and `readyEvals` (`{ eval, value }` or `{ eval, error }`),
+// console errors and failed requests, `meanFrameMs`, and `crops` when the page sets
+// `window.__PONLAI_CROPS__` (tools/island/parity/views.mjs). stdout prints each eval, `unsettled` or
+// `unstable` when so, the file with the diagnostics, and the errors. A worker writes to the paths
+// capture-set names and adds `page`: the visit's index, `load` or `jump`, the view before, the world
+// time, the lock wait (`lockKept` when kept), the time to the shot and the page's memory.
+//
+// GPU lock and browser: a headless browser in a persistent profile slot. A paused capture takes the
+// GPU lock shared (its pixels do not depend on what else renders); a running one, or --exclusive,
+// takes it alone, since its frame times are reported too (docs/reference/gpu-lock.md). A load takes
+// its slot only once the page has its world: until then an init script holds the page's GPU device
+// back, and the tool waits without a slot for `window.__PONLAI_WORLD__.ready`, then takes the slot
+// and opens the gate (a page without the marker takes it when it asks for its device).
+//
+// Cost: a page load (seconds warm; a cold one generates the island and compiles every shader); a
+// paused capture takes about 5-7 s alone.
+//
+// Exit codes: 0 shot; 1 an eval threw, the page threw or logged an error, a request failed (the shot
+// is still written), or a wait timed out; 2 --worker without capture-set's IPC channel.
+import './help.mjs';
 import { acquireGpuLock, leaseGpuLock, releaseGpuLock } from './gpu-lock.mjs';
 import { launchCapture, waitForScene, waitForSettled, waitForStable, stableOptions, stopLoop, startLoop, pngShooter, READY_FRAMES } from './capture-browser.mjs';
 import { evalSource, runInPage } from './page-eval.mjs';
@@ -121,7 +122,16 @@ import PROJECT from '../project.mjs';
 
 /** The scene jump contract's version this tool drives (`__PONLAI__.sceneJump`, app/Scene.ts). */
 const SCENE_JUMP = 1;
-/** The worker's GPU slot lease in seconds (--lease; see the header). */
+/** The worker's GPU slot lease in seconds (--lease; see the header). The worker used to free the
+ * slot after every view, so a set behind another session's back-to-back timing runs waited one
+ * whole timing run per view (34 views in 57 min, 12 in 53 min, with under 20 s of readiness in
+ * each). Why 20 s: a paused view takes 5-7 s alone, so such a set advances about four views per
+ * timing run (0, 6, 12, 18 s, then it yields), and still two when three pages share the GPU and a
+ * view takes about 18 s; a waiting timing run gets the GPU at most 20 s plus the view in flight
+ * after its turn, small against the 3-8 minutes it then holds it, and it already waited for a view
+ * in flight (up to 22 s seen). A longer lease gives the set little more (the timing runs still
+ * alternate with it) and delays every run of a series by as much. Nobody waiting, the slot is kept
+ * for the whole set. */
 const LEASE = 20;
 
 const args = process.argv.slice( 2 );
@@ -176,7 +186,7 @@ async function openPage( viewport ) {
 	page.on( 'crash', () => current.errors.push( 'pageerror: the page crashed' ) );
 	page.on( 'response', ( r ) => { if ( r.status() >= 400 ) current.failures.push( `${ r.status() } ${ r.url() }` ); } );
 	page.on( 'requestfailed', ( r ) => current.failures.push( `${ r.failure()?.errorText } ${ r.url() }` ) );
-	// the GPU gate (see the header, "The slot after the world"): a load gets its GPU device, and so
+	// the GPU gate (loadToWorld, "The slot after the world"): a load gets its GPU device, and so
 	// does any GPU work, only once the gate is opened (`asked`: the page has asked for it)
 	await page.addInitScript( ( gpuGate ) => {
 
@@ -198,8 +208,21 @@ async function openPage( viewport ) {
 
 }
 
-/** A fresh load of `url` up to its world, without the GPU (see the header, "The slot after the world"):
- * returns the time it took (ms), or null on a page that does not say when its world is in. */
+/** A fresh load of `url` up to its world, without the GPU (see the header, GPU lock and browser):
+ * returns the time it took (ms), or null on a page that does not say when its world is in.
+ * The slot after the world: up to now the page's GPU use is held back (the init script in openPage
+ * gates `GPUAdapter.requestDevice`), so the page starts its world, then waits in the renderer's
+ * start with no device, no render, no compile; the caller then takes the slot and opens the gate,
+ * and the page sets up the sky, textures and pipelines, renders and is shot under it. The world's
+ * marker is `window.__PONLAI_WORLD__.ready` (packages/island/world/WorldStart.ts, debug pages). The
+ * tool used to take the slot before the load, so on a grown island a load held a shared slot through
+ * its CPU world generation (7-35 s cold) with the GPU nearly idle. The production bundle starts the
+ * world after the quality choice (a top-level await, which once requested the adapter), and the
+ * gate stays on the device. The cost: the GPU set-up no longer overlaps the world's generation, so
+ * a load takes that much longer from end to end. The world wait has its own deadline (five times
+ * --timeout); a page without the marker (an older build) takes the slot once it asks for its
+ * device, so its world is generated under the slot as before. The JSON's `page.worldMs` is the
+ * load's time to its world. A jump has no load and is unchanged. */
 async function loadToWorld( page, url ) {
 
 	const started = Date.now();
@@ -272,7 +295,9 @@ async function captureView( session, { url, query, evals, steps, readySteps = []
 	const readyFrames = readyFramesFor( query );
 	// up: the floor's frames after the evals, the loading screen gone (an edit can trigger a Vite reload)
 	await waitForScene( page, { frames: readyFrames ?? stable.min, wait, settle, timeout } );
-	// a paused temporal page: its rest, started over after the evals, converged
+	// a paused temporal page: its rest, started over after the evals (its epoch: what the evals
+	// changed need not be in its key), converged; the settled wait below follows, and a rest that
+	// converged before the page was quiet is started over (packages/render/post/TemporalRest.ts)
 	if ( paused( query ) ) {
 
 		await page.evaluate( ( n ) => window[ n.handle ]?.taa?.epoch.bump( 'capture' ), PAGE );
@@ -440,7 +465,7 @@ if ( ! worker ) {
 			const url = `${ baseUrl }?${ query }`;
 			const started = Date.now();
 			session.begin();
-			// a load: its world first, without the slot (see the header, "The slot after the world")
+			// a load: its world first, without the slot (loadToWorld, "The slot after the world")
 			let worldMs = 0;
 			if ( mode === 'load' ) {
 
@@ -450,6 +475,8 @@ if ( ! worker ) {
 
 				} catch ( error ) {
 
+					// a view that fails during the world's generation sends its failed `shot` with no
+					// `locked` before it
 					await send( { type: 'shot', key, mode, from: previous, seconds: ( Date.now() - started ) / 1000, lockSeconds: 0, ok: false, log: `${ key }: its world did not load: ${ error.message ?? error }` } );
 					break;
 

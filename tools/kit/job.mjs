@@ -1,80 +1,100 @@
-// The one waiting tool: runs long commands with their output in a log file, waits on such jobs or
-// on a condition for a bounded time, and stops jobs with everything they started.
-// Agents used to poll long runs with until/sleep loops of their own: thousands of waits and
-// status calls, and some conditions never came true (one waited a day for an `^exit` line that
-// its log never got). Every job started here writes the same start and end lines, and `wait`
-// knows when a job has ended even if it was killed before it could say so.
-// Every command also starts the disk clean in the background when one is due (tools/kit/storage.mjs,
-// every 6 h): every session waits through here, so the clean needs no schedule of its own.
+// Runs long commands as jobs with their output in a log, waits on jobs or a condition, and stops jobs.
 //
-//   node tools/kit/job.mjs run [--log <file>] -- <command ...>      runs it in the foreground
-//   node tools/kit/job.mjs start [--log <file>] -- <command ...>    runs it detached and returns at once
-//   node tools/kit/job.mjs start --wait [--lines 20] [--role r] [--max s] [--log <file>] -- <command ...>
-//   node tools/kit/job.mjs wait <file>... [--role agent|main] [--max s] [--lines 5]
+// It is the one waiting tool: every wait goes through it, never a sleep or polling loop of one's
+// own. A command that may run longer than a few minutes (a capture set, a profile, a build of the
+// references) runs as a job; whoever waits for it, or for anything else, waits here. Every job
+// writes the same start and end lines, and `wait` knows a job has ended even when it was killed
+// before it could say so, so no wait hangs on a line that never comes. Every command also starts
+// the disk clean in the background when one is due (tools/kit/storage.mjs, every 6 h): every
+// session waits through here, so the clean needs no schedule of its own.
+//
+// Usage:
+//   node tools/kit/job.mjs run [--log <file>] -- <command ...>
+//   node tools/kit/job.mjs start [--log <file>] -- <command ...>
+//   node tools/kit/job.mjs start --wait [--lines 20] [--role agent|main] [--max s] [--log <file>] -- <command ...>
+//   node tools/kit/job.mjs wait <file>... [--role agent|main] [--max s] [--lines 5] [--tail <file> [n]]
 //   node tools/kit/job.mjs wait [--role agent|main] [--max s] [condition] [--tail <file> [n]]
-//   node tools/kit/job.mjs status <file>... [--lines 5]                 (wait --max 0)
+//   node tools/kit/job.mjs status <file>... [--lines 5]
 //   node tools/kit/job.mjs list [--cwd <dir> | --all] [--lines 5]
 //   node tools/kit/job.mjs stop <file>... | --cwd <dir> | --all [--grace 10]
+//   node tools/kit/job.mjs start --wait -- npm run build
 //
-// Jobs. A single argument after `--` runs through `sh -c` (pipes, redirections, `&&`); several are
-// run as they are; a single argument with an `&` inside an unquoted word (a query) is refused with
-// exit 2, since sh would background half of it. Without `--log` the log is
-// `<repo top>/artifacts/jobs/<UTC stamp>-<command>.log` (git-ignored), and its path is printed. The log starts with `[job] start <time> pid <runner pid>:
-// <command>`, then holds the command's stdout and stderr, and ends with `[done] exit <code> at
-// <time> after <duration>` (a command killed by a signal exits 128 + its number, one that cannot
-// start 127), with ` (stopped)` appended when the runner was signalled. The runner forwards SIGINT,
-// SIGTERM and SIGHUP to the command and still writes the end line. `start` detaches the runner from
-// the calling shell (it survives the shell's exit) and returns once the start line is written, so
-// a `wait` right after it finds the job.
+// Options:
+//   --log file           the job's log (default <repo top>/artifacts/jobs/<UTC stamp>-<command>.log)
+//   --wait               with start: waits on the job within the budget
+//   --lines n            the log's last lines shown (start --wait 20; wait, status, list 5)
+//   --role agent|main    the budget: agent 240 s (the default), main 3300 s
+//   --max s              lowers the budget to s seconds (it never raises it)
+//   --tail file [n]      with wait: prints file's last n lines (20) at the end
+//   --file F --match RE  condition: until file F has a line matching RE
+//   --exists F           condition: until F exists
+//   --pid N              condition: until process N has exited
+//   --cmd 'shell'        condition: until the shell command exits 0 (each run killed at the deadline)
+//   --cwd dir            list or stop the jobs in dir's own checkout (nearest `.git` entry)
+//   --all                list or stop every job on the machine
+//   --grace s            stop: seconds between SIGTERM and SIGKILL (default 10)
+//
+// Jobs. `run` runs the command in the foreground; `start` runs it detached from the calling shell
+// (it outlives the shell) and returns once the start line is written, so a `wait` right after it
+// finds the job. A single argument after `--` runs through `sh -c` (pipes, redirections, `&&`);
+// several run as they are. A single argument with an `&` inside an unquoted word (a query such as
+// `near:like=a&dist=40`) is refused with exit 2, since sh would background half of it: quote that
+// word. Without `--log` the log's path is printed. The log starts with `[job] start <time> pid
+// <runner pid>: <command>`, then holds the command's stdout and stderr, and ends with `[done] exit
+// <code> at <time> after <duration>` (a command killed by a signal exits 128 + its number, one that
+// cannot start 127), with ` (stopped)` appended when the runner was signalled. The runner forwards
+// SIGINT, SIGTERM and SIGHUP to the command and still writes the end line. The command runs with
+// the application policy (tools/kit/qos.mjs).
 //
 // `start --wait` starts the job the same way, then waits on it as `wait` does: when it ends within
-// the budget it prints the log's last `--lines` lines (20) and exits with the command's code;
-// otherwise it exits 124 and prints the `wait` command to call next. Nothing is killed at the
-// budget, and the output goes to the log from the start, so no child holds the caller's pipe (a
-// Bash tool call returns as soon as the budget ends).
+// the budget it prints the log's last `--lines` lines and exits with the command's code; otherwise
+// it exits 124 and prints the `wait` command to call next. Nothing is killed at the budget, and the
+// output goes to the log from the start, so no child holds the caller's pipe (a Bash tool call
+// returns as soon as the budget ends): a command that may be short or long needs no guess.
 //
 // Budgets. Every wait ends at a wall-clock deadline counted from this process's start, whatever the
 // load, because a wait written as "N times sleep S" stretches on a busy machine. `--role agent`
-// (default) waits at most 240 s: an agent's prompt cache lives five minutes between its requests,
-// so no single wait may outlive it; call it again until the jobs end. `--role main` waits at most
-// 3300 s: a main session's cache lives an hour, and it runs a plain `wait --role main` in the
-// background as a keep-alive, re-armed each time it fires while its work is still running.
-// `--max` may only lower the budget.
+// waits at most 240 s: an agent's prompt cache lives five minutes between its requests, so no
+// single wait may outlive it; an agent runs it in the foreground with the Bash tool's timeout above
+// that, one wait per message, and calls it again until the jobs end. `--role main` waits at most
+// 3300 s, under a main session's one-hour cache: a main session keeps a plain `wait --role main`
+// running in the background as a keep-alive while it waits on agents or jobs, and re-arms it each
+// time it fires.
 //
 // `wait <file>...` returns as soon as every job has ended. A job has ended when its log's last line
 // is the end line, or when its runner is gone without one (killed: reported as lost, exit 1). A file
-// without a start line is not a job and fails at once (exit 2) rather than being waited on. It
-// prints one screen: per job its state and elapsed time, where it stands in the GPU lock (holding
-// a slot or the lock alone, or queued: at which place, behind whom; found through the job's process
-// tree, so a capture several wrappers down counts) and its log's last lines (the text after a
-// line's last carriage return, so progress bars show their latest state), then one line for the
-// lock as a whole. It exits with the first failing job's code (0 when all succeeded) once every
-// job has ended, and with 124 while any job is still running.
+// without a start line is not a job and fails at once (exit 2). Wait on several jobs with one call.
+// `wait` without job logs waits on one condition instead (logs and a condition do not mix), and
+// with neither it is a plain timer (the main session's keep-alive). `status` is `wait` with no
+// budget. `list` shows the running jobs started under the current repo top (default), under a
+// directory, or all of them, with the `status` screen; `--cwd dir` never matches a worktree nested
+// under dir.
 //
-// `wait` without job logs waits on one condition instead (logs and a condition do not mix):
-//   --file F --match RE    until file F has a line matching RE (match something this run writes)
-//   --exists F             until F exists
-//   --pid N                until process N has exited
-//   --cmd 'shell'          until the shell command exits 0 (each run killed at the deadline)
-// and with neither it is a plain timer (the main session's keep-alive). It prints "done after Xs"
-// (exit 0), "still waiting after Xs" (exit 124) or "timer ended after Xs" (exit 0), each with the
-// budget and role; `--tail F [n]` then prints the last n lines (20) of F in every case.
+// `stop` exists so that an agent hands back with nothing of its own running. It snapshots each
+// job's process tree (a child that detached into its own group is still found, while its parent
+// lives), sends SIGTERM to the runner, which passes it to the command so tools run their own
+// cleanup (lock release, browser close), and after `--grace` seconds SIGKILLs every survivor of the
+// snapshot and anything newly under it.
 //
-// Registry and stop. Every `run` and `start` writes `<tmp>/ponlai-jobs/<runner pid>.json` (the
-// absolute log, the runner and command pids, cwd, command and start time); `<tmp>` is the GPU
-// lock's temporary root, so a scratch `PONLAI_GPU_LOCK_DIR` moves the registry with the lock. The
-// runner removes its entry after the end line; entries whose runner is gone are pruned by `list`
-// and `stop`. `list` shows the running jobs started under the current repo top (default), under a
-// directory, or all of them, with the `status` screen. `--cwd <dir>` matches only jobs in dir's own
-// checkout (nearest `.git` entry), never those of a worktree nested under it. `stop` exists so that an agent hands back
-// with nothing of its own running: it snapshots each job's process tree (a child that detached
-// into its own group is still found, while its parent lives), sends SIGTERM to the runner, which
-// passes it to the command so tools run their own cleanup (lock release, browser close), and after
-// `--grace` seconds SIGKILLs every survivor of the snapshot and anything newly under it. It prints
-// what was stopped and exits 0 once every named job has ended.
+// Output: `wait` and `status` print one screen: per job its state and elapsed time, where it stands
+// in the GPU lock (holding a slot or the lock alone, or queued: its place, behind whom; found
+// through the job's process tree, so a capture several wrappers down counts) and its log's last
+// lines (the text after a line's last carriage return, so progress bars show their latest state),
+// then one line for the lock as a whole. A condition's wait prints `done after Xs`, `still waiting
+// after Xs` or `timer ended after Xs`, each with the budget and role. `stop` prints what it
+// stopped. Every `run` and `start` registers itself in `<tmp>/ponlai-jobs/<runner pid>.json` (the
+// log, the runner's and the command's pids, cwd, command, start time); `<tmp>` is the GPU lock's
+// temporary root, so a scratch `PONLAI_GPU_LOCK_DIR` moves the registry with the lock. The runner
+// removes its entry after the end line; `list` and `stop` prune entries whose runner is gone.
 //
-// Exit codes: 0 done, the first failing job's code, 124 still waiting, 2 a file that is not a
-// job's log, 1 bad arguments.
+// GPU lock and browser: neither; it reads the lock's state to show where a job stands. Cost: under
+// a second, plus the wait.
+//
+// Exit codes: 0 done (every job succeeded, a condition held, the timer ended, the jobs stopped);
+// the first failing job's code; 124 still waiting at the budget; 2 a file that is not a job's log,
+// or a command refused for its unquoted `&`; 1 bad arguments, a lost job or a job `stop` could
+// not end.
+import './help.mjs';
 import { closeSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync, unlinkSync, writeFileSync, writeSync, existsSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
 import os from 'node:os';

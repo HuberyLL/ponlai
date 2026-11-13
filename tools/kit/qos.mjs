@@ -1,36 +1,51 @@
-// The tools' scheduling policy on macOS: every tool runs as an application would, not as a daemon.
+// Runs a command, or the importing process, with macOS's application scheduling policy.
 //
 // Processes an agent starts (its shell, node, Python, tsc, the tools) are not applications to macOS:
 // their threads run at the legacy QoS whatever they ask for (a thread that requests user-initiated
-// is still accounted as legacy), and when the machine is busy the scheduler keeps that work on the
+// is still accounted as legacy), and on a busy machine the scheduler keeps that work on the
 // efficiency cores while the performance cores stand idle. Measured while several agents captured
 // and built at once (most of the CPU idle, the efficiency cores full), the same work took 3-14x as
-// long as in a process started with the application policy (`taskpolicy -a`): a single-thread
-// loop 3-14x, the capture tool's PNG decode for readiness 5-10x and its frame compare 4x, tsc 3-14x.
-// On a quiet machine both run alike.
+// long as in a process started with the application policy (`taskpolicy -a`): a single-thread loop
+// 3-14x, the capture tool's PNG decode for readiness 5-10x and its frame compare 4x, tsc 3-14x. On a
+// quiet machine both run alike. The application policy is what the user's own apps get: it puts the
+// tools on par with them, not above them. Elsewhere than macOS nothing changes.
+//
+// Usage:
+//   node tools/kit/qos.mjs <command> [args ...]
+//   node tools/kit/qos.mjs python3 my-script.py
+//
+// Options: none of its own; every argument belongs to the command it runs. Only a first argument
+// of `--help` is read here.
+//
+// The policy is a property of a process, given when it starts, and its children do not inherit it,
+// so each process gets it on its own:
+// - Importing this module re-executes the current node process under `taskpolicy -a` in place
+//   (process.execve: same pid, same stdio and arguments) unless it already runs so.
+//   tools/kit/gpu-lock.mjs and tools/kit/capture-browser.mjs import it, so every tool that renders
+//   or reads captures raises itself before it does anything; tools/kit/serve.mjs, tools/check.mjs
+//   and other CPU-heavy tools import it themselves. A new CPU-heavy node tool imports it first.
+// - `appPolicy( cmd, args )` gives the command line that starts a child with the policy, for a
+//   child that cannot re-execute itself (one with an IPC channel, which an exec closes:
+//   capture-set's capture.mjs workers) and for the commands `gpu-lock.mjs run` and `job.mjs`
+//   start.
+// - The Python tools that do heavy work (tools/kit/clip-metrics.py and its worker processes,
+//   tools/kit/diff-set.py, tools/kit/img.py, tools/island/day-sweep-plot.py) re-execute themselves
+//   the same way with os.execv; a new one copies those few lines of diff-set.py.
+// - The CLI runs any command with the policy: `npm run build`, `typecheck` and `lint` start tsc,
+//   vite and eslint through it, and a one-off script runs through it too.
 // Chrome's helper processes (GPU, renderers, the world's workers) set their own QoS and are not held
 // back, so the page's own work is unaffected; the node side of a capture (decode, compare, PNG
 // writes, while it holds a GPU slot) and every CPU tool are.
 //
-// The policy is a property of the process, given when it is started, and its children do not
-// inherit it: each process has to be started with it. So:
-//   - importing this module re-executes the current node process under `taskpolicy -a` in place
-//     (process.execve: same pid, same stdio and arguments) unless it already runs so.
-//     tools/kit/gpu-lock.mjs and tools/kit/capture-browser.mjs import it, so every tool that renders or
-//     reads captures raises itself before it does anything;
-//   - `appPolicy( cmd, args )` gives the command line that starts a child with the policy, for a
-//     child that cannot re-execute itself (one with an IPC channel, which an exec closes:
-//     capture-set's capture.mjs workers; `gpu-lock run`'s command);
-//   - the Python tools (clip-metrics.py, diff-set.py, compare-captures.py)
-//     re-execute themselves the same way with os.execv;
-//   - `node tools/kit/qos.mjs <command> [args]` runs any command with it (the npm build and typecheck
-//     scripts start tsc and vite through it).
 // PONLAI_QOS holds the pid of the process that runs with the policy, so a process knows it already
 // does and its children (another pid) still raise themselves. PONLAI_QOS=off keeps the policy a
-// process was given (for an A/B of this module). Elsewhere than macOS nothing changes.
+// process was given (for an A/B of this module).
 //
-// The application policy is what the user's own apps get: it puts the tools on par with them, not
-// above them.
+// Output: the command's own; nothing of its own.
+//
+// GPU lock and browser: neither. Cost: one exec, a few milliseconds.
+//
+// Exit codes: the command's (the process becomes it); 2 no command given.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -52,6 +67,8 @@ const cli = process.argv[ 1 ] && path.resolve( process.argv[ 1 ] ) === fileURLTo
 if ( cli ) {
 
 	const [ cmd, ...args ] = process.argv.slice( 2 );
+	// the arguments are the command's: only a first `--help` is this tool's (tools/kit/help.mjs)
+	if ( cmd === '--help' ) await import( './help.mjs' );
 	if ( ! cmd ) {
 
 		console.error( 'usage: node tools/kit/qos.mjs <command> [args ...]' );
