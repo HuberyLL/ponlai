@@ -1,6 +1,6 @@
 // The scene jump: `establishScene` moves the page to another scene as a fresh load of its query
 // holds it, and SCENE_OPTIONS names the query options that make a scene (the tools read the list
-// from this file: tools/island/parity/adhoc.mjs).
+// from this file: tools/kit/parity/adhoc.mjs).
 import { type DayPreset, type WeatherName, weatherWind, renderEvent, registerSceneHistories, registerLightHistories, type RenderParts } from '../packages/render/index.ts';
 import { settings as params, type SettingName } from '../packages/render/setup.ts';
 import { registerIslandHistories, type IslandParts } from '../packages/island/index.ts';
@@ -36,7 +36,7 @@ import { cameraMode } from './CameraViews.ts';
 // clock.)
 // The options form `{ weather?, preset?, hour?, time? }` (tools/render/profile-frame.mjs) sets what it
 // names, keeps the rest and the camera, and clears the leftovers all the same.
-// `__PONLAI__.sceneJump` (1) marks a page that keeps this contract: tools/island/parity/capture-set.mjs
+// `__PONLAI__.sceneJump` (1) marks a page that keeps this contract: tools/kit/parity/capture-set.mjs
 // captures a set in one page only where it is set (older builds' establishScene takes only the
 // options form and leaves state behind). Raise it if the contract changes in a way callers see.
 export const SCENE_OPTIONS = [ 'weather', 'wind', 'windDir', 'preset', 'hour', 'moon', 't', 'dist', 'polar', 'az', 'camera', 'clouds', 'dayLength', 'paused', 'clock', 'approach' ];

@@ -1,25 +1,27 @@
 // Ad-hoc views for capture-set.mjs (and its --quick mode): views given on the command line or in a
-// JSON file instead of views.mjs, captured through the same path (one page per set, the scene jump,
+// JSON file instead of the views table (tables.mjs), captured through the same path (one page per set, the scene jump,
 // readiness, --jobs, the reference store). They replace the scripts that looped tools/kit/capture.mjs
 // over a list of their own, one cold page per view.
 //
 //   --view "name:query[::js]"   one view: its query, and optionally an eval (js run in the page as a
-//                               views.mjs eval is: `s` is window.__PONLAI__, the helpers isl(), free(),
-//                               orbitAround() exist). `like=<view>` in the query starts from that
-//                               views.mjs view (its query, eval and crops; the view's own options win).
+//                               table view's eval is, with what the table gives it: Ponlai's gives `s`,
+//                               the page's handle, and the helpers isl(), free(), orbitAround()).
+//                               `like=<view>` in the query starts from that table view (its query,
+//                               eval and crops; the view's own options win).
 //   --views-file f.json         [ { name, q, eval?, crops?, like? }, ... ] or { name: { q, ... } }
 //   --sweep "key=a,b,c"         every selected view once per value (several sweeps: every
 //                               combination), named `<view>--<key>-<value>` (`<key>-<value>` alone
 //                               when only sweeps are given; a dot in a value becomes `_`)
 //
-// --views (names, or the groups parity|taa|all|normal|special, mixed freely) still selects views.mjs views, alone or beside these;
-// with no --views and some ad-hoc view or sweep, the set is just those (not the parity group).
+// --views (names and the table's groups, mixed freely) still selects the table's views, alone or
+// beside these; with no --views and some ad-hoc view or sweep, the set is just those (not the
+// default group).
 //
 // The query: an ad-hoc view's own options win over the set's (`t=12`, --quality, --aa, --q), so it
 // may set its own time or tier; the page reads the first of a repeated option, so the view's query
-// goes after the set's with the keys it sets taken out. views.mjs views keep the set's query first,
+// goes after the set's with the keys it sets taken out. The table's views keep the set's query first,
 // unchanged. Views whose load-time options differ (anything outside the page's scene options, read
-// from app/Scene.ts SCENE_OPTIONS: the tier, aa, debug switches, `game`, `seed` ...) cannot share a
+// from the configuration's `sceneOptions`: the tier, aa, debug switches, `game`, `seed` ...) cannot share a
 // page (establishScene refuses them), so capture-set captures them in groups, one group of pages
 // per set of load-time options, in the order the views were given.
 //
@@ -28,23 +30,24 @@
 // or console changes: the view after it gets a fresh page (`jumpClean`, capture-set.mjs's header).
 //
 // Names: letters, digits, `-` and `_` (a file name, and no dot: `<view>.repeat.png` and the
-// directory scan read a dot as a suffix), distinct from views.mjs's. The reference store keys a set's
+// directory scan read a dot as a suffix), distinct from the table's. The reference store keys a set's
 // views by name, so an ad-hoc view's coverage carries its definition's hash (`def`): a stored view of
 // the same name but another definition is captured again, never served (reference.mjs SET).
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { VIEWS, viewNames, viewEval, expandViews } from './views.mjs';
-import { ROOT } from '../../kit/root.mjs';
+import { viewTable } from './tables.mjs';
+import PROJECT from '../../project.mjs';
+import { ROOT } from '../root.mjs';
 
-const REPO = ROOT;
+const { VIEWS, viewNames, expandViews, ANCHOR_NAMES } = viewTable;
 const NAME = /^[A-Za-z0-9_-]+$/;
 
-// the page's scene options: what a scene jump may change (app/Scene.ts)
+// the page's scene options: what a scene jump may change (the configuration's `sceneOptions`)
 const SCENE_OPTIONS = ( () => {
 
-	const m = readFileSync( path.join( REPO, 'app/Scene.ts' ), 'utf8' ).match( /const SCENE_OPTIONS = \[([^\]]*)\]/ );
-	if ( ! m ) throw new Error( 'adhoc.mjs: SCENE_OPTIONS not found in app/Scene.ts' );
+	const m = readFileSync( path.join( ROOT, PROJECT.sceneOptions ), 'utf8' ).match( /const SCENE_OPTIONS = \[([^\]]*)\]/ );
+	if ( ! m ) throw new Error( `adhoc.mjs: SCENE_OPTIONS not found in ${ PROJECT.sceneOptions }` );
 	return new Set( [ ...m[ 1 ].matchAll( /'([^']+)'/g ) ].map( ( x ) => x[ 1 ] ) );
 
 } )();
@@ -59,13 +62,13 @@ const firstWins = ( list ) => {
 
 };
 const hash = ( text ) => createHash( 'sha256' ).update( text ).digest( 'hex' ).slice( 0, 16 );
-// views.mjs's crop anchor names, read off the anchors' source
-const ANCHORS = new Set( [ ...viewEval( Object.keys( VIEWS )[ 0 ] ).matchAll( /^\t'([\w-]+)': \(/gm ) ].map( ( m ) => m[ 1 ] ) );
-// views.mjs's own evals, taken before any ad-hoc view is defined (see jumpClean)
+// the table's crop anchor names
+const ANCHORS = new Set( ANCHOR_NAMES );
+// the table's own evals, taken before any ad-hoc view is defined (see jumpClean)
 const VIEWS_EVALS = new Set( Object.values( VIEWS ).map( ( v ) => v.eval ).filter( Boolean ) );
 
 /** Whether the next scene jump undoes what the view's eval did, so its page can serve another view:
- * no eval, or exactly a views.mjs view's (the jump's contract covers those: tools/island/verify-scene-jump.mjs
+ * no eval, or exactly a table view's (the jump's contract covers those: tools/island/verify-scene-jump.mjs
  * checks the views reached from each other). Any other js (an ad-hoc `::js`, a views-file `eval`, a
  * `like=` view's js on top, a sweep over such a view) may change what no jump resets (the GUI's
  * settings, Tune, debug flags, a uniform): capture-set ends that view's page after it. */
@@ -75,7 +78,7 @@ export const jumpClean = ( name ) => ! VIEWS[ name ].eval || VIEWS_EVALS.has( VI
 function define( { name, q = '', eval: js, crops, like } ) {
 
 	if ( ! NAME.test( name ?? '' ) ) throw new Error( `ad-hoc view name ${ JSON.stringify( name ) }: letters, digits, - and _ only` );
-	if ( VIEWS[ name ] ) throw new Error( `ad-hoc view ${ name }: ${ VIEWS[ name ].adhoc ? 'given twice' : 'a views.mjs view has that name' }` );
+	if ( VIEWS[ name ] ) throw new Error( `ad-hoc view ${ name }: ${ VIEWS[ name ].adhoc ? 'given twice' : 'a view of the table has that name' }` );
 	let own = pairs( q );
 	const likeName = like ?? own.find( ( [ k ] ) => k === 'like' )?.[ 1 ].slice( 5 );
 	own = own.filter( ( [ k ] ) => k !== 'like' );
@@ -85,7 +88,7 @@ function define( { name, q = '', eval: js, crops, like } ) {
 	const evalJs = [ base?.eval, js ].filter( Boolean ).join( '\n' ) || undefined;
 	const anchors = crops ?? base?.crops ?? [];
 	const bad = anchors.filter( ( a ) => ! ANCHORS.has( a ) );
-	if ( bad.length ) throw new Error( `ad-hoc view ${ name }: unknown crop anchor ${ bad.join( ', ' ) } (views.mjs: ${ [ ...ANCHORS ].join( ', ' ) })` );
+	if ( bad.length ) throw new Error( `ad-hoc view ${ name }: unknown crop anchor ${ bad.join( ', ' ) } (the table's: ${ [ ...ANCHORS ].join( ', ' ) })` );
 	VIEWS[ name ] = { q: query, eval: evalJs, crops: anchors, adhoc: true, like: likeName ?? undefined,
 		def: hash( JSON.stringify( [ query, evalJs ?? '', anchors ] ) ) };
 
@@ -129,7 +132,7 @@ export function selectViews( o ) {
 		return { key: m[ 1 ], values: m[ 2 ].split( ',' ).filter( ( v ) => v !== '' ) };
 
 	} );
-	if ( ! sweeps.length ) return given.length ? given : viewNames( 'parity' );
+	if ( ! sweeps.length ) return given.length ? given : viewNames();
 	// every combination of the sweeps' values, over the given views (or one bare scene)
 	let combos = [ [] ];
 	for ( const s of sweeps ) combos = combos.flatMap( ( c ) => s.values.map( ( v ) => [ ...c, [ s.key, v ] ] ) );
@@ -165,7 +168,7 @@ export function loadSignature( query ) {
 
 }
 
-/** The ad-hoc views' definitions among `names`: { name: hash } (empty for views.mjs views). */
+/** The ad-hoc views' definitions among `names`: { name: hash } (empty for the table's views). */
 export function viewDefs( names ) {
 
 	return Object.fromEntries( names.filter( ( n ) => VIEWS[ n ].adhoc ).map( ( n ) => [ n, VIEWS[ n ].def ] ) );

@@ -1,9 +1,9 @@
-// Stepped clips for the temporal anti-aliasing work: a parity view (tools/island/parity/views.mjs) set in
-// motion by a named clip (tools/island/parity/clips.mjs), rendered frame by frame with the page's
-// deterministic stepper (`__PONLAI__.loop.step`: fixed dt, no wall clock, the frame pacer and the
-// dynamic scale bypassed), with crops of named subjects captured as they move.
+// Stepped clips for the temporal anti-aliasing work: a view of the views table set in motion by a
+// named clip of the clips table (both through tools/kit/parity/tables.mjs), rendered frame by frame
+// with the page's deterministic stepper (the handle's `loop.step`: fixed dt, no wall clock, the frame
+// pacer and the dynamic scale bypassed), with crops of named subjects captured as they move.
 //
-//   node tools/island/capture-clip.mjs <name> --url U --clip <clip> [--aa msaa|off|taa|taau|fsr3|gt|gt-hi]
+//   node tools/kit/parity/capture-clip.mjs <name> --url U --clip <clip> [--aa msaa|off|taa|taau|fsr3|gt|gt-hi]
 //       [--view v] [--frames n] [--every k] [--dense a-b,c-d] [--crops a,b] [--full 0,30] [--q "extra&query"] [--setup js]
 //       [--quality high] [--size 1728x1117@2] [--dt s] [--gt-jitters n] [--out dir] [--timeout ms] [--runs file.csv]
 //       [--task name] [--anchors-from clip.json] [--stable-* (capture.mjs)] [--ready-frames n] [--wait ms] [--settle ms] [--verbose]
@@ -89,13 +89,13 @@
 // meadow is finer and slightly darker than any real 1.5x render. Judge vegetation look against
 // MSAA, not GT-HI.
 //
-// The exposure's adaptation is frozen on every side while a clip runs (`__PONLAI_CLIP__` set: the
-// pipeline snaps the exposure to its target every frame, Exposure.ts): a converged or stopped-clock
+// The exposure's adaptation is frozen on every side while a clip runs (the `page.clip` global set:
+// the pipeline snaps the exposure to its target every frame, Exposure.ts): a converged or stopped-clock
 // rest jumps to the target while running frames would still be catching up to it, so a temporal
 // clip compared with its rest or with MSAA would differ by the lag alone. The per-pixel dither of
 // a level stays: it is fixed per pixel.
 //
-// --setup js runs page code (`s` = `window.__PONLAI__`, `dt` the step) after the clip's own setup,
+// --setup js runs page code (`s` the page's handle, `dt` the step) after the clip's own setup,
 // before frame 0: a change the clip should watch unfold, such as `s.setWind( { heading: 220 }, 20 )`
 // (a turn of the wind over 20 s of the stepped clock). clip.json records it.
 //
@@ -105,18 +105,21 @@
 //
 // Stepped clips are deterministic (no wall clock), so the tool takes the GPU lock shared.
 // Production builds need `?debug` (added here) and the islanders' assets linked into the build
-// (tools/island/parity/README.md).
+// (tools/kit/parity/README.md).
 import { mkdir, readFile, writeFile, appendFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { acquireGpuLock, releaseGpuLock, gpuUtilisation } from '../kit/gpu-lock.mjs';
-import { VIEWS, viewEval } from './parity/views.mjs';
-import { CLIPS, clipEval } from './parity/clips.mjs';
-import { launchCapture, waitForScene, waitForStable, stableOptions, decodePng, compareFrames, pngShooter } from '../kit/capture-browser.mjs';
-import { ROOT } from '../kit/root.mjs';
+import { acquireGpuLock, releaseGpuLock, gpuUtilisation } from '../gpu-lock.mjs';
+import { viewTable, clipTable } from './tables.mjs';
+import { launchCapture, waitForScene, waitForStable, stableOptions, decodePng, compareFrames, pngShooter } from '../capture-browser.mjs';
+import PROJECT from '../../project.mjs';
+import { ROOT } from '../root.mjs';
 
 const REPO = ROOT;
+const { VIEWS, viewEval } = viewTable;
+const { CLIPS, clipEval } = clipTable;
+const PAGE = PROJECT.page;
 const args = process.argv.slice( 2 );
 const FLAGS = new Set( [ 'verbose', 'stable-trace', 'test-fault' ] );
 const options = {}, positional = [];
@@ -236,7 +239,7 @@ try {
 	let page = await open( gt ? GT_RATIO : DSF, 1 );
 	if ( gt ) {
 
-		const canvas = await page.evaluate( () => [ window.__PONLAI__.renderer.domElement.width, window.__PONLAI__.renderer.domElement.height ] );
+		const canvas = await page.evaluate( ( n ) => [ window[ n ].renderer.domElement.width, window[ n ].renderer.domElement.height ], PAGE.handle );
 		if ( canvas[ 0 ] !== Math.round( W * GT_RATIO ) ) {
 
 			console.log( `gt-hi: the canvas is ${ canvas.join( 'x' ) }, not ${ W * GT_RATIO } wide; falling back to twice the CSS size at a ratio of ${ NOMINAL_HIGH }` );
@@ -257,8 +260,8 @@ try {
 		p.on( 'console', ( m ) => { if ( options.verbose || m.type() === 'error' || m.type() === 'warning' ) errors.push( m.type() + ': ' + m.text() ); } );
 		p.on( 'pageerror', ( e ) => errors.push( 'pageerror: ' + e.message ) );
 		await p.goto( url );
-		await p.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__, null, { timeout } );
-		if ( ! ( await p.evaluate( () => typeof window.__PONLAI__.loop.step === 'function' ) ) ) throw new Error( 'this build has no __PONLAI__.loop.step' );
+		await p.waitForFunction( ( g ) => window[ g.handle ] && window[ g.diagnostics ], PAGE, { timeout } );
+		if ( ! ( await p.evaluate( ( n ) => typeof window[ n ].loop.step === 'function', PAGE.handle ) ) ) throw new Error( `this build has no ${ PAGE.handle }.loop.step` );
 		await p.evaluate( viewEval( viewName, crops ) );
 		// ready as capture.mjs is: the image stopped changing (a temporal page: its rest converged)
 		// after the floor's frames and the loading screen gone (or --ready-frames' fixed count)
@@ -272,24 +275,24 @@ try {
 
 	await page.evaluate( clipEval( options.clip, { frames, ...( options.dt ? { dt: Number( options.dt ) } : {} ), ...( options.setup ? { setup: options.setup } : {} ) } ) );
 	// the GT keeps its own fixed ratio (no scale schedule)
-	await page.evaluate( ( gt ) => {
+	await page.evaluate( ( { gt, g } ) => {
 
-		const s = window.__PONLAI__;
-		if ( gt && window.__PONLAI_CLIP__.scale ) window.__PONLAI_CLIP__.scale = null;
+		const s = window[ g.handle ];
+		if ( gt && window[ g.clip ].scale ) window[ g.clip ].scale = null;
 		// (a temporal page's rest starts over: what the evals changed need not be in its key)
 		s.taa?.epoch.bump( 'clip' );
 
-	}, gt || gtRest );
-	if ( gtRest && ! ( await page.evaluate( () => window.__THREE_GAME_DIAGNOSTICS__?.aa === 'gt' && window.__PONLAI__.taa ) ) ) throw new Error( 'this build has no aa=gt (or it fell back to another mode)' );
+	}, { gt: gt || gtRest, g: PAGE } );
+	if ( gtRest && ! ( await page.evaluate( ( g ) => window[ g.diagnostics ]?.aa === 'gt' && window[ g.handle ].taa, PAGE ) ) ) throw new Error( 'this build has no aa=gt (or it fell back to another mode)' );
 	const scaleSchedule = clip.scale ? ( gt || gtRest ? 'ignored: the ground truth renders at its fixed ratio' : 'applied' ) : 'none';
-	const diagBefore = await page.evaluate( () => ( { ...window.__THREE_GAME_DIAGNOSTICS__ } ) );
+	const diagBefore = await page.evaluate( ( n ) => ( { ...window[ n ] } ), PAGE.diagnostics );
 	// the anchors' world points at the base pose, then their boxes per frame in CSS px
-	const anchors = options[ 'anchors-from' ] ? Object.fromEntries( Object.entries( JSON.parse( await readFile( options[ 'anchors-from' ], 'utf8' ) ).anchors ).filter( ( [ n ] ) => crops.includes( n ) ) ) : await page.evaluate( ( names ) => {
+	const anchors = options[ 'anchors-from' ] ? Object.fromEntries( Object.entries( JSON.parse( await readFile( options[ 'anchors-from' ], 'utf8' ) ).anchors ).filter( ( [ n ] ) => crops.includes( n ) ) ) : await page.evaluate( ( { names, global } ) => {
 
-		const all = window.__PONLAI_CROPS__ ?? {};
+		const all = window[ global ] ?? {};
 		return Object.fromEntries( names.map( ( n ) => [ n, all[ n ] ?? { missing: 'no such anchor in this view' } ] ) );
 
-	}, crops );
+	}, { names: crops, global: PAGE.crops } );
 	const tracked = Object.entries( anchors ).filter( ( [ , a ] ) => a.world ).map( ( [ n, a ] ) => ( { name: n, world: a.world } ) );
 	for ( const t of tracked ) await mkdir( path.join( outDir, t.name ), { recursive: true } );
 	if ( full.size ) await mkdir( path.join( outDir, 'full' ), { recursive: true } );
@@ -313,11 +316,11 @@ try {
 	};
 	// a paused frame without a temporal rest is shot whole until two shots agree (see the header):
 	// its shots stay in memory until then, each { raw (the whole frame as grabbed), crops, frame }
-	const recheck = frames === 1 && clip.clock === 'paused' && ! gtRest && ! ( await page.evaluate( () => !! window.__PONLAI__.taa ) );
+	const recheck = frames === 1 && clip.clock === 'paused' && ! gtRest && ! ( await page.evaluate( ( n ) => !! window[ n ].taa, PAGE.handle ) );
 	const fault = options[ 'test-fault' ] === true;
 	if ( fault && ! recheck ) throw new Error( '--test-fault tests the rest\'s second shot: a paused one-frame clip under msaa, off or gt-hi' );
 	const restShots = [];
-	await page.exposeFunction( '__ponlaiClipFrame', async ( i, frameBoxes, time, state ) => {
+	await page.exposeFunction( '__clipFrame', async ( i, frameBoxes, time, state ) => {
 
 		boxes.push( { i, time, ...state, boxes: { ...frameBoxes } } );
 		const crops = await shootCrops( frameBoxes );
@@ -331,9 +334,9 @@ try {
 		if ( full.has( i ) ) await writeFile( path.join( outDir, 'full', `${ i }.png` ), await shoot( null ) );
 
 	} );
-	const stepped = await page.evaluate( async ( { tracked, every, dense, box, cssScale, fullFrames, gtRest, fault } ) => {
+	const stepped = await page.evaluate( async ( { tracked, every, dense, box, cssScale, fullFrames, gtRest, fault, g } ) => {
 
-		const s = window.__PONLAI__, clip = window.__PONLAI_CLIP__;
+		const s = window[ g.handle ], clip = window[ g.clip ];
 		const V = s.camera.position.constructor;
 		const project = ( w ) => {
 
@@ -379,14 +382,14 @@ try {
 				const hash = ( list ) => { let h = 2166136261; for ( const x of list ) { const b = new Float64Array( [ x ] ), u = new Uint32Array( b.buffer ); h = Math.imul( h ^ u[ 0 ], 16777619 ) >>> 0; h = Math.imul( h ^ u[ 1 ], 16777619 ) >>> 0; } return h.toString( 16 ); };
 				const state = { render: [ s.pipeline.width, s.pipeline.height ], view: hash( [ ...s.camera.matrixWorld.elements, ...s.camera.projectionMatrix.elements ] ), frame: s.renderer.info.frame,
 					...( s.taa ? { taa: { converged: s.taa.converged, restFrames: s.taa.rest.frames, restTarget: s.taa.rest.target } } : {} ) };
-				await window.__ponlaiClipFrame( i, out, s.clockTime(), state );
+				await window.__clipFrame( i, out, s.clockTime(), state );
 				if ( fault ) s.pipeline.settings.exposureOffset = offset;
 
 			},
 		} );
-		return { ...result, pipelines: before === null ? null : s.pipelines.total - before, wallMs: performance.now() - t0, notes: window.__PONLAI_CLIP_NOTES__ ?? [] };
+		return { ...result, pipelines: before === null ? null : s.pipelines.total - before, wallMs: performance.now() - t0, notes: window[ g.clipNotes ] ?? [] };
 
-	}, { tracked, every, dense, box: BOX, cssScale, fullFrames: [ ...full ], gtRest, fault } );
+	}, { tracked, every, dense, box: BOX, cssScale, fullFrames: [ ...full ], gtRest, fault, g: PAGE } );
 	// the rest's second shot: the frame stepped again with the same state and shot whole until a shot
 	// agrees with an earlier one; then that pair's crops (and whole frame) are written
 	let recheckRecord = null;
@@ -406,7 +409,7 @@ try {
 			return c.max === 0 || ( tolerance !== null && c.overLevel <= tolerance.pixels );
 
 		};
-		await page.exposeFunction( '__ponlaiClipAgain', async ( frame ) => {
+		await page.exposeFunction( '__clipAgain', async ( frame ) => {
 
 			const shot = { raw: await shooter.shoot( null ), crops: null, frame };
 			for ( let j = 0; j < restShots.length && ! accepted; j ++ ) {
@@ -422,13 +425,13 @@ try {
 		} );
 		while ( ! accepted && restShots.length < RECHECK_SHOTS ) {
 
-			await page.evaluate( async () => {
+			await page.evaluate( async ( g ) => {
 
-				const s = window.__PONLAI__, clip = window.__PONLAI_CLIP__;
+				const s = window[ g.handle ], clip = window[ g.clip ];
 				await s.loop.step( { frames: 1, dt: clip.dt, clock: clip.clock, camera: clip.camera, ...( clip.scale ? { scale: clip.scale } : {} ),
-					onFrame: () => window.__ponlaiClipAgain( s.renderer.info.frame ) } );
+					onFrame: () => window.__clipAgain( s.renderer.info.frame ) } );
 
-			} );
+			}, PAGE );
 
 		}
 		recheckRecord = { status: accepted ? 'agreed' : 'failed', shots: restShots.length, accepted: accepted ? restShots.indexOf( accepted ) : null, tolerance,
@@ -441,7 +444,7 @@ try {
 
 	}
 	await shooter.close();
-	const diagAfter = await page.evaluate( () => ( { ...window.__THREE_GAME_DIAGNOSTICS__ } ) );
+	const diagAfter = await page.evaluate( ( n ) => ( { ...window[ n ] } ), PAGE.diagnostics );
 	await writeFile( path.join( outDir, 'clip.json' ), JSON.stringify( {
 		name, url, clip: options.clip, clipDef: { ...clip, at: undefined, setup: undefined }, ...( options.setup ? { setup: options.setup } : {} ), view: viewName, aa, quality, ...( gtRest ? { gtJitters } : {} ),
 		viewport: { width: W * cssScale, height: H * cssScale, deviceScaleFactor: ratio }, gtFallback, downsample: gt ? 2 : 1,

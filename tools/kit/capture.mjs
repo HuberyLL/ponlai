@@ -41,7 +41,7 @@
 // back, the diagnostics). It reads; one that changes the scene or renders changes the shot. The
 // JSON records them as `readyEvals` (stdout as `eval-ready`), a throw failing the shot as above.
 // Under --frames n they run once, before the first frame.
-// tools/island/parity's capture-set runs the view's own eval first (same forms, not recorded: a throw
+// tools/kit/parity/capture-set.mjs runs the view's own eval first (same forms, not recorded: a throw
 // fails the view), then any given after its `--` (which then take a page per view: Worker, below).
 // The GPU lock is taken once the page has its world (see "The slot after the world" below; the
 // load's goto waits for the DOM, not the load event, which waits for the gate).
@@ -55,7 +55,7 @@
 // apply; `ready.status` is `converged`). With `tier.taa.restSequence=0` there is no rest and no
 // settled signal: the page is compared for stability like an MSAA one.
 //
-// Worker (--worker): one page for many views, driven by tools/island/parity/capture-set.mjs over the IPC
+// Worker (--worker): one page for many views, driven by tools/kit/parity/capture-set.mjs over the IPC
 // channel it opens (one page per set). The worker asks for a view, captures it,
 // reports and asks again, until told it is done; the first view is a fresh load of
 // `<url>?<query>`, each later one is reached in place by the exact scene jump:

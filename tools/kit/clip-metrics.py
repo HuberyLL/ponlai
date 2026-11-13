@@ -9,7 +9,7 @@
         [--no-flip] [--no-gt-gates] [--workers N]
     uv run ... tools/kit/clip-metrics.py --calibrate masks.json [--size 288] DIR [DIR ...] [--overlays DIR]
 
-Each DIR is a tools/island/capture-clip.mjs output folder (clip.json and <crop>/<i>.png) of the same clip:
+Each DIR is a tools/kit/parity/capture-clip.mjs output folder (clip.json and <crop>/<i>.png) of the same clip:
 the mode under test, MSAA (today's image) and the ground truth (`--aa gt`, at the canvas's
 resolution: its crops are the test's size; the interim `--aa gt-hi` is kept for cross-checks).
 A test or MSAA crop larger than the GT's (384 px against gt-hi's 288 px) is area-resampled to

@@ -7,11 +7,14 @@
 //   node tools/kit/serve.mjs dev|preview [--port N] [--no-build] [--sha <rev>]
 //   node tools/kit/serve.mjs clean
 //
-// Ports: 6400-6499 by default, the first free one. `--port N` uses N or fails naming the process
-// that listens on it (pid, cwd). The URL is printed only when the server answering is this run's
-// job: the job still runs and its log holds vite's ready line for that port. When another
-// session's server takes the port between the check and vite's bind, vite exits "already in use"
-// and the next free port is tried (with `--port N`, exit 1 naming the holder). `preview` runs `npm run build` first unless given `--no-build`.
+// The project's values come from the configuration (tools/project.mjs `serve`): the build, vite's
+// command per mode, the ports, where `--sha` worktrees go and the module that fills them.
+// Ports: the first free one in the configuration's range. `--port N` uses N or fails
+// naming the process that listens on it (pid, cwd). The URL is printed only when the server
+// answering is this run's job: the job still runs and its log holds vite's ready line for that
+// port. When another session's server takes the port between the check and vite's bind, vite exits
+// "already in use" and the next free port is tried (with `--port N`, exit 1 naming the holder).
+// `preview` runs the configuration's build first unless given `--no-build`.
 // Prints `<url>  log <path>  (stop: node tools/kit/job.mjs stop <path>)`.
 // The served checkout is the one containing the cwd, not the one holding this file: agents call
 // the tool by the main checkout's absolute path from their worktrees, and it used to serve (and
@@ -23,17 +26,14 @@
 //
 // `--sha <rev>` serves another commit instead of this checkout. Agents comparing against an older
 // build used to make a worktree and link node_modules by hand for each run. The commit gets a
-// detached worktree at the main checkout's .claude/worktrees/sha-<12 hex> (never a branch, so
+// detached worktree at the main checkout's <serve.worktrees>/sha-<12 hex> (never a branch, so
 // nothing is left to delete), reused by every later call for the same commit. When the commit's
 // package-lock.json equals the main checkout's, its node_modules is a real folder holding a link to
 // each of the main checkout's entries except vite's caches (.vite, .vite-temp, .cache): a link to
 // the whole folder would put the worktree's prebundled dependencies into the main checkout's
-// cache, which its own dev server uses. With another lockfile it runs `npm ci` there instead. The
-// assets fill its public/ themselves (tools/repo/vite-assets.mjs, in commits that have
-// assets.lock.json). A commit without the lock, from before the assets left git, holds none of
-// them (the history was rewritten without them): the files its public/ lacks are copied from the
-// calling checkout's public/ (the brush fonts, which then sat in src/game/ui/fonts/, there), so an
-// asset changed since shows in its later version.
+// cache, which its own dev server uses. With another lockfile it runs `npm ci` there instead. Then
+// the configuration's `serve.prepare` module fills what git does not hold (its header: the assets
+// of a commit from before the asset lock).
 // `preview` builds once per worktree: a successful build writes the sha into
 // dist/.serve-sha, and a call that finds it skips the build. The vite job runs in the worktree, with its log in the calling checkout's
 // artifacts/jobs/ (serve-<mode>-sha-<12 hex>-<port>.log), so `clean` cannot delete it.
@@ -44,14 +44,19 @@
 import './qos.mjs';
 import net from 'node:net';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { constants, copyFileSync, existsSync, readFileSync, readdirSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import PROJECT from '../project.mjs';
 import { ROOT } from './root.mjs';
 
 // This checkout's root and the job tool beside this file; the checkout it serves is `caller`, below.
 const here = ROOT;
 const jobTool = join( dirname( fileURLToPath( import.meta.url ) ), 'job.mjs' );
+// the build, vite's commands, the ports, where `--sha` worktrees go and what fills them (the
+// configuration's `serve`)
+const SERVE = PROJECT.serve;
+const [ FIRST_PORT, LAST_PORT ] = SERVE.ports;
 const usage = 'usage: node tools/kit/serve.mjs dev|preview [--port N] [--no-build] [--sha <rev>] | clean';
 
 function fail( msg ) {
@@ -115,7 +120,7 @@ if ( ! caller ) fail( `${ process.cwd() } is not in a checkout of ${ dirname( co
 
 // The main checkout: sha-* worktrees live there whichever worktree this script runs from.
 const mainCheckout = dirname( commonDir( caller ) );
-const shaRoot = join( mainCheckout, '.claude', 'worktrees' );
+const shaRoot = join( mainCheckout, SERVE.worktrees );
 
 if ( mode === 'clean' ) {
 
@@ -207,50 +212,9 @@ if ( rev !== null ) {
 
 	}
 
-	const from = join( caller, 'public' );
-	if ( ! existsSync( join( repo, 'assets.lock.json' ) ) && existsSync( from ) ) {
-
-		let copied = 0;
-		const fill = ( dir ) => {
-
-			for ( const e of readdirSync( join( from, dir ), { withFileTypes: true } ) ) {
-
-				const path = join( dir, e.name ), target = join( repo, 'public', path );
-				if ( e.isDirectory() ) fill( path );
-				else if ( ! existsSync( target ) ) {
-
-					mkdirSync( dirname( target ), { recursive: true } );
-					copyFileSync( join( from, path ), target, constants.COPYFILE_FICLONE );
-					copied ++;
-
-				}
-
-			}
-
-		};
-
-		fill( '' );
-
-		// The brush fonts sat beside the UI's stylesheet before they moved to public/fonts/.
-		const ui = join( repo, 'src', 'game', 'ui' ), fonts = join( from, 'fonts' );
-		if ( existsSync( join( ui, 'ui.css' ) ) && existsSync( fonts ) ) {
-
-			const css = readFileSync( join( ui, 'ui.css' ), 'utf8' );
-			for ( const name of readdirSync( fonts ) ) {
-
-				const target = join( ui, 'fonts', name );
-				if ( ! css.includes( `./fonts/${ name }` ) || existsSync( target ) ) continue;
-				mkdirSync( dirname( target ), { recursive: true } );
-				copyFileSync( join( fonts, name ), target, constants.COPYFILE_FICLONE );
-				copied ++;
-
-			}
-
-		}
-
-		console.log( `public/: no assets.lock.json, ${ copied } file(s) it lacked copied from ${ from }` );
-
-	}
+	// what git does not hold, by the project's module (the configuration's `serve.prepare`)
+	const { prepareCheckout } = await import( pathToFileURL( join( here, SERVE.prepare ) ).href );
+	prepareCheckout( { repo, caller } );
 
 } else {
 
@@ -313,21 +277,21 @@ if ( fixed && ! await isFree( port ) ) fail( `port ${ port } is taken by ${ hold
 
 async function nextFree( from ) {
 
-	for ( let p = from; p <= 6499; p ++ ) if ( await isFree( p ) ) return p;
+	for ( let p = from; p <= LAST_PORT; p ++ ) if ( await isFree( p ) ) return p;
 	return null;
 
 }
 
 if ( ! fixed ) {
 
-	port = await nextFree( 6400 );
-	if ( port === null ) fail( 'no free port in 6400-6499' );
+	port = await nextFree( FIRST_PORT );
+	if ( port === null ) fail( `no free port in ${ FIRST_PORT }-${ LAST_PORT }` );
 
 }
 
 if ( mode === 'preview' && build ) {
 
-	const r = spawnSync( 'npm', [ 'run', 'build' ], { cwd: repo, stdio: 'inherit' } );
+	const r = spawnSync( SERVE.build[ 0 ], SERVE.build.slice( 1 ), { cwd: repo, stdio: 'inherit' } );
 	if ( r.status !== 0 ) process.exit( r.status ?? 1 );
 	if ( rev !== null ) writeFileSync( stamp, `${ git( [ 'rev-parse', 'HEAD' ], repo ) }\n` );
 
@@ -354,7 +318,7 @@ const jobRunning = ( f ) => spawnSync( 'node', [ jobTool, 'status', f, '--lines'
 async function serve( p, log ) {
 
 	mkdirSync( dirname( log ), { recursive: true } );
-	const vite = `npx vite ${ mode === 'preview' ? 'preview ' : '' }--host 127.0.0.1 --port ${ p } --strictPort`;
+	const vite = `${ SERVE.vite[ mode ] } --host 127.0.0.1 --port ${ p } --strictPort`;
 	const started = spawnSync( 'node', [ jobTool, 'start', '--log', log, '--', vite ], { cwd: repo, stdio: [ 'ignore', 'ignore', 'inherit' ] } );
 	if ( started.status !== 0 ) fail( `job.mjs start failed (exit ${ started.status })` );
 
@@ -408,7 +372,7 @@ for ( ;; ) {
 	if ( fixed ) fail( `port ${ port } was taken before vite bound it, by ${ holder( port ) }` );
 	console.log( `port ${ port } was taken before vite bound it (by ${ holder( port ) }), trying the next` );
 	const next = await nextFree( port + 1 );
-	if ( next === null ) fail( `no free port in ${ port + 1 }-6499` );
+	if ( next === null ) fail( `no free port in ${ port + 1 }-${ LAST_PORT }` );
 	port = next;
 
 }

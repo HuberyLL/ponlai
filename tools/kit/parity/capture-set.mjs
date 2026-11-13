@@ -1,14 +1,14 @@
 // Paused parity captures of a fixed set of views (views.mjs), through tools/kit/capture.mjs's worker:
 // one page per set (one per worker with --jobs), the views reached in place by the exact scene jump.
 //
-//   node tools/island/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|normal|special|a,b,c] [--view "name:query[::js]"]...
+//   node tools/kit/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|normal|special|a,b,c] [--view "name:query[::js]"]...
 //       [--views-file f.json] [--sweep "key=a,b,c"]... [--repeat]
 //       [--quality high] [--aa mode] [--q "extra&query"] [--jobs n] [--retries 1] [--size 1728x1117@2]
 //       [--page-per-view] [--runs file.csv] [--task name] [--procedure name] [--sha sha] [-- capture.mjs options]
-//   node tools/island/parity/capture-set.mjs <refUrl> --reference <root>/<sha>/<set> [same options]
-//   node tools/island/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set> [--ref-url U]
+//   node tools/kit/parity/capture-set.mjs <refUrl> --reference <root>/<sha>/<set> [same options]
+//   node tools/kit/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set> [--ref-url U]
 //       [--diff "diff-set.py options"] [--recapture-reference] [same options]
-//   node tools/island/parity/capture-set.mjs <url> <outDir> --quick --views a,b|--view ...|--sweep ... [--crops x,y] [--full]
+//   node tools/kit/parity/capture-set.mjs <url> <outDir> --quick --views a,b|--view ...|--sweep ... [--crops x,y] [--full]
 //       [--variant "[label::]js"]... [--store <root>/<sha>] [--ref-url R] [--quality, --aa, --q, --size]
 //
 // Every view is the frame of `<baseUrl>?debug&paused&t=12&quality=<q>[&aa=<mode>][&<extra>]&<view's
@@ -51,7 +51,7 @@
 //   --jobs 1 and 4 decoded to the same pixels); a view that differs only by sparse single-frame
 //   speckle on the vegetation while other browsers render is GPU noise: shoot it again.
 // --reference makes the set a stored reference of a commit (reference.mjs; layout and manifest in
-//   tools/island/parity/README.md): if the directory's `complete.json` matches (tool version, browser
+//   tools/kit/parity/README.md): if the directory's `complete.json` matches (tool version, browser
 //   build, tier, aa, size, extra query, capture.mjs options) and covers the views (and repeats) the
 //   set is reused; if another live process is capturing it this one waits and reuses it (freeing
 //   the GPU slot of a `gpu-lock.mjs run --shared` wrapper meanwhile); else it
@@ -101,22 +101,24 @@
 // view is ready, on the frame shot: a reading of the frame belongs there; either one takes a page
 // per view, see above).
 // Production builds need `?debug` (added here) and the islanders' assets linked into the build's
-// output; see tools/island/parity/README.md.
+// output; see tools/kit/parity/README.md.
 // The set and its capture.mjs workers run with the application scheduling policy on macOS
 // (tools/kit/qos.mjs); a worker is started with it, since re-executing would close its IPC channel.
-import { appPolicy } from '../../kit/qos.mjs'; // first: the set and its workers run with the application policy
+import { appPolicy } from '../qos.mjs'; // first: the set and its workers run with the application policy
 import { spawn } from 'node:child_process';
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { viewEval } from './views.mjs';
+import { viewTable } from './tables.mjs';
 import { selectViews, viewQuery, loadSignature, viewDefs, describeViews, jumpClean } from './adhoc.mjs';
-import { gpuUtilisation } from '../../kit/gpu-lock.mjs';
-import { samePixels } from '../../kit/capture-browser.mjs';
-import { ensureReference, setKey, resolveRefDir, checkServed } from '../../kit/reference.mjs';
-import { ROOT } from '../../kit/root.mjs';
+import { gpuUtilisation } from '../gpu-lock.mjs';
+import { samePixels } from '../capture-browser.mjs';
+import { ensureReference, setKey, resolveRefDir, checkServed } from '../reference.mjs';
+import PROJECT from '../../project.mjs';
+import { ROOT } from '../root.mjs';
 
 const REPO = ROOT;
+const { viewEval } = viewTable;
 // --quick: knob variants on a few views, against the stored references (quick.mjs)
 if ( process.argv.includes( '--quick' ) ) {
 
@@ -287,7 +289,7 @@ async function captureGroup( url, dir, list ) {
 				if ( ! m.jump && ! jumpless ) {
 
 					jumpless = true;
-					console.log( `this build has no exact scene jump (__PONLAI__.sceneJump ${ m.marker ?? 'missing' }): a page per view` );
+					console.log( `this build has no exact scene jump (${ PROJECT.page.handle }.sceneJump ${ m.marker ?? 'missing' }): a page per view` );
 
 				}
 

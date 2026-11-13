@@ -34,7 +34,7 @@
 //
 // Queries. `--q` (or the first `--query`) is loaded; each further `--query` is reached in the same
 // page by the exact scene jump (`await __PONLAI__.establishScene( query )`, the loop started, one
-// frame rendered: app/main.ts), as tools/island/parity/capture-set.mjs reaches its views. A query whose
+// frame rendered: app/main.ts), as tools/kit/parity/capture-set.mjs reaches its views. A query whose
 // load-time options differ (quality, aa, dpr, debug switches: establishScene refuses it) and builds
 // without the jump (`__PONLAI__.sceneJump`) get a fresh load instead. `--load` loads every query in
 // a page of its own: a jump draws a fresh load's image, not the world's generation path, so comparing

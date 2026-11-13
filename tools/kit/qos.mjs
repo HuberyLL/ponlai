@@ -21,7 +21,7 @@
 //   - `appPolicy( cmd, args )` gives the command line that starts a child with the policy, for a
 //     child that cannot re-execute itself (one with an IPC channel, which an exec closes:
 //     capture-set's capture.mjs workers; `gpu-lock run`'s command);
-//   - the Python tools (clip-metrics.py, diff-set.py, compare-captures.py, compare-sky-captures.py)
+//   - the Python tools (clip-metrics.py, diff-set.py, compare-captures.py)
 //     re-execute themselves the same way with os.execv;
 //   - `node tools/kit/qos.mjs <command> [args]` runs any command with it (the npm build and typecheck
 //     scripts start tsc and vite through it).

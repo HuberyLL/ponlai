@@ -1,4 +1,4 @@
-"""Compare a parity capture set (tools/island/parity/capture-set.mjs) against a reference set, view by view.
+"""Compare a parity capture set (tools/kit/parity/capture-set.mjs) against a reference set, view by view.
 
   uv run --with numpy --with pillow tools/kit/diff-set.py <refDir> <testDir>
       [--views a,b] [--out dir] [--max-px1 200] [--crops 3] [--crop 256]

@@ -17,7 +17,7 @@ import { isCameraInputTarget, createIslandFrame, type IslandParts } from '../pac
 import { QualityDetector, qualityLines, rememberQuality } from './QualityDetect.ts';
 import type { PageParts } from './Page.ts';
 
-// Deterministic stepping for the clip tools (tools/island/capture-clip.mjs; debug builds only): stops the
+// Deterministic stepping for the clip tools (tools/kit/parity/capture-clip.mjs; debug builds only): stops the
 // live loop and drives the tick itself, `frames` times, `dt` seconds apart, with nothing taken from
 // the wall clock. Each frame gets the timestamp t0 + i * dt * 1000 and a delta of exactly `dt`
 // (three's Timer would take it from the timestamps less its own start time, which rounds

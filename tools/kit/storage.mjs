@@ -10,14 +10,15 @@
 // their artifacts) and the temp folders:
 // - bulk: images and videos of 256 KB or more (captures, clip frames, crops: .png .jpg .jpeg
 //   .webm .mp4 .mov .exr .raw .rgba .bin) and browser profiles left in a task folder, under
-//   artifacts/{plans,archive,perf,verification,crops}, once older than --days. Reports, JSON and small
-//   images stay, and so does every image a report or page links to (a path in a .md or .html file
-//   under those folders, read relative to that file, the checkout or artifacts/): what the user
-//   reviews keeps its pictures, while clip frames and capture sets nobody links go. Other artifacts
-//   folders are never read. artifacts/captures, where one-off screenshots land (some of them shown
-//   or posted), keeps its images 7 days and stays outside the cap.
+//   the folders of artifacts/ the configuration lists (tools/project.mjs `storage.folders`), once
+//   older than --days. Reports, JSON and small images stay, and so does every image a report or
+//   page links to (a path in a .md or .html file under those folders, read relative to that file,
+//   the checkout or artifacts/): what the user reviews keeps its pictures, while clip frames and
+//   capture sets nobody links go. Other artifacts folders are never read. artifacts/captures, where
+//   one-off screenshots land (some of them shown or posted), keeps its images 7 days and stays
+//   outside the cap.
 // - references: a commit's folder in a reference store (a folder named by a full sha under those
-//   folders or artifacts/parity; tools/kit/reference.mjs). Kept while its commit is live: the
+//   folders, such as artifacts/parity; tools/kit/reference.mjs). Kept while its commit is live: the
 //   HEAD of a worktree or the tip of a local branch committed to in the last 7 days, or the commit
 //   such a branch shares with main (it compares against it). Otherwise removed once nothing in it
 //   changed for --days. `.replaced/` and `.verify/` inside a live store go after a day (safe to
@@ -27,10 +28,10 @@
 //   512 MB loses them (IndexedDB: the island's cache, one entry per origin, so per preview port; the
 //   HTTP and code caches): its next load is cold, its captures the same. The shader caches stay. A
 //   slot is trimmed under its own lock (`<n>.lock`, the slots' protocol), so a capture takes another
-//   meanwhile. profile-frame's profile in the temp folder is trimmed the same way when no Chrome
-//   runs in it.
+//   meanwhile. The project's browser profiles in the temp folder (`storage.temp.profiles`:
+//   profile-frame's) are trimmed the same way when no Chrome runs in them.
 // - temp: what killed processes left in the temp folder over a day ago: Playwright's profiles and
-//   artifacts, profile-frame's run folders, Instruments recordings (instruments*.ktrace, written by
+//   artifacts, the project's run folders (`storage.temp.runs`: profile-frame's), Instruments recordings (instruments*.ktrace, written by
 //   xctrace), pip's unpack and build folders.
 // - sessions: Claude Code's temp folders for this checkout and its worktrees (agent outputs,
 //   scratchpads), a session's once it has been idle for 3 days.
@@ -47,13 +48,17 @@ import { execFileSync, spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import PROJECT from '../project.mjs';
 import { ROOT } from './root.mjs';
 
 const HOUR = 3600e3;
 const DAY = 24 * HOUR;
 const GB = 1024 ** 3;
 const DEFAULTS = { days: 2, cap: 50, floor: 12 };
-const GENERATED = [ 'plans', 'archive', 'captures', 'perf', 'verification', 'crops', 'parity' ];
+// the folders under artifacts/ read for bulk files and reference stores, and the project's own
+// leftovers in the temp folder (the configuration's `storage`)
+const GENERATED = PROJECT.storage.folders;
+const TEMP_RUNS = PROJECT.storage.temp.runs, TEMP_PROFILES = PROJECT.storage.temp.profiles;
 const BULK = new Set( [ '.png', '.jpg', '.jpeg', '.webm', '.mp4', '.mov', '.exr', '.raw', '.rgba', '.bin' ] );
 const BULK_MIN = 256 * 1024;
 const LINK = /[\w./~@+%-]+\.(?:png|jpe?g|webm|mp4|mov|exr|raw|rgba|bin)\b/gi;
@@ -64,7 +69,8 @@ const LIVE_DAYS = 7;
 const SLOT_IDLE = 6 * HOUR;
 const CACHES = [ 'IndexedDB', 'Cache', 'Code Cache' ];
 const CACHE_MAX = 512 * 1024 ** 2;
-const TEMP = [ /^playwright[_-]/, /^ponlai-profile-frame-(?!chrome$)/, /^instruments.*\.ktrace$/, /^pip-/ ];
+// a run folder of the project's tools is one of its prefixes, never one of its kept profiles
+const TEMP = [ /^playwright[_-]/, { test: ( name ) => TEMP_RUNS.some( ( p ) => name.startsWith( p ) ) && ! TEMP_PROFILES.includes( name ) }, /^instruments.*\.ktrace$/, /^pip-/ ];
 const SESSION_DAYS = 3;
 const AUTO_EVERY = 6 * HOUR;
 const LOCK_STALE = 2 * HOUR;
@@ -342,8 +348,12 @@ function scanProfiles( main, now, o, items ) {
 		for ( const s of list( dir ) ) if ( s.isDirectory() && /^\d+$/.test( s.name ) ) trimItem( path.join( dir, s.name ), now, items, true );
 
 	}
-	const frame = path.join( os.tmpdir(), 'ponlai-profile-frame-chrome' );
-	if ( ! chromeRunning( frame ) ) trimItem( frame, now, items, false );
+	for ( const name of TEMP_PROFILES ) {
+
+		const profile = path.join( os.tmpdir(), name );
+		if ( ! chromeRunning( profile ) ) trimItem( profile, now, items, false );
+
+	}
 
 }
 

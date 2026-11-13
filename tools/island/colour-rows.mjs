@@ -7,7 +7,7 @@
 //   node tools/island/colour-rows.mjs rows <dir> [--sort <dir> | --own [--sky-mask-deg N]] [--boxes f.json] [--views a,b]
 //       [--sky-bands 0,5,15,30] [--out f.json] [--json]
 //
-// shoot takes the frames: one tools/island/parity/capture-set.mjs run per page below, on one warm page
+// shoot takes the frames: one tools/kit/parity/capture-set.mjs run per page below, on one warm page
 // each, under the shared GPU lock, into `<dir>/<page>/`. The views file is capture-set's (a view's
 // `eval` sets its variant up). Each view ends with this tool's read of the page (pageRead).
 // A page of a set takes one page per view, since an --eval-ready runs on every view and capture-set
@@ -210,7 +210,7 @@ async function shoot( list ) {
 		const q = [ PAGES[ page ], options.q ].filter( Boolean ).join( '&' );
 		console.log( `colour-rows: page ${ page }` );
 		const status = await runChild( 'tools/kit/gpu-lock.mjs', [ 'run', '--shared', '--',
-			process.execPath, 'tools/island/parity/capture-set.mjs', url, path.join( dir, page ), '--size', options.size ?? '2560x1440@1', '--jobs', options.jobs ?? '1',
+			process.execPath, 'tools/kit/parity/capture-set.mjs', url, path.join( dir, page ), '--size', options.size ?? '2560x1440@1', '--jobs', options.jobs ?? '1',
 			'--views-file', viewsFile, ...( q ? [ '--q', q ] : [] ), '--', ...( options.warm ? [ '--ready-reads' ] : [] ), '--eval-ready', pageRead( options.scene === true ) ] );
 		if ( status !== 0 ) {
 

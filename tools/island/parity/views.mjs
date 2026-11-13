@@ -29,12 +29,15 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { eveningHour, morningHour } from '../../../packages/render/sky/DayCycle.ts';
+import PROJECT from '../../project.mjs';
+
+const PAGE = PROJECT.page;
 
 // the hour, for a query, at which the morning's or the evening's sun stands `elevation` degrees up
 const morning = ( elevation ) => morningHour( elevation ).toFixed( 4 );
 const evening = ( elevation ) => eveningHour( elevation ).toFixed( 4 );
 
-const PRE = `const s = window.__PONLAI__;
+const PRE = `const s = window.${ PAGE.handle };
 // the island's box: the camera's ground (packages/island/camera/IslandGround.ts, merged from the chunks' ground
 // grids), which equals the box of the island's chunk meshes but never reads their vertices
 const isl = () => { const b = s.controls.ground.bounds;
@@ -210,7 +213,7 @@ const ANCHORS = {
 	'fog-cliff': () => { const g = heightGrid(); return pick( coast( g.top * 0.45 ).map( ( c ) => ( { p: c.p, score: dist( c.p ) } ) ) ); },
 };
 const anchors = NAMES;
-Object.defineProperty( window, '__PONLAI_CROPS__', { configurable: true, get: () => {
+Object.defineProperty( window, '${ PAGE.crops }', { configurable: true, get: () => {
 	s.camera.updateMatrixWorld();
 	const sc = screen(), out = {};
 	placed = [];
@@ -224,6 +227,9 @@ Object.defineProperty( window, '__PONLAI_CROPS__', { configurable: true, get: ()
 	}
 	return out;
 } } );`;
+
+// every crop anchor's name, read off the anchors' source
+export const ANCHOR_NAMES = [ ...CROPS.matchAll( /^\t'([\w-]+)': \(/gm ) ].map( ( m ) => m[ 1 ] );
 
 const wrap = ( body, crops ) => `(async () => { ${ PRE }\n${ body ?? '' }\n{${ CROPS.replace( 'NAMES', JSON.stringify( crops ) ) }\n}\n})()`;
 
@@ -256,7 +262,7 @@ export const VIEWS = {
 	// whole disc; 5.3, halfway through the air's fade to the centre rays; 9.3, the disc fading to one
 	// ray. Their elevations are chosen by what they reach, which depends on where the clouds sit at
 	// t=12: pinning `shadowRays` to 1, or `shadowAirNarrow` to its other end, must move each of them
-	// (tools/island/parity/README.md), and a view that stays byte identical under that does not belong here.
+	// (tools/kit/parity/README.md), and a view that stays byte identical under that does not belong here.
 	'island-cloudy-low-sun': { special: true, q: `weather=cloudy&hour=${ morning( 4.8 ) }`, crops: [ 'meadow-band-70m', 'rim-lip' ] },
 	'island-cloudy-sun-rising': { special: true, q: `weather=cloudy&hour=${ morning( 5.3 ) }`, crops: [ 'meadow-band-70m', 'rim-lip' ] },
 	'island-cloudy-disc-fade': { special: true, q: `weather=cloudy&hour=${ morning( 9.3 ) }`, crops: [ 'meadow-band-70m', 'rim-lip' ] },
@@ -336,7 +342,7 @@ export function expandViews( spec ) {
 
 }
 
-// (`crops` names other anchors than the view's own: tools/island/capture-clip.mjs --crops)
+// (`crops` names other anchors than the view's own: tools/kit/parity/capture-clip.mjs --crops)
 export const viewEval = ( name, crops = VIEWS[ name ].crops ?? [] ) => wrap( VIEWS[ name ].eval, crops );
 
 if ( process.argv[ 1 ] && path.resolve( process.argv[ 1 ] ) === fileURLToPath( import.meta.url ) ) {
