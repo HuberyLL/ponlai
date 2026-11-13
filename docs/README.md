@@ -15,8 +15,7 @@ Steps for one task.
   extra pass of the frame, with its scene events and histories.
 - [Check a change](how-to/check-a-change.md): the small scenes, a visual change, a performance
   change, a new history-dependent effect, something that depends on the land's shape.
-- [Upgrade three.js](how-to/upgrade-three.md): move to another version of three.js, with the
-  behaviour of three's that the code depends on.
+- [Upgrade three.js](how-to/upgrade-three.md): move to another version of three.js.
 - [Write a tool](how-to/write-a-tool.md): the rules a tool in `tools/` follows.
 
 ## Reference
@@ -29,6 +28,9 @@ Facts to look up.
   probes, the GPU lock, frame profiling and the docs checks.
 - [Look values](reference/look-values.md): the measured values of the island's look (light and
   shade, exposure, water).
+- [Code map](reference/code-map.md): where each part of the code lives, a line per file.
+- [three.js and WebGPU behaviour](reference/three-behaviour.md): what three r186, WebGPU and TSL
+  do that the code is written around; read it before writing TSL or a pass of the frame graph.
 - [Glossary](reference/glossary.md): the project's own words.
 - [Parity captures](../tools/parity/README.md): capture sets, comparisons and their tolerances.
 
