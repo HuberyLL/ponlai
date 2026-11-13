@@ -802,7 +802,7 @@ anything else, waits with `job.mjs` rather than a loop of their own. Its header 
 
 ```text
 node tools/job.mjs start --wait -- npm run build                        (inline when it is short)
-node tools/job.mjs start --log <log> -- node tools/capture-set.mjs ...
+node tools/job.mjs start --log <log> -- node tools/parity/capture-set.mjs ...
 node tools/job.mjs wait <log>          (repeat until it exits 0 or with the job's code)
 node tools/job.mjs stop <log>          (before handing back with it still running)
 ```
@@ -1246,8 +1246,9 @@ fixtures are left out of `npm run lint`.
 `npm run lint:docs` checks the Markdown files' format with markdownlint-cli2 (a dev dependency;
 its rules in `.markdownlint-cli2.jsonc`: prose wrapped at 100 columns, fenced code with a language)
 and their links offline with lychee (local files and `#anchors`; config in `lychee.toml`).
-`tools/verify-doc-paths.mjs`, also in it, checks that every `docs/…/*.md` path written anywhere else
-(code comments, prose) names a file that exists, that every file `AGENTS.md` and
+`tools/verify-doc-paths.mjs`, also in it, checks that every path into `docs/`, `skills/` or
+`tools/` written in full from the repository's root in a tracked text file (code comments and
+strings, configuration, prose) names a file or folder that exists, that every file `AGENTS.md` and
 `docs/reference/code-map.md` name in backticks is tracked, and that `AGENTS.md` stays within its
 limit of 20,000 characters.
 `npm run lint:links` checks the web links too; sites that refuse automated clients (403, 405, 429)
