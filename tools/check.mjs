@@ -1,32 +1,44 @@
-// Runs the checks a commit must pass, one after another, and says which passed, which failed and
-// how long each took. CPU only: nothing here opens a browser, renders or takes the GPU lock, so it
-// runs while another session holds the GPU.
-//   npm run check                 the commit-time checks, about a quarter of a minute
-//   npm run check -- --full       also the production build and the world's chunk checks (minutes)
+// Runs the checks every commit passes, one after another, and says which passed and how long each took.
+//
+// It is the one command to run before a commit: the type check, the code lint and every check
+// that needs no GPU, in about a quarter of a minute. It checks the files in the working tree, not
+// what is staged, so a change left unstaged is checked too. How to use it with the other checks of
+// a change: docs/how-to/check-a-change.md, Run the checks every commit passes.
+//
+// Usage:
+//   node tools/check.mjs [--full]
+//   npm run check                 the commit-time checks
+//   npm run check -- --full       also the production build and the world's chunk checks
+//
+// Options:
+//   --full    adds `npm run build`, tools/island/verify-world-chunks.mjs and
+//             tools/island/verify-chunk-derived.mjs, and runs the docs' lint whatever is staged
 //
 // The commit-time list, in order (cheap and wide first, so a broken type fails before the rest):
-// the type check, the code lint (`npm run lint`: the project's rules as ESLint rules,
-// eslint.config.mjs), the direction of imports between the layers, the packages' exits and the page
-// check (verify-layers), the exits' loading (verify-exits), the page's settings against their docs
-// (verify-settings), the files' size (verify-file-size), the modules' header first lines
-// (verify-headers), the three.js internals the code reaches into
-// (verify-three-internals), the generic tools apart from the project (verify-kit), no binary in git
-// (verify-no-binaries, every file in the index), nothing tracked under .claude/ but the public
-// skills' links (verify-skill-links), then the CPU regression tools (the
-// game's simulation, its words, the ink, the frame graph's compiler, the day cycle, the weather's
-// state, the wind, the local lights, the renderer's extension points, the look tables passed at creation, the
-// code lint's own rules against their fixtures), and the docs' lint (`npm run lint:docs`) when a Markdown file
-// is staged. `--full` adds `npm run build` and `tools/island/verify-world-chunks.mjs`, which take minutes,
-// and `tools/island/verify-chunk-derived.mjs` (the chunks' derived products, about a quarter of a minute on
-// many threads), and runs the docs' lint whatever is staged. Each check runs to its end even after
-// another failed, so one run lists every failure; its output goes to the terminal as it comes.
+// the type check (`npm run typecheck`), the code lint (`npm run lint`, tools/repo/lint/plugin.mjs),
+// verify-layers, verify-exits, verify-settings, verify-file-size, verify-headers (the modules'
+// header first lines), verify-three-internals and verify-kit (tools/repo/), tools/verify-no-binaries.mjs (every file in the index),
+// verify-skill-links (tools/repo/), the game's verify-game, verify-i18n and verify-ink
+// (tools/game/), the renderer's verify-framegraph, verify-day-cycle, verify-weather-state,
+// verify-wind, verify-local-lights, verify-extensions and verify-look-params (tools/render/), then
+// tools/repo/verify-lint.mjs, and the docs' lint (`npm run lint:docs`) when a Markdown file is
+// staged. Each check runs to its end even after another failed, so one run lists every failure.
+//
+// Output: each check's own output on the terminal as it comes, under a `[check] <name>` line;
+// then a summary line (passed, failed, total seconds) and a line per check with pass or FAIL, its
+// time and why it failed (its exit code or signal). It writes no file.
+//
+// GPU lock and browser: neither. Nothing here renders, so it runs while another session holds the
+// GPU. Each check starts under the application scheduling policy (tools/kit/qos.mjs `appPolicy`).
+//
+// Cost: about a quarter of a minute; `--full` takes minutes (the build and the world's chunks).
+//
+// Exit codes: 0 every check passed; 1 a check failed or an unknown option.
 //
 // A check belongs in the commit-time list when it needs no GPU and the whole list stays near a
 // minute; a slower one goes under `--full`. The checks that render (captures, parity, the GPU
 // verify tools) are run by hand (docs/how-to/check-a-change.md).
-//
-// Each check starts with the application scheduling policy (tools/kit/qos.mjs `appPolicy`).
-// Exit 0 when every check passed, 1 when one failed or an option is unknown.
+import './kit/help.mjs';
 import { spawnSync, execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

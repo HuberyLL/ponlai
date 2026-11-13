@@ -1,9 +1,15 @@
-// Checks the direction of the imports between the code's layers, that a package is imported only
-// through its exits, that the world's chunk worker and the headless exits import only plain code,
-// that the renderer and the island keep off the page, which files write another module's state and
-// that each layer names only the userData keys declared for it. CPU only, no GPU, a few seconds
-// (the page and state checks run TypeScript's checker over packages/ and app/).
+// Checks the direction of the imports between the code's layers and the other rules of the layers.
+//
+// It also checks that a package is imported only through its exits, that the world's chunk worker
+// and the headless exits import only plain code, that the renderer and the island keep off the
+// page, which files write another module's state and that each layer names only the userData keys
+// declared for it. Run it after adding a file or an import across folders, or a userData key; it
+// is part of `npm run check`. The exits' own loading is checked by tools/repo/verify-exits.mjs.
+//
+// Usage:
 //   node tools/repo/verify-layers.mjs
+//
+// Options: none.
 //
 // The layers, lowest first: render (light, sky, weather, sea, the frame's passes, the generic
 // materials and vegetation machinery, the quality tiers), island (this island's generation and
@@ -53,9 +59,10 @@
 //   package such as three.js would not run in the worker's plain code.)
 // - The page check: the render and island layers and the game's headless simulation (packages/game/sim/)
 //   name none of the page's globals in PAGE (the address, the browser's storage, the document,
-//   window, navigator, the frame callbacks, workers, IndexedDB, fetch), outside the files in
-//   PAGE_NEEDS, each the one place of a need the renderer has of the browser and allowed only the
-//   names it needs. The page (the app layer: the entry, PageSettings.ts, main.ts) owns the rest and
+//   window, navigator, URLSearchParams, the frame callbacks, workers, IndexedDB, fetch), outside the
+//   files in PAGE_NEEDS, each the one place of a need the renderer has of the browser (the frame
+//   pacing, the workers' start, the world's cache, the assets' fetch, the textures' canvas, the
+//   settings' parser) and allowed only the names it needs. The page (the app layer: the entry, PageSettings.ts, main.ts) owns the rest and
 //   hands the renderer what it needs (the canvas, the settings, the storage). A name counts by
 //   what it resolves to, so a local of the same name passes and `globalThis.x` is not seen; type
 //   positions (`typeof window`) are not code and pass.
@@ -77,8 +84,14 @@
 //   bag (`x.userData.key`, `x.userData[ 'key' ]`); one reached through an alias of the bag
 //   (`const data = material.userData`) or a computed name is not seen.
 //
-// Output: a summary on stdout, every upward import found (known or not) and the failures. It takes
-// no options. Exit 0 when everything passes, 1 with the failures listed.
+// Output: a summary on stdout, every upward import found (known or not), then PASS or FAIL with the
+// failures.
+//
+// GPU lock and browser: neither. Cost: a few seconds, CPU only (the page and state checks run
+// TypeScript's checker over packages/ and app/).
+//
+// Exit codes: 0 everything passes; 1 a failure (listed) or an unknown option.
+import '../kit/help.mjs';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';

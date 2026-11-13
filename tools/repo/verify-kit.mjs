@@ -1,7 +1,17 @@
-// Checks that the generic tools in tools/kit/ stay apart from the project: they import nothing from
-// packages/, app/ or the other groups of tools (render, island, game, repo), only each other and the
-// project's configuration (tools/project.mjs), and no page global is named in their code. The page's
-// globals are the configuration's to name (its `page`), so a kit tool reads them from there.
+// Checks that the generic tools in tools/kit/ stay apart from the project.
+//
+// The kit's tools import nothing from packages/, app/ or the other groups of tools (render, island,
+// game, repo), only each other and the project's configuration (tools/project.mjs), and no page
+// global is named in their code. The configuration holds what a kit tool needs to know of this
+// project: the page's globals and loading screen, the dev server's address and the default query,
+// what a stored reference depends on, where the views' and clips' tables are, and the module that
+// adds the pipeline tracer to an eval. Run it after changing a kit tool; it is part of
+// `npm run check`.
+//
+// Usage:
+//   node tools/repo/verify-kit.mjs
+//
+// Options: none.
 //
 // What counts, per file under tools/kit/ (the folder as it is on disk, so a new file is checked
 // before it is staged):
@@ -13,8 +23,14 @@
 // - Both: no string in the code (comments and docstrings left out) names `packages/`, `app/` or
 //   `tools/<another group>/`, and no name of the form `__NAME__` in capitals (the page's globals
 //   take that form, the configuration's `page` lists them) appears in the code.
-//   node tools/repo/verify-kit.mjs     exit 0 when the kit stands apart, 1 with the list
-// Runs as part of `npm run check`. Pure node, no GPU.
+//
+// Output: a summary on stdout (the files, imports and page globals checked), then PASS or FAIL with
+// the failures.
+//
+// GPU lock and browser: neither. Cost: about a second, CPU only.
+//
+// Exit codes: 0 the kit stands apart; 1 a failure (listed). Arguments are ignored.
+import '../kit/help.mjs';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';

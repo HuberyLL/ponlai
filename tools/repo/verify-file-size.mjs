@@ -1,20 +1,31 @@
-// Checks that no source file grows past LIMIT lines. CPU only, no GPU, well under a second.
-//   node tools/repo/verify-file-size.mjs
+// Checks that no code file under packages/ or app/ grows past LIMIT lines (1500).
 //
 // A file past the limit holds several things that change for different reasons, and no reader,
 // human or model, can hold one whole. A file that passes it is split by what its parts are (a
 // table of the look, the kernels of one effect, the passes of one stage), never by halving. Lines
-// are counted over the whole file, its header comment included.
+// are counted over the whole file, its header comment included. It is part of `npm run check`.
+// A file at its limit that needs a lint exception writes it at the end of a line
+// (tools/repo/lint/plugin.mjs).
 //
-// Guarantees, each a failure (exit 1) when broken:
-// - No code file under packages/ or app/ (.ts, .mts, .js, .mjs) has more than LIMIT lines, except those in
-//   KNOWN, the files over it when the check was written.
+// Usage:
+//   node tools/repo/verify-file-size.mjs
+//
+// Options: none.
+//
+// What it checks, each a failure when broken:
+// - No code file under packages/ or app/ (.ts, .mts, .js, .mjs) has more than LIMIT lines, except
+//   those in KNOWN, the files over it when the check was written.
 // - KNOWN only shrinks: a listed file may not grow past the count recorded for it (a change that
 //   shortens one lowers its count with it), and one that is back within the limit, or gone, fails
 //   until its entry is removed.
 //
-// Output: a summary on stdout, the listed files with their counts and the failures. It takes no
-// options. Exit 0 when everything passes, 1 with the failures listed.
+// Output: a summary on stdout, the listed files with their counts, then PASS or FAIL with the
+// failures.
+//
+// GPU lock and browser: neither. Cost: well under a second, CPU only.
+//
+// Exit codes: 0 everything passes; 1 a failure (listed) or an unknown option.
+import '../kit/help.mjs';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { ROOT } from '../kit/root.mjs';

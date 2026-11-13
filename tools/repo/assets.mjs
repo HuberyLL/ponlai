@@ -1,38 +1,80 @@
-// The game's assets: every binary file the page loads (textures, models, fonts, baked data). None
-// goes into git: a repository that keeps every version of every texture only grows, and its
-// history cannot be cut back without rewriting it. They live in public/ (git-ignored; Vite serves
-// it at the site's root and copies it into dist/), and each version of the whole set is published
-// as one archive on a GitHub release, `assets-v<N>`. assets.lock.json, committed, pins the release,
-// its archive and every file's size and SHA-256, so each commit names the assets it runs with and
-// a checkout of it gets exactly those back (the byte-for-byte checks compare commits).
-//   node tools/repo/assets.mjs [status]        public/ against the lock: missing, changed and unlisted
-//                                         files (exit 0 when it matches, 1 when not)
-//   node tools/repo/assets.mjs pull [--force]  fills public/ from the lock's release; a file that differs
-//                                         from the lock is work in progress and is kept, unless
-//                                         --force
+// Keeps public/ in step with the assets a commit pins, and publishes a new version of them.
+//
+// Every binary file the page loads (textures, models, fonts, audio, baked data) is an asset, and no
+// asset goes into git: a repository that keeps every version of every binary only grows, and its
+// history cannot be cut back without rewriting it. The assets live in public/, git-ignored, which
+// Vite serves at the site's root and copies into dist/. Each version of the whole set is published
+// as one archive (`ponlai-assets-v<N>.tar.gz`) on a GitHub release tagged `assets-v<N>`.
+// assets.lock.json, committed, pins the release, the archive's size and SHA-256 and every file's,
+// so a commit names the assets it runs with and a checkout of it gets exactly those back (the
+// byte-for-byte checks compare commits). Use it to see whether public/ matches the lock, to fill
+// it, and to cut a release; tools/verify-no-binaries.mjs is the check that keeps assets out of git.
+//
+// Usage:
+//   node tools/repo/assets.mjs [status]
+//   node tools/repo/assets.mjs pull [--force]
 //   node tools/repo/assets.mjs release [--notes <text>] [--attach <file>]... [--local]
-//                                         packs public/ as the next release, publishes it with gh
-//                                         and rewrites the lock; --attach uploads more files beside
-//                                         the archive (masters of our own, such as a Blender file);
-//                                         --local packs it into the cache and rewrites the lock but
-//                                         uploads nothing (gh not needed)
 //   node tools/repo/assets.mjs publish [--attach <file>]...
-//                                         uploads the lock's release packed with --local, from this
-//                                         machine's cache, as it was packed (the lock stays valid)
+//
+// Options:
+//   status             public/ against the lock: missing, changed and unlisted files (the default)
+//   pull               fills public/ from the lock's release; a file that differs from the lock is
+//                      work in progress and is kept and named
+//     --force          also replaces the files that differ from the lock
+//   release            packs the whole of public/ as the next release, creates it with gh (its
+//                      notes list what was added, changed and removed) and rewrites the lock
+//     --notes <text>   a paragraph put first in the release's notes
+//     --attach <file>  uploads a file beside the archive; repeatable; not with --local
+//     --local          packs the release into the cache and rewrites the lock, uploading nothing
+//                      (gh not needed)
+//   publish            uploads the lock's release, packed earlier with --local, from the cache as
+//                      it was packed, so the committed lock stays valid
+//     --attach <file>  as for release
+//
+// The dev server and the build pull the files public/ lacks before they read it
+// (tools/repo/vite-assets.mjs `ensureAssets`; its header says what each does without them).
+// Downloads go through gh while the repository is private, else the release's public URL. They are
+// kept in git's common directory (`ponlai-assets/<release>/`, shared by every worktree, never
+// tracked), checked against the lock's size and hash, unpacked once there and copied into each
+// checkout's public/ (a clone where the file system can).
+//
+// A release packed with --local exists on this machine only until it is published: its cache must
+// be kept, and a checkout elsewhere cannot pull it. A release takes the first number past the
+// lock's that the cache does not hold, so a branch packing from an older lock never overwrites
+// another branch's pack (the two locks then merge by hand: the later release repacked over both
+// sets of changes).
+//
 // Rules:
-// - A published release never changes: adding, changing or removing a file cuts the next one, and
-//   the lock moves in the same commit as the code that needs it.
-// - The archive holds the whole set, so one release is one version of the game's assets.
-// - A new release takes the first number past the lock's that this machine's cache does not hold:
-//   another branch may have packed the lock's successor already, its lock not merged here yet.
-// - A release packed with --local exists only in this machine's cache until it is published: a
-//   checkout elsewhere cannot pull it, and the cache's archive must be kept until then.
-// - Downloads are cached in git's common directory (ponlai-assets/<release>/), shared by every
-//   worktree and never tracked; each worktree gets its own copy of the files (a clone where the
-//   file system can).
-// - gh downloads from the repository while it is private; without gh, the release's public URL.
-// The dev server and the build call `ensureAssets` (tools/repo/vite-assets.mjs): missing files are
-// pulled, changed and unlisted ones only reported.
+// - A file the page loads is placed under public/ and loaded through
+//   `import.meta.env.BASE_URL + '<path under public/>'` (a stylesheet: `url( '/<path>' )`, which
+//   Vite rewrites for the base), never from `artifacts/` or another machine path.
+// - Adding, changing or removing an asset cuts the next release; a published release never changes
+//   (a broken one is followed by the next, never replaced). The commit that needs the new files
+//   carries the new assets.lock.json, so every commit still builds with its own assets.
+// - The archive holds the whole set, so one release is one version of the assets.
+// - A release holds only files that may be redistributed: every third-party file is listed in
+//   CREDITS.md (source, author, licence, processing) under its path in public/ before it ships.
+// - A file made by a tool from a source (the moon, the stars, the Milky Way) keeps its tool in
+//   tools/; the release holds the output, and CREDITS.md names the tool and the source.
+// - Masters of our own that the page does not load (Blender files, layered images) go beside the
+//   archive with --attach, on the release whose files they were exported for. Third-party sources
+//   stay with their publisher; CREDITS.md links them.
+//
+// Output: status prints a line per missing, changed and unlisted file, then whether public/
+// matches the lock's release; pull prints the files copied, kept and unlisted; release prints the
+// release and its counts of added, changed and removed files; publish prints the release. release
+// writes assets.lock.json and the archive, its file list and notes in the cache. Errors go to
+// stderr.
+//
+// GPU lock and browser: neither. pull and release reach the network (gh or the release's URL);
+// release and publish need gh unless --local.
+//
+// Cost: status hashes every file of public/, seconds; pull downloads the archive once per release;
+// release packs and hashes the whole set.
+//
+// Exit codes: 0 done (status: public/ matches the lock); 1 status found a difference or no lock,
+// or any command failed (an unknown command or option, a hash mismatch, nothing to release).
+import '../kit/help.mjs';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { constants, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';

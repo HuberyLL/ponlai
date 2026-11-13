@@ -1,7 +1,15 @@
-// Checks what the code depends on of three.js beyond its public interface, against the three that
-// is installed. CPU only, no GPU and no browser: it reads three's sources and imports three in
-// node, a few seconds.
+// Checks what the code depends on of three.js beyond its public interface, against the installed three.
+//
+// Run it after an upgrade of three (docs/how-to/upgrade-three.md) and after a change that reaches
+// into three; it is part of `npm run check`.
+//
+// Usage:
 //   node tools/repo/verify-three-internals.mjs [--verbose] [--fingerprints]
+//
+// Options:
+//   --verbose        prints where each entry was found and each file's reaches into three
+//   --fingerprints   prints every fingerprinted entry's current fingerprint, to record after
+//                    re-checking the code that depends on it on an upgrade of three
 //
 // The renderer reaches into three where no public path gives what it needs: private members of the
 // renderer and of its helpers, the WebGPU backend and its device, methods it replaces or wraps,
@@ -33,9 +41,14 @@
 //   tools/ is white-box (its tools run scripts in the page) and keeps a list of its own,
 //   TOOLS_KNOWN, which only shrinks too.
 //
-// Output: a summary on stdout, warnings and failures listed; `--verbose` prints where each entry
-// was found, `--fingerprints` every fingerprinted entry's current fingerprint. Exit 0 when
-// everything passes (warnings included), 1 with the failures listed.
+// Output: a summary on stdout, the warnings, then PASS or FAIL with the failures; the options add
+// their lines.
+//
+// GPU lock and browser: neither; it reads three's sources and imports three in node. Cost: a few
+// seconds, CPU only.
+//
+// Exit codes: 0 everything passes (warnings included); 1 a failure (listed) or an unknown option.
+import '../kit/help.mjs';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
