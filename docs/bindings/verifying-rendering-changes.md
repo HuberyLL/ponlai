@@ -14,6 +14,16 @@ captures take the wrapper's slot over). Changes hold in the
 kept weathers (clear, fair) and on high at 4K output; the parked ones are out of every default set
 (`docs/reference/tools.md`, Parked weathers and quality tiers).
 
+Contents:
+
+- [Kinds](#kinds)
+- [Views](#views)
+- [Capture](#capture)
+- [Compare](#compare)
+- [References](#references)
+- [History](#history)
+- [Checks](#checks)
+
 ## Kinds
 
 What to run after which change, beyond the skill's comparison:

@@ -8,6 +8,15 @@ in its own facts.
 The rules every tool follows are in `AGENTS.md` (Tools; Stack and commands); this page gives the
 facts a tool is built on.
 
+Contents:
+
+- [Index](#index)
+- [Manual](#manual)
+- [Build](#build)
+- [Prove](#prove)
+- [Checks](#checks)
+- [Register](#register)
+
 ## Index
 
 - `docs/reference/tools.md` indexes the tools by question, one table per group. Each tool's manual
@@ -144,10 +153,10 @@ the commit.
 
 ## Checks
 
-- The order of remedies, the mistake named and the row in the rules table: `AGENTS.md`, Adding a
-  rule. A rule's row names what enforces it (a `ponlai/…` lint rule, a `verify-*` check by its bare
-  name, a command, or "judgement") and the mistake it came from. The rules' full text:
-  `docs/reference/architecture-rules.md`.
+- The order of remedies, and where a rule and its check are named: `AGENTS.md`, Adding a rule. A
+  check that `npm run check` runs is named in `AGENTS.md`, What the checks hold; one run by hand,
+  in Checks run by hand (or a folder's `AGENTS.md`); the mistake a rule came from goes in the
+  commit message that adds it. The rules' full text: `docs/reference/architecture-rules.md`.
 - Lint rules: `tools/repo/lint/plugin.mjs` (its header lists them, how to add one and how an
   exception is written: a disable comment naming the rule and a reason; a comment that no longer
   suppresses anything is an error), scoped in `eslint.config.mjs`, each with a fixture.
@@ -155,8 +164,8 @@ the commit.
   that list when it needs no GPU and the whole list stays near a minute; a slower one goes under
   `--full` (the production build and the world's chunk checks).
 - Checks that render are run by hand under the GPU lock, named beside the kind of change that needs
-  them: `AGENTS.md`'s rules table and the bindings of `verifying-rendering-changes` (Kinds) and
-  `writing-tsl-and-passes`.
+  them: `AGENTS.md`, Checks run by hand, a folder's `AGENTS.md`, and the bindings of
+  `verifying-rendering-changes` (Kinds) and `writing-tsl-and-passes`.
 - Lists of known exceptions only shrink, and an entry no longer needed fails: `KNOWN` and `STATE`
   in `tools/repo/verify-layers.mjs`, `TOOLS_KNOWN` in `tools/repo/verify-three-internals.mjs`.
 
@@ -164,5 +173,6 @@ the commit.
 
 - A new entry tool gets a line in `docs/reference/tools.md` under its group, by its question;
   `verify-tool-manuals` fails until it has one.
-- A new check gets its name in the "Enforced by" column of its rule's row in `AGENTS.md`, and a
-  check that needs no GPU is added to `tools/check.mjs`'s list and its header.
+- A new check is named where its rule is (`AGENTS.md`, What the checks hold or Checks run by hand,
+  or a folder's `AGENTS.md`); the mistake behind the rule goes in the commit message. A check that
+  needs no GPU is added to `tools/check.mjs`'s list and its header.

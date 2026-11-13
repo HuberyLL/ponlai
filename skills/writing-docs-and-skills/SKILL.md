@@ -65,7 +65,7 @@ Each text is one kind, and each kind has one home and one time it is read:
 
 | Kind | What it holds | Read when | What does not belong |
 | --- | --- | --- | --- |
-| Rules file (`AGENTS.md`, or `CLAUDE.md` importing it) | Rules every change follows (one line each, with what enforces it and the mistake it came from), the commands, the folders, an index of what to read before which task | Every turn | Steps of a method; rules of one module; reasons at length; anything a check holds |
+| Rules file (`AGENTS.md`, or `CLAUDE.md` importing it) | Rules every change follows (one line each; what enforces each and the mistake behind it are recorded where the binding says), the commands, the folders, an index of what to read before which task | Every turn | Steps of a method; rules of one module; reasons at length; anything a check holds |
 | Skill | A method for one kind of task, its silent-failure rules first | When the task comes up | The project's paths and values (the binding); what the model already knows |
 | Binding | One project's facts for a skill, a section per step | At the step that needs it | The method |
 | Tool manual (the tool's header, printed by `--help`) | The question it answers, how to call it, its output, what it needs (a GPU, a server) | When the tool is used | How it came to be |
@@ -110,9 +110,9 @@ it goes to the owner with the changes of meaning, unless a check now holds it.
 ### 5. Turn what can be checked into a check (binding: Checks)
 
 For a new rule, prefer in order: make the mistake impossible in the architecture, then in the
-types, then a lint rule, then a test or a verify tool, then text. A rule written as text names the
-mistake that led to it and what enforces it ("judgement" when nothing does). A text rule broken a
-second time gets a check in the change that meets it.
+types, then a lint rule, then a test or a verify tool, then text. A rule written as text is one
+line; what enforces it ("judgement" when nothing does) and the mistake that led to it are recorded
+where the binding says. A text rule broken a second time gets a check in the change that meets it.
 
 Docs are kept true by checks too:
 

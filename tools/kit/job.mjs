@@ -57,15 +57,15 @@
 // waits at most 240 s: an agent's prompt cache lives five minutes between its requests, so no
 // single wait may outlive it; an agent runs it in the foreground with the Bash tool's timeout above
 // that, one wait per message, and calls it again until the jobs end. `--role main` waits at most
-// 3300 s, under a main session's one-hour cache: a main session keeps a plain `wait --role main`
-// running in the background as a keep-alive while it waits on agents or jobs, and re-arms it each
-// time it fires.
+// 3300 s, under a one-hour prompt cache: a session with that cache can keep a plain
+// `wait --role main` running in the background as a keep-alive while it waits on agents or jobs,
+// and re-arm it each time it fires.
 //
 // `wait <file>...` returns as soon as every job has ended. A job has ended when its log's last line
 // is the end line, or when its runner is gone without one (killed: reported as lost, exit 1). A file
 // without a start line is not a job and fails at once (exit 2). Wait on several jobs with one call.
 // `wait` without job logs waits on one condition instead (logs and a condition do not mix), and
-// with neither it is a plain timer (the main session's keep-alive). `status` is `wait` with no
+// with neither it is a plain timer (a keep-alive). `status` is `wait` with no
 // budget. `list` shows the running jobs started under the current repo top (default), under a
 // directory, or all of them, with the `status` screen; `--cwd dir` never matches a worktree nested
 // under dir.

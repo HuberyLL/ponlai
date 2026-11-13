@@ -1,16 +1,63 @@
 # Documentation
 
-The documentation is sorted by the four kinds of Diátaxis (<https://diataxis.fr>). Rules for
-contributors and agents are in [AGENTS.md](../AGENTS.md); the project's structure is in
+Every page of the documentation, the skills and the rules files. The project's structure is in
 [ARCHITECTURE.md](../ARCHITECTURE.md); third-party sources are in [CREDITS.md](../CREDITS.md).
 
-## How-to guides
+## Rules files
 
-Steps for one task.
+The rules an agent or a contributor follows, loaded as the work reaches their folder.
 
-- [Add game content](how-to/add-game-content.md): a need, an item, a place, an option or a
-  building in the game's simulation.
-- [Upgrade three.js](how-to/upgrade-three.md): move to another version of three.js.
+- [AGENTS.md](../AGENTS.md): the index and the rules every change follows.
+- [The renderer's rules](../packages/render/AGENTS.md): the shader and pass rules of
+  `packages/render/` alone, and its checks run by hand.
+- [The island's rules](../packages/island/AGENTS.md): the world in chunks and the growth in place.
+- [The game's rules](../packages/game/AGENTS.md): where the player's words are written.
+- [The tools' rules](../tools/AGENTS.md): what a new tool in `tools/` does first.
+
+## Skills
+
+Methods for one kind of task, each with this project's facts in its binding (`docs/bindings/`).
+
+- [Building a stylised-realism picture](../skills/building-aaa-stylised-realism/SKILL.md)
+  ([binding](bindings/building-aaa-stylised-realism.md)): where a change to the look goes, and a
+  new material.
+- [Diagnosing frames that do not repeat](../skills/diagnosing-nonrepeating-frames/SKILL.md)
+  ([binding](bindings/diagnosing-nonrepeating-frames.md)): a frame that differs between runs of the
+  same build.
+- [Diagnosing visual defects](../skills/diagnosing-visual-defects/SKILL.md)
+  ([binding](bindings/diagnosing-visual-defects.md)): the cause of something wrong on screen.
+- [Fitting a look to reference images](../skills/fitting-a-look-to-reference-images/SKILL.md)
+  ([binding](bindings/fitting-a-look-to-reference-images.md)): the light, air and image values that
+  bring a frame to the reader's own reference images.
+- [Measuring performance changes](../skills/measuring-performance-changes/SKILL.md)
+  ([binding](bindings/measuring-performance-changes.md)): whether a change is faster, and where a
+  frame's time goes.
+- [Verifying rendering changes](../skills/verifying-rendering-changes/SKILL.md)
+  ([binding](bindings/verifying-rendering-changes.md)): proving a change did what was meant and
+  nothing else.
+- [Writing docs and skills](../skills/writing-docs-and-skills/SKILL.md)
+  ([binding](bindings/writing-docs-and-skills.md)): where each text lives and how it is kept true.
+- [Writing tools and checks](../skills/writing-tools-and-checks/SKILL.md)
+  ([binding](bindings/writing-tools-and-checks.md)): a tool, its manual, and a check proved by its
+  planted fault.
+- [Writing TSL and passes](../skills/writing-tsl-and-passes/SKILL.md)
+  ([binding](bindings/writing-tsl-and-passes.md)): shaders, compute kernels, passes and GPU buffers
+  without the failures that give no error.
+
+## Design
+
+What the look and the game are, and why.
+
+- [Art direction](design/art-direction.md): the island's look as a whole (the light, the
+  shade, the exposure, the image) and how it is judged.
+  - [The island](design/island.md): the land, the cliffs, the sea floor, the meadow, the
+    bamboo, the yunpeng, the wind.
+  - [Sea and sky](design/sea-and-sky.md): the sea, its foam and its water, the sun, the air,
+    the clouds, the sky's colour, the parked weathers.
+  - [Night](design/night.md): the moon, its light, the stars.
+  - [Life and islanders](design/life-and-islanders.md): the creatures and the people.
+- [Game design](design/game-design.md): the game behind `?game`.
+- [Game UI](design/ui.md): the player's interface.
 
 ## Reference
 
@@ -39,20 +86,11 @@ Facts to look up.
 - [Glossary](reference/glossary.md): the project's own words.
 - [Parity captures](../tools/kit/parity/README.md): the facts across the parity tools: which
   comparison is byte-exact, how a tolerance is set and how the stored references are used.
-- Skill bindings (`docs/bindings/`): this project's facts for each skill in `skills/`, a page per
-  skill under its name.
 
-## Explanation
+## How-to guides
 
-What something is and why.
+Steps for one task that no skill covers.
 
-- [Art direction](design/art-direction.md): the island's look as a whole (the light, the
-  shade, the exposure, the image) and how it is judged.
-  - [The island](design/island.md): the land, the cliffs, the sea floor, the meadow, the
-    bamboo, the yunpeng, the wind.
-  - [Sea and sky](design/sea-and-sky.md): the sea, its foam and its water, the sun, the air,
-    the clouds, the sky's colour, the parked weathers.
-  - [Night](design/night.md): the moon, its light, the stars.
-  - [Life and islanders](design/life-and-islanders.md): the creatures and the people.
-- [Game design](design/game-design.md): the game behind `?game`.
-- [Game UI](design/ui.md): the player's interface.
+- [Add game content](how-to/add-game-content.md): a need, an item, a place, an option or a
+  building in the game's simulation.
+- [Upgrade three.js](how-to/upgrade-three.md): move to another version of three.js.

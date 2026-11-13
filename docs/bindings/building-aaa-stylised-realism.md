@@ -8,6 +8,15 @@ section names and fills in its own facts.
 Every command that renders in a browser runs under the GPU lock and every wait goes through
 `tools/kit/job.mjs` (`AGENTS.md`).
 
+Contents:
+
+- [Look](#look)
+- [Materials](#materials)
+- [Light and air](#light-and-air)
+- [Image](#image)
+- [Check](#check)
+- [Record](#record)
+
 ## Look
 
 - The look this project means, and what to avoid: `docs/design/art-direction.md` (The look;

@@ -12,26 +12,30 @@ homes in this repository:
 
 | Kind | Here |
 | --- | --- |
-| Rules file | `AGENTS.md`; `CLAUDE.md` imports it and keeps Claude-only notes |
+| Rules file | The root `AGENTS.md` (the index and the rules every change follows) and one in `packages/render/`, `packages/island/`, `packages/game/` and `tools/` (the rules of that folder alone); a `CLAUDE.md` beside each imports it, and the root's keeps Claude-only notes |
 | Skill | `skills/<name>/` (`SKILL.md`, `background.md`, reference files) |
 | Binding | `docs/bindings/<name>.md` |
-| Tool manual | `docs/reference/tools.md` (the manuals, and Which tool for which question) and the tool's header; `tools/kit/parity/README.md` documents its folder |
+| Tool manual | The tool's header, printed by `--help`; `docs/reference/tools.md` indexes the tools by question; `tools/kit/parity/README.md` documents its folder |
 | Architecture page | `ARCHITECTURE.md`; each rule's full text in `docs/reference/architecture-rules.md`, under the same number |
 | Reference page | `docs/reference/` |
 | Design page | `docs/design/` (art direction and its subject pages, game design, game UI) |
-| How-to guide | `docs/how-to/`: one task's steps in this project |
+| How-to guide | `docs/how-to/`: one task's steps in this project that no skill covers; a method used across tasks is a skill |
 | Module header | The header comment of each file under `packages/` and `app/` |
 | Third-party sources | `CREDITS.md` |
 
+- A rule in a rules file is one line. What enforces it is recorded in the file's lists (Checks,
+  below); the mistake behind it goes in the commit message that adds it, never in the file.
 - A new page gets a line in the docs index, `docs/README.md`.
 - The code map is printed, not kept: `node tools/repo/code-map.mjs [folder]` lists each file with
   its header's first line.
 
 ## Budget
 
-- `AGENTS.md`: at most 20,000 characters. The docs lint does not count them at present; count with
-  `wc -m AGENTS.md` before adding a line, and take one out first when the file is at its limit.
-- Other pages have no hard limit.
+- The root `AGENTS.md`: at most `ROOT_LINES` lines and `ROOT_CHARS` characters, the constants of
+  `tools/repo/verify-doc-shape.mjs`, which `npm run lint:docs` runs. Take a line out first when the
+  file is at its limit.
+- A folder's `AGENTS.md` holds the rules of that folder alone; it and the other pages have no hard
+  limit. A page over 100 lines opens with its contents (`verify-doc-shape` checks it).
 
 ## Checks
 
@@ -39,18 +43,22 @@ homes in this repository:
   them, for docs: `tools/repo/verify-headers.mjs` (each module's header opens with one sentence),
   `tools/repo/verify-settings.mjs` (the URL options page against `packages/render/Settings.ts`; `--write`
   rewrites its table of every option),
-  `tools/repo/verify-skill-links.mjs` (nothing tracked under `.claude/` but the skills' links),
+  `tools/repo/verify-skill-links.mjs` (the skills' links under `.claude/`, their frontmatter, size,
+  reference files and bindings, and the root's index of them),
   and the docs lint when a Markdown file is staged. `npm run check -- --full` runs the docs lint
   whatever is staged; run it before a merge.
 - `npm run lint:docs`, before a commit that changes Markdown: markdownlint-cli2
   (`.markdownlint-cli2.jsonc`: prose wrapped at 100 columns), `tools/repo/verify-doc-paths.mjs`
-  (every path into `docs/`, `skills/` or `tools/` in a tracked text file exists; every file
-  `AGENTS.md` and `ARCHITECTURE.md` name in backticks is tracked) and lychee's offline link check.
-  lychee is a separate binary (`docs/reference/tools.md`, Docs checks).
+  (every path into `docs/`, `skills/` or `tools/` in a tracked text file exists; every file the
+  rules files and `ARCHITECTURE.md` name in backticks is tracked), `tools/repo/verify-doc-shape.mjs`
+  (Budget) and lychee's offline link check. lychee is a separate binary
+  (`tools/repo/verify-doc-paths.mjs`'s header).
 - `npm run lint:links`: the web links too, run by hand.
 - A rule turned into a check: a lint rule in `tools/repo/lint/` (named `ponlai/…`) or a `verify-*`
-  tool, with a row in `AGENTS.md`'s rules naming what enforces it and the mistake it came from
-  (`AGENTS.md`, Adding a rule).
+  tool, named in `AGENTS.md`, What the checks hold or Checks run by hand (or a folder's
+  `AGENTS.md`); the mistake it came from goes in the commit message (`AGENTS.md`, Adding a rule).
+- A rule that needs judgement: one line in the rules file naming the page or header that owns its
+  detail, with nothing written for what enforces it; the mistake goes in the commit message.
 
 ## Commit
 

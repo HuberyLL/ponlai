@@ -31,6 +31,15 @@ The concepts several tools share have reference pages of their own:
 
 The npm scripts are in `AGENTS.md`, Stack and commands.
 
+Contents:
+
+- [Kit: generic tools (`tools/kit/`)](#kit-generic-tools-toolskit)
+- [Render: the renderer's tools (`tools/render/`)](#render-the-renderers-tools-toolsrender)
+- [Island: the island's tools (`tools/island/`)](#island-the-islands-tools-toolsisland)
+- [Game: the game's tools (`tools/game/`)](#game-the-games-tools-toolsgame)
+- [Repo: the repository's checks (`tools/repo/`, `tools/`)](#repo-the-repositorys-checks-toolsrepo-tools)
+- [Parked weathers and quality tiers](#parked-weathers-and-quality-tiers)
+
 ## Kit: generic tools (`tools/kit/`)
 
 | Question | Tool |
@@ -142,8 +151,9 @@ not give: automation, A/B statistics and our own pass names.
 | The code lint's own rules (the rules themselves: `tools/repo/lint/plugin.mjs`) | `tools/repo/verify-lint.mjs` |
 | No code file grows past its line limit | `tools/repo/verify-file-size.mjs` |
 | The generic tools stay apart from the project | `tools/repo/verify-kit.mjs` |
-| Nothing tracked under `.claude/` but the skills' links | `tools/repo/verify-skill-links.mjs` |
+| The skills: their links under `.claude/` (nothing else tracked there), their frontmatter, size, reference files and bindings, and the root `AGENTS.md`'s index of them | `tools/repo/verify-skill-links.mjs` |
 | Every path to a doc, skill or tool written in tracked text exists (`npm run lint:docs`) | `tools/repo/verify-doc-paths.mjs` |
+| The root `AGENTS.md` within its budget, each folder's `AGENTS.md` imported by a `CLAUDE.md` beside it, each long docs page opening with its contents (`npm run lint:docs`) | `tools/repo/verify-doc-shape.mjs` |
 | Every source file under `packages/` and `app/` opens its header with one sentence of purpose | `tools/repo/verify-headers.mjs` |
 | Every entry tool answers `--help` from its header manual | `tools/repo/verify-tool-manuals.mjs` |
 

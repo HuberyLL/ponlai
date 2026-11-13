@@ -42,8 +42,8 @@
 // and every holder's and ticket's level with its source; `prio set` adds or replaces an entry and
 // lists what it applies to now (it warns on stderr when nothing matches: a typo, or a session that
 // has not asked yet); `prio clear` removes one; `prio bump` raises or lowers one request, by pid
-// or `#ticket`, and refuses an exclusive holder and an older copy's request. Scheduling is done by
-// the user or a main session, never by a session itself. `gpu` shows the GPU's utilisation and the
+// or `#ticket`, and refuses an exclusive holder and an older copy's request. The table ranks other
+// runs: a run never adds an entry for itself. `gpu` shows the GPU's utilisation and the
 // processes using it (macOS). `log` summarises the lock's history.
 //
 // A request that waits prints a timestamped line on stderr every 30 s: its level and source, its

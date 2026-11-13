@@ -22,16 +22,17 @@
 // licence page); its tool paths are ours and are checked. ABSENT lists the paths written on purpose
 // for a folder that has no file yet, each with its reason and the files allowed to name it.
 //
-// One more check keeps the index and the architecture page honest: in AGENTS.md and
-// ARCHITECTURE.md (each while it is tracked), every file named in backticks (a name ending in a code
-// or data extension, written whole or as the end of its path) names a tracked file, so a file that
-// moves or goes takes its line along.
+// One more check keeps the rules files and the architecture page honest: in every tracked
+// AGENTS.md (the root's and each folder's) and in ARCHITECTURE.md, every file named in backticks (a
+// name ending in a code or data extension, written whole or as the end of its path) names a tracked
+// file, so a file that moves or goes takes its line along.
 //
 // The docs' commands (package.json):
 // - `npm run lint:docs` checks the Markdown files' format with markdownlint-cli2 (a dev
 //   dependency; its rules in .markdownlint-cli2.jsonc: prose wrapped at 100 columns, fenced code
-//   with a language), then runs this tool, then checks the links offline with lychee (local files
-//   and `#anchors`; its config in lychee.toml). `npm run check` runs it when a Markdown file is
+//   with a language), then runs this tool and tools/repo/verify-doc-shape.mjs (the rules files'
+//   budget and imports, the long pages' contents), then checks the links offline with lychee (local
+//   files and `#anchors`; its config in lychee.toml). `npm run check` runs it when a Markdown file is
 //   staged, and `npm run check -- --full` always.
 // - `npm run lint:links` checks the web links too; sites that refuse automated clients (403, 405,
 //   429) count as present.
@@ -49,15 +50,11 @@ import '../kit/help.mjs';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 
-const NAMED = [ 'AGENTS.md', 'ARCHITECTURE.md' ];
 const FILE = /`([\w./-]+\.(?:ts|mjs|js|json|html|py|css|txt))`/g;
 
 const SKIP = /(LICENSE|LICENCE|package-lock\.json$)/;
 const OTHERS = /^CREDITS\.md$/;
-const ABSENT = new Map( [
-	// Diátaxis's tutorials folder, named in AGENTS.md's list of the docs' kinds before its first page
-	[ 'docs/tutorials/', [ 'AGENTS.md', 'tools/repo/verify-doc-paths.mjs' ] ],
-] );
+const ABSENT = new Map( [] );
 const PATH = /(?<![\w./@-])(?:docs|skills|tools)\/[\w./*$<{-]*/g;
 
 const top = execFileSync( 'git', [ 'rev-parse', '--show-toplevel' ], { encoding: 'utf8' } ).trim();
@@ -100,8 +97,9 @@ for ( const line of out.split( '\n' ).filter( Boolean ) ) {
 }
 
 const tracked = execFileSync( 'git', [ 'ls-files' ], { cwd: top, encoding: 'utf8', maxBuffer: 1 << 28 } ).split( '\n' ).filter( Boolean );
+const NAMED = tracked.filter( ( f ) => f === 'ARCHITECTURE.md' || f === 'AGENTS.md' || f.endsWith( '/AGENTS.md' ) );
 let named = 0;
-for ( const doc of NAMED.filter( ( d ) => tracked.includes( d ) ) ) {
+for ( const doc of NAMED ) {
 
 	const lines = readFileSync( `${ top }/${ doc }`, 'utf8' ).split( '\n' );
 	lines.forEach( ( text, i ) => {
@@ -124,4 +122,4 @@ if ( missing.length ) {
 
 }
 
-console.log( `every path into docs, skills and tools (${ paths } in ${ files.size } files) and every file named in AGENTS.md and ARCHITECTURE.md (${ named }) names a file` );
+console.log( `every path into docs, skills and tools (${ paths } in ${ files.size } files) and every file named in the rules files and ARCHITECTURE.md (${ named }) names a file` );
