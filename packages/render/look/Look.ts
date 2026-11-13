@@ -30,7 +30,9 @@ import { NEUTRAL_LOOK } from './NeutralLook.ts';
 // `createDayWindows`, AmbientLook.ts `createKeyLift`); the ambient grade's table and its gains
 // under overcast's deck, where the light stage creates the grade's controller (AmbientLook.ts
 // `createAmbientTables`, lighting/AmbientGrade.ts `createAmbientGrade`), which the ambient light's
-// relight reads too; the ambient occlusion's floor and the meadow canopy's media,
+// relight reads too; the haze's keys, rows and per-sky scales, where the sky stage creates them
+// (HazeLook.ts `createHazeTables`), which weather/HazeKeys.ts `hazeKeyAt` reads by the hour and the
+// weather; the ambient occlusion's floor and the meadow canopy's media,
 // which every material's shader reads, in the shared uniforms (shared.ts `createShared`); the
 // local lights' gain (lighting/LocalLights.ts `createLocalLights`, from the stage `createLight`);
 // the sea's detail and distant swell (ocean/SeaDetail.ts, ocean/OceanFFT.ts, from the stage
@@ -182,7 +184,8 @@ export interface DisplayLook {
 	purkinje: { retina: number; strength: number };
 }
 
-// ---- the haze (HazeLook.ts)
+// ---- the haze (HazeLook.ts `createHazeTables`, from the stage `createSky`, read by
+// weather/HazeKeys.ts)
 
 export interface HazeKey {
 

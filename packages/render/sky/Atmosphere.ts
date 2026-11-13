@@ -98,7 +98,7 @@ import { markSkyRetune } from './SkyRetune.ts';
 // square to the planet's radius toward it: the edge rises opposite a set sun and sinks under the
 // horizon as the sun climbs), so it lies on the low sky opposite a low sun and is gone by day.
 // The polariser, the lean, the aerosol aloft (`aerosol`) and the rising sun's haze aerosol weight
-// (look/HazeLook.ts MIST) are tuned together by least squares against the clear sky as the eye
+// (the haze look's mist key) are tuned together by least squares against the clear sky as the eye
 // sees it (the haze over it, no clouds) at sun 0, 2, 12 and noon, with the noon sea's level held;
 // the haze's weights at a low sun were tuned again later with these rows held beside the haze's own
 // (HazeKeys.ts). The sky
