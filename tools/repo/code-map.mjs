@@ -1,13 +1,18 @@
 // Prints the code map: each source file with the first line of its header comment.
-// CPU only, no GPU, well under a second. Pure git and file reads.
+//
+// The map answers "which file does this?" one level below ARCHITECTURE.md's map of the folders: every
+// tracked source file under packages/, app/ and tools/ with its header's first line. It is printed
+// from the files rather than kept as a page, so it cannot fall behind the code: each file's header
+// comment states its purpose in its first line, a sentence of its own (tools/repo/verify-headers.mjs
+// checks that line for every file under packages/ and app/).
+//
+// Usage:
 //   node tools/repo/code-map.mjs                       every file of the three folders
 //   node tools/repo/code-map.mjs packages/render/post  only the files under the folders or paths named
-//   node tools/repo/code-map.mjs --help                this text
 //
-// The map answers "which file does this?" one level below ARCHITECTURE.md's map of the folders. It
-// is printed from the files rather than kept as a page, so it cannot fall behind the code: each
-// file's header comment states its purpose in its first line, a sentence of its own
-// (tools/repo/verify-headers.mjs checks that line for every file under packages/ and app/).
+// Options:
+//   <folder or path> ...  limit the map to the files under these, from the repository's root
+//   -h                    this whole header
 //
 // A file is a tracked file with a code extension (CODE): TypeScript and JavaScript, Python, CSS.
 // Its header is the first comment that is not a licence notice (`/*! ... */`), a directive
@@ -15,10 +20,16 @@
 // In TypeScript and JavaScript the header may follow the imports, the re-exports and the type
 // aliases, which three.js's style puts first; any other statement ends the search, so a comment
 // inside the code is never taken for a header. In Python it is the module's docstring or the first
-// run of `#` comments; in CSS the first block comment.
+// run of `#` comments; in CSS the first block comment. tools/repo/verify-headers.mjs imports
+// `header` and `sourceFiles` from here, so both find a header the same way.
 //
-// Output: a line per file, grouped under its folder, `  <name>  <first line>`, and `(no header)`
-// where none was found. Exit 0, or 1 on an unknown option or a path that names no file.
+// Output: a line per file on stdout, grouped under its folder, `  <name>  <first line>`, and
+// `(no header)` where none was found.
+//
+// GPU lock and browser: neither. Cost: well under a second, CPU only (git and file reads).
+//
+// Exit codes: 0 the map printed; 1 an unknown option or a path that names no file.
+import '../kit/help.mjs';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';

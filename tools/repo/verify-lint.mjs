@@ -1,24 +1,38 @@
-// Checks that each of the code lint's own rules (tools/repo/lint/plugin.mjs, scoped in eslint.config.mjs)
-// reports what it is written for and nothing else, so a selector that silently matches nothing,
-// or a scope that leaves its folder out, fails here rather than letting the error through. CPU
-// only, no GPU, a few seconds.
+// Checks that each of the code lint's own rules reports what it is written for and nothing else.
+//
+// The rules are in tools/repo/lint/plugin.mjs (its header lists them and how to add one), scoped in
+// eslint.config.mjs. A selector that silently matches nothing, or a scope that leaves its folder
+// out, fails here rather than letting the error through. Run it after changing a rule, its scope
+// or its fixture; it is part of `npm run check`. The fixtures are left out of `npm run lint`.
+//
+// Usage:
 //   node tools/repo/verify-lint.mjs
 //
-// Guarantees, each a failure (exit 1) when broken:
-// - Every rule of the plugin has a fixture, tools/repo/lint/fixtures/<rule>.ts, and every fixture names
-//   a rule of the plugin.
+// Options: none.
+//
+// What it checks, each a failure when broken:
+// - Every rule of the plugin has a fixture, tools/repo/lint/fixtures/<rule>.ts, and every fixture
+//   names a rule of the plugin.
 // - A fixture is linted as if it were a file at its rule's place in the code (FIXTURE_PATHS: a
-//   path inside the rule's `files`), with the repository's config, type information included.
-//   Every line it marks with the comment `// reported` is reported by its rule, and nothing else
-//   is reported: no line it leaves unmarked (the correct forms beside the wrong ones, such as
-//   three's `MathUtils.smoothstep` and a class's own `step` for `tsl-method-order`), no other rule
-//   and no parse error.
+//   path inside the rule's `files`; the default a file under packages/render/post/), with the
+//   repository's config, type information included. Every line it marks with the comment
+//   `// reported` is reported by its rule, and nothing else is reported: no line it leaves unmarked
+//   (the correct forms beside the wrong ones, such as three's `MathUtils.smoothstep` and a class's
+//   own `step` for `tsl-method-order`), no other rule and no parse error.
 //
 // What it does not check: the rules' messages, and the scope's exclusions (a folder a rule leaves
 // out is listed in eslint.config.mjs with its reason).
 //
-// Output: a line per rule, then the failures. It takes no options. Exit 0 when every fixture
-// passes, 1 otherwise.
+// Output: a line per rule on stdout (pass or FAIL, how many marked lines were reported), then the
+// failures or a closing line.
+//
+// GPU lock and browser: neither. It runs under the application scheduling policy
+// (tools/kit/qos.mjs).
+//
+// Cost: a few seconds (ESLint with type information).
+//
+// Exit codes: 0 every fixture passes; 1 a failure (listed) or any argument.
+import '../kit/help.mjs';
 import '../kit/qos.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';

@@ -1,71 +1,88 @@
-"""Compare a parity capture set (tools/kit/parity/capture-set.mjs) against a reference set, view by view.
+"""Compares a capture set with a reference set view by view, exactly or within a tolerance.
 
-  uv run --with numpy --with pillow tools/kit/diff-set.py <refDir> <testDir>
-      [--views a,b] [--out dir] [--max-px1 200] [--crops 3] [--crop 256]
-      [--aa-floor | --temporal [--flip]] [--md file.md] [--crops-from ref|test|<dir>|<file.json>]
-      [--jobs 4]
+It answers whether a set of paused captures (tools/kit/parity/capture-set.mjs) holds the
+reference's pixels: identical, within the reference's own repeatability (--aa-floor), or within
+the temporal tolerance (--temporal). capture-set.mjs --check runs it. Which rule fits which set is
+method: tools/kit/parity/README.md. For two single images, use `tools/kit/img.py diff`.
+
+Usage:
+    uv run --with numpy --with pillow tools/kit/diff-set.py <refDir> <testDir> [options]
+    uv run --with numpy --with pillow tools/kit/diff-set.py ref/ test/ --aa-floor --crops-from test
+
+Options:
+    --views a,b          the views compared; default every <view>.png in <refDir>
+    --out <dir>          default <testDir>/diff
+    --max-px1 <n>        pass: fewer than n pixels over 1 level and none over 2; default 200, 0 for identity
+    --crops <n>          worst regions saved per differing view; default 3
+    --crop <px>          their size; default 256
+    --aa-floor           judge by each view's own repeatability (both sets captured with --repeat)
+    --temporal           judge temporal AA captures by the tolerance (not with --aa-floor)
+    --flip               with --temporal: add the mean NVIDIA FLIP, reported only (--with flip-evaluator)
+    --crops-from <src>   cut the named crop anchors: ref, test, a directory or a JSON file
+    --md <file.md>       the table as Markdown too
+    --jobs <n>           views at once, in threads; default 4, or half the cores below 8
 
 Per view (each <view>.png present in both): the max absolute channel difference, the mean absolute
 difference (over all channels), and how many pixels differ by more than 1, 2, 8 and 32 levels (a
 pixel counts when its largest channel difference exceeds the level). `identical` is equality of
-the decoded pixels (equal bytes, or equal arrays once decoded): a PNG's bytes depend on the encoder
-(the capture tools' fast PNG against Playwright's default one), its pixels do not, so sets written
-by either encoder compare alike. For views that differ, it writes <out>/<view>.diff.png (the
-per-pixel max channel difference, amplified x8 and clipped) and the N worst regions as
-side-by-side crops (ref | test | diff x8) at 1:1, chosen as the windows holding the most
-difference, non-overlapping.
---max-px1 is a pass threshold: a view passes when it has fewer than that many pixels over 1 level
-and none over 2; pass 0 to require identity.
+the decoded pixels: a PNG's bytes depend on the encoder (the capture tools' fast PNG against
+Playwright's default one), its pixels do not, so sets written by either encoder compare alike.
 
---aa-floor judges by each view's own repeatability instead (both sets captured with --repeat, so
-<view>.repeat.png exists on both sides). A view passes when the test frame is pixel-identical to the
-reference frame (either capture of each side), or when the reference does not repeat (its A/A pair
-differs) and the cross difference stays within the larger of the two sides' A/A differences (max
-level and the count of pixels over 1 and 2 levels). The test side need not be non-repeatable too:
-a test that repeats while the reference does not passes when its frame lies within the reference's
-spread (noted as such). A view that repeats on the reference must repeat on the test side, and
-must match it pixel for pixel. Comparing a set with itself (refDir = testDir) lists its A/A floor.
+--aa-floor: a view passes when the test frame is pixel-identical to the reference frame (either
+capture of each side), or when the reference does not repeat (its A/A pair differs) and the cross
+difference stays within the larger of the two sides' A/A differences (max level and the count of
+pixels over 1 and 2 levels). A test that repeats while the reference does not passes when its frame
+lies within the reference's spread (noted as such). A view that repeats on the reference must
+repeat on the test side, and must match it pixel for pixel. Comparing a set with itself (refDir =
+testDir) lists its A/A floor.
+
+--temporal judges temporal AA captures (taa, taau) by the tolerance in tools/kit/tolerance.py, whose
+header holds the thresholds, the model and their calibration: per-pixel differences up to a level
+are ignored, the share of pixels over it is bounded on the frame, in every 32 px window and on
+every named crop, and the windows' and crops' mean signed difference bounds coherent shifts under
+the level. A failure counts only after one recapture: the view passes when any pairing of the two
+sides' captures (<view>.png, <view>.repeat.png) passes, and a failing view without a recapture on
+the test side is marked unconfirmed, so capture temporal sets with --repeat. `use` is the largest
+measurement / threshold ratio of the best pairing (pass: at most 1). The crops are those of
+--crops-from, else of the test side's JSON. FLIP is reported only: a frame's mean hides a missing
+flower entirely. MSAA sets stay pixel-exact (the default and --aa-floor).
+
+--crops-from: `ref` or `test` reads <view>.json on that side, a directory reads <view>.json there,
+and a JSON file holds either one capture's `crops` (used for every view) or { view: crops }.
+
 Both sets must come from the same browser build (`browser` in each capture's JSON): a mismatch is
-reported as a warning, since no frame then matches pixel for pixel. --md writes the table as
-Markdown too.
+reported as a warning, since no frame then matches pixel for pixel. Compare sets of one build, or a
+stored set verified for the other build (tools/kit/reference.mjs).
 
---temporal judges temporal AA captures (taa, taau) by the tolerance in tolerance.py instead: their
-paused frames do not repeat pixel for pixel (the rest averages 40 frames and freezes the GPU's
-own render pass splits), so per-pixel differences up to a level are ignored and the share of pixels over it
-is bounded on the frame, in every 32 px window and on every named crop, with the windows' and
-crops' mean signed difference bounding coherent shifts under the level (thresholds and their
-calibration: tolerance.py). A failure counts only after one recapture: the view passes when any
-pairing of the two sides' captures (<view>.png, <view>.repeat.png) passes, and a failing view
-without a recapture on the test side says so. `use` is the largest measurement / threshold ratio of
-the best pairing (pass: <= 1). Comparing a set with itself (refDir = testDir) judges each view's
-A/A pair. The crops are those of --crops-from, else of the test side's JSON. --flip adds the mean
-NVIDIA FLIP of the frame, reported only (needs `--with flip-evaluator`). MSAA sets stay pixel-exact
-(the default and --aa-floor).
+Output: a table on stdout, one row per view; <out>/report.json with everything. For views that
+differ, <out>/<view>.diff.png (the per-pixel max channel difference, x8 and clipped) and the N
+worst regions as side-by-side crops (ref | test | diff x8) at 1:1, the windows holding the most
+difference, non-overlapping. With --crops-from, per anchor its difference counts and a sheet
+<out>/<view>.<anchor>.png, and per view <out>/<view>.anchors.png (the test frame at a quarter size
+with its anchor boxes).
 
---crops-from cuts the named crop anchors (views.mjs; `crops` in each capture's JSON) from both
-frames: `ref` or `test` reads <view>.json on that side, a directory reads <view>.json there, and a
-JSON file holds either one capture's `crops` (used for every view) or { view: crops }. Each anchor
-gets its own difference counts and a ref | test | diff x8 sheet (<out>/<view>.<anchor>.png), and
-each view an overview of where its anchors fall (<out>/<view>.anchors.png, the test frame at a
-quarter size).
+GPU lock and browser: neither; it reads PNG files. On macOS the process and its threads run with
+the application scheduling policy (tools/kit/qos.mjs).
 
-Writes <out>/report.json (default <out>: <testDir>/diff) and prints a table; exit code 1 if any
-view fails (or is missing).
+Cost: seconds for a set; views run in parallel threads. The output does not depend on --jobs: the
+table prints in view order and every mean is an exact integer sum divided once.
 
-Speed: views are compared in parallel threads (numpy and Pillow's PNG codec release the GIL), --jobs
-of them at once: by default 4, or half the CPU's cores when it has fewer than 8, since captures and
-world generation share the CPU (--jobs 1 runs them one after the other). Each view decodes each of
-its PNGs once and keeps them as uint8; the output is the same as one view at a time, printed in view
-order. Window sums are exact integer sums on a coarse integral image (tolerance.window_sums), and
-every mean is an exact integer sum divided once, so no number depends on the order of summation.
-On macOS the process and its threads run with the application scheduling policy (tools/kit/qos.mjs
-says why; see QOS below).
+Exit codes: 0 every view passes; 1 a view fails or is missing; 2 a usage error (--temporal with
+--aa-floor).
 """
-import argparse
-import json
-import os
 import sys
-from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from help import answer_help  # noqa: E402
+
+answer_help(__file__)
+
+import argparse  # noqa: E402
+import json  # noqa: E402
+import os  # noqa: E402
+import sys  # noqa: E402
+from concurrent.futures import ThreadPoolExecutor  # noqa: E402
 
 # The application scheduling policy on macOS (tools/kit/qos.mjs says why): this process re-executes
 # itself in place under taskpolicy -a, and its pool threads ask for the user-initiated QoS, which
@@ -102,6 +119,8 @@ ap.add_argument("--md", default=None)
 ap.add_argument("--crops-from", default=None)
 ap.add_argument("--temporal", action="store_true")
 ap.add_argument("--flip", action="store_true")
+# views compared at once: 4, or half the cores when the CPU has fewer than 8, since captures and
+# world generation share the CPU
 ap.add_argument("--jobs", type=int, default=min(4, max(1, (os.cpu_count() or 2) // 2)))
 a = ap.parse_args()
 if a.temporal and a.aa_floor:
@@ -325,6 +344,10 @@ elif a.temporal:
 else:
     print(f"{'view':24} {'ident':5} {'max':>4} {'mean':>8} " + " ".join(f"{'>' + str(l):>9}" for l in LEVELS) + "  pass")
 sys.stdout.flush()
+# Views run in threads: numpy and Pillow's PNG codec release the GIL. Each view decodes each of its
+# PNGs once and keeps them as uint8; the output is the same as one view at a time, printed in view
+# order. Window sums are exact integer sums on a coarse integral image (tolerance.window_sums), and
+# every mean is an exact integer sum divided once, so no number depends on the order of summation.
 with ThreadPoolExecutor(max_workers=max(1, a.jobs), initializer=raise_thread) as pool:
     # map() yields in view order: the table prints as the views finish, in order
     for v, (lines, r, row, ok) in zip(views, pool.map(compare, views)):

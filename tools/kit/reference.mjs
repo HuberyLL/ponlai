@@ -1,50 +1,110 @@
-// The reference store: capture sets and clip entries of a commit, kept under `<root>/<sha>/...`
-// and shared by every task and process that checks against that commit, so a reference is
-// captured once per sha, tool version and browser build, never once per task.
+// Keeps the reference captures of a commit once, shared by every process that checks against it.
 //
-// A reference directory is complete for what its manifest, `complete.json`, lists: it is written
-// last (whole, by a rename), after the captures it lists, so a half-written set is never read as
-// complete. Its key says what the captures depend on:
-//   - `tool`: a hash of the capture tools' sources (TOOL_FILES; `toolFiles` keeps each file's own
-//     hash, so a forced recapture names the files that changed);
-//   - `browser`: the browser build (Playwright's Chromium or CHROME_PATH, and its version): frames
-//     may differ across builds, so a set stored under another build is verified before reuse (below);
-//   - the options that change pixels (tier, aa, size and device pixel ratio, extra query, the
-//     capture tool's own options; for a clip entry its clip, view, frame sampling and anchors);
-//   - for a set, `pages`: how its views were reached, 'jump' or 'view' (setKey).
-// What it covers (`coverage`) is recorded apart from the key: a set's views, each with or without
-// its repeat capture. A request whose key matches but which needs more (another view, a repeat)
-// extends the set in place; anything that needs a different key is captured afresh, and the old
-// directory is moved aside to `<root>/<sha>/.replaced/` (safe to delete).
+// A reference (a capture set, or a clip entry of baseline.mjs) is kept under `<root>/<sha>/` and
+// captured once per commit, capture-tool version and browser build, never once per task. A process
+// that runs the usual command gets reuse and waiting by itself: tools/kit/parity/capture-set.mjs
+// (`--reference`, `--check`) keeps capture sets here, tools/kit/parity/baseline.mjs its `baseline`
+// and ground-truth entries, and tools/kit/parity/carry.mjs fills an entry from an earlier commit
+// through the same claim. When to recapture a reference is method: tools/kit/parity/README.md.
 //
-// Who captures: a process that finds nothing usable takes the claim, `<dir>/.capturing/owner.json`
-// (pid, host, start, key, what it will cover), under a short mutex (`.<name>.mutex` beside the
-// directory); a process that finds a live claim waits (polling every 5 s, a line a minute) and then
-// uses the result, first freeing the GPU slot a `gpu-lock.mjs run --shared` wrapper above it holds
-// (yieldAncestorSlot: an idle wait must not keep one of the slots); a claim whose process is
-// gone is stale and taken over (the partial captures are discarded, or kept when a manifest already
-// vouches for them and the claim only extended it).
-// So two tasks that need the same reference at once capture it once.
-//
-// A new browser build (a Chrome auto-update) leaves most frames unchanged, and recapturing every set
-// for it cost close to an hour. So a set whose stored key differs from the request's only by the
-// browser build is verified instead (under the claim, the stored set untouched meanwhile): up to
-// three of its stored views (sampleViews: the island by day, vegetation, water, preferring views the
-// request needs) are captured with the new build into `<root>/<sha>/.verify/` and compared with
-// the stored frames, an MSAA (or aa=off) view by decoded pixels, a temporal one (aa=taa|taau|fsr3|gt)
-// with diff-set.py --temporal. If they match, the manifest records the build in `verifiedBrowsers`
-// and the set is reused (keyMatches accepts a key that differs only by a verified build); if not,
-// the set is captured afresh as for any other key change, starting from the samples. Clip entries
-// (baseline.mjs) are not verified: an entry is one capture, so checking it costs as much as
-// capturing it; a new build recaptures them.
-//
+// Usage:
+//   node tools/kit/reference.mjs status <dir>
 //   import { ensureReference, setKey, clipKey } from './reference.mjs';
-//   node tools/kit/reference.mjs status <dir>     (every manifest and claim under a directory)
 //
-// capture-set.mjs (`--reference`, `--check`) and baseline.mjs (the `baseline` and ground-truth
-// entries) use it; the layout and the manifest are documented in tools/kit/parity/README.md.
-// baseline.mjs's carry-over (carry.mjs) fills an entry through the same claim: its `capture` clones
-// an earlier commit's entry and adds `carriedFrom` to the manifest (status `carried`).
+// Options: none. `status` lists every manifest and claim under `<dir>` (a commit's directory; a
+// short sha in the path names the full one's).
+//
+// Layout (set names such as S1 or FAST3 are the caller's):
+//   <root>/<sha>/                        the full sha (a short one in a path is rewritten to it)
+//     <set>/                             a capture set: <view>.png, <view>.repeat.png, .json, .log
+//       complete.json                    its manifest, written last
+//       .capturing/owner.json            while a process captures or extends it
+//     baseline/<tier>/rest/<view>/       baseline.mjs entries (capture-clip folders), each with its
+//     baseline/<tier>/clip/<clip>[@<view>]/  own complete.json (and .capturing/ while captured)
+//     gt/<tier>/..., gt-hi/high/...      the ground truth's entries, the same way
+//     <label>/...                        a test side's entries (baseline.mjs --label): not references
+//     carry/<A>/                         carry.mjs's checks from commit A
+//     .replaced/<path with ~>@<time>/    a reference replaced by a fresh capture (safe to delete)
+//     .verify/<path with ~>@<time>/      sample views checked against a new browser build (removed)
+//     .<name>.mutex                      beside a reference for milliseconds while a process takes
+//                                        its claim
+//
+// The manifest, `complete.json`, is written last, whole, by a rename, so a half-written directory is
+// never read as complete. It vouches only for what it lists. Its fields:
+// - `key`, what the pixels depend on. `tool` hashes the capture tools' sources (the configuration's
+//   `reference.toolFiles` in tools/project.mjs, one list for sets and one for clip entries, so a
+//   change to the clip tools leaves sets valid and the other way round); `toolFiles` keeps each
+//   file's hash, so a forced recapture names the files that changed. `browser` is CHROME_PATH or
+//   Playwright's Chromium, and its version. Then the options that change pixels: for a set its
+//   tier, aa, size and device pixel ratio, extra query, capture.mjs options and `pages` (`jump`: a
+//   page per worker, most views by the scene jump, also when missing; `view`: a page per view,
+//   neither standing in for the other; a build without the exact jump is stored as `view` with
+//   `jumpless: true` and serves both); for a clip entry its tier, aa, size, q, clip, view, full,
+//   every, dense and `anchors` (the hash of `--anchors-from`'s anchors, null for its own).
+// - `coverage`, apart from the key: a set's views, each with `repeat` (the second fresh-load
+//   capture exists), `identical` (the two hold identical pixels: the view's A/A) and, for an ad-hoc
+//   view, `def` (its definition's hash); a clip entry is `{ "captured": true }`.
+// - `rounds`: each capture, extension or browser verification, with its reason.
+// - `verifiedBrowsers` (sets only): other builds whose sample views matched the stored frames. The
+//   key keeps the build that captured the set, so two builds in use at once never flip it.
+// - `url` (where it was captured from) and, for a carried entry, `carriedFrom`.
+//
+// What a request (`ensureReference`) does:
+// 1. A manifest with the same key covers the request: reused. Another set of the same commit with
+//    the same key that covers it serves too (S1 serves FAST3).
+// 2. A live process holds the claim (`.capturing/owner.json`: pid, host, start, key, what it will
+//    cover) on this directory or on a set that will cover the request: wait, polling every 5 s and
+//    printing a line a minute, then reuse. A `--reference` or baseline run under
+//    `gpu-lock.mjs run --shared` first frees the slot its wrapper holds, since the wait needs no GPU
+//    (yieldAncestorSlot); a `--check` keeps it for its test side, captured meanwhile.
+// 3. Otherwise capture, only with a URL of the commit, saying why: the same key with less coverage
+//    (`not captured yet: ...`) extends the set in place and rewrites the manifest with the union;
+//    another key (the capture tools changed, and which files; the browser build; an option), no
+//    manifest at all, or `--recapture-reference` moves the old directory to `.replaced/`; a claim
+//    whose process is gone (`the capture by pid N did not finish`) is taken over and its partial
+//    captures discarded, or kept when a manifest already vouched for them and the claim only
+//    extended it. Without a URL the tool stops and says what it would need.
+//
+// The claim is taken under the short mutex, so of several processes that find a reference missing
+// exactly one captures it. A claim names a pid on this host; when `ps` cannot answer in time the
+// process counts as alive, since taking over a live capture would put two writers in one directory.
+// A process releases and records only a claim that is still its own.
+//
+// Before capturing, the store checks which worktree serves the URL's port (`lsof`). It refuses a
+// server whose commit differs from the reference's in what the build reads (the configuration's
+// `reference.buildInputs`; a branch that changed only tools or docs serves the same build) or that
+// has uncommitted changes there, and warns when `dist/` is older than the last commit of those
+// inputs.
+//
+// Browser updates: a minor browser build rarely changes frames, and recapturing every set for one
+// costs a full reference round. So a set whose stored key differs from the request's only by
+// `browser` is verified under the claim, the stored set untouched meanwhile. Up to three stored
+// views (sampleViews: one each of the island by day, vegetation and water, preferring views the
+// request needs, and leaving out MSAA views whose stored A/A differed) are captured with the new
+// build into `.verify/` and compared with the stored frames: MSAA and aa=off by decoded pixels, the
+// temporal modes (taa, taau, fsr3, gt) with tools/kit/diff-set.py --temporal. All match: the build
+// joins `verifiedBrowsers` and the set is reused, and extended with the new build when a request
+// needs more. Any differ: the set is captured afresh, the samples kept as its first captures.
+// `--recapture-reference` skips this. A sibling set (S1 serving FAST3) is not verified on another
+// set's request, and clip entries are recaptured under a new build: an entry is one capture, so
+// checking it costs as much as capturing it. carry.mjs accepts a verified build.
+//
+// Output: `status` prints a line per manifest or claim: the path, the kind, `tools current` or
+// `tools CHANGED`, the browser build (and the builds it is verified for), a set's views, repeats,
+// views not repeatable and options, or a clip entry's aa, tier, clip and view, `carried from`, and
+// a live or stale claim; `no reference under <dir>` when there is none. As a module it logs each
+// decision (`reference <name>: reused`, `... captured in N min`) through the caller's log (stdout
+// by default).
+//
+// GPU lock and browser: `status` takes neither. As a module it captures only through the `capture`
+// callback its caller passes, which takes the GPU lock (docs/reference/gpu-lock.md); it runs
+// tools/kit/diff-set.py itself for a temporal set's browser verification.
+//
+// Cost: `status` is under a second. A reuse is a file read; a capture or verification costs what
+// the caller's capture costs.
+//
+// Exit codes: 0 `status` printed; 2 another command or no directory.
+import './help.mjs';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, rmdirSync, statSync, writeFileSync } from 'node:fs';

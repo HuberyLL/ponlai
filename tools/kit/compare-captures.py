@@ -1,15 +1,36 @@
-"""Measure matched overview captures and save unretouched comparison crops.
+"""Measures two matched overview captures region by region and saves unretouched comparison crops.
 
-Usage: uv run --with numpy --with pillow tools/kit/compare-captures.py before.png after.png
-The metrics are pixels.metrics (tools/kit/pixels.py), which `tools/kit/img.py stats` reports too.
+It answers how a change moved the island's main regions (the cliff, the meadow, the open water and
+the water's glare) in one before-and-after pair of overview shots: the same metrics per region,
+and the crops side by side for the eye.
+
+Usage:
+    uv run --with numpy --with pillow tools/kit/compare-captures.py before.png after.png
+
+Options: none. Both captures are the overview camera at 1672 by 941 pixels; any other size stops
+the tool with an assertion.
+
+Output: per region its box and the metrics of each image (pixels.metrics in tools/kit/pixels.py,
+which `tools/kit/img.py stats` reports too: mean RGB, luma mean and spread, local contrast) as JSON
+on stdout and in artifacts/comparison/metrics.json, and in artifacts/comparison/ each region's
+before and after crops and a pair with both side by side.
+
+GPU lock and browser: neither; it reads two PNG files. Cost: under a second.
+
+Exit codes: 0 done; 1 a missing file or captures of another size.
 """
-import json
 import sys
 from pathlib import Path
 
-from PIL import Image, ImageDraw
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from help import answer_help  # noqa: E402
+
+answer_help(__file__)
+
+import json  # noqa: E402
+
+from PIL import Image, ImageDraw  # noqa: E402
+
 from pixels import metrics  # noqa: E402
 
 

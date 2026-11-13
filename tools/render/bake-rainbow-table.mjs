@@ -5,11 +5,17 @@
  * Licensed under the MIT License; see ../packages/render/sky/VolumetricCloudsCS1.LICENSE.txt.
  */
 
-// Bakes the rainbow's colours into packages/render/sky/RainbowTable.data.ts: how much of the sun falling rain
-// sends back at each angle from the antisolar point, per linear sRGB channel, as a phase function
-// relative to isotropic scattering (so 1 means "as bright as an isotropic scatterer").
+// Bakes the rainbow's colours by angle into packages/render/sky/RainbowTable.data.ts.
 //
+// The table holds how much of the sun falling rain sends back at each angle from the antisolar
+// point, per linear sRGB channel, as a phase function relative to isotropic scattering (so 1 means
+// "as bright as an isotropic scatterer"). Run it after a change to the bake below; the bake is
+// deterministic, so the committed table can be regenerated and compared byte for byte.
+//
+// Usage:
 //   node tools/render/bake-rainbow-table.mjs
+//
+// Options: none.
 //
 // Airy's theory of the rainbow (1838) per wavelength and drop size: near Descartes' ray the
 // wavefront leaving a drop is cubic and its far field is Ai^2, scaled so that away from the bow
@@ -18,9 +24,18 @@
 // wavelengths through the CIE 1931 observer into linear sRGB (white balanced: a grey scatterer is
 // exactly grey), smeared by the sun's 0.53 degree disc. Out of it come violet at about 40.6
 // degrees and red at 42.5, a brighter sky inside the primary, Alexander's dark band and the
-// fainter secondary at 50 - 53.5 degrees with its colours reversed. The bake is deterministic, so
-// the committed table can be regenerated and compared byte for byte.
-
+// fainter secondary at 50 - 53.5 degrees with its colours reversed.
+//
+// Output: a sanity line on stdout (where each colour peaks in the primary and the secondary, the
+// dark band's depth, the sky's brightness inside the bow), then the file written and its size. It
+// overwrites packages/render/sky/RainbowTable.data.ts.
+//
+// GPU lock and browser: neither.
+//
+// Cost: seconds, CPU only.
+//
+// Exit codes: 0 the table is written; 1 an error (thrown).
+import '../kit/help.mjs';
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 

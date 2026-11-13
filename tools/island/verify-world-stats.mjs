@@ -1,37 +1,58 @@
-// Statistical checks for the chunked world generator (plain node, CPU only):
-//   node tools/island/verify-world-stats.mjs [--seeds 1,2] [--grow 0,8] [--threads n]
+// Checks that the chunked world keeps the statistics the island's look was tuned on: meadow, stones and scars.
 //
-// tools/island/verify-world-chunks.mjs proves the chunks' seams and locality (a chunk equals itself built
-// incrementally, from scratch and as part of a block), not that what they make still has the
-// statistics the island's look was tuned on. This probe keeps those: for every seed and growth
-// step it builds every chunk of the whole island (`buildChunk` on a pool of worker threads, each
-// job handed its window of the land field) and measures the union of the chunks' owned items.
-// The contact shade is off (`contactOcclusion: false`): it only sets the anchors' sky visibility,
-// which no statistic counts.
+// It answers "does what the chunks make still have the island's numbers": tools/island/
+// verify-world-chunks.mjs proves the chunks' seams and locality (a chunk equals itself built
+// incrementally, from scratch and as part of a block), not the statistics. Run it after a change to
+// the world's generator, with verify-world-chunks.
 //
-//   meadow  the turf anchors of every chunk, per m^2 of land, against the counts before the
-//           anchors were hashed (M2): the sum over the grown islands run (step 8
-//           on) within 5 %; starting islands printed only. The open meadow's anchors (out of the
-//           groves: BambooGroves.ts `groveAt` below OPEN) and the groves' floor's print beside them.
-//           (The blades are generated on the GPU as they draw, Grass.ts: nothing to count here.)
-//   stones  on each seed and step run: no two stones overlap, every crown lies at or below
-//           -1.30 m, every stone lies within its class's reach of its cell (`checkStones`). Once
-//           per run, over seeds 1 - 6 at steps 0, 8 and 16, per 100 m of coast against the
-//           placement's own counts on the same islands: each class within 20 % (TODAY), so are the
-//           large stones (SIZES), and stones of 0.6 m or more within 2.5 m of the coast lie denser
-//           below the wall's scars than elsewhere (3 times when the counts were taken). The density islands
-//           place each chunk's stones from its window exactly as `buildChunk` does (its footprint,
-//           local island solid and floor), with their classes; on the seeds and steps run, those
-//           are checked equal to the built chunks' stones.
-//   scars   on each seed and step run, every scar of the cliff, measured in the chunk that holds
-//           its anchor on that chunk's own wall (a CliffWall over its window): the rock it cuts lies
-//           within its reach of its anchor (tier A 4.5 m, tier B 3 m), so the clamp of its box
-//           trims nothing, and where it breaks off along the octagon round its anchor the rock its
-//           own planes would have cut beyond it above y -1 is at most 0.6 m thick (`chunkScars`).
+// Usage:
+//   node tools/island/verify-world-stats.mjs [--seeds 1,2] [--grow 0,8] [--threads n] [--force]
 //
-// Every failed bound prints FAIL and sets the exit code; the run goes on to print every number.
-// A pass is recorded (tools/island/verify-cache.mjs): a later run with the same arguments, node and source
-// files (the script's whole import graph) prints that it was skipped and exits 0; --force runs it.
+// Options:
+//   --seeds a,b    the seeds (1,2)
+//   --grow a,b     the growth steps measured (0,8)
+//   --threads n    the worker threads (min( 8, cores - 4 ), at least 1)
+//   --force        runs even when these inputs passed before
+//
+// For every seed and growth step it builds every chunk of the whole island (`buildChunk` on a pool of
+// worker threads, each job handed its window of the land field) and measures the union of the
+// chunks' owned items. The contact shade is off (`contactOcclusion: false`): it only sets the anchors'
+// sky visibility, which no statistic counts.
+//   meadow  the turf anchors of every chunk, per m^2 of land, against the counts from before the
+//           anchors were hashed: the sum over the grown islands run (step 8 on) within 5 %; starting
+//           islands printed only. The open meadow's anchors (out of the groves: BambooGroves.ts
+//           `groveAt` below OPEN) and the groves' floor's print beside them. (The blades are generated
+//           on the GPU as they draw, Grass.ts: nothing to count here.)
+//   stones  on each seed and step run: no two stones overlap, every crown lies at or below -1.30 m,
+//           every stone lies within its class's reach of its cell (`checkStones`). Once per run, over
+//           seeds 1 - 6 at steps 0, 8 and 16, per 100 m of coast against the placement's own counts on
+//           the same islands: each class within 20 % (TODAY), so are the large stones (SIZES), and
+//           stones of 0.6 m or more within 2.5 m of the coast lie denser below the wall's scars than
+//           elsewhere (3 times when the counts were taken). The density islands place each chunk's
+//           stones from its window exactly as `buildChunk` does (its footprint, local island solid
+//           and floor), with their classes; on the seeds and steps run, those are checked equal to
+//           the built chunks' stones.
+//   scars   on each seed and step run, every scar of the cliff, measured in the chunk that holds its
+//           anchor on that chunk's own wall (a CliffWall over its window): the rock it cuts lies
+//           within its reach of its anchor (tier A 4.5 m, tier B 3 m), so the clamp of its box trims
+//           nothing, and where it breaks off along the octagon round its anchor the rock its own
+//           planes would have cut beyond it above y -1 is at most 0.6 m thick (`chunkScars`).
+//
+// A pass is recorded (tools/island/verify-cache.mjs, whose header has the key): a later run with the
+// same arguments, node version and source files (the script's whole import graph, a comment
+// included) prints `skipped, these inputs passed at <commit> on <time>` and exits 0. Failures and
+// interrupted runs record nothing. The records live in the main checkout's artifacts/verify-cache/,
+// shared by every worktree; delete the folder to forget them.
+//
+// Output: stdout, every number measured; a failed bound prints FAIL and the run goes on.
+//
+// GPU lock and browser: neither (docs/reference/gpu-lock.md); plain node, CPU only.
+//
+// Cost: a build of every chunk of each island measured, plus the density islands of seeds 1 - 6, on
+// the worker pool; a recorded pass only hashes the sources.
+//
+// Exit codes: 0 every bound held, or the run was skipped; 1 a bound failed.
+import '../kit/help.mjs';
 import { Worker, isMainThread, parentPort } from 'node:worker_threads';
 import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';

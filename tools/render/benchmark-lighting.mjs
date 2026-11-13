@@ -1,9 +1,32 @@
-// Compare production URLs in one browser/page, alternating A/B/B/A to reduce clock drift.
-// Usage: node tools/render/benchmark-lighting.mjs <before URL> <after URL>
-// Its pages are paused in the test mode, which bound their GPU queue to two frames
-// (packages/render/post/FramePacer.ts, "A paused page's queue"): a build from before that bound queues without
-// limit, so between builds on either side of it the paused pages' back-pressure differs, and so may
-// their frame times.
+// Times a paused page of two builds in one browser page, alternating A B B A against clock drift.
+//
+// It loads each build's paused debug page (`paused&t=12&dpr=1.5&frameRate=0`: the loop drawing at
+// every refresh, in a browser without vsync) at a 2400 by 1500 viewport in the order before, after, after, before, waits 350 frames, and averages the
+// diagnostics' `frameMs` over four one-second samples per load. It gives a quick frame-time delta
+// of a paused frame; a change's frame time is measured with tools/render/profile-frame.mjs
+// (`--compare`), which reports per-pass GPU times and intervals.
+//
+// Usage:
+//   node tools/render/benchmark-lighting.mjs <before url> <after url>
+//
+// Options:
+//   before url, after url   the two servers (production previews: tools/kit/serve.mjs preview)
+//
+// Its pages are paused in the test mode, which bounds their GPU queue to two frames
+// (packages/render/post/FramePacer.ts, A paused page's queue): a build from before that bound
+// queues without limit, so between builds on either side of it the paused pages' back-pressure
+// differs, and so may their frame times.
+//
+// Output: the summary (before, after and delta in ms), each load's mean and the page's errors as
+// JSON on stdout; the samples too in artifacts/verification/lighting-performance.json.
+//
+// GPU lock and browser: takes the GPU lock alone (docs/reference/gpu-lock.md), since it times
+// frames, and opens headless Chrome (CHROME_PATH, else Playwright's Chromium).
+//
+// Cost: four page loads of about 350 frames each, plus four seconds of samples per load.
+//
+// Exit codes: 0 done; 1 not two urls, or a page logged an error (a failed assertion is thrown).
+import '../kit/help.mjs';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from '../kit/gpu-lock.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';

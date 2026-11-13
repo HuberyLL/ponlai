@@ -1,10 +1,36 @@
-// Headed browser runs (profile-frame --display, any script that opens a visible Chrome window) take
-// over the screen of whoever is using the machine. They run only while the user has allowed them:
-// a file under the user's home holds the time the permission ends. Everything else runs headless.
-// announceHeadedRun posts a desktop notification 10 s before a headed window opens.
-//   node tools/kit/display-gate.mjs allow [hours]   (default 8)
+// Allows, forbids or reports headed browser runs, which take over the user's screen.
+//
+// A headed run (tools/render/profile-frame.mjs `--display`, any script that opens a visible Chrome
+// window) takes over the screen of whoever uses the machine, so it runs only while the user allows
+// it. When a run may be headed at all, and how many scenes it covers, is the policy in
+// docs/reference/gpu-lock.md; this tool is the switch. Run `status` before a headed
+// run; record a run that is not allowed now as pending instead.
+//
+// Usage:
+//   node tools/kit/display-gate.mjs allow [hours]
 //   node tools/kit/display-gate.mjs deny
-//   node tools/kit/display-gate.mjs status          (exit code 0 when allowed, 1 when not)
+//   node tools/kit/display-gate.mjs [status]
+//
+// Options:
+//   allow [hours]   allows headed runs for that many hours (default 8)
+//   deny            ends the permission now
+//   status          says whether headed runs are allowed now (the default command)
+//
+// The permission is a file under the user's home, `.ponlai/display-allowed`, holding the time it
+// ends (`GATE_FILE`). Scripts read it through this module: `requireDisplayAllowed( label )` throws
+// unless headed runs are allowed now, and `profile-frame --display` refuses without it.
+// `announceHeadedRun( { label, scenes, minutes } )` posts a desktop notification (osascript) and
+// then waits 10 s before the window opens: the user asked to be told, not asked. A notification
+// that fails is logged on stderr and never stops the run.
+//
+// Output: one line on stdout, `headed runs allowed until <local time>` or `headed runs not
+// allowed`. `allow` writes the file; `deny` removes it.
+//
+// GPU lock and browser: neither. Cost: under a second.
+//
+// Exit codes: 0 done, or allowed for `status`; 1 not allowed for `status`, an unknown command or
+// hours that are not a positive number.
+import './help.mjs';
 import { execFile } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';

@@ -1,11 +1,29 @@
-// Checks the island's growth (packages/island/world/IslandGrowth.ts) over many seeds, CPU only (plain node):
-// the coast's shape at every checked step (traced by marching squares at 0.5 m over the land's
-// signed distance), that a grown land equals the same steps taken one at a time through a saved
-// land, that old land is never lost and that the land stays the shelf's reach (Bathymetry.ts
-// SHELF_REACH) inside the lattice at the growth horizon: the land and the ring of shallows the
-// shelf shapes round it, which the island view frames with it, lie on the lattice. Writes a sheet of the first eight seeds to artifacts/growth/shape-sheet-<label>.png.
+// Checks the island's growth over many seeds: the coast's shape, growth by single steps, the lattice's margin.
 //
-// node tools/island/verify-growth-shape.mjs [--label name] [--seeds 32]
+// It answers "does the island grow into a sound shape on every seed" (packages/island/world/
+// IslandGrowth.ts): the coast's shape at every checked step (traced by marching squares at 0.5 m over
+// the land's signed distance: its solidity, elongation and share along the lattice axes), that a
+// grown land equals the same steps taken one at a time through a saved land, that old land is never
+// lost, and that the land stays the shelf's reach (Bathymetry.ts SHELF_REACH) inside the lattice
+// at the growth horizon: the land and the ring of shallows the shelf shapes round it, which the
+// island view frames with it, lie on the lattice.
+//
+// Usage:
+//   node tools/island/verify-growth-shape.mjs [--label name] [--seeds 32]
+//
+// Options:
+//   --label name   names the sheet (latest)
+//   --seeds n      how many seeds are checked (32)
+//
+// Output: artifacts/growth/shape-sheet-<label>.png, a sheet of the first eight seeds; stdout, PASS
+// with the limits and the count of assertions, or FAIL with every failure.
+//
+// GPU lock and browser: neither (docs/reference/gpu-lock.md); plain node, CPU only.
+//
+// Cost: the growth of every seed to its horizon, in one thread.
+//
+// Exit codes: 0 passed; 1 a check failed.
+import '../kit/help.mjs';
 
 import { assert, assertions } from '../kit/assert-count.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';

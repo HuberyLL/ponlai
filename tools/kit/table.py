@@ -2,10 +2,24 @@
 # requires-python = ">=3.10"
 # dependencies = []
 # ///
-"""Several labels' metrics side by side, per crop and metric, with ratios to a base column.
+"""Tables several labels' metrics side by side, per crop and metric, with ratios to a base column.
 
-    uv run tools/kit/table.py <metrics.json | label dir>... [--names a,b,...] [--base <name>]
-        [--refs msaa,gt] [--entries glob,...] [--metrics m1,m2] [--crops c1,c2] [--csv out.csv]
+It answers how several runs compare on the same crops: baseline.mjs labels or clip-metrics.py
+outputs, a column each, beside the references they were measured against. Use it instead of a
+per-task table script. For gate verdicts, use tools/kit/gates.py.
+
+Usage:
+    uv run tools/kit/table.py <metrics.json | label dir>... [options]
+    uv run tools/kit/table.py <root>/<sha>/baseline <root>/<sha>/taau --names msaa,taau
+
+Options:
+    --names a,b,...      the columns' names, one per input; default each input's directory name
+    --base <name>        the column ratios divide by; default the first reference shown, else the first input
+    --refs msaa,gt       the reference roles shown as columns; default msaa,gt
+    --entries glob,...   keep the entries whose name matches a glob
+    --metrics m1,m2      keep only these metrics, in this order
+    --crops c1,c2        keep only these crops, in this order
+    --csv <out.csv>      write the same rows at full precision
 
 Each input is a metrics.json, or a directory holding one (a baseline.mjs label dir
 `<root>/<sha>/<label>/`, or a clip-metrics.py output dir). Both formats are read:
@@ -17,30 +31,38 @@ Each input is a metrics.json, or a directory holding one (a baseline.mjs label d
 
 Every crop holds a role per image ("test", the image measured; "msaa" and, when measured, "gt",
 its references), each a dict of metric -> value. A column of the table is an input's "test" values;
-the reference roles named by --refs (default msaa,gt) add a column each, read from the first input
-that has the entry, because every input of one comparison is measured against the same references.
-A column with no value in an entry's table (a reference not measured, an input without that
-entry) is left out of it.
+the reference roles named by --refs add a column each, read from the first input that has the
+entry, because every input of one comparison is measured against the same references. A column
+with no value in an entry's table (a reference not measured, an input without that entry) is left
+out of it.
 
-Rows are crop x metric, in the first input's order; --crops and --metrics keep only those (in the
-order given), --entries keeps the entries whose name matches a glob. When every input holds a
-single entry, those entries are compared whatever their names (two clip-metrics runs of different
-test dirs); otherwise entries are matched by name.
+Rows are crop x metric, in the first input's order. When every input holds a single entry, those
+entries are compared whatever their names (two clip-metrics runs of different test dirs);
+otherwise entries are matched by name. Every column other than the base gets a "<col>/<base>"
+ratio. A missing value or a zero base gives "-".
 
-Columns are named by --names (one per input), else by the input's directory name. --base names the
-column the ratios divide by (default: the first reference shown, else the first input); every other
-column gets a "<col>/<base>" ratio. A missing value or a zero base gives "-".
-
-Markdown goes to stdout (values to 3 decimals, ratios to 2); --csv writes the same rows at full
+Output: Markdown on stdout (values to 3 decimals, ratios to 2); --csv writes the same rows at full
 precision. Nothing is measured: every number is read from the files, or is a ratio of two of them.
-"""
 
-import argparse
-import csv
-import fnmatch
-import json
+GPU lock and browser: neither; it reads JSON files. Cost: under a second.
+
+Exit codes: 0 the table printed; 1 an input without metrics.json or of neither format, names that
+do not match the inputs or repeat, no entry to show, a --base that is not a column; 2 a usage error.
+"""
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from help import answer_help  # noqa: E402
+
+answer_help(__file__)
+
+import argparse  # noqa: E402
+import csv  # noqa: E402
+import fnmatch  # noqa: E402
+import json  # noqa: E402
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 
 def load( arg ):

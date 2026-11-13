@@ -1,13 +1,26 @@
-// Checks that git tracks nothing under .claude/ but the public skills' links. The skills live in
-// skills/<name>/; Claude Code loads a project's skills from .claude/skills/, so each public skill is
-// a tracked symbolic link there, `.claude/skills/<name>` -> `../../skills/<name>`, and .gitignore
-// lets through only the links it names (everything else under .claude/ is local and private).
+// Checks that git tracks nothing under .claude/ but the public skills' links.
+//
+// The skills live in skills/<name>/; Claude Code loads a project's skills from .claude/skills/, so
+// each public skill is a tracked symbolic link there, `.claude/skills/<name>` ->
+// `../../skills/<name>`, and .gitignore lets through only the links it names (everything else under
+// .claude/ is local and private). It is part of `npm run check`.
+//
+// Usage:
+//   node tools/repo/verify-skill-links.mjs
+//
+// Options: none.
 //
 // Every path `git ls-files .claude` prints must be such a link: mode 120000 in the index, at
 // `.claude/skills/<name>`, its target exactly `../../skills/<name>`, and `skills/<name>/SKILL.md`
 // tracked. A file, a link elsewhere or a link to another name fails.
-//   node tools/repo/verify-skill-links.mjs     exit 0 when every entry is such a link, 1 with the list
-// Runs as part of `npm run check`. Pure git, no GPU.
+//
+// Output: on success one line on stdout with the count of entries; on failure the entries that
+// fail, on stderr.
+//
+// GPU lock and browser: neither; it runs git only. Cost: under a second.
+//
+// Exit codes: 0 every entry is such a link; 1 an entry fails (listed). Arguments are ignored.
+import '../kit/help.mjs';
 import { execFileSync } from 'node:child_process';
 
 const git = ( args ) => execFileSync( 'git', args, { encoding: 'utf8', maxBuffer: 1 << 26 } );

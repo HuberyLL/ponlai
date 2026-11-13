@@ -1,45 +1,68 @@
-// The named clips: short stepped sequences for the temporal anti-aliasing work, each a parity view
-// (views.mjs) set in motion. A clip names its base view, whether the scene clock runs or stays
-// paused, its frame count, a camera path and, where it needs them, extra URL options, a render
-// scale schedule and a per-frame hook. tools/kit/parity/capture-clip.mjs loads the view as capture-set.mjs
-// does (paused at t=12), runs the view's eval, then steps the clip's frames with
-// `__PONLAI__.loop.step` (main.ts: fixed dt, no wall clock, the frame pacer and the dynamic scale
-// bypassed) and captures crops and full frames as it goes.
+// The named clips: short stepped sequences for the temporal anti-aliasing work, each a parity view set in motion.
 //
-// Camera paths are functions of the frame index applied to the view's own pose (the "base"), so
-// like the views they follow any tile layout: nothing is placed by coordinates. The base is the
-// camera's position at frame 0 and its pivot: the orbit's target when the island camera is active,
-// else a point 10 m ahead of a free camera. A path gives each frame a position and a pivot; the
-// camera looks at the pivot (the island camera keeps both as its own pose: its update at rest
-// leaves a pose placed by hand as it is).
+// It answers "what does the clip <name> do, frame by frame": tools/kit/parity/capture-clip.mjs,
+// tools/kit/parity/baseline.mjs and tools/kit/parity/carry.mjs read their clips, the baseline's plan
+// and the ground truth's frame sampling from here. A clip names its base view
+// (tools/island/parity/views.mjs), whether the scene clock runs or stays paused, its frame count, a
+// camera path and, where it needs them, extra URL options (`sun-shadow`: `dayLength=600`), a render
+// scale schedule (`drs-steps`), a per-frame hook (`lightning`: a strike forced at frame 30) and lead
+// frames. What each clip is for is its `about` in CLIPS.
 //
+// Usage:
+//   node tools/island/parity/clips.mjs list [all|normal|special]
+//   node tools/island/parity/clips.mjs show <clip>
+//   node tools/island/parity/clips.mjs eval <clip>
+//
+// Options: none. The commands:
+//   list [group]   the group's clip names, one per line (all)
+//   show <clip>    the clip's definition as JSON, with its view's query and its ground truth's sampling
+//   eval <clip>    the page js that installs window.__PONLAI_CLIP__
+//
+// capture-clip.mjs loads the view as capture-set.mjs does (paused at t=12), runs the view's eval,
+// then steps the clip's frames with `__PONLAI__.loop.step` (app/Frame.ts: a fixed dt, no wall clock,
+// the frame pacer and the dynamic scale bypassed) and captures crops and full frames as it goes.
+// Paused clips isolate the camera's motion over a frozen scene; running ones (the clock steps by dt
+// from t=12) add the scene's own motion: wind, sea, rain, the islander, lightning, the sun.
+//
+// Camera paths are functions of the frame index applied to the view's own pose (the base), so like
+// the views they follow any land: nothing is placed by coordinates. The base is the camera's position
+// at frame 0 and its pivot: the orbit's target when the island camera is active, else a point 10 m
+// ahead of a free camera. A path gives each frame a position and a pivot; the camera looks at the
+// pivot (the island camera keeps both as its own pose: its update at rest leaves a pose placed by
+// hand as it is).
 //   yaw( deg )               turn in place, `deg` degrees a frame about the vertical (a pan)
 //   flick( deg, start, n )   rest, then turn `deg` degrees over n frames (smoothstep), then rest
 //   dolly( k )               toward the pivot, the distance times exp( -k ) a frame (a zoom)
-//   orbit( deg, subject )    around a subject, `deg` degrees a frame, looking at it ('islander':
+//   orbit( deg, subject )    around a subject, `deg` degrees a frame, looking at it (`islander`:
 //                            the walking islander's centre, followed as it moves)
 //   still                    the base pose every frame
 //
-// A render scale schedule is given as shares of the tier's nominal ratio (`__PONLAI__.nominalScale()`,
-// 2K's pixel count on high: 1.38 at the default size), so it keeps its meaning at any --size; the
-// page turns it into the absolute ratios `loop.step` takes.
-//
-// A clip may step `lead` frames before its frame 0 (at frame 0's pose and scale, the clock running
-// as the clip's, nothing captured): a temporal mode starts each clip with its history cut (the
-// stepper restarts the loop), so its first frames converge from one frame's samples, a change that
-// is the start, not the clip's subject (drs-steps: the steps of the scale, not the warm-up).
-//
-// Paused clips isolate the camera's motion over a frozen scene; running ones (the clock steps by
-// dt from t=12) add the scene's own motion: wind, sea, rain, the islander, lightning, the sun.
+// A render scale schedule is given as shares of the tier's nominal ratio
+// (`__PONLAI__.nominalScale()`, 2K's pixel count on high: about 1.38 at the default size), so it
+// keeps its meaning at any --size; the page turns it into the absolute ratios `loop.step` takes. A
+// clip may step `lead` frames before its frame 0 (at frame 0's pose and scale, the clock running as
+// the clip's, nothing captured): a temporal mode starts each clip with its history cut (the stepper
+// restarts the loop), so its first frames converge from one frame's samples, a change that is the
+// start, not the clip's subject (`drs-steps`: 32 lead frames, so the steps of the scale are measured,
+// not the warm-up).
 //
 // Groups: `special`, the clips whose view is a parked weather's (views.mjs: the rain, the storm, the
 // lightning, the fog), and `normal`, the rest; `all` is `normal` (the default), so a parked clip is
 // reached by name or by `special`. The view decides, so a clip and its view never fall into
 // different groups.
 //
-//   node tools/island/parity/clips.mjs list [all|normal|special]  -> clip names, one per line
-//   node tools/island/parity/clips.mjs show <clip>     -> the clip's definition as JSON
-//   node tools/island/parity/clips.mjs eval <clip>     -> the page js that installs window.__PONLAI_CLIP__
+// Exported: CLIPS, CLIP_GROUPS, clipNames( group ), BASELINE_PLAN, CARRY_SPOT, GT_DENSE_MAX, GT_EVERY,
+// gtSampling( clip, frames ), clipScales( clip ), clipEval( name, { frames, dt, setup } ).
+//
+// Output: stdout only.
+//
+// GPU lock and browser: neither (docs/reference/gpu-lock.md); the eval it prints runs in the page of
+// whichever tool loads it.
+//
+// Cost: a fraction of a second.
+//
+// Exit codes: 0 printed; 1 an unknown group (an uncaught error); 2 an unknown command or clip.
+import '../../kit/help.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { VIEWS } from './views.mjs';

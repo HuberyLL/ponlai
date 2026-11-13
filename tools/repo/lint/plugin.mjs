@@ -1,16 +1,61 @@
-// The project's own ESLint rules (eslint.config.mjs loads them as the `ponlai` plugin): each one
-// turns a mechanical rule of the project into a check, and its message tells whoever wrote the
-// line what is wrong, what to write instead and which file explains why.
+// The project's own ESLint rules, loaded by eslint.config.mjs as the `ponlai` plugin.
+//
+// Each rule turns a mechanical rule of the project into a check, and its message tells whoever wrote
+// the line what is wrong, what to write instead and which file explains why. `npm run lint` runs
+// ESLint over packages/ and app/ with these rules and nothing else: no recommended sets and no style
+// rules (the code style is three.js's and is not linted). It reads the code with type information
+// (typescript-eslint's project service over tsconfig.json), takes a few seconds and is one of the
+// checks every commit passes (tools/check.mjs). The scopes are in eslint.config.mjs.
+//
+// The rules, what each reports and where:
+// - `ponlai/tsl-method-order`: TSL's `.mix`, `.step` and `.smoothstep` method forms, which take
+//   their receiver out of order (a call whose receiver is typed as a TSL node or is untyped). All
+//   code.
+// - `ponlai/tsl-only`: shader code in strings: `wgslFn`, `glslFn`, `nativeFn`, `wgsl`, `glsl`, `js`,
+//   `code`, `CodeNode`, `FunctionNode`. All code.
+// - `ponlai/history-on-graph`: `copyTextureToTexture` outside a pass added with `addPass`. All code
+//   but packages/render/post/graph/ and packages/render/three/.
+// - `ponlai/pass-on-graph`: `rtt()` and `convertToTexture()`. All code.
+// - `ponlai/chunk-normals`: `computeVertexNormals`. packages/island/world/ only.
+// - `ponlai/no-dynamic-draw`: `DynamicDrawUsage`. All code.
+// - `ponlai/timestamp-owner`: `trackTimestamp` and three's timestamp pools (`timestampPools`,
+//   `takeTimestamps`, `resolveTimestamps`, `resolveTimestampsAsync`). All code but
+//   packages/render/post/DynamicResolution.ts, packages/render/debug/FrameProfiler.ts and
+//   packages/render/three/.
+// - `ponlai/scene-clock`: the wall clock: `performance.now()`, `Date.now()`, `new Date()`, `Date()`.
+//   All code but the debug folders (packages/render/debug/, packages/island/debug/),
+//   app/Diagnostics.ts, packages/game/GameDebug.ts and app/QualityDetect.ts.
+// - `ponlai/vegetation-tag`: reading `alphaToCoverage` (setting it is fine). All code.
+//
+// An exception is a comment on the line above the one it excepts, naming the rule and a reason a
+// reader can check:
+//   // eslint-disable-next-line ponlai/scene-clock -- the time budget of one slice of the growth's work
+//   const start = performance.now();
+// A file at its line limit (tools/repo/verify-file-size.mjs) takes the same comment at the end of
+// the line, as `// eslint-disable-line ponlai/<rule> -- <reason>`, so the exception adds no line. A
+// real violation that cannot be fixed yet is excepted the same way, its reason starting with
+// `known violation:`. A disable comment that no longer suppresses anything is an error, so the
+// exceptions stay true. For `ponlai/scene-clock`, a reading that only measures how long something
+// took, budgets a slice of work, times out a wait or paces the game's interface in the player's
+// time (its animations, the wheel's repeat limit: they go on while the scene is paused) is an
+// exception; one that decides what the scene shows is a violation.
+//
+// To add a rule:
+// 1. Write it here: a few AST selectors through `selectorRule`, or a rule of its own when it needs
+//    more than a selector can say: the receiver's type (`tsl-method-order`), an ancestor
+//    (`history-on-graph`) or whether a member is read or written (`vegetation-tag`). Its message
+//    says what to write instead and names the file that explains why.
+// 2. Turn it on in eslint.config.mjs in a block of its own whose `files` and `ignores` are the
+//    folders it concerns, each exclusion with its reason in a comment.
+// 3. Add its fixture, tools/repo/lint/fixtures/<rule>.ts: the wrong forms, each line marked
+//    `// reported`, beside the right forms the rule must leave alone. A rule scoped to one folder
+//    names the path its fixture is linted from in `FIXTURE_PATHS` in tools/repo/verify-lint.mjs,
+//    which checks every fixture.
+// 4. Run `npm run lint` and go through every hit: fix it, narrow the scope or write the exception.
 //
 // Each rule has a name of its own, rather than all of them sharing `no-restricted-syntax`: ESLint
 // keeps only the last options of a rule for a file, so rules with different folders would replace
-// each other, and a disable comment names the one rule it excepts. A rule is a few AST selectors
-// (`selectorRule`) unless it needs more than a selector can say: the receiver's type
-// (`tsl-method-order`), an ancestor (`history-on-graph`) or whether a member is read or written
-// (`vegetation-tag`).
-//
-// Each rule has a fixture under tools/repo/lint/fixtures/ that tools/repo/verify-lint.mjs lints: a new rule
-// adds one there (docs/reference/tools.md, Code lint).
+// each other, and a disable comment names the one rule it excepts.
 
 const docs = ( description ) => ( { type: 'problem', docs: { description }, schema: [] } );
 

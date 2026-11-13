@@ -1,99 +1,102 @@
-// Colour rows: what the frame shows, as final-pixel Oklab L, C and h per kind of surface and per kind
-// of light, over a set of views. It answers "what colour is the sunlit rock, the shaded grass, the
-// sky in this view, before and after a change", where a hand-placed box mixes sun and shade.
+// Reads what colour the frame shows per kind of surface and per kind of light, as final-pixel Oklab rows.
 //
+// It answers "what colour is the sunlit rock, the shaded grass, the sky in this view, before and
+// after a change", where a hand-placed box mixes sun and shade: final-pixel Oklab L, C and h per
+// view, per kind of surface and per kind of light, with the sky, the sea, the land's darkest 5 % and
+// any boxes. It prints what the frames hold and judges nothing: it knows no ranges. For the light in
+// scene units over the meadow's blades use tools/island/meadow-light.mjs; for the day as a whole,
+// tools/island/day-sweep.mjs (which runs this tool).
+//
+// Usage:
 //   node tools/island/colour-rows.mjs shoot <url> <dir> --views-file f.json [--pages normal,light,ambient,classes]
 //       [--size 2560x1440@1] [--q "extra&query"] [--warm] [--jobs 1] [--scene]
 //   node tools/island/colour-rows.mjs rows <dir> [--sort <dir> | --own [--sky-mask-deg N]] [--boxes f.json] [--views a,b]
 //       [--sky-bands 0,5,15,30] [--out f.json] [--json]
 //
-// shoot takes the frames: one tools/kit/parity/capture-set.mjs run per page below, on one warm page
-// each, under the shared GPU lock, into `<dir>/<page>/`. The views file is capture-set's (a view's
-// `eval` sets its variant up). Each view ends with this tool's read of the page (pageRead).
-// A page of a set takes one page per view, since an --eval-ready runs on every view and capture-set
-// cannot tell it only reads. --warm says so (capture.mjs --ready-reads: the page's read only reads
-// the frame back, which a scene jump leaves as it found it): the views of a page then reach each
-// other by the scene jump, a view as a jump instead of a load. A view with an eval of
-// its own still ends its page. --jobs is capture-set's page count (one by default).
-// Paths are taken from the cwd the tool is called in, wherever that is; the runs start in the repo.
-// rows is plain node over that output: no browser and no GPU. It prints what the frames hold and
-// nothing else: it knows no ranges and judges nothing. Exit 0, or 1 when a page or a view is missing.
+// Options:
+//   shoot:
+//     --views-file f.json  the views, in tools/kit/parity/capture-set.mjs's views file form (required)
+//     --pages a,b          the pages to shoot, of those below (all four)
+//     --size WxH@dpr       the frame's size (2560x1440@1)
+//     --q query            extra query options for every page
+//     --warm               the views of a page reach each other by the scene jump instead of a load each
+//     --jobs n             capture-set's page count (1)
+//     --scene              the normal page also reads the scene's radiance, normals and camera
+//   rows:
+//     --sort <dir>         the directory whose classes and light pages give the sort (<dir>)
+//     --own                sorts each view by its own depth read instead (with neither --sort nor --sky-bands)
+//     --sky-mask-deg N     with --own: leaves the sky cells within N degrees of the sun or the moon out (0)
+//     --boxes f.json       boxes to read: { "<base view>": { "<name>": [ x, y, w, h ] } } in the PNG's pixels
+//     --views a,b          only these views (every view shot)
+//     --sky-bands e0,e1,.. a row `sky <a>-<b>` per pair of rising elevations in degrees (frames shot with --scene)
+//     --out f.json         the output file (<dir>/rows.json)
+//     --json               prints the JSON instead of the table
 //
-// The pages
+// shoot takes the frames: one tools/kit/parity/capture-set.mjs run per page, on one page each, into
+// `<dir>/<page>/`. A view's `eval` sets its variant up; each view ends with this tool's read of the
+// page. Without `--warm` a page takes a fresh load per view, since an `--eval-ready` runs on every
+// view and capture-set cannot tell it only reads. `--warm` says so (capture.mjs `--ready-reads`): a
+// view is then a scene jump, a fraction of a page load, with the same frames and readings byte for
+// byte. A view with an eval of its own still ends its page. Paths are taken from the directory the
+// tool is called in. rows is plain node over that output.
+//
+// The pages:
 //   normal    the frame itself: the PNG, the exposure, the depth's sky and sea shares
 //   light     flags=lightOnly:2,grey:1: every lit surface a white card, specular off
 //   ambient   the same with ambientOnly: the key light taken out
 //   classes   flags=classes&aa=off: each cell's kind (packages/render/debug/Classes.ts; its codes stored at
 //             most 2^15, so a page pre-exposed past half float, a deep overcast night, decodes)
 //
-// The sort. The frame is cut into a grid of NX by NY cells, each read over the CELL by CELL pixels
-// at its centre, the same pixels on every page (packages/render/debug/RadianceAov.ts `forCellTexels`):
+// The sort. The frame is cut into a grid of 256 by 144 cells, each read over the 3 by 3 pixels at its
+// centre, the same pixels on every page (packages/render/debug/RadianceAov.ts `forCellTexels`):
 //   land      cells with no sky, no sea and a kind
 //   d         a cell's direct share, 1 - ambient / light (luminance)
 //   sun       land cells with d at or over 0.7 of the land's 95th percentile of d
 //   shade     land cells with d at or under 0.2 of it (the penumbra between is in neither)
 //   sky, sea  cells more than 0.99 sky or sea
-// A variant is read through the sort of its base view, so a row is the same cells before and after
-// a change, whatever the change does to the light. A view `<base>--<variant>` takes the sort of
-// `<base>` in the --sort directory (default <dir>), or its own name if that holds it. A variant's
-// frames therefore need only the normal page (`shoot --pages normal`).
+// A variant is read through the sort of its base view, so a row is the same cells before and after a
+// change, whatever the change does to the light: a view `<base>--<variant>` takes the sort of `<base>`
+// in the `--sort` directory, or its own name if that holds it, and needs only the normal page.
 //
-// --own sorts each view by its own frame instead: sky, sea and land by the depth read of the view's
-// normal page alone (a cell more than 0.99 sky or sea; land, a cell with no sky and no sea texel
-// at all), with the floor of the land, and no kinds, light, card, p95 or shares (null), so it needs
-// neither a base view nor the other pages, and takes no --sky-bands. --sky-mask-deg N leaves the cells within N degrees of the sun or the moon out
-// of `sky` (the page's own read of the lights and the camera, so by angle, not by pixels; a light
-// more than a degree under the horizon has no disc to leave out). For views that do not share a camera (a camera turned at each frame, where
-// a cell that was land in one frame is sea in the next, and a base's cells would read sea as land).
+// `--own` sorts each view by its own normal page's depth read (sky and sea cells more than 0.99 so,
+// land the cells with neither), for views that share no camera (a camera turned at each frame, where
+// a base's cells would read sea as land). It gives the land and its floor, no kinds, light, card,
+// p95 or shares, and needs no other page. `--sky-mask-deg` works by angle, from the page's read of
+// the lights and the camera; a light more than a degree under the horizon has no disc to leave out.
 //
-// The rows (rows.json, `views.<view>.rows`), each { n, L, C, h, rgb, card }: `<kind> sun`, `<kind>
-// shade` and `<kind>` over all its cells for each kind that shows; `land sun` and `land shade`, the
-// union of the kinds' sun and shade cells; `land`, `sky`, `sea`; `floor`, the darkest 5 % of the
-// frame's own land cells by luminance. rgb is the row's mean linear pixel and L, C, h are the Oklab
-// of that mean, so a row's hue is the hue of its average colour, steady where single pixels are near
-// neutral. card is the mean luminance of the same cells on the view's own light page (scene units:
-// the light a white card takes there), so `land sun` over `land shade` reads the contrast of the
-// light where the rows' rgb read it in the frame; null when the view has no light page. A row of
-// fewer than MIN_CELLS cells keeps its n and has null values.
+// The rows, each { n, L, C, h, rgb, card }: `<kind> sun`, `<kind> shade` and `<kind>` for each kind that
+// shows; `land sun` and `land shade` over every kind; `land`, `sky`, `sea`; `floor`, the darkest 5 %
+// of the frame's own land cells. rgb is the row's mean linear pixel, L, C, h the Oklab of that mean.
+// card is the mean luminance of the same cells on the light page, in scene units (null without a
+// light page). A row of fewer than 8 cells keeps its n and has null values. A box gives the medians
+// of its pixels' L, C, h (as `img.py stats --oklab`), p5 and p90 of L, and the rows `mean`, `dark`
+// and `lit` (the pixels under and over its median L: a crown's two halves).
 //
-// The boxes (`--boxes`, `views.<view>.boxes`): { "<base view>": { "<name>": [ x, y, w, h ] } } in pixels
-// of the PNG, each read over every pixel: L, C, h the medians of the pixels' values (as `img.py stats
-// --oklab` gives them), p5 and p90 of L, `mean`, the row of all its pixels (the Oklab of their mean
-// linear colour, which a box of mixed light reads quite otherwise than by its medians), and `dark`
-// and `lit`, the row of the pixels under and over the box's median L (the two halves of a crown).
+// With `shoot --scene`, rows adds to every row `scene` { Y, med, hdr } (the cells' luminance in scene
+// units before the display chain, packages/render/debug/Radiance.ts) and the rows that need the cells'
+// direction: `sky band`, `sea away`, `<kind> flat`, `<kind> sun flat`, `land flat` and `land sun
+// flat`; the view's record adds `E`, pi times the sky's irradiance (the probe's: on a clear or fair
+// day it takes the fog layer's haze, which the land's own sky light leaves out,
+// packages/render/sky/Sky.ts `fogEnvironment`), and `preExposure`. A `--sky-bands` row read over
+// fewer than 64 cells has null values and `note: 'too few cells'`. The rows' definitions are beside
+// the code that sorts them (`sortOf`).
 //
-// The scene (shoot --scene): the normal page also reads the frame's own radiance in scene units on
-// the same cells, before the display chain (packages/render/debug/Radiance.ts: `opaque`, the lit surfaces and the
-// sky before the sea and the air, and `hdr`, the composite with them), each cell's world normal
-// (RadianceAov.ts `normal`), the camera's matrices and the sky's irradiance, so a ratio of the scene's
-// light (lit grass over the sky, shade over sun, one weather over another) is read where the rows'
-// rgb read the display. rows then adds to every row `scene` { Y, med, hdr }: the mean and the median
-// of the cells' luminance in the opaque source and the mean in hdr; and the rows that need the
-// cells' direction: `sky band`, the sky cells whose ray stands 4 to 15 degrees up and turns more than
-// 90 degrees in azimuth from the key light's (the sun's, by night the moon's), `sea away`, the sea
-// cells whose ray lies 0 to 5 degrees under the horizon on that side, and `<kind> flat`, `<kind> sun
-// flat`, `land flat` and `land sun flat`, the cells whose normal stands within about 25 degrees of
-// straight up (a flat open card's light, under a sky alone, is read against `E` below). A view
-// read through another's sort takes these rows from the base's normals and camera. The view's
-// record adds `E`, pi times the sky's irradiance (Sky.ts `skyIrradiance`, luminance; the probe's,
-// which takes the fog layer's haze as the dome does: on a clear or fair day not the land's sky
-// light, whose source leaves the fog layer out), against which a flat open card's light is read,
-// and `preExposure`, the frame's P in stops (post/PreExposure.ts).
+// Each view's record also holds `ev` and `exposure` (packages/render/post/Exposure.ts), the key light's
+// `key` { colour, dir }, the sun's `elevation` (degrees), the land's `p95` of d, `shares` { sun,
+// shade, penumbra } of the land, and `note`, whatever the view's eval left in
+// `__PONLAI__.colourNote` (a script reads tune.set's report that way).
 //
-// The sky's bands (rows --sky-bands e0,e1,...: frames shot with --scene): a row `sky <a>-<b>` per pair
-// of neighbouring edges, the sky cells whose ray stands at least a and under b degrees up (half open,
-// [a, b)) and turns more than 90 degrees in azimuth from the key light's, as `sky band` takes them;
-// each cell's elevation is its centre's ray through the camera's matrices as the scene page read
-// them, between frames: unjittered (the temporal modes jitter the scene passes' projection only, and
-// MSAA has no jitter). A band of fewer than SKY_BAND_CELLS cells keeps its n and has null values,
-// with `note: 'too few cells'`. These are not `sky band` (4 to 15 degrees), which stays as it is.
+// Output: shoot writes `<dir>/<page>/` (capture-set's PNGs and JSON per view). rows writes
+// `<dir>/rows.json` (or `--out`) and prints a table per view, or the JSON with `--json`.
 //
-// Each view's record also holds `ev` and `exposure` (the frame's, packages/render/post/Exposure.ts), the key
-// light's `key` { colour, dir }, the sun's `elevation` (degrees), the land's `p95` of d, `shares`
-// { sun, shade, penumbra }, the land cells' shares in the sort's sun, shade and neither, and `note`,
-// whatever the view's eval left in `__PONLAI__.colourNote` (a script reads tune.set's report that way).
+// GPU lock and browser: shoot runs each page's capture-set under `tools/kit/gpu-lock.mjs run
+// --shared` (docs/reference/gpu-lock.md) in the capture tools' headless browser; rows neither.
 //
-// Output: `<dir>/rows.json` (or --out) and a table on stdout, or the JSON with --json.
+// Cost: shoot, a page load per page and view (a scene jump per view with `--warm`); rows, seconds of
+// CPU (it starts under the QoS policy, tools/kit/qos.mjs).
+//
+// Exit codes: 0 done; 1 a page that failed, a missing page or view, or a page's failed read; 2 bad usage.
+import '../kit/help.mjs';
 import '../kit/qos.mjs'; // first: the PNG decodes run with the application policy
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -246,7 +249,10 @@ function oklab( r, g, b ) {
 
 const round = ( v, digits = 4 ) => Number( v.toFixed( digits ) );
 
-// the row of a mean linear colour
+// the row of a mean linear colour. L, C and h are the Oklab of the cells' mean linear colour, so a
+// row's hue is the hue of its average colour, steady where single pixels are near neutral. A row's
+// card (cellsRow) reads the light where its rgb reads the frame: `land sun` over `land shade` cards
+// is the contrast of the light itself.
 function rowOf( n, r, g, b ) {
 
 	const [ L, A, B ] = oklab( r, g, b );
@@ -321,8 +327,21 @@ function cellRays( camera ) {
 
 }
 
+// The sky's bands (rows --sky-bands e0,e1,...): a row `sky <a>-<b>` per pair of neighbouring edges,
+// the sky cells whose ray stands at least a and under b degrees up (half open, [a, b)) and turns more
+// than 90 degrees in azimuth from the key light's, as `sky band` takes them. Each cell's elevation
+// is its centre's ray through the camera's matrices as the scene page read them, between frames:
+// unjittered (the temporal modes jitter the scene passes' projection only, and MSAA has no
+// jitter). These are not `sky band` (4 to 15 degrees), which stays as it is.
 const skyBandRow = ( a, b ) => `sky ${ a }-${ b }`;
 
+// The rows that need the cells' direction (frames shot with --scene): `sky band`, the sky cells
+// whose ray stands 4 to 15 degrees up and turns more than 90 degrees in azimuth from the key
+// light's (the sun's, by night the moon's); `sea away`, the sea cells whose ray lies 0 to 5 degrees
+// under the horizon on that side; `<kind> flat`, `<kind> sun flat`, `land flat` and `land sun
+// flat`, the cells whose normal (RadianceAov.ts `normal`) stands within about 25 degrees of straight
+// up: a flat open card's light, under a sky alone, is read against the view's `E`. A view read
+// through another's sort takes these rows from the base's normals and camera.
 // the sort of a view (see the header): { land, cells: { row: [ cell indices ] }, p95 }
 function sortOf( dir, view, skyBands = [] ) {
 
@@ -431,7 +450,8 @@ function cellsRow( colours, list, light, scene ) {
 
 }
 
-// a box's numbers over every pixel (see the header)
+// a box's numbers over every pixel (see the header). `mean` is the Oklab of the pixels' mean linear
+// colour, which a box of mixed light reads quite otherwise than by its medians.
 function boxRow( { width, height, data }, [ x0, y0, w, h ] ) {
 
 	if ( x0 < 0 || y0 < 0 || x0 + w > width || y0 + h > height ) throw new Error( `box ${ [ x0, y0, w, h ] } lies outside the ${ width } by ${ height } frame` );

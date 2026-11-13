@@ -1,19 +1,28 @@
-// Plays the game headless in node and writes what happened, so a designer can read days of play
-// without a browser and a brain can be judged offline on the same island, the same day clock and
-// the same record the page keeps. Pure CPU; Node 22.18+ strips the imported TypeScript.
+// Plays the game headless in node and writes what happened, day by day.
 //
+// A designer can read days of play without a browser, and a brain can be judged offline on the
+// same island, the same day clock and the same record the page keeps. It answers what the islanders
+// do over days of play, how the needs and the stock run, and how a brain plays from what it
+// perceives; it replaces a loop over the simulation of one's own. To assert the rules instead, use
+// tools/game/verify-game.mjs.
+//
+// Usage:
 //   node tools/game/play-game.mjs [--days 5] [--seed 1] [--hour 8] [--pieces 0] [--grow]
-//     [--population 0] [--place kind[@x,z]]... [--script file.json] [--brain standin|<module>]
-//     [--latency 90] [--thoughts] [--out dir]
+//       [--population 0] [--place kind[@x,z]]... [--script file.json] [--brain standin|<module>]
+//       [--latency 90] [--thoughts] [--out dir]
 //
+// Options:
 //   --days N        game days to play (default 5; a fraction plays part of one)
-//   --seed S        the game's seed (SimState.seed: the islanders, their lifespans, the catches)
+//   --seed S        the game's seed (default 1; SimState.seed: the islanders, their lifespans,
+//                   the catches)
 //   --hour H        the whole hour the game starts at (default 8, the page's)
-//   --pieces P      the island grown by P pieces (tools/game/game-fixture.mjs `inputAt`, land seed 1)
+//   --pieces P      the island grown by P pieces (default 0; tools/game/game-fixture.mjs `inputAt`,
+//                   land seed 1)
 //   --grow          when the population reaches a step (Sim.growthDue), the next piece arrives at
 //                   once, as the page's swap hands it back (Session.setIsland of
 //                   `inputAt( pieces + 1 )`)
-//   --population N  N islanders more than the starting three (Sim.addIslander: drawn sex and age)
+//   --population N  N islanders more than the starting three (default 0; Sim.addIslander: drawn sex
+//                   and age)
 //   --place K[@x,z] a blueprint of kind K placed at the start (repeatable), at world metres x, z;
 //                   without a point at the first open ground that takes it, outward from the
 //                   island's middle (as verify-game's chests)
@@ -22,16 +31,16 @@
 //   --brain B       `standin` (sim/standin.ts, the default), or a module's path: its `createBrain`
 //                   or default export is called with the context below and returns a Brain (or a
 //                   Promise of one)
-//   --latency G     the game seconds an asynchronous thought takes (default 90: three real
-//                   seconds at the day clock's default 2880 s a game day, where a real second is
-//                   30 game seconds)
+//   --latency G     the game seconds an asynchronous thought takes (default 90: three real seconds
+//                   at the day clock's default 2880 s a game day, where a real second is 30 game
+//                   seconds)
 //   --thoughts      also write thoughts.jsonl: every thought, what the islander perceived and the
 //                   brain's answer (calls, or why it failed), for judging a brain offline
 //   --out DIR       where the outputs go (default artifacts/play/<UTC stamp>/, git-ignored)
 //
 // What it guarantees. The game runs as the page runs it: in the page's own session around the
-// simulation (packages/game/Session.ts, which Game.ts hosts beside the view), a frame of one tick at a
-// time (Session.advance, a growth due asked for before the tick, so none after the last), the
+// simulation (packages/game/Session.ts, which Game.ts hosts beside the view), a frame of one tick at
+// a time (Session.advance, a growth due asked for before the tick, so none after the last), the
 // leader's lines between ticks (Session.speak, checked as the speak bar's), the starting islanders
 // (--population's with them) landing at the start and the blueprints placed as the player's
 // (Session.place). What happened it reads from the one stream the page's record and interface read
@@ -40,16 +49,16 @@
 // between bags, each at the tick it happened; it never watches the state for changes. So what the
 // page's game does around the simulation (feeding the record, hearing, growing) is the session's,
 // never copied here. The record notes no skies: the weather is the page's own and nothing in the
-// simulation depends on it. With a
-// brain that answers at once (the stand-in) the run is the simulation's own deterministic game: the
-// same options write the same files byte for byte (nothing in them depends on the wall clock or the
-// output folder). An
-// asynchronous brain (a `think` that returns a Promise) never holds up the page's world, so
-// headless the world runs on for --latency game seconds after a thought is asked and only then
-// waits, however long the answer takes in real time, before it applies the answer and steps on:
-// the timing of every answer is a function of the options, and a brain whose answers are a
-// function of its perceptions plays a repeatable game too. An answer that comes sooner in real time
-// still lands at its tick.
+// simulation depends on it.
+//
+// With a brain that answers at once (the stand-in) the run is the simulation's own deterministic
+// game: the same options write the same files byte for byte (nothing in them depends on the wall
+// clock or the output folder). An asynchronous brain (a `think` that returns a Promise) never holds
+// up the page's world, so headless the world runs on for --latency game seconds after a thought is
+// asked and only then waits, however long the answer takes in real time, before it applies the
+// answer and steps on: the timing of every answer is a function of the options, and a brain whose
+// answers are a function of its perceptions plays a repeatable game too. An answer that comes
+// sooner in real time still lands at its tick.
 //
 // The brain module's context: `heard( id )` and its session name `takeHeard( id )` (the leader's
 // words the islander heard since the last call, oldest first: Session.takeHeard), `hasHeard( id )`,
@@ -58,19 +67,26 @@
 // `options` (this run's). A brain that keeps failing (MAX_FAILURES answers rejected in a row) ends
 // the run with exit 1, its outputs written.
 //
-// Outputs, in the --out folder: transcript.md (day by day: the record's entries in the words of
-// the record page, packages/game/ui/data/record.ts, the building one is about by its id; the islanders'
+// Output, in the --out folder: transcript.md (day by day: the record's entries in the words of the
+// record page, packages/game/ui/data/record.ts, the building one is about by its id; the islanders'
 // actions with their outcomes (an interrupted one as `interrupted: <reason>`), consecutive alike
-// ones merged, what they said, the brain's thoughts
-// when it is asynchronous, needs every six game hours, and a table per day), timeline.json (each
-// game hour, every islander's position, needs, bag and action), summary.json (per islander the
-// share of time by activity, each need's lowest, mean and highest, each item's flows by the call
-// that moved it, thoughts; the dead, the buildings and when they were placed and built, the
-// island's stock, the growth, the record's entries by kind), record.json (the record as a save
-// holds it) and, with --thoughts, thoughts.jsonl (a line per thought: who, when it was asked and
-// answered, the perception and the calls). On stdout a short summary. Exit 0 when the run played
-// through, 1 when it failed (a brain that kept failing, an error), 2 for a bad option. A long run
-// (many days, a language-model brain) goes through tools/kit/job.mjs.
+// ones merged, what they said, the brain's thoughts when it is asynchronous, needs every six game
+// hours, and a table per day), timeline.json (each game hour, every islander's position, needs, bag
+// and action), summary.json (per islander the share of time by activity, each need's lowest, mean
+// and highest, each item's flows by the call that moved it, thoughts; the dead, the buildings and
+// when they were placed and built, the island's stock, the growth, the record's entries by kind),
+// record.json (the record as a save holds it) and, with --thoughts, thoughts.jsonl (a line per
+// thought: who, when it was asked and answered, the perception and the calls; about 1 MB for four
+// islanders over five days). On stdout a line per day played and a short summary; errors on stderr.
+//
+// GPU lock and browser: neither; pure CPU (Node 22.18+ strips the imported TypeScript). It runs
+// under the application scheduling policy (tools/kit/qos.mjs).
+//
+// Cost: five game days of the stand-in take about two seconds. A long run (many days, a
+// language-model brain) goes through tools/kit/job.mjs.
+//
+// Exit codes: 0 the run played through; 1 it failed (a brain that kept failing, an error); 2 a bad
+// option.
 //
 // Generic: no need, item, option, building or kind of record entry is named here. The needs are
 // the body's own keys, the activities the calls under way, an item's flows what each call's
@@ -78,6 +94,7 @@
 // kinds' rows (a kind without one, the record's default row), and an event of a kind that neither
 // the record notes nor this tool has a line for a line of its own (`[event]`, its kind and what it
 // holds): a new rule shows in the outputs without a change to the tool.
+import '../kit/help.mjs';
 import '../kit/qos.mjs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';

@@ -1,27 +1,46 @@
-"""Build the meadow ground's web textures from two Poly Haven scans (CC0).
+"""Builds the meadow ground's and the groves' web textures from two Poly Haven scans (CC0).
 
-Usage: uv run --with pillow --with numpy tools/island/build-ground-textures.py [source-dir]
+It answers "how were public/textures/ground/ made": run it again only to rebuild them from the scans.
 
-source-dir (default artifacts/third-party/polyhaven) holds each scan's 1K maps in a folder of its
-id, `<id>_diff_1k.jpg` (colour, sRGB), `<id>_nor_gl_1k.jpg` (OpenGL normals) and
-`<id>_rough_1k.jpg` (roughness):
+Usage:
+  uv run --with pillow --with numpy tools/island/build-ground-textures.py [source-dir]
+
+Options:
+  source-dir   the folder holding the scans (artifacts/third-party/polyhaven)
+
+source-dir holds each scan's 1K maps in a folder of its id, `<id>_diff_1k.jpg` (colour, sRGB),
+`<id>_nor_gl_1k.jpg` (OpenGL normals) and `<id>_rough_1k.jpg` (roughness):
   brown_mud_leaves_01  https://polyhaven.com/a/brown_mud_leaves_01: brown earth under small green
                        leaves, a 1.3 m square; the open meadow's ground
   forrest_ground_01    https://polyhaven.com/a/forrest_ground_01: moss, short grass, dead leaves
                        and twigs, a 2 m square; the bamboo groves' floor
-Writes public/textures/ground/ (meadow_* from the first, grove_* from the second):
+
+Output: public/textures/ground/ (meadow_* from the first scan, grove_* from the second):
   <name>_albedo.jpg  the colour, unchanged
   <name>_detail.png  the normal map's x and y (R, G) and the roughness (B), 8 bits each, no
                      alpha (the page decodes it exactly into a texture array's layer; the normal's
                      z follows from x and y): the cliff's stone packs its scan the same way, and
                      the three share one array, so one hex-tiled read serves each
+stdout: a line per texture written.
+
+GPU lock and browser: neither (docs/reference/gpu-lock.md).
+
+Cost: a few image decodes and encodes.
+
+Exit codes: 0 written; 1 a missing scan file (an uncaught error).
 """
-import shutil
 import sys
 from pathlib import Path
 
-import numpy as np
-from PIL import Image
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "kit"))
+from help import answer_help  # noqa: E402
+
+answer_help(__file__)
+
+import shutil  # noqa: E402
+
+import numpy as np  # noqa: E402
+from PIL import Image  # noqa: E402
 
 source = Path(sys.argv[1] if len(sys.argv) > 1 else "artifacts/third-party/polyhaven")
 out = Path("public/textures/ground")

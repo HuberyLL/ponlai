@@ -1,7 +1,19 @@
-// GPU probe of the frame graph's compile path (packages/render/post/graph/Compile.ts, packages/render/three/ThreePatches.ts) and its
-// warm-up. Needs the dev server (it imports src modules into the page):
-//   node tools/render/verify-frame-graph-gpu.mjs http://127.0.0.1:5190
+// Checks on the GPU that three draws the frame graph's passes into their MRT layouts as the graph expects.
 //
+// It covers the frame graph's compile path (packages/render/post/graph/Compile.ts, the cache-key
+// patches in packages/render/three/ThreePatches.ts) and its warm-up, the blends per attachment the
+// temporal modes rest on, and the app's own materials under their passes' MRT. The graph's
+// compiler and runtime on the CPU are checked by tools/render/verify-framegraph.mjs. Run it after a
+// change to the patches, the graph's compile or warm-up, the motion MRTs, or an upgrade of three
+// (docs/how-to/upgrade-three.md).
+//
+// Usage:
+//   node tools/render/verify-frame-graph-gpu.mjs [url]
+//
+// Options:
+//   url   the dev server (default http://127.0.0.1:5190); it imports the source modules into the page
+//
+// What it checks, each a failure when broken:
 // 1. MRT cache keys, on fresh renderers in a bare page. One material is drawn into a single
 //    target without an MRT and into a two-attachment target with mrt( { output, velocity } ), in
 //    both orders; then again with each draw compiled first through the warm-up's compile
@@ -41,7 +53,19 @@
 //    scene MRT; the spray's after-resolve MRT), in both orders, drawn and warmed (`compileInto`
 //    first). Each draw needs its own pipeline (a warmed one none), a fragment shader with one output
 //    per attachment, and the vegetation's velocity its motion class over a tenth of the target.
-// Shared GPU lock (no timing), headless (CHROME_PATH or Playwright's Chromium).
+//
+// Output: on stdout, `ok` or `FAIL` per check; the report as JSON in
+// artifacts/verification/frame-graph-gpu.json.
+//
+// GPU lock and browser: takes the GPU lock shared (docs/reference/gpu-lock.md; it measures no time)
+// and opens headless Chrome (CHROME_PATH, else Playwright's Chromium). It needs the dev server: on
+// any other server it stops before the lock (tools/kit/dev-server.mjs).
+//
+// Cost: a few bare pages, and two loads of the app (its default mode and taa) of 120 frames each.
+//
+// Exit codes: 0 every check passes; 1 a check failed (the final assertion is thrown), a page threw,
+// or the url is not the dev server.
+import '../kit/help.mjs';
 
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';

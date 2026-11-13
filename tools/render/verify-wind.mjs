@@ -1,3 +1,29 @@
+// Checks the wind's state, clocks and the plants' and sea's readings of it on the CPU, with no GPU.
+//
+// It loads packages/render/weather/Wind.ts with the island's wind look and checks the pause, the
+// advection's direction, the update's cadence, the calm sea's bounds in light and gentle winds, the
+// levels' numbers and fair's wind, the plants' own rates and bands, the sea's spectrum wind, the
+// leaves' flutter at a fixed rate, the gusts' scroll and time, a deterministic seek, and the
+// previous frame's wind that motion vectors read (rendered frames, seek, cut, `windFreeze`, and the
+// wrapped clocks read only through periodic functions). For the last it also scans every `.ts`
+// file under packages/ and app/: a read of a wind clock outside `wave()`, or of the gusts' scroll
+// or time outside Wind.ts, fails. Run it after a change to the wind or to a shader that reads it;
+// it is part of `npm run check`.
+//
+// Usage:
+//   node tools/render/verify-wind.mjs
+//
+// Options: none.
+//
+// Output: one line on stdout naming what passed, with the count of assertions, of source files
+// scanned and of clock reads found; a failed assertion's message and stack on stderr.
+//
+// GPU lock and browser: neither; node strips the imported TypeScript itself.
+//
+// Cost: about a second, CPU only.
+//
+// Exit codes: 0 every check passes; 1 a check failed (the assertion is thrown).
+import '../kit/help.mjs';
 import { assert, assertions } from '../kit/assert-count.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';

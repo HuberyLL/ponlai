@@ -1,68 +1,98 @@
-// A page probe without a screenshot: loads the scene, runs JavaScript in it and prints the values as
-// JSON, so a question about the running page (a diagnostic, a timing, a uniform, the pipelines an
-// action creates) needs no Playwright script of its own.
+// Loads the scene in a browser, runs JavaScript in it and prints the values as JSON.
 //
-//   node tools/kit/probe.mjs [url] [--q "paused&t=12&dpr=1"] [--query q2]... [--init js|@file]...
-//       [--eval js|@file] [--until js|@file] [--frames n] [--sleep ms] ...  (steps, in order)
+// It answers a question about the running page (a diagnostic, a load timing, a uniform, the
+// pipelines an action builds, a frame time) without a screenshot and without a Playwright script
+// of one's own. Several queries can be probed in one call, each reached in the same page by the
+// scene jump.
+//
+// Usage:
+//   node tools/kit/probe.mjs [url] [--q query] [--query q]... [--init js|@file]...
+//       [--eval js|@file] [--until js|@file] [--frames n] [--sleep ms] ...
 //       [--w 1600 --h 900 --scale 1] [--timeout 60000] [--exclusive] [--fresh] [--load] [--console [prefix]]
+//   node tools/kit/probe.mjs --q "debug" --eval "D.timings" --eval "P.camera.position"
 //
-// url: the server (default http://127.0.0.1:5190/, the dev server), or a page of it by its file
-// (`http://127.0.0.1:5190/scenes.html`, the test scenes); a production preview needs
-// `debug` in the query for `window.__PONLAI__` and the diagnostics (docs/reference/tools.md, Page).
+// Options:
+//   url             the server (default http://127.0.0.1:5190/, the dev server) or a page of it by its
+//                   file (`<server>/scenes.html`, the test scenes); a production preview needs `debug`
+//                   in the query for `window.__PONLAI__` and the diagnostics
+//   --q query       the first query loaded (default `paused&t=12&dpr=1`)
+//   --query q       a further query, reached by the scene jump; repeatable
+//   --eval js       a step: runs in the page and records its value
+//   --until js      a step: waits until the expression is truthy, up to --timeout
+//   --frames n      a step: waits for n rendered frames
+//   --sleep ms      a step: waits that long
+//   --init js       runs before any of the page's scripts on every load (Playwright's addInitScript)
+//   --w, --h        the viewport in CSS pixels (1600 by 900); --scale its device pixel ratio (1)
+//   --timeout ms    each wait's limit, the navigation's included (60000)
+//   --exclusive     takes the GPU lock alone instead of a shared slot, for frame times
+//   --fresh         a new empty browser profile, deleted afterwards: a cold load
+//   --load          loads every query in a page of its own instead of jumping to it
+//   --console [p]   records every console line, or those starting with p
 //
-// Steps. `--eval`, `--until`, `--frames` and `--sleep` run in the order given, for every query:
-// - `--eval js`: runs in the page and records its value. `js` is an expression (`D.timings`), a
-//   function (`async () => { ... }`, called), or statements with a `return`; `await` works in all
-//   three. `@file` reads it from a file. In scope: `P` = `window.__PONLAI__`, `D` =
-//   `window.__THREE_GAME_DIAGNOSTICS__` as the step starts (most of its counters lag by up to 30
-//   frames; read live counters from `P`), `frames( n )`, `sleep( ms )`, `until( fn, timeoutMs )`,
-//   `pipelines` (`mark()`, `since( mark )`: which pipelines an action built, tools/render/pipeline-trace.mjs).
-//   The value is serialised in the page (cycles, functions, typed arrays, three's vectors). The
-//   forms, the scope and the serialiser are tools/kit/page-eval.mjs, which tools/kit/capture.mjs's
-//   `--eval` shares: its header has the details.
-// - `--until js`: waits until the expression (same forms and scope) is truthy, checked every
-//   rendered frame (every 100 ms while the loop is stopped), up to --timeout; records the wait in ms
-//   and frames. Examples: `D.settled` (the paused page will draw the same frame from now on),
-//   `D.taa?.converged`, `D.frame > 300`.
-// - `--frames n`: waits for n rendered frames; `--sleep ms` waits that long.
-// Before the steps, every query waits until the page is up (each wait, the navigation included, up
-// to --timeout): `__PONLAI__` and the diagnostics exist, one frame rendered, and the loading screen
-// gone (its fade finished, tools/kit/capture-browser.mjs `waitForScene`). The page is not stopped or
-// settled further: add an `--until` for that.
-// `--init js` runs before any of the page's scripts on every load (Playwright's addInitScript), for
-// hooks that must see the start, such as wrapping `GPUDevice.prototype.createRenderPipeline`.
+// Steps. The steps run in the order given, for every query. `js` is an expression (`D.timings`), a
+// function (`async () => { ... }`, called) or statements with a `return`; `await` works in all
+// three, and `@file` reads it from a file. In scope: `P` = `window.__PONLAI__`, `D` =
+// `window.__THREE_GAME_DIAGNOSTICS__` as the step starts (most of its counters lag by up to 30
+// frames: read live counters such as `P.pipelines.total` from `P`), `frames( n )`, `sleep( ms )`,
+// `until( fn, timeoutMs )` and `pipelines` (`mark()`, `since( mark )`: which pipelines an action
+// built, tools/render/pipeline-trace.mjs). The value is serialised in the page (cycles, functions,
+// typed arrays, three's vectors). The forms, the scope and the serialiser are
+// tools/kit/page-eval.mjs's, shared with tools/kit/capture.mjs's `--eval`. `--until` is checked
+// every rendered frame (every 100 ms while the loop is stopped). Useful conditions: `D.settled` (the
+// paused page will draw the same frame from now on), `D.taa?.converged`, `D.frame > 300`.
 //
-// Queries. `--q` (or the first `--query`) is loaded; each further `--query` is reached in the same
-// page by the exact scene jump (`await __PONLAI__.establishScene( query )`, the loop started, one
-// frame rendered: app/main.ts), as tools/kit/parity/capture-set.mjs reaches its views. A query whose
-// load-time options differ (quality, aa, dpr, debug switches: establishScene refuses it) and builds
-// without the jump (`__PONLAI__.sceneJump`) get a fresh load instead. `--load` loads every query in
-// a page of its own: a jump draws a fresh load's image, not the world's generation path, so comparing
-// two loaded pages (a grown page against a fresh grow=1 page) needs it. Each query runs every step.
+// Before the steps, every query waits until the page is up: `__PONLAI__` and the diagnostics exist,
+// one frame is rendered and the loading screen's fade has finished (tools/kit/capture-browser.mjs
+// `waitForScene`). The page is not stopped or settled further: add an `--until` for that.
 //
-// Output (stdout, JSON): the url, the browser, the profile slot, the GPU lock's wait, and per query
-// its `mode` (load|jump), `readyMs` (load or jump until up), `ms` (the whole query), `steps`
-// (`{ eval, value }`, `{ eval, error }`, `{ until, ms, frames }`, `{ frames }`, `{ sleep }`; an
-// eval or until under the shared lock adds `gaveUpMs`, below),
-// the console's errors and warnings and the failed requests; `--console` adds every console line
-// (or those starting with the prefix) as `console`. Exits 1 when an eval failed, an `--until`
-// timed out or the page threw.
+// Queries. The first query is loaded. Each further one is reached in the same page by the exact
+// scene jump (`await __PONLAI__.establishScene( query )`, the loop started, one frame rendered), as
+// tools/kit/parity/capture-set.mjs reaches its views. A query whose load-time options differ
+// (quality, aa, dpr, debug switches), or a build without the jump, gets a fresh load instead, and so
+// does the query after one that failed. A jump draws a fresh load's image, not the world's
+// generation path: to compare two loaded pages (a grown page against a fresh `grow=1` page) use
+// `--load`.
 //
-// The browser is the capture tools' (tools/kit/capture-browser.mjs): headless, in a persistent profile
-// slot, so the world cache and the shader cache are warm from the second probe on. `--fresh` runs in
-// a new empty profile instead (a cold load: the island generated, every shader compiled), deleted
-// afterwards. The GPU lock is held from before the load to the end of the last query: shared,
-// since a probe's values do not depend on what else renders; `--exclusive` takes it alone, for
-// frame times (`D.frameMs`) or GPU timings that others' work would disturb.
-// A long eval that waits on CPU work (worker generation, a grown page) stops the loop
-// (`await P.loop.stop()`) and waits with `until` (or `sleep`): while the loop stands, those helpers
-// offer the shared slot back (tools/kit/page-eval.mjs), and the probe gives it up when a request ranked
-// before its next one waits (leaseGpuLock with no budget: the rule capture's views lease by), then
-// queues again by rank and resolves the helper only once it holds the slot again, so the eval never
-// renders without it. Each give-up is logged on stderr with its duration, and the step's
-// `gaveUpMs` sums them. (One such eval held a slot for 30 min while a timing run waited for the
-// lock.) Note the ranks: a default exclusive request (low) ranks after a probe (normal) until it
-// ages (30 min), so it is let in from then on, not at once. `--exclusive` keeps its hold.
+// Common questions:
+//   diagnostics and load timings      --eval "D.timings" --eval "D.worldCache"
+//   a uniform or the camera           --eval "P.shared.wetness.value" --eval "P.camera.position"
+//   the pipelines an action builds    --q "debug&paused" --until "D.settled" --eval "window.m = pipelines.mark()"
+//                                     --eval "P.setWeather( 'storm', 0 )" --frames 120 --eval "pipelines.since( window.m )"
+//   the game's state                  --q "debug&game" --eval "P.game.sim.state.villagers[ 0 ]"
+//   frame time                        --exclusive --q "debug" --frames 300 --eval "D.frameMs"
+//   linear radiance over boxes        --q "debug&paused&flags=lightOnly" --frames 60
+//                                     --eval "await P.radiance( { boxes: { a: [ 0.4, 0.6, 0.1, 0.1 ] } } )"
+// `pipelines.since` lists each pipeline's kind, label, material, object, target, frame and the
+// first 6 app frames of its stack; it sees only pipelines built after the first `mark()`.
+// `D.settled` never turns true on a running page. For an A/B frame time use
+// tools/render/profile-frame.mjs. The page's handles: docs/reference/page.md.
+//
+// Output (stdout, JSON): the url, the browser, the profile slot, the lock and its wait, and per
+// query its `mode` (load or jump), `readyMs` (until up), `ms` (the whole query), `steps` (`{ eval,
+// value }`, `{ eval, error }`, `{ until, ms, frames }`, `{ frames }`, `{ sleep }`), the console's
+// errors and warnings and the failed requests; `--console` adds the lines it records as `console`.
+//
+// GPU lock and browser: takes the GPU lock (docs/reference/gpu-lock.md) from before the load to the
+// end of the last query, shared by default since a probe's values do not depend on what else
+// renders, and opens the capture tools' headless browser in a persistent profile slot, so the world
+// cache and the shader cache are warm from the second probe on.
+//
+// Cost: a page load (seconds warm; a cold `--fresh` load generates the island and compiles every
+// shader), then the steps. Probes share the GPU as capture pages do: two probes sweeping a paused,
+// grown island at 4K took about 1.4 times one probe's time, with readings identical to a probe
+// alone; three probes gave little more throughput, and a reading could differ in the last digit.
+//
+// Exit codes: 0 every step ran; 1 an eval failed, an `--until` timed out or the page threw (the JSON
+// is still printed); 2 a bad option.
+//
+// A long eval that waits on CPU work (worker generation, a grown page) stops the loop (`await
+// P.loop.stop()`) and waits with `until` or `sleep`. While the loop stands, those helpers offer the
+// shared slot back (tools/kit/page-eval.mjs): the probe gives it up when a request ranked before
+// its next one waits (`leaseGpuLock` with no budget), queues again by rank and resolves the helper
+// only once it holds the slot again, so the eval never renders without it. Each give-up is logged on
+// stderr with its duration, and the step's `gaveUpMs` sums them. A default exclusive request ranks
+// after a probe until it has waited 30 min. `--exclusive` keeps its hold.
+import './help.mjs';
 import { acquireGpuLock, leaseGpuLock, lockOwner, releaseGpuLock } from './gpu-lock.mjs';
 import { launchCapture, waitForScene } from './capture-browser.mjs';
 import { evalSource as source, runInPage } from './page-eval.mjs';

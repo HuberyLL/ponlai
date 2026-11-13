@@ -79,7 +79,7 @@ Three layers:
   sliced by `unicode-range`, so a page loads only the slices its characters need: the islanders
   may say anything).
 - **Numerals and Latin**: our own brush fonts, drawn with the icons' brush, in
-  `public/fonts/` (assets: `docs/reference/tools.md`): `PonlaiBrush.woff2` (text cut) and
+  `public/fonts/` (assets: `tools/repo/assets.mjs`): `PonlaiBrush.woff2` (text cut) and
   `PonlaiBrushDisplay.woff2` (from 24 px up). Declare them with `unicode-range: U+0020-007E, U+00B7`
   and put them first in every stack, so every digit and Latin letter in any text switches to the
   brush while CJK falls through. Their figures are tabular: a changing number never shifts its

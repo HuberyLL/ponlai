@@ -1,7 +1,29 @@
-// GPU regression: full-angle Snell refraction, tilted normals, index matching and
-// the radiance Jacobian at the water-to-air interface.
-// Needs the Vite dev server: it imports the source modules into the page (tools/kit/dev-server.mjs).
-// Usage: node tools/render/verify-optical-interface.mjs http://127.0.0.1:5190
+// Checks on the GPU the light's crossing of the water-to-air interface.
+//
+// It loads a paused page and runs the probe in packages/render/lighting/OpticalInterface.ts
+// (`probeOpticalInterface`) on its renderer: full-angle Snell refraction, tilted normals, index
+// matching and the radiance's Jacobian at the interface. Run it after a change to the water's
+// refraction or the optical interface.
+//
+// Usage:
+//   node tools/render/verify-optical-interface.mjs [url]
+//
+// Options:
+//   url   the dev server (default http://127.0.0.1:5190)
+//
+// Output: the probe's result and the page's errors as JSON on stdout and in
+// artifacts/verification/optical-interface.json.
+//
+// GPU lock and browser: takes the GPU lock shared (docs/reference/gpu-lock.md; its pixels do not
+// depend on the GPU's load) and opens headless Chrome (CHROME_PATH, else Playwright's Chromium). It
+// imports the source modules into the page, so it needs the dev server: on any other server it
+// stops before the lock (tools/kit/dev-server.mjs).
+//
+// Cost: a page load and its first 80 frames, then the probe: seconds.
+//
+// Exit codes: 0 the probe passed; 1 it failed, the page logged an error, or the url is not the dev
+// server (a failed assertion is thrown).
+import '../kit/help.mjs';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from '../kit/gpu-lock.mjs';
 import { requireDevServer } from '../kit/dev-server.mjs';

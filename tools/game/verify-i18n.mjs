@@ -1,16 +1,36 @@
-// Checks of the interface's words (packages/game/ui/i18n/, its header has the rules): that no Chinese
-// is written in the code outside the catalogues, so every word the player reads goes through one,
-// and how far each other language's catalogue has drifted from the source, zh-CN.json: the keys it
-// lacks (the page shows the Chinese for them), the keys the source no longer has, and the values
-// that name other values ({{place}}) than the source's. A key's plural forms (_one, _other) count
-// as the key.
+// Checks the interface's words: no Chinese in the code outside the catalogues, and each language's drift.
 //
-// Fails (exit 1) on a Chinese literal in the code outside ALLOWED, and on a source value that is
-// not a non-empty string. The drift of another language is reported, not failed: English is a
-// snapshot not maintained while the game is in development (`--strict` fails on it too, for when
-// a language is). `--list` prints every drifted key.
-// Pure CPU; reads the sources with TypeScript's parser.
-// Run: node tools/game/verify-i18n.mjs [--strict] [--list]
+// The catalogues are in packages/game/ui/i18n/ (its header has the rules); zh-CN.json is the
+// source. Every word the player reads goes through one, so no Chinese is written in the code under
+// packages/ or app/ outside them. For each other language it reports how far its catalogue has
+// drifted from the source. Run it after a change to the interface's text; it is part of
+// `npm run check`.
+//
+// Usage:
+//   node tools/game/verify-i18n.mjs [--strict] [--list]
+//
+// Options:
+//   --strict   fails on another language's drift too (for when a language is maintained)
+//   --list     prints every drifted key under its language
+//
+// It fails on a Chinese literal in the code outside ALLOWED (the content that is not the
+// interface's words: the islanders' names, the stand-in brain's lines, the debug panel's
+// placeholder lines and days), and on a source value that is not a non-empty string. The drift of
+// another language is reported, not failed: English is a snapshot not maintained while the game is
+// in development. The drift is the keys a catalogue lacks (the page shows the Chinese for them), the
+// keys the source no longer has, and the values that name other values (`{{place}}`) than the
+// source gives; a value that leaves one of the source's values unsaid is counted apart and never
+// fails. A key's plural forms (`_one`, `_other`) count as the key.
+//
+// Output: on stdout, the count of code files and Chinese literals, the source's count of strings,
+// a line per other language with its drift (with --list, its keys), each failure as `FAIL ...`,
+// and a closing `verify-i18n: ok` or `verify-i18n: FAILED`.
+//
+// GPU lock and browser: neither. Cost: about a second, CPU only (it reads the sources with
+// TypeScript's parser).
+//
+// Exit codes: 0 no failure; 1 a failure. Other arguments are ignored.
+import '../kit/help.mjs';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import ts from 'typescript';

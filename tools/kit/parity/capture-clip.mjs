@@ -1,111 +1,98 @@
-// Stepped clips for the temporal anti-aliasing work: a view of the views table set in motion by a
-// named clip of the clips table (both through tools/kit/parity/tables.mjs), rendered frame by frame
-// with the page's deterministic stepper (the handle's `loop.step`: fixed dt, no wall clock, the frame
-// pacer and the dynamic scale bypassed), with crops of named subjects captured as they move.
+// Captures a named clip frame by frame with the page's stepper, as crops that follow their subjects.
 //
-//   node tools/kit/parity/capture-clip.mjs <name> --url U --clip <clip> [--aa msaa|off|taa|taau|fsr3|gt|gt-hi]
-//       [--view v] [--frames n] [--every k] [--dense a-b,c-d] [--crops a,b] [--full 0,30] [--q "extra&query"] [--setup js]
-//       [--quality high] [--size 1728x1117@2] [--dt s] [--gt-jitters n] [--out dir] [--timeout ms] [--runs file.csv]
-//       [--task name] [--anchors-from clip.json] [--stable-* (capture.mjs)] [--ready-frames n] [--wait ms] [--settle ms] [--verbose]
-//       [--test-fault]
+// It answers how the anti-aliasing modes hold up in motion: a view of the views table set in motion
+// by a named clip of the clips table (both through tools/kit/parity/tables.mjs; the clips are in
+// tools/island/parity/clips.mjs), rendered with the page's deterministic stepper (the handle's
+// `loop.step`, debug builds only: fixed dt, no wall clock, the frame pacer and the dynamic scale
+// bypassed), with crops of named subjects captured as they move. tools/kit/clip-metrics.py
+// measures the result; tools/kit/parity/baseline.mjs runs it for a whole plan. For paused views,
+// use tools/kit/parity/capture-set.mjs.
 //
-// The page loads `U?debug&paused&testMode=0&t=12&quality=<q>&aa=<mode>[&<extra>]&<view's query>[&<clip's
-// query>]` (`aa=off` adds `msaa=1`; `aa` reaches builds that read it, others ignore it; `testMode=0`
-// leaves the test mode's switch out, so what it turns off moves in the clips: packages/render/debug/TestMode.ts) in a
-// persistent profile slot, runs the view's eval (the crop anchors' setup included), waits for the
-// scene as capture.mjs does (tools/kit/capture-browser.mjs: the image stopped changing, with the same
-// --stable-* options, or under taa / taau / gt the rest converged, or --ready-frames' fixed count;
-// --wait / --settle ms of fixed delay around the floor when given; the readiness record goes into clip.json as `ready`; the loop is left stopped,
-// as the stepper wants it), runs the clip's eval, reads the crop anchors once at the base pose and then steps the clip. After each frame
-// (every k-th with --every, and every frame of the --dense runs; frame 0 always) each anchor's world point is projected with that
-// frame's camera into a box of 192 CSS px (384 device px at a pixel ratio of 2, clamped into the
-// frame) and captured; an anchor behind the camera that frame is skipped. --full lists frames also
-// captured whole. --anchors-from takes the anchors' world points from an earlier clip.json
-// instead (the anchors pick their points by device pixels, so a GT run at another pixel ratio
-// could pick others: pass the test run's to frame the same subjects).
+// Usage:
+//   node tools/kit/parity/capture-clip.mjs <name> --url <preview> --clip <clip> [options]
+//   node tools/kit/parity/capture-clip.mjs pan --url http://localhost:5191/ --clip pan-slow --aa taau --full 0,30
 //
-// The crops and full frames are the compositor's image PNG-encoded for speed
-// (tools/kit/capture-browser.mjs, "The shot": Playwright's screenshot's pixels, not its bytes; compare
-// them decoded). The shots drop the page's device metrics until the clip has been stepped: the
-// page reads its ratio only on a resize, and none fires, so the frames are the same.
+// Options:
+//   --aa <mode>             msaa, off, taa, taau, fsr3, gt or gt-hi; default msaa
+//   --view <v>              the base view; default the clip's
+//   --frames <n>            default the clip's
+//   --every <k>             capture every k-th frame (frame 0 always); default 1
+//   --dense <a-b,c-d>       runs of frames captured every frame under --every
+//   --crops <a,b>           the anchors cropped; default the clip's, else the view's
+//   --full <0,30>           frames also captured whole
+//   --anchors-from <f>      take the anchors' world points from an earlier clip.json
+//   --q "<extra&query>"     added to the page's query
+//   --setup <js>            page code (`s` the handle, `dt` the step) run before frame 0
+//   --dt <s>                the clock's step; default 1 / 60
+//   --gt-jitters <n>        with --aa gt: renders averaged per frame; default 32, 64 for one frame
+//   --quality <tier>        default high
+//   --size <W>x<H>[@<dpr>]  default 1728x1117@2
+//   --out <dir>             default artifacts/clips/<name>
+//   --timeout <ms>          the page's waits; default 240000
+//   --stable-*, --ready-frames <n>, --wait <ms>, --settle <ms>  readiness, as tools/kit/capture.mjs
+//   --runs <file.csv>       append a line to a run log; default the PARITY_RUNS variable, else none
+//   --task <name>           the run log's task
+//   --verbose               print up to 60 console errors instead of 12
+//   --test-fault            test the rest's second shot (below)
 //
-// Output, under artifacts/clips/<name>/ (or --out): <crop>/<i>.png per crop and frame,
-// full/<i>.png, and clip.json (the url, the clip, the boxes per frame, the page's diagnostics
-// before and after, the pipelines created while stepping, the scene time, the browser build, wall
-// time, console errors, the rest's second shot).
+// The page loads `<url>?debug&paused&testMode=0&t=12&quality=<tier>&aa=<mode>[&<extra>]&<view's
+// query>[&<clip's query>]`. `aa=off` adds `msaa=1`; a build that does not read `aa` ignores it.
+// `testMode=0` leaves the test mode's switch out, so what it turns off moves in the clips
+// (docs/reference/test-mode.md). In a persistent profile slot the page runs the view's eval (the
+// crop anchors' setup included), waits for the scene as capture.mjs does (tools/kit/capture-browser.mjs:
+// the image stopped changing, or under a temporal mode the rest converged, or --ready-frames' fixed
+// count), runs the clip's eval and --setup, reads the crop anchors once at the base pose and steps
+// the clip. A clip's lead frames (clips.mjs) are stepped once before frame 0 and never shot. After
+// each captured frame each anchor's world point is projected with that frame's camera into a box
+// of 192 CSS px (384 device px at a ratio of 2, clamped into the frame); an anchor behind the camera
+// is skipped. Pass a test run's clip.json to a ground-truth run with --anchors-from: the anchors
+// pick their points by device pixels, so a run at another ratio could pick others.
 //
-// --aa gt is the ground truth of the temporal modes (packages/render/post/Antialiasing.ts, debug builds): the
-// temporal graph at the canvas's resolution, each captured frame held still after its tick until
-// the temporal rest has averaged `--gt-jitters` jittered renders of it with a box filter
-// (`loop.step`'s `converge`; 32 by default, 64 for a clip of one frame, the rest GT), without
-// sharpening. Its crops are cut at the test's own size (no downsampling). It renders every
-// frame at the canvas's ratio: a clip's scale schedule applies to the test and MSAA sides only.
-// Ground-truth sets are shared per merge-base (`<parity root>/<sha>/gt/`).
-//
-// A clip of one frame (`--clip rest`) is the image at rest: under the other temporal modes (taa,
-// taau) it is held still too until the rest has converged on it (`converge`, the tier's own rest
-// sequence), as capture.mjs waits for `diag.taa.converged` on a paused page. MSAA and off have no
-// rest and capture the frame as stepped, shot twice (below).
-//
-// The rest shot twice. The readiness check vouches for the frames it compared, not for the frame the
-// clip then steps: the clip's evals come after it, so the stepped frame is a new render,
-// and a single frame can come out as a discrete alternative image (measured:
-// 0.3-1 M px of scattered vegetation pixels off by up to 190 levels, mean about 0, the same
-// image each time; and about 1.5 % of the frames stepped in the first seconds
-// after the readiness, alone or not, and 2 of 24 rest clips stored it while other browsers
-// rendered; a stored rest reference once was such a frame). So a paused one-frame clip without a
-// temporal rest (MSAA, off, gt-hi) is stepped again with the same state and shot whole each time
-// until two shots agree within the readiness tolerance (--stable-tolerance: by default at most 5000
-// pixels differ at all; `exact` asks for equal pixels), at most RECHECK_SHOTS shots, else the clip
-// fails and nothing is written. The crops are those of an agreeing shot (the first one's, or shot
-// again on the later frame when the first was the odd one). A fifth to two fifths of a settled
-// page's stepped frames differ from its settled frame by a few to about 2000 pixels (task D3's
-// speckle), which the tolerance accepts; the alternative image (0.87 M px on island-fair-noon) is far
-// outside it. clip.json records it (`recheck`). Cost: one more stepped frame and one whole-frame
-// grab when the first two agree, about 0.3 s alone and 0.9 s on a shared GPU (plus the whole-frame
-// shot itself when --full does not ask for it). Motion clips and the temporal rests are not shot twice: a moving
-// frame cannot be rendered again without replaying its state, and a temporal rest averages 32-64
-// renders, so one odd render is a 1/32 share there, inside the temporal comparisons' tolerance.
-// A clip's lead frames (clips.mjs: stepped before frame 0 at frame 0's pose and scale, never shot)
-// run once, before the first shot; each further shot steps one frame at frame 0's pose and scale,
-// without the lead (the clock is paused, so the scene is frame 0's).
-// `--test-fault` checks the check: frame 0 (with any lead frames before it) is drawn with the
-// exposure offset raised by half a stop (the whole frame brighter) and the offset goes back for the
-// next, so the first shot must be rejected and the crops taken from a later, agreeing one.
-//
-// --aa gt-hi is the interim ground truth: MSAA on high at twice a nominal ratio
-// for the --size given (nominal = min( ratio, 1.5 ), so 3 at the default @2 and 2 at @1: high's
-// paused scale until it became the 4/3 baseline, kept so the stored ground truths stay comparable),
-// box-downsampled 2x2. The page runs at that device pixel ratio with the same `dpr` (the canvas
-// then holds the render; checked against the canvas's size). If the canvas does not reach it, the
-// tool falls back to twice the CSS size at the nominal ratio (the same render, the CSS boxes
-// doubled) and records `gtFallback`. Every crop and frame is box-downsampled 2x2, so a gt-hi crop
-// is 192 x nominal px (288 at the default size, where the test's crop is 384): clip-metrics.py
-// resamples the test to the GT's size. The ground truth renders every frame at its own fixed
-// ratio: a clip's render scale schedule (drs-steps) applies to the test and MSAA sides only, and
-// clip.json records it as ignored (`scaleSchedule`). Known bias: pixel-width vegetation rules (blades kept 2 px wide, the rim's
-// 0.75 px, the coverage gain that fades in under 16 px) are in render pixels, so at 3x the blades
-// are drawn a third narrower in scene terms than at 1.5 and fewer blades are widened: GT-HI's
-// meadow is finer and slightly darker than any real 1.5x render. Judge vegetation look against
-// MSAA, not GT-HI.
+// --setup takes a change the clip should watch unfold, such as `s.setWind( { heading: 220 }, 20 )`.
+// --dt steps the scene's own motion further per frame (not the camera path's): a motion-vector test
+// whose sub-pixel motion a reprojection's resampling would hide makes it a few pixels a frame.
 //
 // The exposure's adaptation is frozen on every side while a clip runs (the `page.clip` global set:
-// the pipeline snaps the exposure to its target every frame, Exposure.ts): a converged or stopped-clock
-// rest jumps to the target while running frames would still be catching up to it, so a temporal
-// clip compared with its rest or with MSAA would differ by the lag alone. The per-pixel dither of
-// a level stays: it is fixed per pixel.
+// the pipeline snaps the exposure to its target every frame, packages/render/post/Exposure.ts), so
+// a temporal clip compared with its rest or with MSAA does not differ by the adaptation's lag. The
+// per-pixel dither of a level stays: it is fixed per pixel.
 //
-// --setup js runs page code (`s` the page's handle, `dt` the step) after the clip's own setup,
-// before frame 0: a change the clip should watch unfold, such as `s.setWind( { heading: 220 }, 20 )`
-// (a turn of the wind over 20 s of the stepped clock). clip.json records it.
+// --aa gt is the temporal modes' ground truth (packages/render/post/Antialiasing.ts, debug builds):
+// the temporal graph at the canvas's resolution, each captured frame held still after its tick
+// until the rest has averaged --gt-jitters jittered renders of it with a box filter, unsharpened,
+// cropped at the test's own size. It renders every tier, so each tier has its own ground truth.
+// --aa gt-hi is the older ground truth, kept for cross-checks: MSAA on high at twice a nominal ratio,
+// box-downsampled 2x2 (288 px crops at the default size); its rules are beside GT_RATIO below. Both
+// render every frame at their own fixed ratio: a clip's scale schedule applies to the test and
+// MSAA sides only (clip.json: `scaleSchedule`). Judge vegetation look against MSAA, not a ground
+// truth: their blades are finer than MSAA's.
 //
-// --dt s steps the clip's frames s seconds apart instead of 1 / 60 (the clock's step, so the
-// scene's own motion per frame, not the camera path's): a motion vector test whose sub-pixel motion
-// a reprojection's resampling would hide makes the motion a few pixels a frame with it.
+// A clip of one frame (`--clip rest`) is the image at rest. Under taa and taau it is held still until
+// the rest has converged on it. Under msaa, off and gt-hi it is stepped again with the same state
+// and shot whole until two shots agree within the readiness tolerance (--stable-tolerance), at
+// most 6 shots, else the clip fails and nothing is written: a single stepped frame can be a
+// discrete alternative image that the readiness check before it cannot see (the measurements are
+// beside RECHECK_SHOTS below). clip.json records the shots (`recheck`). `--test-fault` draws frame 0
+// half a stop brighter, so the first shot must be rejected and the crops taken from a later one.
+// Motion clips and temporal rests are not shot twice: a moving frame cannot be rendered again
+// without replaying its state, and one odd render is a small share of a temporal rest.
 //
-// Stepped clips are deterministic (no wall clock), so the tool takes the GPU lock shared.
-// Production builds need `?debug` (added here) and the islanders' assets linked into the build
-// (tools/kit/parity/README.md).
+// Output: under --out, `<crop>/<i>.png` per crop and frame, `full/<i>.png`, and clip.json (the url,
+// the clip, the boxes, camera and render size per frame, the readiness record `ready`, the page's
+// diagnostics before and after, the pipelines created while stepping, the scene time, the browser
+// build, wall time, console errors, `recheck`). The PNGs are the compositor's image encoded for
+// speed: compare them decoded. Stdout: a summary line, the clip's notes, console errors.
+//
+// GPU lock and browser: one headless page in a profile slot holds a shared slot of the GPU lock for
+// the whole clip; stepped clips are deterministic (docs/reference/gpu-lock.md).
+//
+// Cost: a page load and readiness, then a stepped frame and its crops per captured frame. The
+// rest's second shot adds one stepped frame and a whole-frame grab, under a second.
+//
+// Exit codes: 0 captured; 1 a page error, a console error, the rest's shots disagreeing or another
+// failure; 2 usage, an unknown option, clip or view, gt-hi on a tier other than high, or a bad
+// --size, --gt-jitters or --dense.
+import '../help.mjs';
 import { mkdir, readFile, writeFile, appendFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -156,7 +143,20 @@ if ( ! view ) { console.error( `unknown view ${ viewName }` ); process.exit( 2 )
 const size = ( options.size ?? '1728x1117@2' ).match( /^(\d+)x(\d+)(?:@([\d.]+))?$/ );
 if ( ! size ) { console.error( `bad --size ${ options.size }` ); process.exit( 2 ); }
 const W = Number( size[ 1 ] ), H = Number( size[ 2 ] ), DSF = Number( size[ 3 ] ?? 1 );
-// gt-hi's nominal render ratio at this size (the display's, up to 1.5: see above), and its ratio
+// gt-hi: MSAA on high at twice a nominal ratio for the --size given (nominal = min( ratio, 1.5 ), so
+// 3 at the default @2 and 2 at @1: high's paused scale until it became the 4/3 baseline, kept so the
+// stored ground truths stay comparable), box-downsampled 2x2. The page runs at that device pixel
+// ratio with the same `dpr` (the canvas then holds the render; checked against the canvas's size).
+// If the canvas does not reach it, the tool falls back to twice the CSS size at the nominal ratio
+// (the same render, the CSS boxes doubled) and records `gtFallback`. Every crop and frame is
+// box-downsampled 2x2, so a gt-hi crop is 192 x nominal px (288 at the default size, where the
+// test's crop is 384): clip-metrics.py resamples the test to the GT's size. Known bias: pixel-width
+// vegetation rules (blades kept 2 px wide, the rim's 0.75 px, the coverage gain that fades in under
+// 16 px) are in render pixels, so at 3x the blades are drawn a third narrower in scene terms than at
+// 1.5 and fewer blades are widened: GT-HI's meadow is finer and slightly darker than any real 1.5x
+// render. aa=gt's blades are finer than MSAA's too (one sample: at least 1 canvas px, MSAA's 2
+// render px). The gates read aa=gt; gt-hi entries are kept under `<sha>/gt-hi/high/`.
+// gt-hi's nominal render ratio at this size (the display's, up to 1.5), and its ratio
 const NOMINAL_HIGH = Math.min( DSF, 1.5 ), GT_RATIO = 2 * NOMINAL_HIGH;
 const frames = Number( options.frames ?? clip.frames );
 const gtJitters = gtRest ? Number( options[ 'gt-jitters' ] ?? ( frames <= 1 ? 64 : 32 ) ) : null;
@@ -172,7 +172,22 @@ const timeout = Number( options.timeout ?? 240000 );
 const outDir = path.resolve( options.out ?? path.join( REPO, 'artifacts/clips', name ) );
 // the crop box in CSS px (384 device px at a ratio of 2, as the parity crops)
 const BOX = 192;
-// a paused one-frame clip's shots before it fails for want of two that agree (see the header)
+// A paused one-frame clip's shots before it fails for want of two that agree (see the header).
+// The readiness check vouches for the frames it compared, not for the frame the clip then steps:
+// the clip's evals come after it, so the stepped frame is a new render, and a single frame can come
+// out as a discrete alternative image (measured: 0.3-1 M px of scattered vegetation pixels off by up
+// to 190 levels, mean about 0, the same image each time; about 1.5 % of the frames stepped in the
+// first seconds after the readiness, and 2 of 24 rest clips stored it while other browsers
+// rendered; a stored rest reference once was such a frame). A fifth to two fifths of a settled
+// page's stepped frames differ from its settled frame by a few to about 2000 pixels of speckle,
+// which the tolerance (by default at most 5000 pixels differ at all; `exact` asks for equal pixels)
+// accepts; the alternative image (0.87 M px on island-fair-noon) is far outside it. The crops are
+// those of an agreeing shot (the first one's, or shot again on the later frame when the first was
+// the odd one). Each further shot steps one frame at frame 0's pose and scale, without the lead
+// frames (the clock is paused, so the scene is frame 0's). Cost: one more stepped frame and one
+// whole-frame grab when the first two agree, about 0.3 s alone and 0.9 s on a shared GPU (plus the
+// whole-frame shot itself when --full does not ask for it). A temporal rest averages 32-64 renders,
+// so one odd render is a 1/32 share there, inside the temporal comparisons' tolerance.
 const RECHECK_SHOTS = 6;
 
 // ------------------------------------------------------------------ PNG (8-bit, non-interlaced)
@@ -300,6 +315,8 @@ try {
 	const boxes = [];
 	// the compositor's image, PNG encoded for speed (tools/kit/capture-browser.mjs, "The shot"); the
 	// device metrics come back once the clip is stepped (nothing reads the ratio while stepping)
+	// The shots drop the page's device metrics until the clip has been stepped: the page reads its
+	// ratio only on a resize, and none fires, so the frames are the same.
 	const shooter = await pngShooter( page, { timeout } );
 	const shoot = async ( clipRect ) => {
 

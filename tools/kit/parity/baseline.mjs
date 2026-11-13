@@ -1,75 +1,97 @@
-// The MSAA baseline of a merge-base: the rest images and stepped clips that the
-// anti-aliasing gates read, captured from a preview of that commit, with the interim ground truth
-// and the metrics of MSAA against it. Every gate in thresholds.json is a ratio or a band times
-// this baseline, measured at the same merge-base in the same session, never an absolute number, so
-// each later task on that sha reuses `<root>/<sha>/baseline/metrics.json` and measures only its own
-// mode.
+// Captures and measures a commit's MSAA baseline and ground truth for the anti-aliasing gates.
 //
-//   node tools/kit/parity/baseline.mjs --url U --sha SHA [--root DIR] [--label baseline] [--aa msaa]
-//       [--tiers high] [--only rest|clips] [--views a,b] [--clips a,b] [--gt | --no-gt] [--gt-aa gt|gt-hi]
-//       [--jobs 2] [--capture-only | --metrics-only] [--thresholds thresholds.json] [--runs runs.csv] [--task name]
-//       [--ref-url R] [--recapture-reference] [--skip-existing] [--size 1728x1117@2] [--q "extra&query"] [--verbose]
-//       [--carry-from A [--carry-url <preview of A>] [--carry-recheck]]
+// It answers how an anti-aliasing mode compares with MSAA and with a ground truth, on the rest
+// images and stepped clips of a plan, measured at one commit. Every gate of a thresholds file is a
+// ratio or a band times this baseline, measured at the same commit, never an absolute number, so
+// each later run on that sha reuses `<root>/<sha>/baseline/metrics.json` and measures only its own
+// mode. Captures go through tools/kit/parity/capture-clip.mjs, metrics through
+// tools/kit/clip-metrics.py; tools/kit/gates.py and tools/kit/table.py read the result.
 //
-// The plan: the clips table's BASELINE_PLAN (tables.mjs), the rest images, whole frames and clips
-// per quality tier. Without --tiers a run takes high only; `--tiers high,medium,low` reaches the
-// others' entries. Rest images go through tools/kit/parity/capture-clip.mjs as the one-frame clip `rest`, so their crops
-// are cut exactly as a clip's are.
+// Usage:
+//   node tools/kit/parity/baseline.mjs --url <preview> --sha <sha> [options]
+//   node tools/kit/parity/baseline.mjs --url <test> --sha <base> --label taau --aa taau --ref-url <base preview>
 //
-// Layout under <root>/<sha>/:
+// Options:
+//   --url <url>              the preview captured from (optional with --metrics-only, --capture-only)
+//   --sha <sha>              the commit whose store the run uses (a short sha is resolved)
+//   --root <dir>             the store's root; default artifacts/parity
+//   --label <name>           the side under test; default baseline (MSAA)
+//   --aa <mode>              the label's mode; default msaa, the only mode of the label baseline
+//   --tiers <a,b>            default high
+//   --only rest|clips        one kind of entry
+//   --views <a,b>            views or groups of the views table
+//   --clips <a,b>            clips or groups (a group only selects among the plan's clips)
+//   --gt, --no-gt            capture the ground truth; default on for baseline or with --ref-url
+//   --gt-aa gt|gt-hi         the ground truth's mode; default gt
+//   --ref-url <url>          a preview of the commit, for its reference entries in another label's run
+//   --jobs <n>               captures at once; default 2 (metrics: twice that, within half the CPUs)
+//   --capture-only, --metrics-only  one half of the run
+//   --thresholds <t.json>    add the gate verdicts and aggregates
+//   --skip-existing          take an entry without a manifest, or of another key, as it is
+//   --recapture-reference    capture the reference entries afresh
+//   --carry-from <A>         take reference entries over from commit A when carry.mjs allows it
+//   --carry-url <url>        a preview of A, for what A's store lacks for the checks
+//   --carry-recheck          run the carry checks' spot checks again
+//   --size <W>x<H>[@<dpr>]   default 1728x1117@2
+//   --q "<extra&query>"      added to every page's query
+//   --runs <file.csv>, --task <name>  the run log (default the PARITY_RUNS variable)
+//   --verbose                print the captures' output
+//
+// The plan is the clips table's BASELINE_PLAN (tools/kit/parity/tables.mjs): the rest images,
+// whole frames and clips per tier. Rest images go through capture-clip.mjs as the one-frame clip
+// `rest`, so their crops are cut exactly as a clip's. Without --views or --clips the run leaves out
+// the entries on the views table's `special` views (the parked weathers): they are run only when
+// named or asked for by `special`. --clips may also name a clip that is not a gate's (`--clips
+// drs-steps`): its baseline and ground truth are kept the same way.
+//
+// Layout under <root>/<sha>/ (the store's wider layout: tools/kit/reference.mjs):
 //   <label>/<tier>/rest/<view>/           a capture-clip folder (crops, clip.json, metrics/)
 //   <label>/<tier>/clip/<clip>[@<view>]/  the same for a clip (on another view than its own: @view)
 //   gt/<tier>/...                         the ground truth (`--aa gt`: 64 jittered renders at rest, 32
 //                                         per clip frame), shared by every label; clips of more than 60
 //                                         frames every 4th frame plus their dense runs (the clips table's
 //                                         gtSampling)
-//   gt-hi/high/...                        the interim ground truth (`--gt-aa gt-hi`, high only): kept
-//                                         for cross-checks against aa=gt
-//   <label>/metrics.json                  every entry's metrics; for the label `baseline` (MSAA) this
-//                                         is the baseline the gates multiply
+//   gt-hi/high/...                        the older ground truth (`--gt-aa gt-hi`, high only)
+//   <label>/metrics.json                  every entry's metrics; for the label `baseline` the
+//                                         baseline the gates multiply
 //
-// The baseline's and the ground truth's entries are references of the merge-base, kept by the
-// reference store (reference.mjs, layout in tools/kit/parity/README.md): each entry has its own
-// manifest (`complete.json`: the clip tools' version, the browser build, tier, aa, size, extra
-// query, clip, view, frame sampling and the anchors it took), so an entry is reused when it
-// matches, waited for when another live process is capturing it, and otherwise captured (saying
-// why: missing, the tools or the browser changed, a capture that did not finish). They are
-// captured from the reference's own preview only: `--url` for the baseline's run, `--ref-url` for
-// another label's (a test build's run), whose missing references are otherwise reported and their
-// entries skipped. With --ref-url another label's run also captures the ground truth (as --gt).
-// --capture-only without --url only reuses or waits for the reference entries (missing ones are
-// reported): capture-set.mjs --quick checks its references that way.
-// --skip-existing accepts an entry without a manifest or of another key as it is (references
-// captured before the store) and skips the side under test where its clip.json exists;
-// --recapture-reference captures the reference entries afresh. --clips may also name a clip that
-// is not a gate's (`--clips drs-steps`): its baseline and ground truth are kept the same way.
-// --views and --clips take the tables' groups beside names; a clip group only selects among the
-// plan's clips. Without --views / --clips the run leaves out the entries on the views table's
-// `special` views (Ponlai's parked weathers): they stay in the plan but are run only when named or
-// asked for by `special`.
+// The baseline's and the ground truth's entries are references of the commit in the store
+// (tools/kit/reference.mjs, each entry with its own manifest): reused when they match, waited for
+// while another process captures them, else captured, saying why. They are captured from the
+// commit's own preview only: --url for the baseline's run, --ref-url for another label's, whose
+// missing references are otherwise reported and their entries skipped. --capture-only without --url
+// only reuses or waits for them, as capture-set.mjs --quick does.
 //
 // `--label x --aa taau` captures the same entries for another mode and measures them against the
-// baseline's MSAA captures and the shared ground truth (with --thresholds: gate verdicts). The
-// ground truth and other labels take the baseline's anchors (`--anchors-from`), so every side
-// frames the same subjects. aa=gt renders every tier (at the canvas's resolution, the tier's own
-// content), so each tier is measured against its own ground truth. Where a tier has none (gt-hi
-// exists for high only) its metrics take high's ground truth of the same view, which cancels in
-// every ratio to MSAA; their GT-relative values mean nothing and no gate reads them.
+// baseline's MSAA captures and the shared ground truth. The ground truth and other labels take the
+// baseline's high anchors (capture-clip `--anchors-from`), so every side frames the same subjects.
+// aa=gt renders every tier, so each tier is measured against its own ground truth. Where a tier
+// has none (gt-hi exists for high only) its metrics take high's ground truth of the same view,
+// which cancels in every ratio to MSAA; their GT-relative values mean nothing and no gate reads them.
 //
-// --carry-from A takes the baseline's and the ground truth's entries over from an earlier commit A's
-// store instead of capturing them, when carry.mjs finds nothing between A and this sha that could
-// change them (the conditions, their order and the watch lists are in carry.mjs): a missing or
-// stale reference entry whose A counterpart has the key this run asks for is then cloned from A,
-// its manifest saying `carriedFrom`. An entry that may not carry is captured as without the
-// option, and the log says which condition failed. The checks capture on this sha's preview (the
-// reference URL above); --carry-url captures what A's store lacks for them from a preview of A;
-// --carry-recheck runs the spot checks again instead of reusing an earlier run's verdict.
-// A reference entry that is not stored, may not carry and has no URL to capture it from fails the
-// run with exit 1 before any capture starts, naming each such entry and why.
+// --carry-from A clones a missing or stale reference entry from commit A's store when
+// tools/kit/parity/carry.mjs finds nothing between A and this sha that could change it, and A's
+// entry has the key this run asks for; the manifest then says `carriedFrom`. An entry that may not
+// carry is captured as without the option, and the log says which condition failed. The checks
+// capture on this sha's preview.
 //
-// Clips and rest frames are deterministic (the page's stepper), so captures take the GPU lock shared
-// (capture-clip.mjs takes it). Wall times go to --runs (or PARITY_RUNS) and into metrics.json.
-// Python metrics run through `uv run --with numpy --with pillow --with scipy --with flip-evaluator`.
+// Output: stdout, a line per capture and per entry's metrics, then a summary with the failures,
+// console errors and aggregates. Each entry's folder holds its capture's `capture.log`. A partial
+// run (--views, --clips, --only, --tiers) merges into an existing metrics.json: the entries it
+// measured are replaced, the others stay. Wall times go into metrics.json and the run log.
+//
+// GPU lock and browser: each capture-clip.mjs takes a shared slot of the GPU lock for its clip and
+// opens a headless page (docs/reference/gpu-lock.md); --metrics-only uses no GPU. The metrics run
+// through `uv run --with numpy --with pillow --with scipy --with flip-evaluator`.
+//
+// Cost: a clip capture per entry and side, then clip-metrics per entry. Reused references cost a
+// file read each.
+//
+// Exit codes: 0 every capture and metric done; 1 a capture or a metric failed, or a reference
+// entry that is not stored, may not carry and has no URL to capture it from (before any capture);
+// 2 usage, an unknown option or argument, or another error (an unknown tier, view or clip, no entry
+// to do, --aa other than msaa for the label baseline).
+import '../help.mjs';
 import { spawn, execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile, appendFile, rm } from 'node:fs/promises';

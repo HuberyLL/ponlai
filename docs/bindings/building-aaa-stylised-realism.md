@@ -42,7 +42,7 @@ Every command that renders in a browser runs under the GPU lock and every wait g
   Tunable parameters): `__PONLAI__.tune.set( { name: value } )` at run time, or `tune=<base64 JSON>`
   in the URL.
 - The clear day's key against the ambient light on the meadow: `tools/island/meadow-light.mjs`,
-  with the window its `--expect` takes (`docs/reference/tools.md`, Probes).
+  with the window its `--expect` takes (its header).
 - Whether the land, sky, sea or air brightens anywhere through the dusk:
   `tools/island/dusk-grid.mjs`.
 

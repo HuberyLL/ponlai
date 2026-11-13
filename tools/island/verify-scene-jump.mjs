@@ -1,76 +1,104 @@
-// Regression probe for the exact scene jump (app/Scene.ts `establishScene`): a parity view reached by
-// a jump within one page must be the frame a fresh load of its query draws. It captures the views
-// both ways, in the layout of tools/kit/parity/capture-set.mjs, so tools/kit/diff-set.py judges them:
+// Checks the exact scene jump: a view reached by a jump within one page must be the frame a fresh load of it draws.
 //
-//   node tools/island/verify-scene-jump.mjs <baseUrl> <outDir> [--fresh | --legacy] [--retune] [--views parity|taa|all|normal|special|a,b,c]
-//       [--view "name:query[::js]"]...
+// It answers "does `__PONLAI__.establishScene( query )` (app/Scene.ts, where its contract is
+// written) leave nothing behind": after the jump, one rendered frame at the jump's camera and the
+// view's eval, the paused frame must be the one a fresh load of the view's query draws, byte for byte
+// wherever the fresh load repeats. It is the regression probe for anything that adds state a jump
+// must clear (ARCHITECTURE.md, rule 4). It captures the parity views both ways, in the layout of
+// tools/kit/parity/capture-set.mjs, so tools/kit/diff-set.py judges them.
+//
+// Usage:
+//   node tools/island/verify-scene-jump.mjs <baseUrl> <outDir> --check <root>/<sha>/<set> [options]
+//   node tools/island/verify-scene-jump.mjs <baseUrl> <outDir> [--fresh | --legacy] [--retune]
+//       [--views parity|taa|all|normal|special|a,b,c] [--view "name:query[::js]"]...
 //       [--order list|reverse] [--from <view or query>]... [--between <view or query>]...
-//       [--suffix .repeat] [--quality high]
-//       [--aa mode] [--q "extra&query"] [--size 1728x1117@2] [--frames n] [--stable-* (as capture.mjs)]
-//       [--profile dir] [--timeout 240000]
-//   node tools/island/verify-scene-jump.mjs <baseUrl> <outDir> --check <root>/<sha>/<set> [same options]
+//       [--suffix .repeat] [--quality high] [--aa mode] [--q "extra&query"] [--size 1728x1117@2]
+//       [--frames n] [--stable-* ...] [--profile dir] [--timeout 240000]
 //
-// --view adds an ad-hoc view (repeatable), with capture-set.mjs's syntax and parser
-// (tools/kit/parity/adhoc.mjs, whose header has the rules: `like=<view>` starts from a views.mjs view, the
-// view's own options win over the set's). The ad-hoc views follow --views's in the run's list; with
-// --view and no --views the list is just the ad-hoc views (no --views and no --view: all). So a new
-// scene option is checked as `--views island-fair-noon --view approach-half:approach=0.5` rather than
-// pieced together from --q and --from. One page reaches every view, so the views must share their
-// load-time options (adhoc.mjs loadSignature; establishScene refuses the others). Under --check the
-// fresh side's set stores each ad-hoc view with its definition's hash, as capture-set's: a stored
-// fresh load of the same name and definition is reused, a changed query or eval captures it again.
+// Options:
+//   --check <set>        the whole check in one command, against the reference store (below)
+//   --fresh              one fresh page load per view instead of one page for the list
+//   --legacy             jumps as builds before the exact jump could (below)
+//   --retune             rebakes the sky on every scene visited and checks it comes back (below)
+//   --views a,b          view names and groups, mixed (all; with only --view, just the ad-hoc views)
+//   --view name:q[::js]  an ad-hoc view, repeatable, with capture-set's syntax (tools/kit/parity/adhoc.mjs)
+//   --order o            list or reverse (list)
+//   --from v|query       a scene visited before the list without capturing it, repeatable
+//   --between v|query    a scene visited before each view, repeatable
+//   --suffix s           appended to every file name (none; `.repeat` for the second set)
+//   --quality q          the tier (high)
+//   --aa mode            the anti-aliasing mode (the tier's)
+//   --q query            extra query options (none)
+//   --size WxH@dpr       the viewport (1728x1117@2)
+//   --frames n           n rendered frames after the evals instead of the stability rule
+//   --stable-min, --stable-every, --stable-repeats, --stable-tolerance, --stable-patience, --stable-cap
+//                        the stability rule, as tools/kit/capture.mjs's
+//   --profile dir        the persistent browser profile (artifacts/.capture-profiles/scene-jump)
+//   --timeout ms         each wait in the page (240000)
 //
-// --check runs the whole check in one command: the fresh side, the jump side in both orders into
-// <outDir>, then diff-set.py (`--aa-floor`, `--temporal` for aa=taa|taau|fsr3|gt; its table also in
-// <outDir>/diff.txt; its exit code is the check's). The fresh side is the reference store's set of
-// the commit (tools/kit/reference.mjs, through capture-set.mjs `--reference --repeat
-// --page-per-view` with the same views and options, so it is keyed like every capture-set set): a
-// fresh page per view, so the jump is compared with fresh loads, never with itself (the key's
-// `pages: 'view'`; a set reached by jumps is refused). A stored set of the commit is reused, else
-// capture-set captures it, still parallel (default --jobs). The URL must serve that commit
-// (capture-set checks it). The two jump orders (the list, and the reverse with
-// `--suffix .repeat`) are independent pages, so they run at once, as two child processes of this
-// tool, each with its own browser profile (`<profile>` and `<profile>-reverse`) and its own leased
-// slot. A full 24-view check used to run as four commands through one page at a time, the fresh
-// loads alone two thirds of it; `--fresh` still captures fresh loads into <outDir> by hand.
-// --fresh: one fresh page load per view (a new page in the same browser), as capture-set loads it.
-// Otherwise one page for the whole list: it loads the first scene (the first `--from`, else the
-// first view), then visits each `--from` scene in turn without capturing it (a view's name, or a
-// query of its own such as "weather=storm&preset=noon&t=5"), then each view in `--order`, each one
-// after the `--between` scenes if any (so every view is reached from them): the jump
-// `await __PONLAI__.establishScene( query )` (the view's full query: the common part and its own),
-// a frame rendered at the jump's camera, the view's eval, readiness, the shot.
-// --legacy jumps the way builds before the exact jump could: establishScene's options (weather,
-// preset or hour, time) and the camera reset to the island view (capture-tooling plan 3.2).
-// --retune rebakes the sky on every scene visited, after the view's eval, through each path a
-// retune takes, before readiness: `refreshEnvironment()` (a new hour's or a seek's bake), a tunable
-// the bake reads set and set back through `tune.set` (`sky.atmosphere.mieG`, the aerosol lobe the
-// sky and the haze share), and the haze over the sky switched off and on as the GUI switches it (a
-// plain write of `pipeline.air.settings.sky`, which the frame loop finds: RenderStages.ts `retuneSky`), each
-// bake awaited. The page must still draw the fresh
-// load's frame: every explicit bake starts from the state before a page's first (Sky.ts `reset`).
-// After each round trip the sky's irradiance must be the page's own bit for bit, and the switch must
-// change it (else the run fails, the readings in the shot's JSON as `ready.retune`).
-// Readiness is capture.mjs's by default (tools/kit/capture-browser.mjs, "Readiness by stability"):
-// after the evals the floor's frames and the loading screen gone (waitForScene), a temporal page's
-// rest restarted and converged, then the image grabbed with the loop stopped until two grabs agree
-// (waitForStable, the `--stable-*` options as capture.mjs's; a temporal page is shot on its held
-// rest). A page still changing at the cap is shot anyway and printed as unstable. The loop stays
-// stopped for the screenshot (its last frame on the canvas); the next jump starts it again. A fixed
-// wait settled pages off their settled image under GPU load, so the views wandered between loads.
-// `--frames n` keeps the old fixed rule: n rendered frames after the evals, then the rest and the
-// stop. A persistent browser profile (`--profile`, one browser at a time) keeps the world cache and
-// the shader cache across runs.
-// Writes `<outDir>/<view><suffix>.png` and `.json` (the page's diagnostics, the crop anchors, the
-// scene it was reached from, `ready`: the readiness record, as capture.mjs's). Compare two sets
-// with diff-set.py: the fresh set taken twice (`--suffix .repeat`) as the reference, and a jump set in two orders (list, then reverse with
-// `--suffix .repeat`) as the test, `--aa-floor` for MSAA, `--temporal` for taa, taau and fsr3.
-// The page renders paused, so the GPU lock is taken shared, and leased per view as capture.mjs's
-// worker leases it (gpu-lock.mjs `leaseGpuLock`, 20 s): kept from one view to the next while nobody
-// waits, given up at a view boundary for a waiter ranked before it after 20 s of holding. The page
-// stays open across a yield with its loop stopped (every view ends with the shot's stopped loop),
-// and the next jump starts it again under the slot. It used to hold one slot for the whole run.
-// The closing line gives the run's time and how much of it went to waiting for the lock.
+// The jump side. One page for the whole list: it loads the first scene (the first --from, else the
+// first view), visits each --from scene in turn without capturing it (a view's name, or a query of its
+// own such as "weather=storm&preset=noon&t=5"), then each view in --order, each after the --between
+// scenes if any: `await __PONLAI__.establishScene( query )` with the view's full query (the common
+// part `debug&paused&t=12&quality=<q>`, then the view's own), a frame rendered at the jump's camera,
+// the view's eval, readiness, the shot. Only load-time options need a new page (quality, aa, size and
+// dpr), so the views must share theirs (adhoc.mjs loadSignature; establishScene refuses the others).
+// --fresh loads a new page in the same browser per view instead, as capture-set loads it.
+//
+// Ad-hoc views follow --views's in the list, so a new scene option is checked as `--views
+// island-fair-noon --view approach-half:approach=0.5`, not pieced together from --q and --from
+// (adhoc.mjs's header has the rules: `like=<view>` starts from a views.mjs view, the view's own
+// options win over the set's).
+//
+// --check: the fresh side is the reference store's set of the commit (tools/kit/reference.mjs,
+// through capture-set.mjs --reference --repeat --page-per-view with the same views and options, keyed
+// like every capture-set set): a fresh page per view, so the jump is compared with fresh loads, never
+// with itself; a stored set whose key is not `pages: 'view'` is refused. A stored set of the commit
+// is reused, else capture-set captures it in parallel; the URL must serve that commit. Under --check
+// the fresh side stores each ad-hoc view with its definition's hash: a changed query or eval
+// captures it again. The two jump orders (the list, and the reverse with `--suffix .repeat`) then
+// run at once as two child processes, each with its own browser profile (<profile> and
+// <profile>-reverse) and leased slot, and diff-set.py judges them (--aa-floor, or --temporal for
+// aa=taa, taau, fsr3 or gt). By hand: --fresh, --fresh --suffix .repeat (the reference's A/A), the
+// list, the reverse with --suffix .repeat, then `uv run --with numpy --with pillow
+// tools/kit/diff-set.py <ref> <test> --aa-floor`.
+//
+// --legacy jumps with establishScene's options only (weather, preset or hour, time) and resets the
+// camera to the island view. --retune rebakes the sky on every scene visited, after the view's eval
+// and before readiness, through each path a retune takes: `refreshEnvironment()` (a new hour's or a
+// seek's bake), a tunable the bake reads set and set back through `tune.set` (`sky.atmosphere.mieG`,
+// the aerosol lobe the sky and the haze share), and the haze over the sky switched off and on as the
+// GUI switches it (a plain write of `pipeline.air.settings.sky`, which RenderStages.ts `retuneSky`
+// finds), each bake awaited. The page must still draw the fresh load's frame (every explicit bake
+// starts from the state before a page's first: Sky.ts `reset`); after each round trip the sky's
+// irradiance must be the page's own bit for bit, and the switch must change it, else the view fails
+// (the readings in the shot's JSON as `ready.retune`).
+//
+// Readiness is capture.mjs's (tools/kit/capture-browser.mjs, "Readiness by stability"): after the
+// evals, the floor's frames and the loading screen gone, a temporal page's rest restarted and
+// converged, then the image grabbed with the loop stopped until two grabs agree. A page still
+// changing at the cap is shot anyway and printed as unstable. The loop stays stopped for the shot;
+// the next jump starts it again. A fixed wait settled pages off their settled image under GPU load,
+// so --frames keeps that rule only by request. A persistent profile keeps the world and shader caches
+// across runs (one browser per profile at a time).
+//
+// Output: <outDir>/<view><suffix>.png and .json (the page's diagnostics, the crop anchors, the scene
+// it was reached from, `ready`: the readiness record, as capture.mjs's); with --check also
+// <outDir>/diff.txt and diff/. stdout: a line per view and a closing line with the run's time and how
+// much of it went to waiting for the GPU lock (with --check: PASS or FAIL).
+//
+// GPU lock and browser: it takes the GPU lock itself, shared (docs/reference/gpu-lock.md), leased per
+// view (20 s, as capture.mjs's worker): kept from one view to the next while nobody waits, given up at
+// a view boundary for a waiter ranked before it. The page stays open across a yield with its loop
+// stopped. Headless browser pages of its own; no server (it needs one serving the commit).
+//
+// Cost: a jump is a fraction of a fresh load's time (about a third, on an unshared GPU); --check adds
+// the fresh side when the store lacks it, and runs both jump orders at once.
+//
+// Exit codes: 0 every view captured (with --check: the diff passed); 1 a page error or a failed
+// retune (with --check: a jump page failed, else diff-set.py's own code); 2 bad usage, or with --check
+// a reference set that failed or is not made of fresh loads.
+import '../kit/help.mjs';
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';

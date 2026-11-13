@@ -1,10 +1,13 @@
-// Dusk grid: the scene's light at a grid of sun elevations through the dusk and the dawn, read off
-// the running page in scene units, each point reached by the exact scene jump and baked explicitly,
-// and judged for the rule that a lower sun never makes a quantity brighter (packages/render/sky/DayCycle.ts:
-// the dusk's shares). It answers "does the land, the sky, the sea or the air brighten anywhere as
-// the sun goes down, by how much, and which of the night's terms does it", where a few views at
-// fixed hours miss a step in between.
+// Reads the scene's light at a grid of sun elevations through the dusk and the dawn, and judges its fall.
 //
+// It answers "does the land, the sky, the sea or the air brighten anywhere as the sun goes down or
+// comes up, by how much, and which of the dusk's shares does it", where a few views at fixed hours
+// miss a step in between. Each point is read off the running page in scene units, reached by the
+// exact scene jump and baked explicitly, and the rule that a lower sun never makes a judged quantity
+// brighter is checked (packages/render/sky/DayCycle.ts: the dusk's shares). For the meadow's light
+// use tools/island/meadow-light.mjs; for the frame's colours over the whole day, tools/island/day-sweep.mjs.
+//
+// Usage:
 //   node tools/island/dusk-grid.mjs [base] [--weathers clear,fair] [--sides evening,morning]
 //       [--from 2 --to -8 --step 0.5] [--midnight] [--at e1,e2,...] [--hours h1,h2,...]
 //       [--fine e1:e2:step]... [--views island[,<parity view>...]] [--split [name,...] [--fit]] [--night-split] [--twilight]
@@ -12,167 +15,92 @@
 //       [--haze [--haze-sky 3,5,10,20] [--haze-distances 300,1000]]
 //       [--frames] [--walk] [--q "grow=36"] [--src dir] [--out dir] [--timeout ms] [--lock-timeout s]
 //
-// base: the page's server (default http://127.0.0.1:5190/), a dev server: the reads import the
-// page's own modules by path (a production preview has none). `node tools/kit/serve.mjs dev --sha <rev>
-// --port N` serves another commit; give its checkout as --src.
+// Options:
+//   base                 a dev server (default http://127.0.0.1:5190/): the reads import the page's modules by path
+//   --weathers a,b       the weathers (clear,fair); parked ones by name
+//   --sides a,b          evening, morning or both (both)
+//   --from, --to, --step the grid of elevations in degrees (2 down to -8 by 0.5); --to down to -18, or `midnight`
+//   --midnight           adds midnight (hour 0), measured once per weather and shared by both sides
+//   --fine e1:e2:step    adds a denser series over a span; repeatable
+//   --at e1,e2 | --hours h1,h2  replace the grid with these elevations or clock hours (before noon: the morning's)
+//   --views a,b          `island` (the orbit's island view) or parity views without a camera query (island)
+//   --split [names]      forces each named dusk share to 0 and 1 (every DUSK_FORCES name)
+//   --fit                with --split: solves each night share's slope (tools/island/dusk-fit.mjs) into fit.txt
+//   --night-split        the twilight forced to 0 (the night's terms alone), and the local lights off alone
+//   --twilight           the twilight alone (every night share forced to 0); not with --split
+//   --compare dir        compares with an earlier run, value by value
+//   --compare-tolerance  the views' reads' relative tolerance in --compare and the split's last state (1e-4)
+//   --judge x            the rules' margin (0.02)
+//   --judge-range e1:e2  the elevations the step rule judges (2:-8)
+//   --judge-weathers a,b the weathers the step rule judges (all run)
+//   --overall-weathers   the weathers the overall rule judges (all run)
+//   --haze               also reads the haze's medium and opacity in a fixed view of its own
+//   --haze-sky e1,e2     the haze's sky rays' elevations in degrees (3,5,10,20)
+//   --haze-distances d   the haze's level rays' distances in metres (300,1000); at most 64 rays in all
+//   --frames             saves a PNG of each point into <out>/frames/
+//   --walk               reaches each point of a side by `setHour` in one page instead of the jump
+//   --q query            extra query options for every point (grow=36: the grown island, its yunpeng clumps)
+//   --src dir            the checkout whose DayCycle.ts and look the hours come from (this one)
+//   --out dir            the output folder (artifacts/dusk-grid/<time>)
+//   --timeout ms         each wait in the page (120000)
+//   --lock-timeout s     how long to wait for the GPU lock; 0 waits as long as it takes (0)
 //
-// The points
-//   - Elevations: --from down to --to by --step (default +2 to -8 by 0.5); --to takes down to -18,
-//     or `midnight` (-18 and midnight). --midnight adds midnight, the hour 0 (`e: null`, `at:
-//     "midnight"`), measured once per weather and shared by both sides. --fine e1:e2:step adds a
-//     denser series over a span (repeatable). --at e1,e2,... and --hours h1,h2,... replace the grid
-//     with those elevations or clock hours (an hour before noon is the morning's).
-//   - The hour of an elevation is solved in node from the sun of --src's packages/render/sky/DayCycle.ts
-//     (default: this checkout): a bisection of `sunElevationAt` on the side's half of the day to
-//     1e-12 h, checked against `eveningHour` / `morningHour` where the module has them (the largest
-//     difference is in summary.txt), and given to the page with 9 decimals. The page's own sun is
-//     checked against it after each jump (within 1e-3 degrees), so a page of another arc than
-//     --src's fails rather than reading other elevations.
-//   - Each point is its own scene jump (app/Scene.ts `establishScene`) to `weather=<w>&hour=<h>&paused&t=12`
-//     plus --q (default `grow=36`, the grown island: its yunpeng clumps), never reached by walking the
-//     clock through the points before it, since the scene is a function of its query (ARCHITECTURE.md, rule 4).
-//     --walk instead reaches each point of a side by `__PONLAI__.setHour` in one page, from the
-//     side's first point loaded: the path check, against a jump run through --compare.
-//   - At each point the figures are hidden, every `sky.dusk.force.*` tunable is set back to -1 (a
-//     scene jump keeps tunables), and the views' camera is placed: `island` is the orbit's island
-//     view, any other name a parity view's placement (tools/island/parity/views.mjs `eval`; its query's
-//     weather and hour are not taken, and a view whose query places the camera is refused).
+// The points. The hour of an elevation is solved in node from --src's sun and given to the page; the
+// page's own sun is checked against it after each jump (within 1e-3 degrees), so a page of another
+// arc than --src's fails rather than reading other elevations. `node tools/kit/serve.mjs dev --sha
+// <rev> --port N` serves another commit; give its checkout as --src. Each point is its own scene jump
+// to `weather=<w>&hour=<h>&paused&t=12` plus --q, never reached by walking the clock (a scene is a
+// function of its query: ARCHITECTURE.md, rule 4); --walk is the path check, against a jump run
+// through --compare. At each point the figures are hidden, every `sky.dusk.force.*` tunable is set
+// back to -1 and the views' camera placed. A state (the point as it is, or with shares forced) is the
+// forces set, an explicit bake of the environment, then per view the settled signal and the reads.
 //
-// A state (the point as it is, or with some shares forced) is taken as: the forces set through the
-// page's Tune handle (`sky.dusk.force.<name>`: DayCycle.ts DUSK_FORCES), an explicit bake of the
-// environment (sky/SkyRetune.ts, read back as `sky.bakeVersion` rising), then per view the page's
-// settled signal (tools/kit/capture-browser.mjs `waitForSettled`, after a few frames of the view's pose
-// when the camera moved: the signal and the uniforms are the last rendered frame's) and the reads.
-// The frame loop is stopped between points, when the lock may be given up.
+// The reads (scene units, luminance; the full list is beside `readJs`): the sky's and the deck's
+// irradiance (E, Edeck), the sky's metering (mS, mS2), the baked sky's ring 4 degrees up (sky4), the
+// land's ambient (landA, the land's gain on the probe's irradiance, which takes the fog layer's haze:
+// on a clear or fair day not the land's own sky light, whose source leaves it out), the far sea, the
+// air, the key's floors and colour; per view on a 256 x 144 grid of cells, the exposure with its keys
+// and meters (EV, kappa, beta, the meter's means), the metering illuminance over the land (M, Mfar),
+// and the radiance over the land, the sky, the sea and the yunpeng's cells. Weights (moonKeyGain,
+// handoff, daylight, the night's shares, `share.<name>`) are reported, never judged.
 //
-// The reads (scene units, luminance)
-//   CPU: E (pi times the sky's irradiance), Edeck (the deck's, read back), mS (the sky's metering
-//   log2) and mS2 = 2^mS, the far sea's seaBody / seaRadiance / seaNight / seaSun, the air's
-//   airAmb0 / airAmb1 / airMie0 / airDeckShare / airKeyFloor, keyIsMoon, keyColour, keyCloudFloor,
-//   deckKeyFloor, landKeyFloor = keyCloudFloor x keyColour, airKey = deckKeyFloor x keyColour,
-//   skyScale, landA = skyScale x E (E the probe's irradiance, which takes the fog layer's haze: on a
-//   clear or fair day not the land's own sky light, whose source leaves the fog layer out),
-//   landSky, sunBounce, daySky, displayAmbientGain, nightSkyLevel,
-//   moonVisibility, leafThrough, leafBack, swardTint (luminance of the tint), yunpengNight; sky4,
-//   the ring of the environment's baked source (the sky with its haze) 4 degrees up, its
-//   mean luminance over every azimuth, and sky4sun / sky4away over the halves within and beyond 90
-//   degrees of the sun's azimuth; skyLow4, the same ring 4 degrees down (the sea's half).
-//   Per view, on a 256 x 144 grid of cells (3 x 3 texels each; land = cells with no sky and no sea):
-//   <view>.EV, .EVt (the exposure, and the value it adapts toward, `exposure.target`), .kappa,
-//   .kappaH, .beta (the exposure's keys), .mM and .mH (the meter's trimmed means, computed from
-//   its histograms as Metering.ts does, P taken out), .mS (the sky's log, the term the meter reads
-//   beside them), .eM, .eH, .eS, .eG (the target's terms as Exposure.ts takes them: the scene's,
-//   the highlight's, the sky's and the guarded scene's) with .highlightDecides (1 where e_H lies
-//   under e_M, so the soft minimum follows it) and .EVt2 (the target recomputed from them, to check
-//   against .EVt), .M and .Mfar (the metering illuminance
-//   over the land, and over the land outside the yunpeng's lights' reach), .Yland, .Yfar, .Ysky,
-//   .Ysea (the opaque source), .hYland, .hYsky, .hYsea (hdr: with the sea and the air),
-//   .yunInner, .yunRing, .yunMInner, .yunMRing (the cells a clump covers, and the ring to three
-//   times its size: radiance and M).
-//   Weights (reported, never judged): the snapshot's moonKeyGain, handoff, daylight,
-//   nightVisibility, nightSkyLevel, moonVisibility, overcastAdaptation; gradeNight (the display's
-//   night) and gradeExposureNight (the exposure's: the `exposureNight` force sets the weight the
-//   exposure's keys take, apart from the display's); moonKeyShare,
-//   nightAmbientShare, displayNight, exposureNight, starNight at this sun; and `share.<name>`, each forced share's value as the code made it
-//   (DayCycle.ts `duskShares`: a number, or [ least, greatest ] when its readers took several).
+// --split forces each named share to 0 and to 1, then puts the night's shares back one at a time from
+// the twilight alone (T), each one's `inc` recorded; the last state must equal the point bit for bit,
+// else the point is void. --haze reads, in a view 65 m over the sea facing the open sea and pitched 10
+// degrees up, the haze's whole medium (`hazeMedium`) and its opacity on sky rays and level rays
+// (`hazeOpacity`, VolumetricHaze.probe); --compare judges the medium bit for bit. The details of
+// both are beside their code.
 //
-// --haze: at each point, after the point's own state, the haze in a view of its own (`haze-rows`:
-// 65 m over the sea at the land box's +x edge, its back to the island, facing the open sea, pitched
-// 10 degrees up with a vertical field of 30; one pose everywhere, so the points read alike and
-// compare), once the page has settled there:
-//   - hazeMedium: every item of the haze's key as the frame set it (RenderStages.ts `hazeKey`, `key.*`), the
-//     haze's copy of it (`look.*`), its medium's uniforms (`air.*`: the weather's haze and fog, the
-//     layers, sigma, the dome's own depth), the clouds' copy of the medium (`clouds.*`), the moon's aerosol keys (`moon.*`, Tune
-//     `haze.moon.*`) and the settings (`settings.*`); vectors flattened (`.0`, `.1`, ...), non-finite
-//     numbers as text. The light's colours are not in it.
-//   - hazeOpacity: 1 - T per display channel and the light at full opacity (VolumetricHaze.probe,
-//     the composite's own nodes on the GPU) along the view's azimuth: `sky <e>` at each --haze-sky
-//     elevation (the medium to the atmosphere's top, without the dome's own thin haze) and
-//     `level <d> m` at the camera's height over a surface at each --haze-distances (the composite's
-//     fog over it, the volume and the rest beyond it). A ray outside the view's frustum is not read
-//     (null, and `hazeOutside`).
-// Then the point's view is placed again for the states that follow. summary.txt lists the opacity;
-// --compare judges hazeMedium bit for bit at every point both runs hold (the deck's shares
-// `key.deck`, `key.overcastDeck` listed, not judged), the differing items by name.
+// The rules (summary.txt; a broken one exits 1):
+//   Step      on adjacent points within --judge-range, q( lower ) <= ( 1 + judge ) q( higher ) for E,
+//             Edeck, mS2, landA, seaRadiance, airAmb0 and every view's Mfar (marked *)
+//   Overall   from the range's top down, midnight included, the largest rise q( e' ) / q( e ) for e' < e
+//             over 1 + judge (marked #)
+//   Exposure  per view, EV( lower ) >= EV( higher ) - log2( 1 + judge ) on the step pairs (marked !)
+//   Fine      each --fine series: a rise between adjacent points of at most judge x step / 0.5
+// Reported, not judged: M, Yland, landKeyFloor, airKey, airMie0, the yunpeng's cells, leafThrough,
+// leafBack, swardTint, sky4, sky4sun, sky4away, the hdr luminances.
 //
-// --split [names] (default every DUSK_FORCES name; the twilight's are sun, hazeSun, hazeSky)
-//   - Per name, states with the share forced to 0 (q0) and to 1 (q1); the point itself is q. A
-//     twilight's share is a weight that is 1 unforced, so its q1 is q. A forced value equal to the
-//     share's own (an exact 0 or 1 in every reader, from `share.<name>`) is not taken again: that
-//     state is q (never for hazeNight, which has no value of its own).
-//   - Cumulative: from every night name of the split forced to 0 (T, the twilight) the names are put
-//     back one at a time in DUSK_FORCES order; `inc` is what each one adds. The last state (nothing
-//     forced) is taken again and must equal q bit for bit, else the point is void (reported, exit 1);
-//     the reads of the hdr source (hY*, mH) within --compare-tolerance, since the haze's rest after
-//     other states puts a cell's fourth digit a unit apart now and then (its largest: `hdrDrift`).
-//   - Residual: T + sum over the night names of ( q - q0 ) - q, per quantity; over 1 % of q it is
-//     listed in summary.txt (terms that act on each other: a product of shares).
-// --fit (with --split): each night share's slope solved from the split (tools/island/dusk-fit.mjs, whose
-//   header has the method), into fit.txt; `node tools/island/dusk-fit.mjs <out>` fits a run already made.
-// --night-split: the twilight forced to 0 (sun, hazeSun, hazeSky): the night's terms alone
-//   (`night`), and the local lights forced off alone (`noLights`).
-// --twilight: the twilight alone, every night name of DUSK_FORCES forced to 0 (the split's T, as
-//   `cumulative.T`), without the split's other states: where the twilight and the night cross,
-//   read against the night of another point (midnight), at a few seconds a point. Not with --split,
-//   which takes T itself.
+// Output: in --out, `<weather>-<side>.json` per weather and side (every point's values, weights and
+// states, written after every point), summary.txt (the values, the rules' results, residuals, void
+// points, errors), handoff.txt (with --split and midnight: the moon's key against the twilight's fall
+// and the land's key floor at night), fit.txt (--fit), terms.txt (--split, --night-split or
+// --twilight: q, T, each inc and the residual per quantity), compare.txt (--compare: in [+2.5, +4]
+// degrees the CPU values and weights bit for bit, the views' reads within the tolerance; with
+// --night-split in both runs, the lamps-off exposure's lift and its distance from NIGHT_METER_LIFT)
+// and frames/ (--frames). stdout: progress and a summary line.
 //
-// The rules (summary.txt; violations exit 1)
-//   - Step: on the grid's adjacent points within --judge-range (default +2 to -8), q( lower ) <=
-//     ( 1 + judge ) q( higher ) for E, Edeck, mS2, landA, seaRadiance, airAmb0 and every view's
-//     Mfar; a cell over it is marked *. Weathers: --judge-weathers (default all run).
-//   - Overall: over every point from the range's top down, midnight included, the largest rise
-//     q( e' ) / q( e ) for e' < e and the pair; over 1 + judge it is marked #, and judged only for
-//     --overall-weathers (default all run).
-//   - Exposure, per view: EV( lower ) >= EV( higher ) - log2( 1 + judge ) on the step pairs, else
-//     marked ! with the change of kappa and of m_M (EV = kappa - m_M, blended with the sky's); EV at
-//     night less EV at the range's top is reported.
-//   - Fine (each --fine series): a rise between adjacent points of at most judge x step / 0.5.
-//   Reported, not judged: M, Yland, landKeyFloor, airKey, airMie0, the yunpeng's cells, leafThrough,
-//   leafBack, swardTint, sky4, sky4sun, sky4away, the hdr luminances.
+// GPU lock and browser: it takes the GPU lock itself (run it unwrapped), shared, leased per point
+// (docs/reference/gpu-lock.md); the frame loop is stopped while the slot may be given up. One
+// headless capture browser page at 1600 x 900; no server (it needs the dev server running).
 //
-// Output (--out, default artifacts/dusk-grid/<time>; frames there too, never in git)
-//   <weather>-<side>.json: { version: 1, sha (--src's HEAD), base, query, weather, side, weathers,
-//     sides, grid, views, split, points: [ { key, e, at, hour, elevation, values, weights, shares?:
-//     { <name>: { w, q0, q1, inc } } (q is the point's `values`), cumulative?: { T }, residual?,
-//     void?, night?, noLights?, hazeMedium?, hazeOpacity?, hazePose?, hazeOutside?, frame?, error?,
-//     warnings? } ] }, written after every point;
-//   summary.txt: the values per point, then per weather and side the steps (%), the overall rises,
-//     the exposure's steps, the fine series, the residuals, the void points and errors;
-//   handoff.txt (with --split and midnight): per weather e_d (the highest point whose key has
-//     turned to the moon, snapshot `handoff` 1), the land's twilight ambient there T( e_d ) (Mfar in
-//     the T state), the moon's key at night K = q - q0( moonKey ) at midnight, and the condition
-//     T( e_d ) - T( night ) >= K (pass / fail) with T( e_d ) / K; then the line
-//     `floor <weather> landKeyFloor(night)/M(night) = x.xx %` (landKeyFloor / pi over M, M being
-//     lum( E ) / pi; marked under or over 5 %), with the key's measured share
-//     of M at night beside it;
-//   fit.txt (with --fit): per weather and side each share's solved endpoints, the width's k, the
-//     margin and the overall condition, then every share placed at once (tools/island/dusk-fit.mjs);
-//   terms.txt (with --split, --night-split or --twilight): per quantity and point, q, T, each night name's inc,
-//     the residual, `night` and `noLights`;
-//   compare.txt (--compare dir): every point both runs hold, value by value. In [+2.5, +4] the CPU
-//     values and the weights must be bit for bit the same, and the views' reads (GPU reads) within
-//     --compare-tolerance (default 1e-4 relative): two pages loaded on the same commit, one
-//     walking the clock and one jumping, read a mean of the hdr source (the sea, the land through
-//     the air) a few 1e-8 apart at a point in ten, and an opaque cell can land a unit apart in its
-//     fourth significant digit (Radiance.ts rounds each cell to four), while one page reaching a
-//     point twice by the jump reads it again bit for bit; the largest view difference is in
-//     compare.txt. A difference past the tolerance is a violation. With --haze in both runs, the
-//     haze's medium is judged bit for bit at every point (above); each point it differs at is a
-//     violation, and the opacity's largest difference is reported. With --night-split in both runs
-//     it lists the lift, the island view's metered EV with the lamps off less the other run's at
-//     each point both hold, and at midnight that lift less NIGHT_METER_LIFT (the day look's
-//     `nightMeterLift`, island/look/Day.ts): run against a page of the night those keys were set
-//     over, it says how far the night keys and the constant lie from what the meter now gives (the
-//     exposure's keys, island/look/Exposure.ts).
+// Cost: a point takes about a second, a few tens of seconds with --split. Both kept weathers, both
+// sides from +2 to -14 and midnight with --split take hours: run it through tools/kit/job.mjs.
 //
 // Exit codes: 0 every judged rule held; 1 a rule was broken, a point is void, or --compare found a
-// difference in [+2.5, +4]; 2 an option or the page went wrong (an unknown option, a page error,
-// a point that did not settle: what was measured is still written); 3 the GPU lock stayed held for
-// --lock-timeout seconds and nothing was measured.
-//
-// The tool takes the GPU lock itself (run it unwrapped): shared, since the reads do not depend on
-// what else renders, and leased per point (leaseGpuLock), the loop stopped while it may be given up. A run of the four weathers, both sides,
-// +2 to -14 and midnight with --split takes hours: run it through tools/kit/job.mjs.
+// difference in [+2.5, +4]; 2 a bad option, a page error or a point that did not settle (what was
+// measured is still written); 3 the GPU lock stayed held for --lock-timeout seconds, nothing measured.
+import '../kit/help.mjs';
 import '../kit/qos.mjs'; // first: the summary's CPU work runs with the application policy
 import { acquireGpuLock, leaseGpuLock, releaseGpuLock } from '../kit/gpu-lock.mjs';
 import { launchCapture, pngShooter, stopLoop, waitForScene, waitForSettled } from '../kit/capture-browser.mjs';
@@ -342,7 +270,10 @@ const nightNames = splitNames.filter( ( n ) => ! TWILIGHT.includes( n ) );
 const twilightNames = options.twilight ? FORCES.filter( ( n ) => ! TWILIGHT.includes( n ) ) : [];
 let hourCheck = 0;
 
-/** The hour on `side` at which the sun of --src stands `e` degrees up (see the header). */
+/** The hour on `side` at which the sun of --src stands `e` degrees up: a bisection of
+ * `sunElevationAt` on the side's half of the day to 1e-12 h, checked against `eveningHour` /
+ * `morningHour` where the module has them (the largest difference is in summary.txt), and given to
+ * the page with 9 decimals. */
 function hourOf( e, side ) {
 
 	const evening = side === 'evening';
@@ -474,6 +405,14 @@ const HAZE_VIEW = `(() => { const s = window.__PONLAI__, b = s.controls.ground.b
 // the dome's own haze) and level rays at the camera's height over a surface at each --haze-distances
 // (the composite's fog over it), read on the GPU by VolumetricHaze.probe. A ray outside the view's
 // frustum (the probe takes the composite's grid projection) is not read: null, listed.
+// The view (`haze-rows`): 65 m over the sea at the land box's +x edge, its back to the island, facing
+// the open sea, pitched 10 degrees up with a vertical field of 30; one pose everywhere, so the points
+// read alike and compare. The medium's items, by prefix: `key.*` (the haze's key as the frame set it,
+// RenderStages.ts `hazeKey`), `look.*` (the haze's copy of it), `air.*` (its medium's uniforms: the
+// weather's haze and fog, the layers, sigma, the dome's own depth), `clouds.*`, `moon.*` (Tune
+// `haze.moon.*`) and `settings.*`. The light's colours are not in it. Opacity is 1 - T per display
+// channel, with the light at full opacity: `sky <e>` and `level <d> m` (the composite's fog over the
+// surface, the volume and the rest beyond it). summary.txt lists the opacity.
 const hazeReadJs = () => `async () => { ${ PAGE }
 	const air = s.pipeline.air, cam = s.camera, medium = {};
 	const put = ( name, v ) => {
@@ -513,6 +452,34 @@ const hazeReadJs = () => `async () => { ${ PAGE }
 	return { medium, opacity, outside, pose: { position: cam.position.toArray(), forward: [ fx, 0, fz ], pitch: ${ HAZE_PITCH }, fov: cam.fov, aspect: cam.aspect } };
 }`;
 
+// The reads (scene units, luminance).
+//   CPU: E (pi times the sky's irradiance), Edeck (the deck's, read back), mS (the sky's metering
+//   log2) and mS2 = 2^mS, the far sea's seaBody / seaRadiance / seaNight / seaSun, the air's
+//   airAmb0 / airAmb1 / airMie0 / airDeckShare / airKeyFloor, keyIsMoon, keyColour, keyCloudFloor,
+//   deckKeyFloor, landKeyFloor = keyCloudFloor x keyColour, airKey = deckKeyFloor x keyColour,
+//   skyScale, landA = skyScale x E (E the probe's irradiance), landSky, sunBounce, daySky,
+//   displayAmbientGain, nightSkyLevel, moonVisibility, leafThrough, leafBack, swardTint (luminance of
+//   the tint), yunpengNight; sky4, the ring of the environment's baked source (the sky with its haze)
+//   4 degrees up, its mean luminance over every azimuth, and sky4sun / sky4away over the halves
+//   within and beyond 90 degrees of the sun's azimuth; skyLow4, the same ring 4 degrees down (the
+//   sea's half).
+//   Per view, on a 256 x 144 grid of cells (3 x 3 texels each; land = cells with no sky and no sea):
+//   <view>.EV, .EVt (the exposure, and the value it adapts toward, `exposure.target`), .kappa,
+//   .kappaH, .beta (the exposure's keys), .mM and .mH (the meter's trimmed means, computed from its
+//   histograms as Metering.ts does, P taken out), .mS (the sky's log, the term the meter reads beside
+//   them), .eM, .eH, .eS, .eG (the target's terms as Exposure.ts takes them: the scene's, the
+//   highlight's, the sky's and the guarded scene's) with .highlightDecides (1 where e_H lies under
+//   e_M, so the soft minimum follows it) and .EVt2 (the target recomputed from them, to check against
+//   .EVt), .M and .Mfar (the metering illuminance over the land, and over the land outside the
+//   yunpeng's lights' reach), .Yland, .Yfar, .Ysky, .Ysea (the opaque source), .hYland, .hYsky,
+//   .hYsea (hdr: with the sea and the air), .yunInner, .yunRing, .yunMInner, .yunMRing (the cells a
+//   clump covers, and the ring to three times its size: radiance and M).
+//   Weights (reported, never judged): the snapshot's moonKeyGain, handoff, daylight,
+//   nightVisibility, nightSkyLevel, moonVisibility, overcastAdaptation; gradeNight (the display's
+//   night) and gradeExposureNight (the exposure's: the `exposureNight` force sets the weight the
+//   exposure's keys take, apart from the display's); moonKeyShare, nightAmbientShare, displayNight,
+//   exposureNight, starNight at this sun; and `share.<name>`, each forced share's value as the code
+//   made it (DayCycle.ts `duskShares`: a number, or [ least, greatest ] when its readers took several).
 const readJs = ( view, cpu ) => `async () => { ${ PAGE }
 	const out = {}, view = ${ JSON.stringify( view ) };
 	const g = s.controls.ground;
@@ -756,7 +723,13 @@ async function moveAndSettle( js ) {
 }
 
 /** One state of the current point: the forces set, the bake, then per view the settled signal and
- * the reads. Returns { values, weights, unsettled }. */
+ * the reads. Returns { values, weights, unsettled }.
+ * The forces go through the page's Tune handle (`sky.dusk.force.<name>`: DayCycle.ts DUSK_FORCES);
+ * the bake is an explicit one of the environment (sky/SkyRetune.ts), read back as `sky.bakeVersion`
+ * rising; the settled signal is tools/kit/capture-browser.mjs `waitForSettled`, after a few frames of
+ * the view's pose when the camera moved (the signal and the uniforms are the last rendered frame's).
+ * A view other than `island` is a parity view's placement (tools/island/parity/views.mjs `eval`; its
+ * query's weather and hour are not taken). */
 async function state( forces ) {
 
 	await run( applyJs( forces ) );
@@ -846,8 +819,21 @@ async function measure( point, query, how ) {
 		await moveAndSettle( viewJs( options.views[ 0 ] ) );
 
 	}
+	// --split [names] (default every DUSK_FORCES name; the twilight's are sun, hazeSun, hazeSky).
+	// - Per name, states with the share forced to 0 (q0) and to 1 (q1); the point itself is q. A
+	//   forced value equal to the share's own (an exact 0 or 1 in every reader, from `share.<name>`) is
+	//   not taken again: that state is q (never for hazeNight, which has no value of its own).
+	// - Cumulative: from every night name of the split forced to 0 (T, the twilight) the names are put
+	//   back one at a time in DUSK_FORCES order; `inc` is what each one adds. The last state (nothing
+	//   forced) is taken again and must equal q bit for bit, else the point is void (exit 1); the reads
+	//   of the hdr source (hY*, mH) within --compare-tolerance, since the haze's rest after other states
+	//   puts a cell's fourth digit a unit apart now and then (its largest: `hdrDrift`).
+	// - Residual: T + sum over the night names of ( q - q0 ) - q, per quantity; over 1 % of q it is
+	//   listed in summary.txt (terms that act on each other: a product of shares).
+	// --twilight takes T alone (`cumulative.T`), where the twilight and the night cross, read against
+	// the night of another point (midnight), at a few seconds a point.
 	// a share the code already makes exactly 0 or 1 everywhere needs no state of its own
-	const natural = ( n ) => n === 'hazeNight' ? undefined : q.weights?.[ `share.${ n }` ];
+	const natural =( n ) => n === 'hazeNight' ? undefined : q.weights?.[ `share.${ n }` ];
 	const is = ( n, x ) => natural( n ) === x;
 	let states = 1;
 	const taken = async ( forces ) => {
@@ -928,6 +914,10 @@ async function measure( point, query, how ) {
 
 }
 
+// <weather>-<side>.json, written after every point. Each point: { key, e, at, hour, elevation,
+// values, weights, shares?: { <name>: { w, q0, q1, inc } } (q is the point's `values`), cumulative?:
+// { T }, residual?, void?, night?, noLights?, hazeMedium?, hazeOpacity?, hazePose?, hazeOutside?,
+// frame?, error?, warnings? }.
 const files = {};
 const fileOf = ( weather, side ) => files[ `${ weather }-${ side }` ] ??= {
 	version: 1, tool: 'dusk-grid', sha, src: options.src, base, query: options.q, weather, side, weathers: options.weathers, sides: options.sides,
@@ -1016,6 +1006,9 @@ if ( argError ) {
 }
 
 // ---- the rules
+// The step rule's weathers are --judge-weathers, the overall rule's --overall-weathers (both default
+// to the weathers run). An exposure step marked ! is listed with the change of kappa and of m_M (EV =
+// kappa - m_M, blended with the sky's); EV at night less EV at the range's top is reported.
 function fmt( x, digits = 4 ) {
 
 	if ( x === null || x === undefined ) return '-';
@@ -1194,6 +1187,11 @@ if ( splitNames.length || options.nightSplit || twilightNames.length ) {
 	writeFileSync( path.join( options.out, 'terms.txt' ), t.join( '\n' ) );
 
 }
+// handoff.txt: per weather e_d (the highest point whose key has turned to the moon, snapshot
+// `handoff` 1), the land's twilight ambient there T( e_d ) (Mfar in the T state), the moon's key at
+// night K = q - q0( moonKey ) at midnight, and the condition T( e_d ) - T( night ) >= K (pass / fail)
+// with T( e_d ) / K; then `floor <weather> landKeyFloor(night)/M(night) = x.xx %` (landKeyFloor / pi
+// over M, M being lum( E ) / pi; marked under or over 5 %), the key's measured share of M beside it.
 if ( splitNames.includes( 'moonKey' ) && nightNames.length ) {
 
 	const h = [];
@@ -1231,6 +1229,15 @@ if ( splitNames.includes( 'moonKey' ) && nightNames.length ) {
 if ( options.fit ) writeFileSync( path.join( options.out, 'fit.txt' ), fitDusk( Object.values( files ), { judge: options.judge, views: options.views } ).join( '\n' ) + '\n' );
 
 // ---- the comparison
+// Why the views' reads take a tolerance: two pages loaded on the same commit, one walking the clock
+// and one jumping, read a mean of the hdr source (the sea, the land through the air) a few 1e-8
+// apart at a point in ten, and an opaque cell can land a unit apart in its fourth significant digit
+// (Radiance.ts rounds each cell to four), while one page reaching a point twice by the jump reads it
+// again bit for bit. With --night-split in both runs, the lift is the island view's metered EV with
+// the lamps off less the other run's; at midnight it is set against NIGHT_METER_LIFT (the day look's
+// `nightMeterLift`, packages/island/look/Day.ts): run against a page of the night those keys were set
+// over, it says how far the night keys (packages/island/look/Exposure.ts) and the constant lie from
+// what the meter now gives.
 let compareFound = null;
 if ( options.compare ) {
 

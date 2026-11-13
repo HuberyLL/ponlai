@@ -1,20 +1,28 @@
-// Regression probe for the island camera's anchors (packages/island/camera/IslandCameraControls.ts): a wheel
-// zoom and a pinch move out from the ground under the cursor, and a drag keeps the grabbed ground
-// under it, so that point stays at the cursor's pixel on every frame.
+// Checks the island camera's anchors: zooms, pinches and drags keep the ground under the cursor at its pixel.
 //
+// It answers "does a wheel zoom or a pinch move out from the ground under the cursor, and does a drag
+// keep the grabbed ground under it, on every frame" (packages/island/camera/IslandCameraControls.ts).
+// Run it after a change to the island camera or its ground (packages/island/camera/).
+//
+// Usage:
 //   node tools/island/verify-zoom-anchor.mjs [url] [--runs 24] [--q "extra&query"] [--out file.json] [--timeout 600000]
 //
-// url: the server (default http://127.0.0.1:5190/, the dev server); a production preview needs
-// `debug` in --q for `window.__PONLAI__`. One page (tools/kit/probe.mjs, the GPU lock shared, 1600x900)
-// runs the cases, each from a scene jump to its start view, with synthetic input dispatched on the
-// canvas between rendered frames:
+// Options:
+//   url            the server (http://127.0.0.1:5190/, the dev server; a preview needs `debug` in --q)
+//   --runs n       how many times wheel-sea runs; wheel-land runs a quarter as many (24)
+//   --q query      extra query options after `paused&cameraInput` (none)
+//   --out f.json   writes the whole record (none)
+//   --timeout ms   tools/kit/probe.mjs's timeout (600000)
+//
+// One probe page (tools/kit/probe.mjs, 1600 x 900, with `cameraInput`: the island camera takes the
+// hand's input only with it) runs the cases, each from a scene jump to its start view, with synthetic
+// input dispatched on the canvas between rendered frames:
 //   wheel-sea    a macOS wheel notch out (deltaY +4.000244140625) every 3 frames from 40 m to the
-//                farthest zoom, the cursor at 72 % / 62 % over the water (the island view zooms
-//                out only, from its pose's distance: IslandStages.ts `islandNearest`); `--runs` times, as a
+//                farthest zoom, the cursor at 72 % / 62 % over the water (the island view zooms out
+//                only, from its pose's distance: IslandStages.ts `islandNearest`); --runs times, as a
 //                per-anchor failure of a few in a hundred needs that many notches to show (the sea's
 //                hit once rounded to a miss for 2 % of anchors: IslandGround.ts)
-//   wheel-land   the same from 22 m with the cursor at 45 % / 50 % over the island, a quarter as
-//                many runs
+//   wheel-land   the same from 22 m with the cursor at 45 % / 50 % over the island
 //   pinch-out    a ctrl wheel (Chrome's pinch) of +4 every frame from 22 m, the cursor at 30 % / 70 %
 //   pinch-fast   a ctrl wheel of +8 every frame from 22 m, the cursor at 55 % / 45 %
 //   drag         a left drag of 6 px right and 3 px up per frame for 30 frames, at 22 m
@@ -23,8 +31,17 @@
 // (`anchorZoom`) is recorded, and one that found no ground is a loss. A case passes with no loss and
 // a worst drift under 0.5 px (the anchors are exact solutions; over land each notch takes its anchor
 // again from the coarse height grid, which moved the first one by up to 0.15 px).
-// Prints one line per case; `--out` writes the whole record (each case's runs, the losses with the
-// camera's position, quaternion, fov and the ray). Exit 0 passed, 1 failed, 2 bad arguments.
+//
+// Output: stdout, one line per case; --out, the whole record (each case's runs, the losses with the
+// camera's position, quaternion, fov and the ray).
+//
+// GPU lock and browser: probe.mjs takes the GPU lock, shared (docs/reference/gpu-lock.md), in one
+// headless capture browser page; no server (it needs one running).
+//
+// Cost: one page load and a few hundred rendered frames.
+//
+// Exit codes: 0 every case passed; 1 a case failed or the probe gave no record; 2 bad arguments.
+import '../kit/help.mjs';
 import { spawn } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';

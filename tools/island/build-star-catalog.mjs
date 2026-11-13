@@ -1,15 +1,31 @@
-// Pack the Yale Bright Star Catalogue into the compact star list the night sky draws:
+// Packs the Yale Bright Star Catalogue into the compact star list the night sky draws.
+//
+// It answers "how was public/sky/stars.bin made": run it again only to rebuild it from the catalogue.
+//
+// Usage:
 //   node tools/island/build-star-catalog.mjs <bsc5 catalog.gz> [public/sky/stars.bin]
+//
+// Options:
+//   catalog.gz   the catalogue's file (required)
+//   target       the output (public/sky/stars.bin)
 //
 // Source: the Bright Star Catalogue, 5th Revised Ed. (Hoffleit and Warren 1991), CDS catalogue
 // V/50 (https://cdsarc.cds.unistra.fr/viz-bin/cat/V/50), file `catalog.gz`; the byte layout is in
 // the catalogue's ReadMe. From each of its 9110 entries this keeps the J2000 position, the visual
-// magnitude and a colour from B-V; the 14 entries removed from the catalogue (blank positions)
-// are skipped.
+// magnitude and a colour from B-V; the 14 entries removed from the catalogue (blank positions) are
+// skipped.
 //
 // Output, little-endian: 'BSC5', a u32 star count, then 8 bytes per star, brightest first:
 //   u16 right ascension (65536 per turn), i16 declination (32767 per 90 degrees),
 //   u8 V magnitude ((V + 2) * 20), u8 x3 linear sRGB colour (brightest channel 255).
+// stdout: the target, the star count, the magnitude range and the size.
+//
+// GPU lock and browser: neither (docs/reference/gpu-lock.md).
+//
+// Cost: one pass over a small catalogue.
+//
+// Exit codes: 0 written; 1 no catalogue given or an unreadable one (an uncaught error).
+import '../kit/help.mjs';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { gunzipSync } from 'node:zlib';

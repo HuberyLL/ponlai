@@ -1,5 +1,26 @@
-// CPU-only transition contracts; Node's native TypeScript stripping needs no browser/GPU.
-// Run: node --experimental-strip-types tools/render/verify-weather-state.mjs
+// Checks the weather's state, transitions, wind and auto chain on the CPU, with no browser and no GPU.
+//
+// It loads packages/render/sky/Weather.ts and checks a transition, its interruption and pause, the
+// presets, the heading's wrap, the wind levels and headings with any sky, the seeded auto chain
+// and its wind, the forecast read ahead, moisture, the parked weathers kept out of the chain,
+// lingering showers, the deck's light gone by night, the moon's gains at its height, and the ranges
+// and validation. Run it after a change to the weather's state or its presets; it is part of
+// `npm run check`. The weather on the page is checked by tools/render/verify-weather.mjs.
+//
+// Usage:
+//   node tools/render/verify-weather-state.mjs
+//
+// Options: none.
+//
+// Output: on stdout, the wind levels' shares over a long auto chain, then one line naming what
+// passed and the count of assertions made; a failed assertion's message and stack on stderr.
+//
+// GPU lock and browser: neither; node strips the imported TypeScript itself.
+//
+// Cost: under a second, CPU only.
+//
+// Exit codes: 0 every check passes; 1 a check failed (the assertion is thrown).
+import '../kit/help.mjs';
 import { assert, assertions } from '../kit/assert-count.mjs';
 import { Weather, WEATHER_PRESETS, WIND_LEVELS, PREVAILING_HEADING, PARKED_WEATHER, daySkyAt, deckRamp, deckSkyGain, deckSkyGap, overcastDeckLight, withMoon } from '../../packages/render/sky/Weather.ts';
 import { moonKeyShare } from '../../packages/render/sky/DayCycle.ts';

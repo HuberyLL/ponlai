@@ -1,5 +1,27 @@
-// Pure CPU checks; Node 22.18+ strips the imported TypeScript without a build or browser.
-// Run: node tools/render/verify-day-cycle.mjs
+// Checks the day cycle's clock, sun, moon, stars and exposure on the CPU, with no browser and no GPU.
+//
+// It loads packages/render/sky/DayCycle.ts with the island's exposure and day windows
+// (packages/island/look/IslandLook.ts), as the page's sky stage hands them over, and checks the
+// clock's wrapping, presets, speed, pause and rollover, the hour of each elevation on either side of
+// noon, continuous directions and grade, the dusk shares and the exposure only growing as the sun
+// sinks, the moon fixed in the sky at every hour and phase with a finite key through both
+// handoffs, the fixed stars, and the validation of bad input. Run it after a change to the day
+// cycle or the look's day windows or exposure; it is part of `npm run check`.
+//
+// Usage:
+//   node tools/render/verify-day-cycle.mjs
+//
+// Options: none.
+//
+// Output: one line on stdout naming what passed and the count of assertions made; a failed
+// assertion's message and stack on stderr.
+//
+// GPU lock and browser: neither; node strips the imported TypeScript itself.
+//
+// Cost: under a second, CPU only.
+//
+// Exit codes: 0 every check passes; 1 a check failed (the assertion is thrown).
+import '../kit/help.mjs';
 import { assert, assertions } from '../kit/assert-count.mjs';
 import { DayCycle, DAY_PRESETS, NOON_ELEVATION, MOON, cloudMoonShare, displayNight, exposureNight, moonDirection, moonKeyShare, nightAmbientAt, nightAmbientShare, skyNight, starNight, sunElevationAt, morningHour, eveningHour, yunpengNightShare } from '../../packages/render/sky/DayCycle.ts';
 import { createDayWindows } from '../../packages/render/look/DayLook.ts';

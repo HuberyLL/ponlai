@@ -1,32 +1,41 @@
-// Checks the packages' exits (tools/repo/layers.json `exits`): that each headless exit and the
-// renderer's setup exit load in plain node, and that nothing the page and setup exits load awaits
-// or reads the page as it loads. CPU only, no GPU, about a second.
-//   node tools/repo/verify-exits.mjs
+// Checks that the packages' exits load without doing work or reading the page, the headless ones in plain node.
 //
 // An exit is a file of re-exports through which another package imports a package
-// (tools/repo/verify-layers.mjs checks that every import across packages goes through one). Loading an
-// exit loads its whole package, so a module that did work as it loaded would make the order of
-// the imports part of the program, and a package that read the page at load could not be loaded
-// anywhere else.
+// (tools/repo/layers.json `exits`; tools/repo/verify-layers.mjs checks that every import across
+// packages goes through one). Loading an exit loads its whole package, so a module that did work as
+// it loaded would make the order of the imports part of the program, and a package that read the
+// page at load could not be loaded anywhere else. Run it after a change to what an exit loads; it
+// is part of `npm run check`.
 //
-// Guarantees, each a failure (exit 1) when broken:
-// - Each headless exit (render/data.ts, island/land.ts, game/sim/index.ts) and the setup exit
-//   (render/setup.ts, which the headless game loads for its settings) loads in plain node, with its
-//   types stripped and nothing installed first, without throwing, and every value name it
-//   re-exports is defined once it has loaded. (The page exits do not load in node, nor need to:
-//   modules of theirs read `import.meta.env`, which the bundler provides.)
-// - Every file a page exit (render/index.ts, island/index.ts, game/index.ts) or the setup exit loads, followed
-//   through its
-//   static imports and re-exports with `import type` left out, has no `await` at module scope and
-//   names none of the page's globals in PAGE at module scope. Module scope is the code that runs as
-//   the module loads: its top-level statements, the initialisers of its classes' static fields and
-//   static blocks, and the bodies of functions called where they are written; a function's body,
-//   a method or an instance field's initialiser runs later and is not read. A name counts unless
-//   it is a property's name (`x.document`, `{ window: ... }`) or the file declares it at its top
-//   level; type positions are not code and pass.
+// Usage:
+//   node tools/repo/verify-exits.mjs
 //
-// Output: a line per exit and the failures. It takes no options. Exit 0 when everything passes, 1
-// with the failures listed.
+// Options: none.
+//
+// What it checks, each a failure when broken:
+// - Each headless exit (packages/render/data.ts, packages/island/land.ts,
+//   packages/game/sim/index.ts) and the setup exit (packages/render/setup.ts, which the headless game
+//   loads for its settings) loads in plain node, with its types stripped and nothing installed first,
+//   without throwing, and every value name it re-exports is defined once it has loaded. The page
+//   exits do not load in node, nor need to: modules of theirs read `import.meta.env`, which the
+//   bundler provides.
+// - Every file a page exit (packages/render/index.ts, packages/island/index.ts,
+//   packages/game/index.ts) or the setup exit loads, followed through its static imports and
+//   re-exports with `import type` left out, has no `await` at module scope and names none of the
+//   page's globals in PAGE (the address, the storage, the document, window, the browser's
+//   description, the frame callbacks, workers, IndexedDB, fetch) at module scope. Module scope is
+//   the code that runs as the module loads: its top-level statements, the initialisers of its
+//   classes' static fields and static blocks, and the bodies of functions called where they are
+//   written. A function's body, a method or an instance field's initialiser runs later and is not
+//   read. A name counts unless it is a property's name (`x.document`, `{ window: ... }`) or the file
+//   declares it at its top level; type positions are not code and pass.
+//
+// Output: a line per exit, then the failures.
+//
+// GPU lock and browser: neither. Cost: about a second, CPU only.
+//
+// Exit codes: 0 everything passes; 1 a failure (listed) or an unknown option.
+import '../kit/help.mjs';
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';

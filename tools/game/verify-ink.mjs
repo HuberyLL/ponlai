@@ -1,12 +1,28 @@
-// Checks of the interface's ink (packages/game/ui/Ink.ts, its header has the rules), asserted on strokes
-// drawn here as the page draws them (a centreline and half-widths, coverage anti-aliased over a
-// pixel), at high's scale (1.2 at 1920 x 1080 CSS pixels, device pixel ratio 2): the ink is the same
-// for the same stroke and seed and another for another seed; it never adds ink, and never reaches
-// past the outline; a short stroke (an icon's) keeps its ink; a long stroke keeps its first press
-// and dries toward its exit, more on a broad stroke than on a thin one; a stroke told not to dry (a
-// gauge) keeps its ink to its exit.
-// Pure CPU; Node 22.18+ strips the imported TypeScript.
-// Run: node tools/game/verify-ink.mjs
+// Checks the interface's ink on strokes drawn as the page draws them.
+//
+// The ink is packages/game/ui/Ink.ts (its header has the rules). The strokes are drawn here as the
+// page draws them (a centreline and half-widths, coverage anti-aliased over a pixel), at high's
+// scale (1.2 at 1920 x 1080 CSS pixels, device pixel ratio 2). Run it after a change to the ink; it
+// is part of `npm run check`.
+//
+// Usage:
+//   node tools/game/verify-ink.mjs
+//
+// Options: none.
+//
+// What it asserts: the ink is the same for the same stroke and seed and another for another seed;
+// it never adds ink, and never reaches past the outline; a short stroke (an icon's) keeps its ink;
+// a long stroke keeps its first press and dries toward its exit, more on a broad stroke than on a
+// thin one; a stroke told not to dry (a gauge) keeps its ink to its exit.
+//
+// Output: on stdout a line with the shares of ink measured, then `verify-ink: all checks passed`
+// with the count of assertions. A failed assertion prints node's assertion error on stderr.
+//
+// GPU lock and browser: neither. Cost: under a second, CPU only (Node 22.18+ strips the imported
+// TypeScript).
+//
+// Exit codes: 0 every assertion holds; 1 an assertion failed. Arguments are ignored.
+import '../kit/help.mjs';
 import { assert, assertions } from '../kit/assert-count.mjs';
 import { inkShares } from '../../packages/game/ui/Ink.ts';
 

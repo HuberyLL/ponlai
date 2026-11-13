@@ -19,8 +19,8 @@ Detail lives where it is owned.
   changes a flow. The rules' full text: `docs/reference/architecture-rules.md`. Files:
   `node tools/repo/code-map.mjs`. Art decisions go to `docs/explanation/art-direction.md`, measured
   look values to `docs/reference/look-values.md`, URL options to `docs/reference/url-options.md`,
-  tool manuals to `docs/reference/tools.md`; this file changes with a rule every change follows, the
-  reading index or the folders.
+  tool manuals to each tool's header (indexed in `docs/reference/tools.md`); this file changes with
+  a rule every change follows, the reading index or the folders.
 - The docs follow Diátaxis (<https://diataxis.fr>), a page one kind, in its folder of `docs/`:
   tutorials (`docs/tutorials/`, none yet) for a first success, how-to guides (`docs/how-to/`) for
   one task's steps, reference (`docs/reference/`, and a module's header beside its code) for facts,
@@ -41,8 +41,9 @@ Detail lives where it is owned.
   tools), in seconds, without a GPU; `-- --full` adds the build and the world's chunks
   (`docs/how-to/check-a-change.md`). `npm run lint:docs`: Markdown, offline links, docs paths in
   code; `npm run lint:links` adds web links. In-page keys:
-  `docs/reference/tools.md`, Page.
-- Tools are in `tools/`, their manual in `docs/reference/tools.md` (Which tool for which question).
+  `docs/reference/page.md`.
+- Tools are in `tools/`, each one's manual in its header (`node <tool> --help`), indexed by question
+  in `docs/reference/tools.md`.
   Most changes meet: `node tools/kit/serve.mjs dev|preview` (a worktree's server on a free port),
   `tools/kit/capture.mjs` (one screenshot), `tools/kit/parity/capture-set.mjs` (views on one warm
   page, not a loop), `tools/render/scenes.mjs` (the renderer's test scenes checked in seconds: run
@@ -66,7 +67,7 @@ Detail lives where it is owned.
 ## Tools
 
 - Before writing a script, look for the tool that answers the question (`docs/reference/tools.md`,
-  Which tool for which question); if one almost fits, add an option to it.
+  the index of the tools); if one almost fits, add an option to it.
 - A script needed a second time, or by another task, becomes a tool (`docs/how-to/write-a-tool.md`).
   A truly one-off script stays in the task's artifacts folder.
 - Never start a GPU tool to see its options: it queues for the lock and renders. Read its header.
@@ -90,7 +91,7 @@ record and the rule guards a stated convention.
 | The island grows in place: a Grow swaps the changed chunks in one frame, and what depends on the land's shape joins the swap (`Growth.ts`). | `verify-growth-swap` | a stale shore on a grown page (`ARCHITECTURE.md`, rule 15) |
 | A swap never builds a pipeline; one that needs one is a bug (`Growth.ts`). | `verify-growth-swap`, `verify-first-use` | - |
 | Changes hold in the kept weathers (clear, fair) and on high (4K output: 1920x1080 CSS pixels at DPR 2) only; parked weathers (`sky/Weather.ts` `PARKED_WEATHER`) and tiers (`Quality.ts` `PARKED_QUALITY`) need no support but keep compiling and loading by name (`?weather=`, `?quality=`); default checks skip them. | `npm run typecheck`; judgement | the parked tiers slowed every line of work down (`Quality.ts`) |
-| Changes are judged at high's standard: 4K output at 60 fps with MSAA 4x, about 14 ms of GPU time a frame at the baseline (`Quality.ts`; `docs/reference/tools.md`, Frame profiler). | `profile-frame`, a measurement run by hand | - |
+| Changes are judged at high's standard: 4K output at 60 fps with MSAA 4x, about 14 ms of GPU time a frame at the baseline (`Quality.ts`; `docs/reference/profile-frame.md`). | `profile-frame`, a measurement run by hand | - |
 | Quality tiers change the cost, never the mood (weather, clock, lighting). High at 4K output is the reference image, the only active tier and every module's default; a load knob is read once, so a change of tier reloads (`Quality.ts`). | judgement | - |
 | Code that differs by anti-aliasing mode reads `post/Antialiasing.ts`'s exports, never the tier. | judgement | the depth resolve read four samples from a target of two |
 | A layer imports only from layers below, a package only through its exits (a newly needed name is added there); a `userData` key is on its layer's list (`ARCHITECTURE.md`, rules 10, 11). | `verify-layers`, `verify-exits` | a module that worked as it loaded made import order part of the program |
@@ -100,7 +101,7 @@ record and the rule guards a stated convention.
 | three's internals are reached only in `packages/render/three/`; an upgrade of three follows `docs/how-to/upgrade-three.md`. | `verify-three-internals` | - |
 | A file adapted from another project opens with a `/*! ... */` notice (project, copyright line, licence), its licence text beside it (`ocean/tidewater.LICENSE.txt`). Public-domain code (CC0, Unlicense) needs no notice; it and a technique borrowed without code are credited in a comment where used. | judgement | - |
 | `CREDITS.md` lists every third-party source (adapted code, assets with source, author, licence and processing, techniques) but npm dependencies (the build collects theirs in `dist/licenses/`); other shipped licence text goes in `vite.config.ts` `LICENCE_FILES`. No reference images in git, no unlicensed third-party art. | judgement | - |
-| No asset in git: what the page loads lives in the git-ignored `public/`, loads through `import.meta.env.BASE_URL`, ships in a GitHub release (`assets-v<N>`, never changed once published) pinned by `assets.lock.json`, the new lock in the commit whose code needs it; nothing binary or over 1 MiB is committed (`docs/reference/tools.md`, Assets). | `verify-no-binaries`; the rest: judgement | binary assets were kept in git |
+| No asset in git: what the page loads lives in the git-ignored `public/`, loads through `import.meta.env.BASE_URL`, ships in a GitHub release (`assets-v<N>`, never changed once published) pinned by `assets.lock.json`, the new lock in the commit whose code needs it; nothing binary or over 1 MiB is committed (`tools/repo/assets.mjs`). | `verify-no-binaries`; the rest: judgement | binary assets were kept in git |
 | Machine details (hardware, user names, local paths) stay out of the repository; measurements are relative. | judgement | - |
 | Comments and docs state what was measured and found, never cite the git-ignored `artifacts/` notes, plans or reports, or internal task and milestone names (a tool's output folder may be named). | judgement | - |
 | Code style follows three.js (mrdoob): tabs, spaces inside parentheses and brackets, English comments that explain why. | judgement | - |

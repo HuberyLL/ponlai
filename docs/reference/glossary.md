@@ -19,7 +19,7 @@ Chunk
 
 GPU lock
 : The lock every tool that renders the scene in a browser takes (`tools/kit/gpu-lock.mjs`): timing
-  runs hold it alone, paused captures and probes share it ([Tools](tools.md), GPU lock).
+  runs hold it alone, paused captures and probes share it ([GPU lock](gpu-lock.md)).
 
 Grow
 : The step that adds the next piece to the island in place: it swaps in only the changed chunks in
@@ -85,7 +85,7 @@ Temporal modes
 
 Test mode
 : A paused page that runs MSAA, with every history-dependent effect frozen or off, shot once
-  `settled` holds; there a paused frame is exactly repeatable ([Tools](tools.md), Test mode).
+  `settled` holds; there a paused frame is exactly repeatable ([Test mode](test-mode.md)).
 
 Tier
 : A quality tier, every cost knob in one table (`packages/render/Quality.ts`): high is the only

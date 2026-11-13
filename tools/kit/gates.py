@@ -2,29 +2,39 @@
 # requires-python = ">=3.10"
 # dependencies = []
 # ///
-"""Gate verdicts of one baseline.mjs label, regrouped per gate id, with a task's decisions applied.
+"""Regroups one baseline.mjs label's gate verdicts per gate id, with a task's decisions applied.
 
-    uv run tools/kit/gates.py <metrics.json> --thresholds thresholds.json [--policy policy.json]
-        [--normal] [--md out.md] [--json out.json] [--title text]
-
-<metrics.json> is a label's `<root>/<sha>/<label>/metrics.json` measured with --thresholds
-(baseline.mjs): every crop of every entry carries clip-metrics.py's verdicts, "<metric>" against
-MSAA and "gt:<metric>" against the ground truth. clip-metrics judges each crop by the rule that the
-thresholds file gives it; a task's later decisions (judge this look against the ground truth instead
-of MSAA, leave that gate informational) are not in those verdicts. This tool applies them and says,
-per gate id of the thresholds file, how many verdicts pass and fail and which items fail.
+It answers which gates a label passes. <metrics.json> is a label's `<root>/<sha>/<label>/metrics.json`
+measured with --thresholds (tools/kit/parity/baseline.mjs): every crop of every entry carries
+tools/kit/clip-metrics.py's verdicts, "<metric>" against MSAA and "gt:<metric>" against the ground
+truth. clip-metrics judges each crop by the rule that the thresholds file gives it; a task's later
+decisions (judge this look against the ground truth instead of MSAA, leave that gate
+informational) are not in those verdicts. This tool applies them and says, per gate id of the
+thresholds file, how many verdicts pass and fail and which items fail. To compare labels' values
+side by side, use tools/kit/table.py.
 
 What it guarantees: every verdict comes from the metrics file, either as clip-metrics gave it or
 rejudged by a policy rule from the test's own value in the file; nothing is measured again. The
 tool holds no decision itself: every one is a rule of the policy file, so the decisions stay with
 the task that made them and can be read, diffed and copied.
 
-Gate ids: a verdict's gate is the id of the thresholds rule that judged it, found as clip-metrics
-finds it (the most specific of "<clip>@<view>/<crop>/<metric>", "<clip>/<crop>/<metric>",
-"<clip>@<view>/*/<metric>", "<clip>/*/<metric>", "*/<crop>/<metric>", "*/*/<metric>"; `gt` rules for
-"gt:" verdicts); "?" when none matches. Gates print in the thresholds' `gates` order.
+Usage:
+    uv run tools/kit/gates.py <metrics.json> --thresholds <thresholds.json> [options]
 
-The policy (JSON; without one, clip-metrics' verdicts stand as they are):
+Options:
+    --thresholds <file>   the thresholds file the metrics were judged by (required)
+    --policy <file>       the task's decisions (below); without one, clip-metrics' verdicts stand
+    --normal              count special-weather entries apart: they fail no gate
+    --md <file>           the report as Markdown too
+    --json <file>         the counts per gate with the failing items
+    --title <text>        the report's title; default the label
+
+Gate ids: a verdict's gate is the id of the thresholds rule that judged it, the first found of
+"<clip>@<view>/<crop>/<metric>", "<clip>/<crop>/<metric>", "<clip>@<view>/*/<metric>",
+"<clip>/*/<metric>", "*/<crop>/<metric>", "*/*/<metric>" (`gt` rules for "gt:" verdicts); "?" when
+none matches. Gates print in the thresholds' `gates` order.
+
+The policy (JSON):
 
     { "about": "...",
       "informational": [ { "match": { ... }, "note": "why" }, ... ],
@@ -49,26 +59,38 @@ The policy (JSON; without one, clip-metrics' verdicts stand as they are):
               test value is not judged. The original verdict is not touched: mark it informational
               with its own rule when the GT judgement replaces it.
 
---normal: verdicts of special-weather entries (views.mjs's group `special`, and the clips whose
-view is in it, clips.mjs) are counted in their own column and fail no gate: normal weather is
-accepted first (both lists are read from those modules through node).
+--normal: verdicts of special-weather entries (tools/island/parity/views.mjs's group `special`, and
+the clips whose view is in it, tools/island/parity/clips.mjs) are counted in their own column and
+fail no gate: normal weather is accepted first. Both lists are read from those modules through node.
 
-Outputs: stdout and --md, a table per gate (PASS, FAIL, informational, special weather) and per
+Output: stdout and --md, a table per gate (PASS, FAIL, informational, special weather) and per
 gate the failing items (test and MSAA values, their ratio, the rule) and the informational ones
 that fail; --json the counts per gate with the failing items ({ label, aa, verdict, gates: { id:
 { PASS, FAIL, info, special, fails: [ { tier, entry, crop, metric, test, msaa } ] } }, aggregates,
 thresholds, policy }). baseline.mjs's aggregates (IQ-fidelity, IQ-alignment) are copied from the
 metrics file and count as judged gates.
 
+GPU lock and browser: neither; it reads JSON files, and with --normal runs node to read the two
+tables. Cost: under a second.
+
 Exit codes: 0 when every judged gate passes (no FAIL outside the informational and, with --normal,
-the special-weather columns, and no aggregate FAIL), 1 otherwise, 2 for bad input.
+the special-weather columns, and no aggregate FAIL); 1 otherwise; 2 for bad input (a file that
+cannot be read or parsed, an unknown policy key, a missing --thresholds).
 """
-import argparse
-import fnmatch
-import json
-import os
-import subprocess
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from help import answer_help  # noqa: E402
+
+answer_help(__file__)
+
+import argparse  # noqa: E402
+import fnmatch  # noqa: E402
+import json  # noqa: E402
+import os  # noqa: E402
+import subprocess  # noqa: E402
+import sys  # noqa: E402
 
 HERE = os.path.dirname( os.path.abspath( __file__ ) )
 ROOT = os.path.dirname( os.path.dirname( HERE ) )

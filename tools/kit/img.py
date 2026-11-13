@@ -2,157 +2,125 @@
 # requires-python = ">=3.10"
 # dependencies = ["numpy", "pillow"]
 # ///
-"""One image tool for captures: differences, crops, side-by-side sheets, statistics and profiles
-around a point.
+"""Measures and arranges captures: differences, crops, sheets, thumbnails, statistics, flicker, ring profiles.
 
-  uv run tools/kit/img.py diff  A B            [region] [--thr 1,2,8,32] [--bbox-thr 0] [--heat P] [--gain 8] [--json]
+It does the image work around captures (tools/kit/capture.mjs, capture-set, capture-clip): how two
+captures or sets differ, a region's colour and light, a crop or a labelled sheet for the eye, a
+clip's flicker. Use it instead of a Pillow or NumPy script of one's own. Its numbers are
+diff-set.py's and compare-captures.py's (the shared helpers in tools/kit/pixels.py). How to check a
+visual change with it: docs/how-to/check-a-change.md.
+
+Usage:
+  uv run tools/kit/img.py diff  A B            [region] [--thr 1,2,8,32] [--bbox-thr 0] [--heat P] [--json]
   uv run tools/kit/img.py crop  IMG|DIR...     region [--zoom N] --out DIR
   uv run tools/kit/img.py sheet IMG|DIR...     [region] [--labels a,b] [--cols N] [--diff] [--zoom N | --scale F | --width W] --out FILE
   uv run tools/kit/img.py thumb IMG|DIR...     [--short 360] [--quality 88] --out DIR
-  uv run tools/kit/img.py stats IMG|DIR...     [region] [--pct 1,5,50,95,99] [--oklab] [--split] [--cover] [--mask M] [--json]
-  uv run tools/kit/img.py stats IMG|DIR... --deck [--deck-boxes auto|h|sun|none] [region] [--deck-rows [--horizon x0,x1,y]]
-                                         [--trend 15] [--px-per-deg 24] [--json]
-  uv run tools/kit/img.py flicker CLIP|DIR...  [region] [--frames a-b] [--spike 20,40] [--odd 2.5] [--drop-odd] [--map P] [--gain 8] [--json] [--save]
+  uv run tools/kit/img.py stats IMG|DIR...     [region] [--pct 1,5,50,95,99] [--oklab] [--linear] [--split] [--cover] [--mask M [--against B]] [--json]
+  uv run tools/kit/img.py stats IMG|DIR... --deck [--deck-boxes auto|h|sun|none] [region] [--deck-rows [--horizon x0,x1,y]] [--trend 15] [--px-per-deg 24] [--json]
+  uv run tools/kit/img.py flicker CLIP|DIR...  [region] [--frames a-b] [--spike 20,40] [--odd 2.5] [--drop-odd] [--map P] [--json] [--save]
   uv run tools/kit/img.py radial IMG|DIR...    --centre x,y | --centre-key KEY  [--rings 0,2,4,8,15,30,50] [--fov F] [--half up] [--json]
 
-  region: --box [name=]x,y,w,h (repeatable) and/or --anchor name[,name] | all  [--anchors FILE.json]
+Options:
+  region        --box [name=]x,y,w,h (repeatable) and/or --anchor name[,name]|all [--anchors FILE.json]
+  --match glob  the files a directory stands for (default *.png, sorted by name)
+  --gain g      the scale of diff's heat map, sheet's --diff column and flicker's map (default 8)
+  --jobs n      diff and flicker: worker threads (default half the CPUs, 1 to 4)
+  --json        prints JSON instead of a table (diff, stats, flicker, radial)
+  diff          --thr levels counted (1,2,8,32); --bbox-thr the box's level (0); --heat a heat map
+  crop          --zoom nearest-neighbour factor (1); --out the directory (required)
+  sheet         --labels; --cols; --diff; --zoom (1), --scale or --width; --out the file (required)
+  thumb         --short the short side in pixels (360); --quality JPEG quality (88); --out (required)
+  stats         --pct percentiles (1,5,50,95,99); --oklab; --linear; --split; --cover; --mask; --against
+  stats --deck  --deck-boxes (auto); --deck-rows; --horizon; --trend degrees (15); --px-per-deg (24)
+  flicker       --frames a-b; --spike levels (20,40); --odd factor (2.5, 0 none); --drop-odd; --map; --save
+  radial        --centre or --centre-key; --rings edges (0,2,4,8,15,30,50); --fov degrees; --half side
 
-`uv run` reads the dependencies above (PEP 723), so no system Pillow or NumPy is needed. A
-directory stands for its PNGs (--match, default `*.png`, sorted by name); `diff` and `sheet` pair
-directories by file name.
-
-diff: per pair (two images, or the PNGs two directories share) and per region, `identical`
-(equal decoded pixels), the max and mean absolute channel difference, the count of pixels over each
---thr level (a pixel counts when its largest channel difference exceeds the level), the mean signed
-difference B - A per channel (`bias`), the luma mean's change (`dL`, Rec. 709 on code values) and
-the bounding box [x, y, w, h] of the pixels over --bbox-thr. The numbers are diff-set.py's (the
-same helpers, tools/kit/pixels.py): max, mean and counts over 1, 2, 8 and 32 equal its report.
---heat writes the per-pixel max channel difference times --gain (clipped; x8 as diff-set's
-<view>.diff.png): a file for one pair, else a directory of <name>[.<region>].diff.png.
-
-crop: every region of every image, nearest-neighbour zoomed by --zoom, saved as
-<out>/<name>.<region>.png.
-
-sheet: a labelled grid. Files (or one directory's PNGs): one column each (--cols wraps them into
-rows when no region is given). Several directories: one column each, one row per shared file name. Each region adds rows, cut
-with the same box from every column (an anchor's box comes from the first column's capture JSON
-that names it). --diff adds a column after two inputs: their difference x --gain. Tiles are
-1:1 unless --zoom (nearest, integer), --scale (box filter) or --width (box filter to that width)
-is given; a full frame wider than 1280 px is scaled down to 1280 by default.
-
-thumb: each image (or directory's PNGs) scaled by a box filter to --short pixels on its short side and
-saved as <out>/<name>.jpg at --quality: a frame kept to be recognised, not measured.
-
-stats: per image and region, compare-captures.py's metrics (mean RGB, luma mean and standard
-deviation, the mean luma difference of adjacent pixels, the share of pixels with luma over 245)
-and the luma percentiles of --pct. --oklab adds the median Oklab lightness, chroma and hue (degrees)
-of the region's pixels (sRGB decoded), the screen colour a look is judged by; --linear adds the region's
-mean linear luminance Y (sRGB decoded, Rec. 709 weights), the --pct percentiles of Y and the Oklab
-L, a and b of its mean linear colour (`linear` in --json: a light level compared in stops, log2 of a
-ratio of Y, and a colour difference as the Oklab distance of the means); --split sorts the
-region's pixels by their Oklab L and gives four parts of it, each the mean Oklab L, C and hue (the
-mean of the pixels' L, a and b, C and h taken from the mean a and b) and mean linear RGB of its
-pixels: `under` and `over` the region's own median L (a crown's dark and lit halves), `p5` the darkest
-5 % and `p90` the brightest 10 % (`medianL` and `parts` in --json); --cover adds the share
-of pixels (%) whose red exceeds twice their green: the meadow's blades in a capture taken with
-`flags=grassMask` (packages/island/world/Grass.ts), which paints them red over the green ground. --mask M reads
-a mask capture of the same view (a file, or a directory holding one of each image's name) and splits
-the region's pixels by it: `marked` where the mask differs from the image by more than 16 levels in a
-channel and its red is its largest, `edge` where it differs so and its green is, the `rest` the
-others (a bright paint leaves the display chain desaturated: about the sun a marked red came out
-salmon, its red under twice its green, and a test by that ratio found a sixth of the marked sky
-there); it gives the marked share (%) and, for the marked
-pixels and the rest of the image itself, the median Oklab L, C and hue with their 10th and 90th
-percentiles (the hue's about its circular mean), the marked median's dL and dC over the rest's, and
-each marked pixel's dL and dC against the rest round it (their Gaussian mean over the rest's pixels
-only, a sigma of 1 % of the region's width: median and 10-90 percentiles), since the rest of a sky
-is lighter or darker by its elevation; --against B (a file, or a directory of the same names) gives
-them against the same pixels of the view without what the mask marks instead (which an exposure
-that meters the frame may have moved as a whole). `flags=streakMask` (packages/render/sky/Sky.ts) marks
-the thin cloud layer's streaks, `flags=streaks:0` takes the layer away.
-
-stats --deck: the cloud deck's structure on a sky, in place of the metrics above, per region. Oklab L
-and C and linear luminance Y (Rec. 709) come from the sRGB code values. The regions are named
-presets (--deck-boxes; `auto` takes `h` for a file name ending in -h and `sun` for one ending in -sun,
-or none when --box / --anchor is given) and every --box or --anchor; each preset box is given on a
-2560 x 1440 frame and scaled with the image's width:
-  h     skyL 0,0,820,500; skyR 1780,0,780,500; sky, skyL and skyR read as one region; skyHigh
-        0,0,2560,140 (about 14-20 degrees up); skyLowBand 0,400,2560,110 (about 1-5 degrees up)
-        over the columns of skyL and skyR only, clear of the island
-  sun   sunSide 1500,0,1060,560 (round the sun, which stands above the frame); offSide 0,0,640,560
-The sky mask is the union of every box read; each blur is a Gaussian normalised over the mask (the
-blur of L times the mask over the blur of the mask), so neither the land nor the frame's edge pulls
-anything in. Degrees: --px-per-deg, by default 24 at 2560 wide (the horizon view's vfov of 55 on
-1440 rows), scaled with the width. Per region:
-  spread     the region's blocks of a degree (24 px square, each the median of its sky pixels, a
-             block kept when nine tenths of it is sky): p90 - p10 of their L; `stops` log2 of
-             their Y's p90 over p10
-  structure  L minus its broad trend (a sigma of --trend / 2 degrees, 15 by default): p10 and p90
-  scale std  the std of L - G1, G1 - G3, G3 - G10 and G10 - G30, G_d a sigma of d / 2 degrees:
-             the bands under 1, 1-3, 3-10 and 10-30 degrees
-  gradient   |grad L| a degree on a sigma of .125 degree (normalised over the whole frame): p95
-             and p99, how hard the edges are
-  mass       the half length (to .5) of the structure's autocorrelation along x and y, in degrees,
-             averaged over the region's boxes: about a third to a half of a mass's width
-  dark/light the median L and C of the blocks in the lowest and the highest quarter of the
-             p10..p90 range
---deck-rows adds the horizon's profile: row medians of L over x0..x1 every 6 px from 15 degrees up
-to 6 down (--horizon x0,x1,horizonY, by default 0,800,528 at 2560 wide, scaled), and from it the
-sky 0-6 degrees up against 6-15 up (their medians, their difference and their blocks' spreads),
-the far sea's fall a degree over 0-5 down (a line's slope, positive when the sea darkens downward)
-and its largest step between rows within one degree, and `line`, the pixel row within a degree of
-the horizon that stands furthest from the rows 3 px above and below it (a thin dark or bright
-line). Read every view at the same scale: 8-bit quantisation floors the std under 1 degree at
-about .0014 on a flat sky, and a frame read at half size gives the same numbers within a few per
-cent above 1 degree and lower ones under it.
-
-flicker: frame-to-frame flicker of a run of consecutive frames, per region: a capture-clip clip
-directory (its whole frames, <clip>/full/<i>.png, in frame order) or a directory of PNGs named by
-frame number. The frames must be consecutive (a gap is refused: the measures compare neighbours);
---frames a-b keeps frames a to b. Luma is Rec. 709 of the 8-bit values (float32), in levels:
-  F       mean |L_t - L_t-1|
-  Fhp     mean |L_t - ( L_t-2 + L_t+2 ) / 2|, the temporal high-pass (clip-metrics.py's)
-  spike   s = L_t - ( L_t-1 + L_t+1 ) / 2, a one-frame flash: the share of pixel-frames with
-          |s| over each --spike level and with s over the first (`bright`), in per mille, its
-          99.9th percentile (`p999`), and the share of pixels that flash over the first level at
-          least once (`once`, %)
-  std     the mean per-pixel standard deviation over the frames; `mean` the luma mean
-The numbers equal the sparkle surveys' flicker.py. A clip of 120 frames at 60 fps (2 s) is what
-the vegetation surveys measured; the sea's own motion is a useful control region (Fhp about 0.35,
-no spikes, on island-fair-noon). --map writes each region's flash map: the share of frames whose
-|s| exceeds the first level, times 255 x --gain (a file for one clip and region, else a directory
-of <clip>[.<region>].flash.png). --save writes <clip>/flicker.json. Only the regions are kept in
-memory, so give regions rather than the whole frame for long 4K runs.
-Odd frames: a paused page's stepped frames now and then come out as a discrete alternative image
-(scattered vegetation pixels off by up to 190 levels: capture-clip.mjs, "The rest shot twice"),
-which in a 120-frame meadow clip raised Fhp by about 5 % and the flashes by about 6 % from one
-frame. A frame whose flash share over all the regions exceeds --odd (2.5) times the clip's median
-and the median by 0.5 per mille is listed (`odd`); --drop-odd leaves out every term that reads
-one, so A/Bs of small effects compare the wind's flicker rather than which clip caught an odd
-frame.
-
-radial: the profile around a point (the sun), ring by ring: per ring the median R, G, B (code
-values), the median luma (Rec. 709 on code values), the median linear luma (sRGB decoded, 0 - 1) and
-the count of the ring's pixels inside the frame. --rings are the rings' edges in percent of the
-image's height, or in degrees from the point with --fov (the capture's vertical field of view: a
-radius r maps to tan(r) / tan(fov / 2) half heights, exact at the frame's centre). --centre is the
-point in pixels, or in fractions of the width and height when both are at most 1; --centre-key
-reads it, in fractions, from the capture JSON's --eval-ready values (the first one that holds KEY,
-as [x, y]), so each image takes its own. --half up|down|left|right keeps the half of each ring on
-that side of the point (up: the sky over a sun near the horizon, without the sea under it).
+`uv run` reads the dependencies from the script's own block (PEP 723), so no system Pillow or
+NumPy is needed. A directory stands for its PNGs; `diff` and `sheet` pair directories by file name.
 
 Regions: --box takes pixels of the image as stored (a capture at dpr 2 has twice the CSS size).
 --anchor reads the named crop anchors of the capture's JSON (<name>.json next to <name>.png,
 `crops`: tools/island/parity/views.mjs; for diff, B's JSON, else A's), `all` every anchor in it;
 --anchors FILE reads them from a capture JSON or a { name: {x, y, w, h} } file instead. An anchor
-the capture reports missing (off screen) is skipped with a note.
+the capture reports missing (off screen) is skipped with a note on stderr.
+
+diff: per pair and region, `identical` (equal decoded pixels), the max and mean absolute channel
+difference, the count of pixels over each --thr level (a pixel counts when its largest channel
+difference exceeds the level), the mean signed difference B - A per channel (`bias`), the luma
+mean's change (`dL`, Rec. 709 on code values) and the bounding box [x, y, w, h] of the pixels over
+--bbox-thr. Max, mean and the counts over 1, 2, 8 and 32 equal diff-set.py's report. --heat writes
+the per-pixel max channel difference times --gain (clipped; as diff-set's <view>.diff.png).
+
+crop: every region of every image, zoomed by --zoom. sheet: a labelled grid. Files (or one
+directory's PNGs) take a column each (--cols wraps them into rows when no region is given); several
+directories take a column each and a row per shared file name. Each region adds rows, cut with
+the same box from every column (an anchor's box comes from the first column's capture JSON). --diff
+adds a column after two inputs: their difference times --gain. Tiles are 1:1 unless --zoom
+(nearest, integer), --scale or --width (box filter) is given; a full frame wider than 1280 px is
+scaled down to 1280. thumb: a box-filtered JPEG, a frame kept to be recognised, not measured.
+
+stats: per image and region, compare-captures.py's metrics (mean RGB, luma mean and standard
+deviation, the mean luma difference of adjacent pixels, the share of pixels with luma over 245) and
+the luma percentiles of --pct. --oklab adds the median Oklab L, C and hue (degrees) of the
+region's pixels (sRGB decoded), the screen colour a look is judged by. --linear adds the mean
+linear luminance Y (sRGB decoded, Rec. 709), the --pct percentiles of Y and the Oklab L, a and b of
+the mean linear colour: light compared in stops (log2 of a ratio of Y), colour as an Oklab distance.
+--split gives the means under and over the region's median L and of its darkest 5 % and brightest
+10 % (oklab_split). --cover adds the share of pixels (%) whose red exceeds twice their green: the
+blades in a capture with `flags=grassMask` (packages/island/world/Grass.ts). --mask M reads a mask
+capture of the same view (a file, or a directory of the same names) and splits the region's pixels
+into those it marks and the rest: the marked share, both parts' median Oklab L, C and hue with their
+10th and 90th percentiles, and each marked pixel against the rest round it (mask_stats); --against B
+compares them with the same pixels of the view without what the mask marks. `flags=streakMask`
+(packages/render/sky/Sky.ts) marks the thin cloud layer's streaks; `flags=streaks:0` takes it away.
+
+stats --deck: the cloud deck's structure on a sky instead of the metrics above: per region the
+spread of its blocks of a degree, its structure about a broad trend, the std per band of size, the
+edges' gradient, the masses' size and the dark and light blocks (deck_stats). The regions are named
+presets on a 2560 x 1440 frame, scaled with the image's width (DECK_BOXES: `h`, the horizon views'
+sky; `sun`, round the sun above the frame; `auto` picks by a file name ending in -h or -sun, or none
+when --box or --anchor is given), plus every --box or --anchor. --deck-rows adds the horizon's rows
+(--horizon x0,x1,horizonY, default 0,800,528 at 2560 wide): the low sky against the sky over it and
+the far sea's fall a degree (deck_rows).
+
+flicker: frame-to-frame flicker of consecutive frames per region: a capture-clip clip directory
+(its whole frames, <clip>/full/<i>.png) or a directory of PNGs named by frame number. A gap is
+refused, and at least 5 frames are needed. It gives F, the temporal high-pass Fhp (clip-metrics.py's),
+one-frame flashes over the --spike levels, the per-pixel std and the mean, and lists odd frames
+(flicker_clip). A clip of 120 frames at 60 fps is the usual run; the sea's own motion is a useful
+control region (Fhp about 0.35, no spikes, on island-fair-noon). Only the regions are kept in memory,
+so give regions rather than the whole frame for long 4K runs.
+
+radial: the profile around a point (the sun), ring by ring: the median R, G, B (code values), luma
+(Rec. 709 on code values), linear luma (sRGB decoded, 0-1) and the count of the ring's pixels in the
+frame. --rings are edges in percent of the image's height, or degrees with --fov. --centre is in
+pixels, or fractions when both are at most 1; --centre-key reads it, in fractions, from the capture
+JSON's --eval-ready values (the first that holds KEY, as [x, y]). --half keeps the half of each ring
+on that side of the point (up: the sky over a low sun, without the sea under it).
+
+Output: tables on stdout (JSON with --json); notes on stderr. Files: diff --heat and flicker --map
+write a .png for one pair, clip or region, else a directory of <name>[.<region>].diff.png or
+<clip>[.<region>].flash.png; crop writes <out>/<name>.<region>.png; sheet writes --out; thumb writes
+<out>/<name>.jpg; flicker --save writes <clip>/flicker.json.
+
+GPU lock and browser: neither; it reads image files. Cost: under a second to seconds per image; a
+long 4K clip takes longer. It runs with the application policy on macOS (tools/kit/qos.mjs).
+
+Exit codes: 0 done; 1 a usage error the tool reports (no region for crop, mismatched inputs, a gap
+in a clip, no centre) or a file it cannot read; 2 a bad option (argparse).
 """
-import argparse
-import json
-import os
 import sys
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from help import answer_help  # noqa: E402
+
+answer_help(__file__)
+
+import argparse  # noqa: E402
+import json  # noqa: E402
+import os  # noqa: E402
+from concurrent.futures import ThreadPoolExecutor  # noqa: E402
 
 # The application scheduling policy on macOS (tools/kit/qos.mjs says why), as in diff-set.py: the
 # process re-executes itself in place under taskpolicy -a, and its pool threads ask for the
@@ -497,7 +465,14 @@ def mask_stats(R, M, bare=None):
     view: `marked` where the mask differs from the image by more than 16 levels in a channel and its
     red is its largest, `edge` where it differs so and its green is, `rest` the others (the edge left
     out of both). With `bare`, the same view without what the mask marks: the marked pixels' own
-    differences in L and C from it."""
+    differences in L and C from it.
+    Why the largest channel and not a ratio: a bright paint leaves the display chain desaturated;
+    about the sun a marked red came out salmon, its red under twice its green, and a test by that
+    ratio found a sixth of the marked sky there. The hue's percentiles are taken about its circular
+    mean. Each marked pixel's dL and dC are against the rest round it (their Gaussian mean over the
+    rest's pixels only, a sigma of 1 % of the region's width: median and 10-90 percentiles), since
+    the rest of a sky is lighter or darker by its elevation. Against `bare`, the differences leave out
+    a change the marked pixels made to the whole frame (an exposure that meters the frame)."""
     if M.shape != R.shape or (bare is not None and bare.shape != R.shape):
         return {"error": f"mask shape {list(M.shape)} against {list(R.shape)}"}
     c = M[..., :3].reshape(-1, 3).astype(np.int32)
@@ -581,7 +556,11 @@ def oklab_median(R):
 
 
 def oklab_split(R):
-    """The pixels' means under and over their median Oklab L, and over the darkest 5 % and the brightest 10 %."""
+    """The pixels' means under and over their median Oklab L, and over the darkest 5 % and the brightest 10 %.
+    Four parts, each the mean Oklab L, C and hue (the mean of the pixels' L, a and b, C and h taken
+    from the mean a and b) and the mean linear RGB of its pixels: `under` and `over` the region's own
+    median L (a crown's dark and lit halves), `p5` the darkest 5 % and `p90` the brightest 10 %
+    (`medianL` and `parts` in --json)."""
     lin, L, A, B = oklab_pixels(R)
     median, low, high = np.percentile(L, [50, 5, 90])
 
@@ -650,7 +629,26 @@ def masked_blur(X, M, sigma):
 
 
 def deck_stats(f, a, X):
-    """The deck's measures on each of the image's sky regions; --deck-rows adds the horizon's rows."""
+    """The deck's measures on each of the image's sky regions; --deck-rows adds the horizon's rows.
+    Oklab L and C and linear luminance Y (Rec. 709) come from the sRGB code values. The sky mask is
+    the union of every box read; each blur is masked_blur, so neither the land nor the frame's edge
+    pulls anything in. Degrees: --px-per-deg, by default 24 at 2560 wide (the horizon view's vfov of
+    55 on 1440 rows), scaled with the width. Per region:
+      spread     the region's blocks of a degree (24 px square, each the median of its sky pixels, a
+                 block kept when nine tenths of it is sky): p90 - p10 of their L; `stops` log2 of
+                 their Y's p90 over p10
+      structure  L minus its broad trend (a sigma of --trend / 2 degrees, 15 by default): p10 and p90
+      scale std  the std of L - G1, G1 - G3, G3 - G10 and G10 - G30, G_d a sigma of d / 2 degrees:
+                 the bands under 1, 1-3, 3-10 and 10-30 degrees
+      gradient   |grad L| a degree on a sigma of .125 degree (normalised over the whole frame): p95
+                 and p99, how hard the edges are
+      mass       the half length (to .5) of the structure's autocorrelation along x and y, in degrees,
+                 averaged over the region's boxes: about a third to a half of a mass's width
+      dark/light the median L and C of the blocks in the lowest and the highest quarter of the
+                 p10..p90 range
+    Read every view at the same scale: 8-bit quantisation floors the std under 1 degree at about
+    .0014 on a flat sky, and a frame read at half size gives the same numbers within a few per cent
+    above 1 degree and lower ones under it."""
     H, W = X.shape[:2]
     regs = deck_regions(f, a, X.shape)
     if not regs:
@@ -724,7 +722,11 @@ def deck_stats(f, a, X):
 
 def deck_rows(L, a, ppd, W):
     """The horizon's profile: row medians of L over x0..x1 every 6 px from 15 degrees up to 6 down,
-    and what section 4 reads from it."""
+    and what section 4 reads from it: the sky 0-6 degrees up against 6-15 up (their medians, their
+    difference and their blocks' spreads), the far sea's fall a degree over 0-5 down (a line's
+    slope, positive when the sea darkens downward) and its largest step between rows within one
+    degree, and `line`, the pixel row within a degree of the horizon that stands furthest from the
+    rows 3 px above and below it (a thin dark or bright line)."""
     k = W / DECK_WIDTH
     x0, x1, hz = ints(a.horizon) if a.horizon else (round(v * k) for v in DECK_ROWS)
     H = L.shape[0]
@@ -800,6 +802,8 @@ def centre_of(f, a, shape):
 
 
 def cmd_radial(a):
+    """With --fov (the capture's vertical field of view) a ring's radius r in degrees maps to
+    tan(r) / tan(fov / 2) half heights, exact at the frame's centre."""
     if not a.centre and not a.centre_key:
         sys.exit("radial: give --centre x,y or --centre-key KEY")
     edges = [float(v) for v in a.rings.split(",")]
@@ -870,6 +874,22 @@ def clip_frames(d, span):
 
 
 def flicker_clip(d, a):
+    """The flicker measures of one clip, per region. Luma is Rec. 709 of the 8-bit values (float32),
+    in levels:
+      F       mean |L_t - L_t-1|
+      Fhp     mean |L_t - ( L_t-2 + L_t+2 ) / 2|, the temporal high-pass (clip-metrics.py's)
+      spike   s = L_t - ( L_t-1 + L_t+1 ) / 2, a one-frame flash: the share of pixel-frames with |s|
+              over each --spike level and with s over the first (`bright`), in per mille, its 99.9th
+              percentile (`p999`), and the share of pixels that flash over the first level at least
+              once (`once`, %)
+      std     the mean per-pixel standard deviation over the frames; `mean` the luma mean
+    The map is the share of frames whose |s| exceeds the first level, times 255 x --gain.
+    Odd frames: a paused page's stepped frames now and then come out as a discrete alternative image
+    (scattered vegetation pixels off by up to 190 levels: capture-clip.mjs, "The rest shot twice"),
+    which in a 120-frame meadow clip raised Fhp by about 5 % and the flashes by about 6 % from one
+    frame. A frame whose flash share over all the regions exceeds --odd times the clip's median and
+    the median by ODD_FLOOR is listed (`odd`); --drop-odd leaves out every term that reads one, so
+    A/Bs of small effects compare the wind's flicker rather than which clip caught an odd frame."""
     files = clip_frames(d, tuple(ints(a.frames.replace("-", ","))) if a.frames else None)
     first = decode(files[0][1])
     regs = regions([files[0][1]], a, first.shape)

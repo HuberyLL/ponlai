@@ -24,7 +24,7 @@ Check a fingerprint against these first.
 ## Reproduce
 
 - The still frame is the test mode: a paused page under MSAA, final once `settled` holds
-  (`docs/reference/tools.md`, Test mode).
+  (`docs/reference/test-mode.md`).
 - Serve the checkout with `node tools/kit/serve.mjs dev`; `--sha <rev>` serves another commit for a
   before-and-after.
 - The cheapest reproduction is a test scene of the renderer (`tools/render/scenes.mjs`, its header).

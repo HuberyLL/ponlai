@@ -1,8 +1,15 @@
-// Checks the page's settings (packages/render/Settings.ts) against their documentation and the entry that
-// installs them, and the addresses the tools build against them. CPU only (plain `node`, which
-// strips the module's types), well under a second.
-//   node tools/repo/verify-settings.mjs            check
-//   node tools/repo/verify-settings.mjs --write    rewrite the docs' table of every option, then check
+// Checks the page's settings against their docs, the entry that installs them and the tools' addresses.
+//
+// The settings (packages/render/Settings.ts) are the one entrance every URL option is read
+// through; docs/reference/url-options.md documents them. Run it after adding or changing an
+// option; it is part of `npm run check`. A usage a tool needs is declared in
+// packages/render/Settings.ts, not changed in the tool.
+//
+// Usage:
+//   node tools/repo/verify-settings.mjs [--write]
+//
+// Options:
+//   --write   rewrites the docs' table of every option first, then checks
 //
 // Guarantees, each a failure (exit 1) when broken:
 // - docs/reference/url-options.md ends with a table of every declared option and prefix (between
@@ -33,8 +40,14 @@
 //   (a prefix), or `numberSetting( 'name', ... )`, in a file under `packages/` or `app/`, comments left out; a
 //   read through a helper of its own (WorldStart.ts `intParam`) is not seen.
 //
-// Output: a summary line, then the failures. Exit 0 when everything passes, 1 otherwise or on an
-// unknown option.
+// Output: a summary line on stdout (with --write, first a line saying the table was rewritten),
+// then PASS or FAIL with the failures. --write rewrites docs/reference/url-options.md's table.
+//
+// GPU lock and browser: neither. Cost: well under a second, CPU only (plain node, which strips the
+// module's types).
+//
+// Exit codes: 0 everything passes; 1 a failure (listed) or an unknown option.
+import '../kit/help.mjs';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { ROOT } from '../kit/root.mjs';

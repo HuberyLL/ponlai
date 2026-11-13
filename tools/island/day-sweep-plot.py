@@ -2,21 +2,40 @@
 # requires-python = ">=3.10"
 # dependencies = ["matplotlib", "numpy"]
 # ///
-"""The curves of tools/island/day-sweep.mjs: one PNG per camera and weather, over the day in five panels:
-the sun's elevation, the frame's exposure (EV), and the sky, the sea, the land and the land's
-darkest 5 % by log2 luminance of the rows' mean colour, Oklab chroma and Oklab hue. The steps it
-flagged are circled on the curves in their region's colour, and the pairs of frames the camera
-turned between (a change of the picture, not of the light) are shaded.
+"""Draws tools/island/day-sweep.mjs's curves: one PNG per camera and weather, over the day.
 
-  uv run tools/island/day-sweep-plot.py <series.json> <outDir>
+Five panels share the day's hours: the sun's elevation, the frame's exposure (EV), and the sky, the
+sea, the land and the land's darkest 5 % by log2 luminance of the rows' mean colour, Oklab chroma
+and Oklab hue. The steps day-sweep flagged are circled on the curves in their region's colour, and
+the pairs of frames the camera turned between (a change of the picture, not of the light) are
+shaded. day-sweep runs it; run it by hand only to redraw a run's curves.
 
-series.json is what day-sweep.mjs writes beside its report: { sunrise, sunset (hours), cameras:
-{ <camera>: { <weather>: { points: [ { hour, elevation, ev, regions: { <region>: { log2Y, C, h } } } ],
-jumps: [ { hours: [ from, to ], region, quantity: log2Y | colour } ], turned: [ [ from, to ] ] } } } }.
-Writes <outDir>/curves-<camera>-<weather>.png.
+Usage:
+    uv run tools/island/day-sweep-plot.py <series.json> <outDir>
+    uv run tools/island/day-sweep-plot.py <run>/colour/series.json <run>
+
+Options: none. series.json is what day-sweep.mjs writes to <run>/colour/: { sunrise, sunset
+(hours), cameras: { <camera>: { <weather>: { points: [ { hour, elevation, ev, regions: { <region>:
+{ log2Y, C, h } } } ], jumps: [ { hours: [ from, to ], region, quantity: log2Y | colour } ],
+turned: [ [ from, to ] ] } } } }.
+
+Output: <outDir>/curves-<camera>-<weather>.png.
+
+GPU lock and browser: neither (docs/reference/gpu-lock.md).
+
+Cost: one matplotlib figure per camera and weather, a small part of a day-sweep run.
+
+Exit codes: 0 done; 1 a missing or malformed series file.
 """
-import os
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "kit"))
+from help import answer_help  # noqa: E402
+
+answer_help(__file__)
+
+import os  # noqa: E402
 
 # The application scheduling policy on macOS (tools/kit/qos.mjs says why), as in img.py: the process
 # re-executes itself in place under taskpolicy -a.
@@ -25,7 +44,6 @@ if sys.platform == "darwin" and os.environ.get("PONLAI_QOS") != "off" and os.env
     os.execv("/usr/sbin/taskpolicy", ["/usr/sbin/taskpolicy", "-a", sys.executable, *sys.orig_argv[1:]])
 
 import json  # noqa: E402
-from pathlib import Path  # noqa: E402
 
 import matplotlib  # noqa: E402
 

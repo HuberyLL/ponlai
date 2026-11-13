@@ -1,139 +1,101 @@
-// The meadow's light, cover and colour, measured on its leaf pixels: how bright the sunlit blades
-// are against bare ground in the same sun, how many of them are lit, how dark the shaded ones are,
-// how much of the lawn the blades cover, and the colour of the lit lawn on screen.
+// Measures the meadow's light, cover and colour on its leaf pixels, and guards the land's key-to-ambient ratio.
 //
+// It answers "how bright are the sunlit blades against bare ground in the same sun, how many of them
+// are lit, how dark are the shaded ones, how much of the lawn do the blades cover, and what colour is
+// the lit lawn on screen", in linear radiance per class of pixel, where a box on a screenshot mixes
+// them. For colour per kind of surface over the whole frame use tools/island/colour-rows.mjs; for the
+// light through the dusk, tools/island/dusk-grid.mjs.
+//
+// Usage:
 //   node tools/island/meadow-light.mjs [url] [--elev 50,20] [--azimuth 135] [--view name=tilt,dist,fov]...
-//       [--target x,z] [--views-file f.json [--views a,b]] [--side afternoon] [--weather clear] [--flags a,b] [--q extra] [--expect lo,hi]
-//       [--w 1920 --h 1080 --scale 2] [--timeout 60000] [--out dir] [--pages a,b|none] [--save dir] [--reuse dir]
+//       [--target x,z] [--views-file f.json [--views a,b]] [--side afternoon] [--weather clear] [--flags a,b]
+//       [--q extra] [--expect lo,hi] [--w 1920 --h 1080 --scale 2] [--timeout 60000] [--out dir]
+//       [--pages a,b|none] [--save dir] [--reuse dir]
+//   node tools/island/meadow-light.mjs --elev 22 --weather clear --expect 13.8,16.8
 //
-// url: the server (default http://127.0.0.1:5190/, the dev server; a production preview needs the
-// debug build's `debug` in the query, which every page here carries).
+// Options:
+//   url                   the server (http://127.0.0.1:5190/, the dev server; a preview works too, every page carries `debug`)
+//   --elev e1,e2          the sun's elevations in degrees, above 0 and below noon's (50,20)
+//   --side s              afternoon or morning: whose hour gives each elevation (afternoon)
+//   --azimuth a1,a2       each placed view's heading from the direction toward the sun, degrees (135)
+//   --view name=t,d,fov   a placed view, repeatable; `island` alone is the island camera's own (game=50,24,50)
+//   --target x,z          the lawn point placed views look at (-13.76,0.8)
+//   --views-file f.json   adds the views of a file in capture-set's form, all or those --views names
+//   --views a,b           with --views-file: only these views (all but names starting with `_`)
+//   --weather w           the weather (clear)
+//   --flags a,b           extra flags for every page (none)
+//   --q query             extra query options for every page (none)
+//   --expect lo,hi        exits 3 when a view's key:ambient falls outside [lo, hi] (no check)
+//   --w, --h, --scale     the viewport's CSS size and device pixel ratio (1920, 1080, 2)
+//   --timeout ms          each wait in the page (60000)
+//   --out dir             the output folder (artifacts/meadow-light/<UTC stamp>)
+//   --pages a,b|none      the pages shot; the rest are read from --reuse (the seven below; `lean` only when named)
+//   --save dir            writes each page read (frame, depth, camera, the normal page's canvas) to dir
+//   --reuse dir           reads the pages --pages leaves out from a --save run of the same views and size
 //
-// Views. Each sun elevation (`--elev`, degrees, the afternoon's hour that gives it, or the morning's
-// with `--side morning`: packages/render/sky/DayCycle.ts)
-// is shot from each view: `name=tilt,dist,fov` is a camera `dist` m from the lawn point `--target`
-// (x, z; its height the camera's ground), looking down `tilt` degrees, with a vertical field of view
-// of `fov` degrees, its heading turned from the direction toward the sun by each `--azimuth`
-// (degrees: 180 the sun straight behind, 135 behind and to the side, the framing the look is judged
-// in; 90 side-on; 0 against the light). The view `island` is the island camera's own (the query's
-// default orbit, every azimuth alike). Default: `--view game=50,24,50 --azimuth 135`. The views keep
-// the sun where it stands relative to the camera, so elevations compare like for like.
-// `--views-file` adds the views of a file in capture-set's form (name -> { q, eval }; names starting
-// with `_` skipped), all of them or those `--views` lists, each at every elevation: its `q` joins the
-// query and its eval runs as capture-set runs it (tools/island/parity/views.mjs's helpers). Without `--view`
-// the file's views are the only ones.
+// Views. Each elevation is shot from each view. `name=tilt,dist,fov` is a camera `dist` m from
+// --target (its height the ground's), looking down `tilt` degrees with a vertical field of `fov`
+// degrees, its heading turned from the direction toward the sun by each --azimuth (180 the sun
+// straight behind, 135 behind and to the side, the framing the look is judged in, 90 side-on, 0
+// against the light). The views keep the sun where it stands relative to the camera, so elevations
+// compare like for like. A views file's views take their `q` into the query and run their eval as
+// capture-set does (tools/island/parity/views.mjs's helpers); without --view they are the only ones.
 //
-// Pages. Every view is shot on seven pages, each a fresh load of its flags (they are read at load),
-// the views reached in it by the exact scene jump and a camera move, each read once the page's
-// `settled` signal holds, from the resolved opaque colour at the render's size (the frame graph's
-// `opaque` radiance source: linear, before the sea, the haze and the post chain):
-//   mask    `grassMask:exact`: the blades unlit in a red far over any radiance, so each pixel's
-//           cover is exact in the scene's four samples (packages/island/world/Grass.ts); full cover is all four,
-//           with neither green nor blue. Everything but the land and the blades is hidden (the
-//           bamboo, the yunpeng, the islanders, the sea), so this page's cover and depth are the
-//           meadow's own behind whatever stands in front of it
-//   albedo  `grassMask:albedo,albedoOnly`: every lit surface unlit in its own diffuse colour, the
-//           albedo the lighting takes (the blades' darkening toward the roots included), the turf's
-//           between them too (packages/render/debug/LightLayer.ts)
-//   light   `lightOnly`: every lit albedo 0.5 grey (packages/render/debug/LightLayer.ts), the light alone
-//   bare    `lightOnly,bareGround`: the blades hidden, the turf lit as bare ground, same pixels
-//   ambient `lightOnly,bareGround,ambientOnly`: the bare ground without the sun, so each pixel's
-//           share of direct light sorts sun from shade
-//   normal  no flag: the frame as drawn (its radiance for the colours, and the canvas for the screen)
-//   matte   `lightOnly:2`: the light page without the specular, so the light page less this one is
-//           each pixel's specular radiance (it does not depend on the albedo); optional: a run
-//           reused without it leaves the specular's measures out
-//   lean    `grassMask:lean`, hidden as the mask: each leaf's lean from upright, as drawn and by its
-//           pose alone (packages/island/world/Grass.ts); shot only when `--pages` names it, for the `lean`
-//           measure (the leaves' lean over the lawn they cover whole, LEAN: weighted by the pixels
-//           each leaf covers, as the view shows them)
-// All the pages draw the same blades (the test mode's paused frame is a function of the query and the
-// camera), so their pixels line up.
-// A change that moves only some pages need not shoot the rest: `--save dir` writes each page read
-// (its frame, depth, camera and, for `normal`, the canvas) to dir, and `--reuse dir` reads every page
-// `--pages` leaves out from such a run, of the same views and size (`--pages none`: all of them, no
-// browser, to run changed measures on a saved run). The blades' shading (their
-// normals, colour of light, the cast they read) moves `light`, `normal` and `matte` only: `bare` and `ambient`
-// draw no blades and no cast of theirs, `mask` and `albedo` no light. Their geometry, albedo or the
-// turf move the others.
+// Pages. Every view is shot on seven pages, each a fresh load of its flags (flags are read at load),
+// the views reached in it by the exact scene jump and a camera move, each read once `settled` holds,
+// from the resolved opaque colour at the render's size (the frame graph's `opaque` source: linear,
+// before the sea, the haze and the post chain):
+//   mask     `grassMask:exact`: each pixel's exact blade cover over the scene's four samples
+//            (packages/island/world/Grass.ts), with everything but the land and the blades hidden
+//   albedo   `grassMask:albedo,albedoOnly`: every lit surface in its own diffuse colour
+//   light    `lightOnly`: every lit albedo 0.5 grey (packages/render/debug/LightLayer.ts)
+//   bare     `lightOnly,bareGround`: the blades hidden, the turf lit as bare ground
+//   ambient  `lightOnly,bareGround,ambientOnly`: the bare ground without the sun
+//   normal   no flag: the frame as drawn, and the canvas
+//   matte    `lightOnly:2`: the light page without the specular (optional when reused)
+//   lean     `grassMask:lean`, hidden as mask: each leaf's lean from upright (only when --pages names it)
+// All the pages draw the same blades, so their pixels line up. The blades' shading moves only light,
+// normal and matte: `--pages light,normal,matte --reuse dir` shoots those three; their geometry,
+// albedo or the turf move the others. `--pages none` reads every page from --reuse, with no browser.
 //
 // The sort. Lawn: pixels within a hundredth of the frame's width of blades covering at least 2 % of
 // them (the mask page's: behind an occluder too). Open lawn: the lawn where the mask and light pages'
-// depths agree (within 2 cm), so nothing hidden on the mask page stands in front of it; every
-// measure but the cover reads the open lawn only. Leaf: fully covered pixels only (a partly covered
-// pixel mixes the blade with the ground behind it). Sun and shade, by the bare ground's share of
-// direct light d = 1 - ambient / bare at the pixel: sunlit where d is at least 0.7 of the open lawn's
-// 95th percentile of d, shaded at most 0.2 of it (cast shade: the bamboo's, the land's), the
-// penumbra left out.
+// depths agree within 2 cm; every measure but the cover reads it only. Leaf: fully covered pixels.
+// Sun and shade by the bare ground's share of direct light d = 1 - ambient / bare: sunlit where d is
+// at least 0.7 of the open lawn's 95th percentile of d, shaded at most 0.2 of it, the penumbra left out.
 //
-// The measures (each view; Y is luminance, Rec. 709 linear):
-//   litBare        the median Y of the bare ground at the sunlit leaf pixels
-//   bright, dark   the medians of the two clusters the sunlit leaf pixels split into on log Y
-//                  (Otsu's threshold); `litShare` the share in the bright one, `litDark` bright / dark
-//   mean           the mean Y of the sunlit leaf pixels
-//   brightToBare, meanToBare   bright / litBare, mean / litBare
-//   shadedGrass, shadedBare, shadedRatio   the mean Y of the shaded leaf pixels, of the bare ground
-//                  at the same pixels, and the first over the second
-//   groundToLeaf   the mean Y of the sunlit turf the blades leave bare (cover 0) over that of the
-//                  sunlit leaf pixels: the light the ground under the sward takes
-//   cover          the mean cover over the lawn, over a box at the frame's centre (a fifth of each
-//                  side), and over the lawn per band of view depth (m)
-//   leafAlbedo     the blades' albedo over the open leaf pixels, sunlit or not (the albedo page): Y,
-//                  R/G, B/G of the mean, `warmShare`, the share of those pixels with R/G over 0.95,
-//                  and `rgSpread`, the 10th and 90th percentiles of the pixels' R/G (how far the
-//                  blades' colours spread)
-//   groundAlbedo   the turf's albedo over the open lawn the blades leave bare (cover 0) where they
-//                  cover at least a quarter of the lawn's box around it (the ground under the sward,
-//                  not the coast's lip or a gap beyond it), sunlit or not (the albedo page): Y, R/G,
-//                  B/G of the mean
-//   specular       over the sunlit leaf pixels (with the matte page), the specular's share of their
-//                  radiance in green and in blue (`g`, `b`), and `glint`, the share of those pixels
-//                  whose specular is at least what their diffuse returns
-//   leaf, ground   the colour of the sunlit leaf pixels and of the sunlit bare turf in the normal
-//                  page's radiance (`radiance`: R/G, B/G) and their albedo (normal over light, times
-//                  the grey's 0.5: `albedo` Y, R/G, B/G; diffuse light only, so a rough estimate)
-//   screen         the Oklab of the mean colour of the sunlit lawn's pixels on the canvas (sRGB
-//                  decoded, the box mean), over the lawn and per depth band; and the sunlit leaf
-//                  pixels and the sunlit bare turf on the canvas as a close look reads them
-//                  (`leaf`, `turf`): the median of their linear luminance (sRGB decoded), the R/G
-//                  and B/G of their mean 8-bit codes and the standard deviation of their codes' luma
-//                  (`sd`, the texture's swing within each); `fleck`, the same over the turf the
-//                  blades leave in the sun (its light at least FLECK of the bare ground's there);
-//                  the leaf's `bright`, the Oklab, R/G and B/G of the mean colour of its brightest
-//                  third; `soil`, over the bare turf pixels redder than green (soil, not the
-//                  green flecks on it): the Oklab, R/G and B/G of the mean colour of their
-//                  brighter half and `relief`, their luminance's 90th over its 10th percentile; and
-//                  `spread`, the sunlit lawn's linear luminance on the canvas at its 10th, 50th and
-//                  90th percentiles and the outer two over the median (`low`, `high`: how deep the
-//                  gaps between the blades go and how far the lit blades rise)
-//   gaps           the share of the frame the open lawn takes where the blades leave it bare
-//   keyToAmbient   the key's illuminance at normal incidence (the sun light's colour times its
-//                  intensity, read on the page) over the ambient irradiance on the sunlit open lawn's
-//                  bare ground, 2 pi times the ambient page's median luminance there (its grey 0.5),
-//                  in scene units (each page's pre-exposure divided out). It guards the land's sky
-//                  light against the key: `--expect lo,hi` exits 3 when a view's value falls outside.
-//                  A view with no reading (no sunlit open ground, or pages saved before this
-//                  reading) counts as outside. The ambient page holds the ambient's specular too, and
-//                  the lawn's bare ground is not open level ground: at a clear 22 degree sun the
-//                  default view reads about 0.65 of the key-to-ambient a white card on lit open
-//                  ground reads at the same sun (another framing: the lit grass and ground in front
-//                  of an eye-height camera). Its window: docs/reference/tools.md, Probes
-// Under a sun so low or a view so shaded that a class is empty its measures are null. A placed view
-// shot at several azimuths also gets, per elevation, the mean of its ratios, cover and screen colour
-// over them (`means`, `<view>-e<elevation>-mean`), as one framing alone carries the sun's side of
-// the camera with it.
+// The measures (each view; Y is luminance, Rec. 709 linear; the definitions are beside `measure`):
+// the sunlit blades' bright and dark clusters against the bare ground (`brightToBare`, `meanToBare`,
+// `litShare`, `litDark`), the shaded blades against shaded bare ground (`shadedRatio`), the light the
+// turf under the sward takes (`groundToLeaf`), the cover over the lawn, the frame's centre and bands
+// of view depth, the blades' and the turf's albedo, the specular's share, the leaf's and the turf's
+// colour, the Oklab of the sunlit lawn on the canvas with the close look's leaf, turf, fleck, soil and
+// spread, the gaps' share of the frame, the lean (with `lean`), and `keyToAmbient`. A class a low sun
+// or a shaded view leaves empty gives null measures. A placed view at several azimuths also gets, per
+// elevation, the mean of its ratios, cover and screen colour (`<view>-e<elevation>-mean`).
 //
-// Outputs: `<out>/meadow-light.json` (every view's measures, the sun's actual elevation and the
-// azimuth it stands at from the view), per view `<out>/<view>.png` (the normal page's canvas) and
-// `<out>/<view>.sort.png` (the sort at the render's size: sunlit bright leaf yellow, sunlit dark
-// leaf green, shaded leaf blue, lawn behind an occluder purple, partly covered grey by its cover,
-// sunlit turf tan, shaded turf brown), and a table on stdout. `--out` defaults to artifacts/meadow-light/<UTC stamp>/.
-// Exit codes: 0 measured, 1 a page or view failed, 3 a key:ambient outside `--expect` or missing (all
-// measured).
+// key:ambient. The key's illuminance at normal incidence over the ambient irradiance on the sunlit
+// open lawn's bare ground, in scene units. It guards the land's sky light against the key. Its window
+// on the default view at `--elev 22 --weather clear` is 13.8 to 16.8 (the value 15.3, within 10 %):
+// run it so before merging a change to the sky's light, the haze or the ambient light; a change that
+// moves it on purpose restates the window here. A view with no reading counts as outside.
 //
-// The GPU lock is held shared (the readings do not depend on what else renders) and offered back
-// between pages (leaseGpuLock), never across the CPU work of the measures, which runs after the
-// browser is closed.
+// Output: in --out, meadow-light.json (every view's measures, the sun's actual elevation and its
+// azimuth from the view), per view <view>.png (the normal page's canvas) and <view>.sort.png (the
+// sort: sunlit bright leaf yellow, sunlit dark leaf green, shaded leaf blue, lawn behind an occluder
+// purple, partly covered grey by its cover, sunlit turf tan, shaded turf brown); stdout: the tables
+// (the measures, the lean, the soil against the lit leaves, key:ambient).
+//
+// GPU lock and browser: it takes the GPU lock itself, shared (docs/reference/gpu-lock.md), offered
+// back between pages and released before the measures' CPU work; one headless capture browser page;
+// no server (it needs one running). `--pages none`: neither.
+//
+// Cost: a fresh page load per page, a scene jump per view in it; the measures then take
+// seconds of CPU per view under the QoS policy. --save keeps about 30 MB per view and page.
+//
+// Exit codes: 0 measured; 1 a page or view failed; 2 bad usage; 3 a key:ambient outside --expect or
+// missing (everything measured).
+import '../kit/help.mjs';
 import '../kit/qos.mjs'; // first: the measures run here, over every pixel of seven frames per view
 import { acquireGpuLock, leaseGpuLock, releaseGpuLock } from '../kit/gpu-lock.mjs';
 import { launchCapture, waitForScene, pngShooter, stopLoop, startLoop, decodePng } from '../kit/capture-browser.mjs';
@@ -204,6 +166,22 @@ const stamp = new Date().toISOString().replace( /[:.]/g, '-' ).slice( 0, 19 );
 const out = path.resolve( options.out || path.join( repo, 'artifacts', 'meadow-light', stamp ) );
 mkdirSync( out, { recursive: true } );
 
+// The pages, in detail:
+//   mask    the blades unlit in a red far over any radiance, so each pixel's cover is exact in the
+//           scene's four samples (packages/island/world/Grass.ts); full cover is all four, with
+//           neither green nor blue. Everything but the land and the blades is hidden (the bamboo, the
+//           yunpeng, the islanders, the sea), so this page's cover and depth are the meadow's own
+//           behind whatever stands in front of it
+//   albedo  the albedo the lighting takes (the blades' darkening toward the roots included), the
+//           turf's between them too (packages/render/debug/LightLayer.ts)
+//   ambient the bare ground without the sun, so each pixel's share of direct light sorts sun from shade
+//   matte   the light page less this one is each pixel's specular radiance (it does not depend on the
+//           albedo); a run reused without it leaves the specular's measures out
+//   lean    each leaf's lean from upright, as drawn and by its pose alone, for the `lean` measure (the
+//           leaves' lean over the lawn they cover whole, LEAN: weighted by the pixels each leaf
+//           covers, as the view shows them)
+// The test mode's paused frame is a function of the query and the camera, so every page draws the
+// same blades. `bare` and `ambient` draw no blades and no cast of theirs, `mask` and `albedo` no light.
 const PAGES = [
 	{ name: 'mask', flags: [ 'grassMask:exact' ], hide: true, depth: true },
 	{ name: 'albedo', flags: [ 'grassMask:albedo', 'albedoOnly' ] },
@@ -530,6 +508,65 @@ function oklab( r, g, b ) {
 const SRGB = new Float64Array( 256 ).map( ( _, i ) => { const c = i / 255; return c <= 0.04045 ? c / 12.92 : ( ( c + 0.055 ) / 1.055 ) ** 2.4; } );
 const BANDS = [ [ 0, 10 ], [ 10, 20 ], [ 20, 40 ], [ 40, 80 ], [ 80, 190 ] ];
 
+// The measures (each view; Y is luminance, Rec. 709 linear):
+//   litBare        the median Y of the bare ground at the sunlit leaf pixels
+//   bright, dark   the medians of the two clusters the sunlit leaf pixels split into on log Y
+//                  (Otsu's threshold); `litShare` the share in the bright one, `litDark` bright / dark
+//   mean           the mean Y of the sunlit leaf pixels
+//   brightToBare, meanToBare   bright / litBare, mean / litBare
+//   shadedGrass, shadedBare, shadedRatio   the mean Y of the shaded leaf pixels, of the bare ground
+//                  at the same pixels, and the first over the second
+//   groundToLeaf   the mean Y of the sunlit turf the blades leave bare (cover 0) over that of the
+//                  sunlit leaf pixels: the light the ground under the sward takes
+//   cover          the mean cover over the lawn, over a box at the frame's centre (a fifth of each
+//                  side), and over the lawn per band of view depth (m)
+//   leafAlbedo     the blades' albedo over the open leaf pixels, sunlit or not (the albedo page): Y,
+//                  R/G, B/G of the mean, `warmShare`, the share of those pixels with R/G over 0.95,
+//                  and `rgSpread`, the 10th and 90th percentiles of the pixels' R/G (how far the
+//                  blades' colours spread)
+//   groundAlbedo   the turf's albedo over the open lawn the blades leave bare (cover 0) where they
+//                  cover at least a quarter of the lawn's box around it (the ground under the sward,
+//                  not the coast's lip or a gap beyond it), sunlit or not (the albedo page): Y, R/G,
+//                  B/G of the mean
+//   specular       over the sunlit leaf pixels (with the matte page), the specular's share of their
+//                  radiance in green and in blue (`g`, `b`), and `glint`, the share of those pixels
+//                  whose specular is at least what their diffuse returns
+//   leaf, ground   the colour of the sunlit leaf pixels and of the sunlit bare turf in the normal
+//                  page's radiance (`radiance`: R/G, B/G) and their albedo (normal over light, times
+//                  the grey's 0.5: `albedo` Y, R/G, B/G; diffuse light only, so a rough estimate)
+//   screen         the Oklab of the mean colour of the sunlit lawn's pixels on the canvas (sRGB
+//                  decoded, the box mean), over the lawn and per depth band; and the sunlit leaf
+//                  pixels and the sunlit bare turf on the canvas as a close look reads them
+//                  (`leaf`, `turf`): the median of their linear luminance (sRGB decoded), the R/G
+//                  and B/G of their mean 8-bit codes and the standard deviation of their codes' luma
+//                  (`sd`, the texture's swing within each); `fleck`, the same over the turf the
+//                  blades leave in the sun (its light at least FLECK of the bare ground's there);
+//                  the leaf's `bright`, the Oklab, R/G and B/G of the mean colour of its brightest
+//                  third; `soil`, over the bare turf pixels redder than green (soil, not the
+//                  green flecks on it): the Oklab, R/G and B/G of the mean colour of their
+//                  brighter half and `relief`, their luminance's 90th over its 10th percentile; and
+//                  `spread`, the sunlit lawn's linear luminance on the canvas at its 10th, 50th and
+//                  90th percentiles and the outer two over the median (`low`, `high`: how deep the
+//                  gaps between the blades go and how far the lit blades rise)
+//   gaps           the share of the frame the open lawn takes where the blades leave it bare
+//   keyToAmbient   the key's illuminance at normal incidence (the sun light's colour times its
+//                  intensity, read on the page) over the ambient irradiance on the sunlit open lawn's
+//                  bare ground, 2 pi times the ambient page's median luminance there (its grey 0.5),
+//                  in scene units (each page's pre-exposure divided out). It guards the land's sky
+//                  light against the key: `--expect lo,hi` exits 3 when a view's value falls outside.
+//                  A view with no reading (no sunlit open ground, or pages saved before this
+//                  reading) counts as outside. The ambient page holds the ambient's specular too, and
+//                  the lawn's bare ground is not open level ground: at a clear 22 degree sun the
+//                  default view reads about 0.65 of the key-to-ambient a white card on lit open
+//                  ground reads at the same sun (another framing: the lit grass and ground in front
+//                  of an eye-height camera). Its window: the header, key:ambient
+// Under a sun so low or a view so shaded that a class is empty its measures are null. A placed view
+// shot at several azimuths also gets, per elevation, the mean of its ratios, cover and screen colour
+// over them (`means`, `<view>-e<elevation>-mean`), as one framing alone carries the sun's side of
+// the camera with it.
+// The sort: a leaf is a fully covered pixel only, since a partly covered one mixes the blade with the
+// ground behind it; shade is cast shade (the bamboo's, the land's); an open pixel is one where nothing
+// hidden on the mask page stands in front of the lawn.
 const MASK = 256; // packages/island/world/Grass.ts MASK_EXACT
 // the depth (cm) the mask and light pages may differ by at an open pixel: both draw the same blades,
 // so 93 to 97 % of the leaf pixels agree exactly; a looser match (2 % and 5 cm) let through what

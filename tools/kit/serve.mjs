@@ -1,46 +1,68 @@
-// Starts the dev or preview server of the checkout the cwd is in, on a free port, through job.mjs.
-// Agents used to pick a port by hand, look it up with lsof and start vite themselves, and a
-// worktree's server failed on a port another worktree's server already held. This picks a free
-// port (or names who holds the one asked for), starts vite detached with its log under
-// artifacts/jobs/, waits until its own server answers and prints the URL and how to stop it.
+// Starts the dev or preview server of the checkout the cwd is in, or of another commit, on a free port.
 //
+// A worktree's server must not collide with another worktree's, and an agent must not pick a port
+// by hand, look it up with lsof or start vite itself. This picks a free port (or names who holds
+// the one asked for), starts vite detached through tools/kit/job.mjs, waits until its own server
+// answers and prints the URL and how to stop it. `--sha` serves another commit instead, for a
+// comparison against an older build.
+//
+// Usage:
 //   node tools/kit/serve.mjs dev|preview [--port N] [--no-build] [--sha <rev>]
 //   node tools/kit/serve.mjs clean
 //
+// Options:
+//   dev          the dev server (vite)
+//   preview      the production build (`npm run build` first, then `vite preview`)
+//   --port N     uses port N, or fails naming the process that listens on it (default: the first
+//                free port in the configuration's range, 6400-6499)
+//   --no-build   preview: serves the dist/ there is, without building
+//   --sha rev    serves that commit from a detached worktree instead of this checkout
+//   clean        removes every --sha worktree but those with a live job (no options)
+//
 // The project's values come from the configuration (tools/project.mjs `serve`): the build, vite's
 // command per mode, the ports, where `--sha` worktrees go and the module that fills them.
-// Ports: the first free one in the configuration's range. `--port N` uses N or fails
-// naming the process that listens on it (pid, cwd). The URL is printed only when the server
-// answering is this run's job: the job still runs and its log holds vite's ready line for that
-// port. When another session's server takes the port between the check and vite's bind, vite exits
-// "already in use" and the next free port is tried (with `--port N`, exit 1 naming the holder).
-// `preview` runs the configuration's build first unless given `--no-build`.
-// Prints `<url>  log <path>  (stop: node tools/kit/job.mjs stop <path>)`.
-// The served checkout is the one containing the cwd, not the one holding this file: agents call
-// the tool by the main checkout's absolute path from their worktrees, and it used to serve (and
-// rebuild) main's dist silently. A cwd outside this repository exits 1. The first line printed
-// names the served checkout: its path, HEAD (short sha) and branch.
-// Exit codes: 0 serving; 1 bad usage, a cwd outside the repository, port taken, no free port, vite
-// exited for another reason or did not answer within 60 s (its job is stopped; the log's tail is
-// printed); a failed build or npm ci exits with its code.
 //
-// `--sha <rev>` serves another commit instead of this checkout. Agents comparing against an older
-// build used to make a worktree and link node_modules by hand for each run. The commit gets a
-// detached worktree at the main checkout's <serve.worktrees>/sha-<12 hex> (never a branch, so
-// nothing is left to delete), reused by every later call for the same commit. When the commit's
-// package-lock.json equals the main checkout's, its node_modules is a real folder holding a link to
-// each of the main checkout's entries except vite's caches (.vite, .vite-temp, .cache): a link to
-// the whole folder would put the worktree's prebundled dependencies into the main checkout's
-// cache, which its own dev server uses. With another lockfile it runs `npm ci` there instead. Then
-// the configuration's `serve.prepare` module fills what git does not hold (its header: the assets
-// of a commit from before the asset lock).
-// `preview` builds once per worktree: a successful build writes the sha into
-// dist/.serve-sha, and a call that finds it skips the build. The vite job runs in the worktree, with its log in the calling checkout's
-// artifacts/jobs/ (serve-<mode>-sha-<12 hex>-<port>.log), so `clean` cannot delete it.
+// The served checkout is the one containing the cwd, not the one holding this file: an agent may
+// call the tool by the main checkout's absolute path from its worktree, and must not serve (and
+// rebuild) main's dist by mistake. A cwd outside this repository exits 1. The first line printed
+// names the served checkout: its path, HEAD (short sha) and branch.
+//
+// The URL is printed only when the server answering is this run's job: the job still runs and its
+// log holds vite's ready line for that port, so a port another session takes at the same moment
+// never passes for its own. When another session's server takes the port between the check and
+// vite's bind, vite exits "already in use" and the next free port is tried (with `--port N`, exit 1
+// naming the holder).
+//
+// `--sha <rev>`: the commit gets a detached worktree at the main checkout's
+// .claude/worktrees/sha-<12 hex> (never a branch, so nothing is left to delete), reused by every
+// later call for the same commit. When the commit's package-lock.json equals the main checkout's,
+// its node_modules is a real folder holding a link to each of the main checkout's entries except
+// vite's caches (.vite, .vite-temp, .cache): a link to the whole folder would put the worktree's
+// prebundled dependencies into the main checkout's cache, which its own dev server uses. With
+// another lockfile it runs `npm ci` there instead. Then the configuration's `serve.prepare` module
+// fills what git does not hold (tools/repo/serve-checkout.mjs: the assets of a commit from before
+// the asset lock). `preview` builds once per
+// worktree: a successful build writes the sha into dist/.serve-sha, and a call that finds it skips
+// the build. The vite job runs in the worktree, with its log in the calling checkout's
+// artifacts/jobs/, so `clean` cannot delete it.
+//
 // `clean` skips, and names, a sha-* worktree with a live job (job.mjs list --cwd), since a server
-// another session started may still be in use; it removes the other (git worktree remove --force: node_modules and dist are untracked; the links are
-// removed, not followed) and runs git worktree prune.
-
+// another session started may still be in use: stop its job first. It removes the others (git
+// worktree remove --force: node_modules and dist are untracked; the links are removed, not
+// followed) and runs git worktree prune.
+//
+// Output: the served checkout's line, then `<url>  log <path>  (stop: node tools/kit/job.mjs stop
+// <path>)`. The log is artifacts/jobs/serve-<mode>-<port>.log in the calling checkout
+// (serve-<mode>-sha-<12 hex>-<port>.log for `--sha`). On a failure the log's tail is printed.
+//
+// GPU lock and browser: neither; it starts a server (a detached job that outlives this process:
+// stop it with `job.mjs stop <log>` before handing back). Cost: seconds for dev; a build for
+// preview; a worktree and maybe `npm ci` on the first `--sha` call of a commit.
+//
+// Exit codes: 0 serving (or `clean` done); 1 bad usage, a cwd outside the repository, a port
+// taken, no free port, a revision that is not a commit, vite exiting for another reason or not
+// answering within 60 s (its job is stopped); a failed build or `npm ci` exits with its code.
+import './help.mjs';
 import './qos.mjs';
 import net from 'node:net';
 import { execFileSync, spawnSync } from 'node:child_process';

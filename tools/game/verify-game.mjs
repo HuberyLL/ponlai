@@ -1,40 +1,64 @@
-// Checks of the game's simulation, asserted: the clock and its ticks (a minute's first second that
-// minute), the ground grid and a path over it, a body that walks to a point and stops there, a save
-// that loads back as it was, a brain
-// whose late answer is applied while the world ran on; then the first prototype's rules: needs that
-// fall and rise (thirst off: hydration holds), fishing by the seeded generator and the bag's capacity,
-// the chest placed as a blueprint and built, several of a kind with ids of their own, two
-// islanders building one site, the island's stock (its stores) and a cost's shortfall, actions that replace each other, a perception
-// without positions, the stand-in brain building the chest and keeping the islander fed for
-// days, and a save taken mid-action; the islanders' lives (the starting three, ages that run a year
-// a game day, lifespans drawn by Gompertz's law, a death noted in the record, a slower pace at the
-// ends of life, ids never reused); the save file (the simulation and its record read back as
-// written, a save of another version refused, and a record restored from a save that keeps the
-// entries the original keeps, a game resumed at its start included); then the island's growth: a land grown by IslandGrowth, the population steps, the
-// coming piece's cells, a step crossed adding exactly one piece, the grid opening cells without
-// reindexing, islanders walking onto the new piece, the shore moving to the new coast as on a
-// fresh load, and a save that keeps its piece count; then the session the page and the play tool
-// run the game in (packages/game/Session.ts): a new game's islanders landing as it is installed, a
-// blueprint placed noted as the player's at its tick, the player's commands checked at the entrance,
-// the sky noted over the ticks since the last look, the leader's words heard by a brain that hears, a
-// save read back into another session, and a growth asked once while its piece is on the way and not
-// again when none came; then the islanders among themselves: words heard within earshot and noticed
-// until the next thought, the others in sight by name, age and what they do, `do` naming its place,
-// giving (its refusals, its events and its record entry), going to someone who walks away, following
-// until replaced or the one followed dies, the stand-in asking for food and being given it, and a
-// save mid-follow that plays on the same; then the rules' structure: an action's condition held every
-// tick (going to someone who died, dying mid-action, fishing on a coast a growth turned inland: each
-// interrupted with its reason), a brain's late answer for an islander who died refused, the entrance
-// refusing what a tool does not take (a NaN or null count, `__proto__`, stray, missing and mistyped
-// arguments, answers that are not lists) and changing nothing, and two lines said in one frame both
-// recorded at their tick; then content added by this check alone (a need, an item with a use, a
-// kind of place with an option, a kind of building with a store and an option), played, perceived,
-// recorded, saved and loaded, shown in the interface's default words and looks, and taken away, and
-// the core naming none of the content's ids; last, the rules' maths: no function in packages/game/sim
-// (its content included) whose result differs between engines, and its own exp and log against
-// Math's.
-// Pure CPU; Node 22.18+ strips the imported TypeScript.
-// Run: node tools/game/verify-game.mjs
+// Checks the game's simulation, its save, its growth, its session and its rules' structure, asserted.
+//
+// It plays the simulation headless in node on the island of tools/game/game-fixture.mjs and asserts
+// what each rule promises. Run it after any change under packages/game/ that is not the view; it is
+// part of `npm run check`. To read what happens over days of play instead, use
+// tools/game/play-game.mjs.
+//
+// Usage:
+//   node tools/game/verify-game.mjs
+//
+// Options: none.
+//
+// What it asserts, in order:
+// - The core: the clock and its ticks (a minute's first second that minute), the ground grid and a
+//   path over it, a body that walks to a point and stops there, a save that loads back as it was, a
+//   brain whose late answer is applied while the world ran on.
+// - The first prototype's rules: needs that fall and rise (thirst off: hydration holds), fishing by
+//   the seeded generator and the bag's capacity, the chest placed as a blueprint and built, several
+//   of a kind with ids of their own, two islanders building one site, the island's stock (its
+//   stores) and a cost's shortfall, actions that replace each other, a perception without
+//   positions, the stand-in brain building the chest and keeping the islander fed for days, and a
+//   save taken mid-action.
+// - The islanders' lives: the starting three, ages that run a year a game day, lifespans drawn by
+//   Gompertz's law, a death noted in the record, a slower pace at the ends of life, ids never reused.
+// - The save file (packages/game/save.ts): the simulation and its record read back as written, a
+//   save of another version refused, and a record restored from a save that keeps the entries the
+//   original keeps, a game resumed at its start included.
+// - The island's growth: a land grown by IslandGrowth, the population steps, the coming piece's
+//   cells, a step crossed adding exactly one piece, the grid opening cells without reindexing,
+//   islanders walking onto the new piece, the shore moving to the new coast as on a fresh load, and
+//   a save that keeps its piece count (one no step reaches stands on none).
+// - The session the page and the play tool run the game in (packages/game/Session.ts): a new game's
+//   islanders landing as it is installed, a blueprint placed noted as the player's at its tick, the
+//   player's commands checked at the entrance, the sky noted over the ticks since the last look, the
+//   leader's words heard by a brain that hears, a save read back into another session, and a growth
+//   asked once while its piece is on the way and not again when none came.
+// - The islanders among themselves: words heard within earshot and noticed until the next thought,
+//   the others in sight by name, age and what they do, `do` naming its place, giving (its refusals,
+//   its events and its record entry), going to someone who walks away, following until replaced or
+//   the one followed dies, the stand-in asking for food and being given it, and a save mid-follow
+//   that plays on the same.
+// - The rules' structure: an action's condition held every tick (going to someone who died, dying
+//   mid-action, fishing on a coast a growth turned inland: each interrupted with its reason), a
+//   brain's late answer for an islander who died refused, the entrance refusing what a tool does not
+//   take (a NaN or null count, `__proto__`, stray, missing and mistyped arguments, answers that are
+//   not lists) and changing nothing, and two lines said in one frame both recorded at their tick.
+// - Content added by this check alone (a need, an item with a use, a kind of place with an option,
+//   a kind of building with a store and an option): played, perceived, recorded, saved and loaded,
+//   shown in the interface's default words and looks, and taken away; and the core naming none of
+//   the content's ids (ARCHITECTURE.md, rule 7).
+// - Last, the rules' maths: no function in packages/game/sim (its content included) whose result
+//   differs between engines, and its own exp and log against Math's.
+//
+// Output: on stdout a line per part with what it measured, then `verify-game: all checks passed`
+// with the count of assertions. A failed assertion prints node's assertion error on stderr.
+//
+// GPU lock and browser: neither. Cost: seconds, CPU only (Node 22.18+ strips the imported
+// TypeScript).
+//
+// Exit codes: 0 every assertion holds; 1 an assertion failed or an error. Arguments are ignored.
+import '../kit/help.mjs';
 import { assert, assertions } from '../kit/assert-count.mjs';
 import { ROOT } from '../kit/root.mjs';
 import { newGame, loadGame } from '../../packages/game/sim/Sim.ts';
