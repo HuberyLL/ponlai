@@ -133,8 +133,7 @@ SIGGRAPH 2020; "Real-Time Samurai Cinema", SIGGRAPH 2021).
   down with it, the more the lower the sun, so a low sun reads as a low sun. In the golden hour,
   with the sun at 3 degrees, a sunlit cliff is orange with a deep brown shade, and the sky over it a
   shade redder and dimmer. Avoid a yellow-gold face under a pale sky.
-- One night key serves every night's sky: the deep night holds its exposure whatever the moon,
-  and the moonlit island stays readable ([Night](night.md)).
+- The night has an exposure of its own: [Night](night.md#the-light).
 - A clouded sky is metered by the sky itself, with a key of its own
   ([Sea and sky](sea-and-sky.md#the-light-under-cloud)).
 - A sun in the frame may read a little brighter than its eye-adapting exposure would show it.
