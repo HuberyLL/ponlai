@@ -114,7 +114,7 @@ import { startLoadTimeline, markSlices, windowLoad } from '../kit/load-timeline.
 const argv = process.argv.slice( 2 );
 const flags = new Set( argv.filter( ( a ) => a.startsWith( '--' ) ) );
 const VALUE_FLAGS = new Set( [ 'report', 'scenes', 'scene', 'w', 'h', 'scale', 'quality', 'warmup', 'seconds', 'orbit', 'eval', 'eval-a', 'eval-b', 'repeat', 'out', 'label', 'q', 'compare', 'idle-wait', 'idle-threshold', 'timestamps', 'hooks',
-	'mode', 'toggle', 'world-cache', 'slices', 'min-slices', 'stop-margin', 'stop-width', 'slice', 'settle', 'block', 'blocks', 'lag', 'profile-dir', 'target', 'scales', 'scale-settle', 'motion', 'preload-wait', 'hang', 'load-timeline' ] );
+	'mode', 'toggle', 'world-cache', 'slices', 'min-slices', 'stop-margin', 'stop-width', 'slice', 'settle', 'block', 'blocks', 'lag', 'profile-dir', 'target', 'scales', 'scale-settle', 'motion', 'preload-wait', 'hang', 'load-timeline', 'window' ] );
 const opt = ( name, fallback ) => {
 
 	const i = argv.indexOf( '--' + name );
@@ -208,8 +208,8 @@ const REPEAT = Math.max( 1, Number( opt( 'repeat', 1 ) ) );
 const EXTRA_Q = opt( 'q', '' );
 // GPU timestamps: on (the default: frame intervals and the GPU time per pass), off (frame intervals
 // only), or both (each scene twice: its frame intervals from a run without timestamps, its passes
-// from one with them). With timestamp queries on, Chrome on an Apple GPU ran the same frames up to
-// a quarter faster (light scenes most, a GPU-bound heavy scene hardly at all), so the frame rate a
+// from one with them). With timestamp queries on, Chrome ran the same frames up to a quarter faster
+// on the GPU measured (light scenes most, a GPU-bound heavy scene hardly at all), so the frame rate a
 // player sees is the one without them; their per-pass split stays the reference for where the time
 // goes, and A/B deltas in one mode cancel the bias.
 // --accept: the 60 fps criterion per scene (docs/reference/profile-frame.md, Acceptance), under vsync; frame intervals come from the
@@ -556,8 +556,8 @@ function loadIdle( log ) {
 }
 
 // The idle checks (the opening one, a load's, a scene's hold taken again) in full-screen display
-// mode judge the GPU's clients, not its utilisation. Measured during a full-screen run (T25):
-// before the kiosk window opened, WindowServer took 16-20 % of the GPU's time, the Claude app's
+// mode judge the GPU's clients, not its utilisation. Measured during a full-screen run:
+// before the kiosk window opened, WindowServer took 16-20 % of the GPU's time, another app's
 // helper 8-16 % and another Chrome 5-11 %; with the window up, the profiled Chrome took 80-90 %,
 // WindowServer 2-10 %, and the others fell below 0.5 %, coming back as soon as the run ended. Full
 // screen removes the load the utilisation counted, so judged by it the opening check refused runs
