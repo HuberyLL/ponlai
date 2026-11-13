@@ -25,8 +25,12 @@ import { NEUTRAL_LOOK } from './NeutralLook.ts';
 //
 // Some systems take their tables as an argument where they are created instead, not as a module
 // loads, so two made from two sets in one process hold their own numbers
-// (tools/verify-look-params.mjs): the exposure and the day's windows, where the renderer's sky
-// stage creates them (ExposureLook.ts `createExposure`, DayLook.ts `createDayWindows`); the ambient occlusion's floor and the meadow canopy's media,
+// (tools/verify-look-params.mjs): the exposure, the day's windows and the low key's lift, where the
+// renderer's sky stage creates them (ExposureLook.ts `createExposure`, DayLook.ts
+// `createDayWindows`, AmbientLook.ts `createKeyLift`); the ambient grade's table and its gains
+// under overcast's deck, where the light stage creates the grade's controller (AmbientLook.ts
+// `createAmbientTables`, lighting/AmbientGrade.ts `createAmbientGrade`), which the ambient light's
+// relight reads too; the ambient occlusion's floor and the meadow canopy's media,
 // which every material's shader reads, in the shared uniforms (shared.ts `createShared`); the
 // local lights' gain (lighting/LocalLights.ts `createLocalLights`, from the stage `createLight`);
 // the sea's detail and distant swell (ocean/SeaDetail.ts, ocean/OceanFFT.ts, from the stage

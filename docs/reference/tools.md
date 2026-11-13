@@ -1468,7 +1468,11 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   registry or a new definition.
 - `tools/verify-look-params.mjs` (plain `node`, no options; it loads part of the page's modules
   through Vite's SSR loader, about a second) checks the systems that take their look tables at
-  creation: the exposure (`packages/render/look/ExposureLook.ts` `createExposure`), the shared
+  creation: the exposure (`packages/render/look/ExposureLook.ts` `createExposure`), the day's
+  windows (`packages/render/look/DayLook.ts` `createDayWindows`), the wind on the plants
+  (`packages/render/weather/Wind.ts` `windResponse`), the ambient grade's tables and the low key's
+  lift (`packages/render/look/AmbientLook.ts` `createAmbientTables`, `createKeyLift`, and the
+  grade's controller, `packages/render/lighting/AmbientGrade.ts` `createAmbientGrade`), the shared
   uniforms (`packages/render/shared.ts` `createShared`: the ambient occlusion's floor and the meadow
   canopy's media), the local lights (`packages/render/lighting/LocalLights.ts`), the sea's detail
   (`packages/render/ocean/SeaDetail.ts`) and the FFT ocean's distant swell
