@@ -1259,7 +1259,7 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
 
 ## Other tools
 
-- `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows and water (each
+- `tools/render/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows and water (each
   file names the server it expects); they take the GPU lock (shared).
   `verify-optical-interface`, `verify-frame-graph-gpu`, `verify-refracted-sun` and
   `verify-solar-shadows` import the source modules and need the dev server: on any other server they
