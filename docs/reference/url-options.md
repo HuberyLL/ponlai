@@ -301,9 +301,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   a share of the sun's illuminance, above which its body is lit fully), the stops under all of it
   each night layer comes in from at -7 degrees after a clear sunset `sky.twilight.depth.sky` (the
   sky's night key; `ambient`; `stars`; `haze`; `cloudMoon`, the clouds' own moonlight:
-  `packages/render/look/DayLook.ts` DUSK_DEPTH) and the
+  `packages/render/look/DayLook.ts` `createDayWindows`, `depth`) and the
   degrees at the night's end of that window over which they ease into all of it `sky.twilight.ease`
-  (DUSK_EASE; 0 takes them in by even stops to the end), where the moon stands
+  (its `ease`; 0 takes them in by even stops to the end), where the moon stands
   `sky.moon.elevation` (degrees up, 15 to 40) and `sky.moon.turn` (degrees from the noon meridian:
   0 its noon side, 180 the pole's, positive toward the west), and the stars' sky, the one seen
   from `sky.stars.latitude` degrees south at the sidereal time `sky.stars.sidereal` (hours:
