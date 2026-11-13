@@ -3,16 +3,17 @@
 This guide gives the steps for checking a change before it is committed: the checks every commit
 passes, a change to the renderer on its small scenes, a visual change, a performance change, a new
 history-dependent effect and a change that depends on the land's shape. The tools named here are
-described in `docs/reference/tools.md`; the rules they check are in `AGENTS.md`, Rules for every
-change.
+described in their headers (`node <tool> --help`), indexed in `docs/reference/tools.md`; the rules
+they check are in `AGENTS.md`, Rules for every change.
 
 ## Run the checks every commit passes
 
 1. Run `npm run check` before every commit. It runs the type check, the code lint
-   (`npm run lint`: the project's mechanical rules as ESLint rules, `docs/reference/tools.md`, Code
-   lint) and the checks that need no GPU (the layers' imports and the packages' exits, the
-   settings against their docs, the files' size, the three.js internals, no binary in git, the CPU
-   regression tools with the renderer's extension points and the lint's own fixtures, and the
+   (`npm run lint`: the project's mechanical rules as ESLint rules, `tools/repo/lint/plugin.mjs`)
+   and the checks that need no GPU (the layers' imports and the packages' exits, the settings
+   against their docs, the files' size, the three.js internals, no binary in git, the tools'
+   manuals, the CPU regression tools with the renderer's extension points and the lint's own
+   fixtures, and the
    docs' lint when a Markdown file is staged), in about a quarter of a minute, and ends with a
    list of what passed and failed and how long each took. It checks the files in the working
    tree, not what is staged: a change left unstaged is checked too.
@@ -50,13 +51,13 @@ take minutes.
 4. Go on to the island's checks below whatever the scenes say: they show no shore, terrain,
    island plants or game, and the island's look is not the one they are shot with.
 
-The tool and its options: `docs/reference/tools.md`, Test scenes.
+The tool and its options: `tools/render/scenes.mjs`'s header.
 
 ## Check a visual change
 
 1. Capture the views the change touches before and after it (`tools/kit/capture.mjs` for one view,
    `tools/kit/parity/capture-set.mjs` for a list of views on one warm page;
-   `docs/reference/tools.md`, Captures).
+   their headers).
 2. Compare each capture against the previous one, and compare crops, not only the whole frame
    (`uv run tools/kit/img.py diff|crop|sheet|stats`).
 3. Report the measured differences.
@@ -66,8 +67,9 @@ statistics (`tools/island/capture-growth.mjs`), not by pixel difference.
 
 ## Measure a performance change
 
-Use `tools/render/profile-frame.mjs`; what its readings mean is in `docs/reference/tools.md`, Frame
-profiler. A change is judged at high's standard (`AGENTS.md`, Rules for every change).
+Use `tools/render/profile-frame.mjs`; what its readings mean is in
+`docs/reference/profile-frame.md`. A change is judged at high's standard (`AGENTS.md`, Rules for
+every change).
 
 1. Measure on a production build, under the GPU lock: the scene matrix at the default generic
    display, before and after the change (`--compare` for an A/B, or `--toggle` on a debug flag
@@ -85,7 +87,7 @@ profiler. A change is judged at high's standard (`AGENTS.md`, Rules for every ch
 
 A history-dependent effect (a temporal resolve, exposure adaptation, lighting or fog accumulated
 over frames, vegetation that responds to what passes through it, a per-frame physics simulation)
-keeps the test mode's byte comparisons valid this way (`docs/reference/tools.md`, Test mode):
+keeps the test mode's byte comparisons valid this way (`docs/reference/test-mode.md`):
 
 1. Register how to clear its history with the renderer's table
    (`packages/render/post/SceneHistory.ts`: `onJump` for a scene jump, `onCut` for a cut of the
@@ -95,7 +97,7 @@ keeps the test mode's byte comparisons valid this way (`docs/reference/tools.md`
    own through `FrameHost.pending`, or the rest's signature) until it has converged
    on a still scene, or freeze it or turn it off in the test mode.
 3. Freeze it or turn it off under the test mode's one switch (`packages/render/debug/TestMode.ts`;
-   `docs/reference/tools.md`, Test mode).
+   `docs/reference/test-mode.md`).
 4. A Grow does not clear rendering history (`tools/island/verify-growth-swap.mjs` shoots its first view
    without a jump), so the effect is frozen or off under the switch there, or the swap resets it.
 5. Add its module to `reference.watch.motion` in `tools/project.mjs` when its paths are not already

@@ -1,7 +1,7 @@
 # Write a tool
 
-This guide gives the rules for writing a tool in `tools/`. The tools that exist are described in
-`docs/reference/tools.md`.
+This guide gives the rules for writing a tool in `tools/`. The tools that exist are indexed by
+question in `docs/reference/tools.md`; each one's manual is its header.
 
 When to write a tool rather than add an option or keep a one-off script is in `AGENTS.md`, Tools.
 A tool is written to these rules:
@@ -10,10 +10,42 @@ A tool is written to these rules:
   profiles, readiness), `kit/reference.mjs` (stored references), `kit/parity/tables.mjs` (the
   views' and clips' tables; its header gives their contract), `kit/pixels.py` (image metrics),
   `gpu-lock.mjs`, `job.mjs`, `qos.mjs`.
-- The header comment comes first: the usage line, what the tool guarantees (what it compares or
-  measures, and under which conditions), its rules with their reasons, and its outputs. Options
-  it does not know are an error, not ignored. A change that makes a check faster keeps that
-  guarantee true (a scene-jump check compares jumps with fresh loads, not with other jumps).
+- The header comment is the tool's manual, written for a colleague who has not met the tool. In
+  this order, each part once:
+  - a first line of one sentence: the question the tool answers;
+  - when to use it and what it guarantees (what it compares or measures, under which conditions),
+    with its rules and their reasons;
+  - `Usage:` with the command written from the repository's root, and `Options:` (or
+    `Options: none.`);
+  - what it prints and writes;
+  - whether it takes the GPU lock or opens a browser, and its rough cost;
+  - its exit codes, and what a failure means.
+
+  A section heading is a capitalised phrase ending in a colon at the start of a comment line, and
+  a section ends at a blank comment line. The header stays within 120 lines; a longer explanation
+  goes to a page under `docs/reference/` that the header links (`tools/render/profile-frame.mjs`
+  and `docs/reference/profile-frame.md`). Options a tool does not know are an error, not ignored.
+  A change that makes a check faster keeps its guarantee true (a scene-jump check compares jumps
+  with fresh loads, not with other jumps).
+- An entry tool answers `--help` from its header, at once: its first import is
+  `import '../kit/help.mjs';` (the path from its folder), which prints the first line, the Usage and
+  the Options and exits before any other import runs, so no GPU lock is taken, no browser opened and
+  no server started; `--help --full` prints the whole header. A Python tool's manual is its module
+  docstring, and right after it, before any other import or a re-exec, it calls the same helper:
+
+  ```python
+  sys.path.insert(0, str(Path(__file__).resolve().parent))  # the path to tools/kit/
+  from help import answer_help  # noqa: E402
+
+  answer_help(__file__)
+  ```
+
+- A file is an entry tool if its header has a `Usage:` section, it exports nothing, or it runs
+  only when called (`resolve( process.argv[ 1 ] ) === fileURLToPath( import.meta.url )`); a Python
+  file, if its docstring has `Usage:` or no other tool imports it. Anything else is a module, whose
+  header still opens with one sentence. `tools/repo/verify-tool-manuals.mjs`, part of
+  `npm run check`, finds the entries so and runs each one's `--help` with the lock, the browser and
+  child processes made to throw; a new entry tool also gets a line in `docs/reference/tools.md`.
 - Output goes to files (images, JSON a script can read) with a short summary on stdout. Exit
   codes mean something: 0 passed, 1 failed, and 3 for contended (the GPU was busy, nothing
   measured). A long tool prints progress lines, so `job.mjs wait` shows where it is.
@@ -33,7 +65,7 @@ A tool is written to these rules:
   evaluate and `WAIT_FRAMES` spliced into page code written as a string: one wait, which fails at
   once while the page's loop is stopped. Never a count of animation frames: the frame pacer skips
   the refreshes between its frames, and a paused page in the test mode holds a due frame while two
-  are still queued on the GPU (`docs/reference/tools.md`, Test mode), so the read saw the frame
+  are still queued on the GPU (`docs/reference/test-mode.md`), so the read saw the frame
   before whenever the page did not tick after the state was set. Rendered frames wait for the state
   the next tick applies; a still, converged image is still waited for by `settled` (the Readiness
   rule above), never by a count of frames of either kind.
@@ -50,7 +82,7 @@ A tool is written to these rules:
     controls), `__PONLAI_WORLD__` (`ready` and `ms`, set as the world starts:
     `app/WorldBoot.ts`) and, with `?profile`, `__PONLAI_PROFILE__` (the frame profiler's readings);
   - `__THREE_GAME_DIAGNOSTICS__.settled`, true once a paused frame is final
-    (`packages/render/post/Settled.ts`; `docs/reference/tools.md`, Page).
+    (`packages/render/post/Settled.ts`; `docs/reference/page.md`).
 
   The scene page mounts the same handles (`app/scenes/ScenePage.ts`). A tool that needs more of
   the page adds it to one of the three, never a global of its own.

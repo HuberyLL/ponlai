@@ -70,12 +70,12 @@ simulation) when it meets three conditions:
 - On a still scene it converges to the same image whatever came before, or it can be frozen or
   turned off in the test mode.
 - Outside the test mode its frames are compared within a tolerance
-  ([tools/kit/parity/README.md](../../tools/kit/parity/README.md), Temporal tolerance).
+  ([tools/kit/parity/README.md](../../tools/kit/parity/README.md), How a tolerance is set).
 
 Its per-frame update reads the scene clock's step, never the wall clock, so a stepped clip repeats
 (rule 17 names the three cadences that follow the wall clock's step). The test mode is a paused page
 under MSAA, with every history-dependent effect frozen or off, shot once the page's `settled` signal
-holds ([tools.md](tools.md), Test mode). There a paused frame repeats exactly and equals a fresh
+holds ([Test mode](test-mode.md)). There a paused frame repeats exactly and equals a fresh
 load's, and refactors are checked byte for byte. Under the temporal modes a paused page shows its
 rest image, compared within the tolerance. A new history-dependent effect follows
 [check-a-change.md](../how-to/check-a-change.md), Add a history-dependent effect.

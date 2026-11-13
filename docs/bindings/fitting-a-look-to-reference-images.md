@@ -12,11 +12,11 @@ Rules for every change); keep them and the run's notes in the task's artifacts f
 ## Views
 
 - A repeatable frame is the test mode: a paused page under MSAA, shot once `settled` holds
-  (`docs/reference/tools.md`, Test mode). `t=<hour>` and `weather=<name>` reach a sun and a sky;
+  (`docs/reference/test-mode.md`). `t=<hour>` and `weather=<name>` reach a sun and a sky;
   the sun's elevation by hour is `packages/render/sky/DayCycle.ts`'s.
 - The island's views: `tools/island/parity/views.mjs` (names, queries, the evals that place the
   camera), shot together on one warm page by `tools/kit/parity/capture-set.mjs`
-  (`tools/kit/parity/README.md`, Views and capture-set.mjs). A view of your own goes in a views
+  (their headers). A view of your own goes in a views
   file of the same form.
 - A view that keeps the sun where it stands against the camera, so elevations compare like for
   like: `tools/island/meadow-light.mjs` `--elev` and `--azimuth` (its header).
@@ -25,8 +25,8 @@ Rules for every change); keep them and the run's notes in the task's artifacts f
 ## Measure
 
 - Region rows on your frames, by kind of surface and kind of light (sunlit rock, shaded grass, the
-  sky, the darkest land) in Oklab: `tools/island/colour-rows.mjs` (`docs/reference/tools.md`,
-  Captures). It reads the same cells before and after a change.
+  sky, the darkest land) in Oklab: `tools/island/colour-rows.mjs` (its
+  header). It reads the same cells before and after a change.
 - Boxes on a reference image or a capture: `uv run tools/kit/img.py stats` with `--oklab`,
   `--split` or `--linear`. On the test scenes, each shot's readings (`readings.json` of
   `tools/render/scenes.mjs`) hold the box of every region the scene names (cards, lit and shaded

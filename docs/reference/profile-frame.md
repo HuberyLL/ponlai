@@ -253,7 +253,7 @@ report.
 Headless at 60 Hz shows whether the GPU holds 60 fps, not how a faster display paces the frames:
 every scene once passed it while a 120 Hz display showed uneven cadence and a restless dynamic scale
 under a player's drags. `--display` measures that on the real display, headed. It needs the display
-gate (`tools/kit/display-gate.mjs`; docs/reference/gpu-lock.md). A run is headed only for what a
+gate (`tools/kit/display-gate.mjs`; [GPU lock](gpu-lock.md)). A run is headed only for what a
 screen alone shows: pacing and cadence, late frames, the frame pacer's rate and the dynamic scale
 under a player's drags; GPU cost and tuning run headless.
 
@@ -310,7 +310,7 @@ log gives each scene's time over its settles and slices.
 
 ## The GPU lock and the machine's load
 
-The run holds the GPU lock (docs/reference/gpu-lock.md) exclusively only for what it measures,
+The run holds the [GPU lock](gpu-lock.md) exclusively only for what it measures,
 and opens no browser while it queues: a headed window must not sit on the screen, or die, while
 the request waits.
 

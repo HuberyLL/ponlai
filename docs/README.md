@@ -24,8 +24,16 @@ Facts to look up.
 
 - [URL options](reference/url-options.md): the page's URL options, debug views and console
   handles.
-- [Tools](reference/tools.md): the tools in `tools/`, the page's keys, the test mode, captures,
-  probes, the GPU lock, frame profiling and the docs checks.
+- [Tools](reference/tools.md): the index of the tools in `tools/`, by the question each answers;
+  each tool's manual is its header (`node <tool> --help`).
+- [Test mode](reference/test-mode.md): how a page is loaded so that a frame repeats exactly, and
+  the `settled` signal.
+- [GPU lock](reference/gpu-lock.md): the lock every tool that renders takes, long jobs and waiting,
+  process priority and headed runs.
+- [The page's handles and keys](reference/page.md): the debug handles the tools drive, the keys, the
+  island camera's controls and the performance readout.
+- [Frame profiler](reference/profile-frame.md): what `tools/render/profile-frame.mjs` measures and
+  how to read its results.
 - [Look values](reference/look-values.md): the measured values of the island's look (light and
   shade, exposure, water).
 - [Architecture rules](reference/architecture-rules.md): the rules across the layers in full, each
@@ -33,7 +41,8 @@ Facts to look up.
 - [three.js and WebGPU behaviour](reference/three-behaviour.md): what three r186, WebGPU and TSL
   do that the code is written around; read it before writing TSL or a pass of the frame graph.
 - [Glossary](reference/glossary.md): the project's own words.
-- [Parity captures](../tools/kit/parity/README.md): capture sets, comparisons and their tolerances.
+- [Parity captures](../tools/kit/parity/README.md): the method across the parity tools: which
+  comparison is byte-exact, how a tolerance is set and how the stored references are used.
 - Skill bindings (`docs/bindings/`): this project's facts for each skill in `skills/`, a page per
   skill under its name.
 

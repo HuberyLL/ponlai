@@ -34,7 +34,7 @@ r186, each with the check that sees it.
    each only after reading the code it covers. Repeat until the check passes.
 4. Run `npm run typecheck` and `npm run build`.
 5. Compare the shader code: build the WGSL with `tools/render/wgsl-build.mjs` on the old version and
-   the new one (`docs/reference/tools.md`, WGSL builds), and note which shaders changed and why.
+   the new one (its header), and note which shaders changed and why.
 6. Run the checks that need no GPU: `npm run check -- --full`.
 7. Run the GPU checks that compare two paths of the same code, which must still pass byte for byte:
    the scene jump (`tools/island/verify-scene-jump.mjs`) and the growth swap
@@ -42,7 +42,7 @@ r186, each with the check that sees it.
    `packages/render/three/`.
 8. Compare the image with captures from before the upgrade (`tools/kit/parity/capture-set.mjs`).
    An upgrade need not match byte for byte: judge it within the temporal tolerance
-   (`tools/kit/parity/README.md`, Temporal tolerance), explain each difference, then capture new
+   (`tools/kit/parity/README.md`, How a tolerance is set), explain each difference, then capture new
    reference sets.
 9. Check the pipelines: the count the page creates (`diagnostics.pipelines`,
    `packages/render/debug/PipelineCounter.ts`), that no player step creates one

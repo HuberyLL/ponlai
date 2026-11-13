@@ -17,7 +17,7 @@ The tools that load pages with these options: [Tools](tools.md).
   A paused page lifts its loading screen at once, without the fade, so a capture of a paused frame
   never catches the screen over it.
 - `paused` also puts the page in the test mode (`packages/render/debug/TestMode.ts`;
-  `docs/reference/tools.md`, Test mode); `testMode=0` keeps a paused page out of it, as the clips
+  `docs/reference/test-mode.md`); `testMode=0` keeps a paused page out of it, as the clips
   do.
 
 ## The island
@@ -93,7 +93,7 @@ The tools that load pages with these options: [Tools](tools.md).
 
 - `quality` (low, medium, high: the tier of every knob in `packages/render/Quality.ts`; without it
   high, the only active tier: medium and low are parked, see `docs/reference/tools.md`, Parked
-  quality tiers), `tier.<knob>=<value>`
+  weathers and quality tiers), `tier.<knob>=<value>`
   overrides one knob for an A/B (e.g. `tier.post.hazeGrid.width=128`). The GPU timing that once
   chose the tier (`app/QualityDetect.ts`, `autoQuality`, and `autoQualitySlow`, a factor on the
   time it measures) is parked with them: the load reads neither for the tier, and the GUI's quality
@@ -389,7 +389,7 @@ and none of the island's or the game's.
   own: its `views`, `times` (each a name and the query that reaches it) and `readings`,
   `setView( name )`, and `read()`, which gives every reading the frame holds (the scene's linear
   radiance over its box, the exposure, the key and the sky's irradiance). `tools/render/scenes.mjs`
-  shoots and reads them (`docs/reference/tools.md`, Test scenes).
+  shoots and reads them (its header).
 
 ## Ambient light, occlusion and other views
 

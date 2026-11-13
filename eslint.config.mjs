@@ -10,7 +10,7 @@
 //   that no longer suppresses anything is an error, so the exceptions stay true.
 // - A new rule goes in the plugin, gets its block here and a fixture in tools/repo/lint/fixtures/
 //   (`node tools/repo/verify-lint.mjs` fails unless each fixture reports its rule):
-//   docs/reference/tools.md, Code lint.
+//   tools/repo/lint/plugin.mjs's header.
 import tseslint from 'typescript-eslint';
 import ponlai from './tools/repo/lint/plugin.mjs';
 

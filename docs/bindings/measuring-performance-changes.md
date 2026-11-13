@@ -5,8 +5,10 @@ This project's facts for the skill
 section is named after the step of the skill that reads it. A project of your own copies the
 section names and fills in its own facts.
 
-The profiler is `tools/render/profile-frame.mjs`; its header is its manual (modes, options, what
-each reading means). Read it there, never by starting the tool. Every wait goes through
+The profiler is `tools/render/profile-frame.mjs`; its header is its manual (usage, options,
+output, exit codes; `node tools/render/profile-frame.mjs --help --full` prints it without
+rendering), and `docs/reference/profile-frame.md` holds its scenes, its modes and what each
+reading means. Read them there, never by starting the tool to see. Every wait goes through
 `tools/kit/job.mjs` (`AGENTS.md`).
 
 ## Standard
