@@ -358,9 +358,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `tools/dusk-grid.mjs` sets and reads them).
 - `renderLook=neutral` (debug pages only) loads the renderer with its neutral look in place of the
   island's (`packages/render/look/NeutralLook.ts`: gains of 1, no grade, no vignette, no bloom,
-  clean air, one exposure key all day, nothing done for the night), the look it draws with where
-  nobody installed one (`packages/render/look/Look.ts`). The tunables then start from the neutral
-  numbers. It shows what the renderer does without the island's numbers; it is no picture to judge.
+  clean air, one exposure key all day, nothing done for the night). The tunables then start from the
+  neutral numbers. It shows what the renderer does without the island's numbers; it is no picture to
+  judge.
   Off a debug page the island's look loads whatever the option says. The test scenes' page draws
   with the neutral look by itself, and takes the island's with `renderLook=ponlai` (The test
   scenes).

@@ -131,10 +131,11 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   (`?scene=ball|empty|sea|plants`) built from the renderer's stages alone, with no island or game
   (`ScenePage.ts`; a scene is a module beside it, its type in `TestScene.ts`, the list in
   `index.ts`). Their files import only the renderer's exits (`tools/verify-layers.mjs`). The page
-  draws with the renderer's neutral look (`renderLook=ponlai` installs the island's, in the entry)
-  and takes the island's inputs from `packages/render/NeutralInputs.ts`: the probes, the bounce's
-  ground and the shore's fields of level open ground or of the open sea far from any shore.
-  `tools/scenes.mjs` shoots, reads and checks them.
+  draws with the renderer's neutral look (`renderLook=ponlai` picks the island's, in the entry,
+  which hands the look to the page) and takes the island's inputs from
+  `packages/render/NeutralInputs.ts`: the probes, the bounce's ground and the shore's fields of
+  level open ground or of the open sea far from any shore. `tools/scenes.mjs` shoots, reads and
+  checks them.
 - `packages/render/Quality.ts`: the quality tiers, every cost knob in one table (high the only
   active one); `app/QualityDetect.ts` takes `?quality` or high (its GPU timing is parked with the
   lower tiers).
@@ -221,8 +222,8 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   the sun's maps and the clouds (`VolumetricHaze.ts`, its keys by the hour and the weather in
   `HazeKeys.ts`, its medium's closed form in `HazeDepth.ts`).
 - `packages/render/look/`: the look the renderer draws with, passed in: the types of its tables, one
-  set per system, and the installed set with its reader (`Look.ts`: `installLook`, `readLook`), the
-  renderer's neutral set, drawn with where nobody installed one (`NeutralLook.ts`), and per system
+  set per system (`Look.ts`), the renderer's neutral set, which the test scenes draw with
+  (`NeutralLook.ts`), and per system
   the module that makes its tables from the numbers it is handed, with their tunables and the CPU
   code that reads only them; the shaders and the methods that take them stay in their modules. The
   sky's (`SkyLook.ts`: made from the sky's table the sky stage hands `createSkyTables`), the
@@ -243,9 +244,9 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
 - `packages/island/look/`: the island's numbers for those tables, one file per system (`Sea.ts`,
   `Day.ts`, `Ambient.ts`, `Exposure.ts`, `Display.ts`, `Haze.ts`, `Sky.ts`, `Occlusion.ts`,
   `LocalLights.ts`, `MeadowCanopy.ts`, `Wind.ts`), numbers and pure
-  functions of numbers only, gathered in `IslandLook.ts`. The entry installs them after the
-  settings (`PageSettings.ts`) and hands them to the stages; a node tool that reads the installed
-  look back installs them first (`tools/island-look.mjs`).
+  functions of numbers only, gathered in `IslandLook.ts`. The entry picks them after the settings
+  (`PageSettings.ts`) and the page hands them to the stages; a node tool hands them to what it
+  creates.
 - `packages/render/post/`: the frame's passes and tidewater's display chain (`Pipeline.ts`; its
   options of the graph's structure in `PostOptions.ts`, the display chain's materials in
   `PipelineDisplay.ts`, the passes declared on the frame graph in `PipelinePasses.ts`; its bloom in
