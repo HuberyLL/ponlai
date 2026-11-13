@@ -12,7 +12,8 @@
 //   a stage holds no await of its own, so the frames and microtasks between two stages stay the
 //   entry's to order.
 // - What the island gives a stage comes as an argument typed by the renderer's own types: this
-//   file names nothing of the island's.
+//   file names none of the island's things (one argument keeps the island in its name only:
+//   `createWater`'s `islandSea`, the open sea's range and the reflector's top).
 // - The registered plant kinds are placed by a stage too (`placeVegetation`: the scene, the
 //   wind's motion flag, the two depth prepasses), which closes their registry; the sun's caster box
 //   and the rain's collision bake read the same registry (`vegetationCasters`,

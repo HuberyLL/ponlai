@@ -78,7 +78,7 @@ import { canvasContext, gpuDevice, pendingTimestamps, resolveTimestamps, takeTim
 // So the graph labels its own passes and what three's nodes render as part of them (the bloom
 // chains' passes); what runs outside the graph (the sky, the shadow maps, the ocean) is labelled
 // by hand.
-// The page (main.ts) exposes `api` as `window.__PONLAI_PROFILE__`, read by tools/profile-frame.mjs.
+// The page (app/main.ts, app/scenes/ScenePage.ts) exposes `api` as `window.__PONLAI_PROFILE__`, read by tools/profile-frame.mjs.
 // `?profile=frames` keeps the frame and tick timing but skips the GPU timestamps. Measure frame
 // rates that way: with timestamp queries on, Chrome ran the same frames up to a quarter faster
 // (light scenes most; a scene that keeps the GPU saturated hardly at all), so the per-pass split
@@ -891,7 +891,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 
 export type FrameProfiler = ReturnType<typeof createFrameProfiler>;
 
-/** The scene's passes by subsystem. `handles` are main.ts's objects. */
+/** The scene's passes by subsystem. `handles` are the page's parts (app/main.ts). */
 export function labelPonlaiPasses( profiler: FrameProfiler, handles: Record<string, unknown> ): void {
 
 	const h = handles as Record<string, Record<string, unknown>>;
