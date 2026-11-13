@@ -11,11 +11,11 @@ import type { UiShared } from './Shared.ts';
 
 // The speak bar: the player talks to the islanders in words.
 //
-// The speak bar (docs/explanation/ui.md, Speaking; the design canvas's SpeakFlow): the player talks to the
-// islanders in words. At rest it is 说话 between two brush strokes fading outwards at the bottom
-// centre; it unfolds from the middle as characters are typed, holds about 27 characters (MAX_W)
-// and then scrolls left, fading out at its left edge. The caret is one brush stroke. With an
-// islander selected, their name stands above it; to everyone, nothing does.
+// The speak bar (docs/explanation/ui.md, Speaking): the player talks to the islanders in words. At
+// rest it is 说话 between two brush strokes fading outwards at the bottom centre; it unfolds from
+// the middle as characters are typed, holds about 27 characters (MAX_W) and then scrolls left,
+// fading out at its left edge. The caret is one brush stroke. With an islander selected, their name
+// stands above it; to everyone, nothing does.
 //
 // Enter sends (Game.speak: the words go into the record and to their listeners) and the bar stays
 // open; the line flies off a character at a time and each that leaves makes room for the next:

@@ -17,9 +17,9 @@ import type { UiShared } from './Shared.ts';
 
 // 沧海录, the record: the island's and each islander's log, day by day, over a paused world.
 //
-// 沧海录, the record (docs/explanation/ui.md; the design canvas's RecMain and RecPerson): opened by the scroll
-// at the top right over the dimmed, stopped world (the game paused while it is open, and running
-// again on closing if it ran before); the rest of the interface hides. Esc or × closes it; ←/→ step the days.
+// 沧海录, the record (docs/explanation/ui.md, 沧海录, the record): opened by the scroll at the top
+// right over the dimmed, stopped world (the game paused while it is open, and running again on
+// closing if it ran before); the rest of the interface hides. Esc or × closes it; ←/→ step the days.
 // - Left: 蓬莱 (the whole island) pinned on top, then every islander who has landed, scrolling past
 //   about seven names (no scrollbar; a fade at an edge only where more names lie beyond).
 // - A page: 蓬莱's logs everything; an islander's is their life from landing on, under a large
@@ -29,11 +29,18 @@ import type { UiShared } from './Shared.ts';
 //   arrows (shown only where more lie) or ←/→; days slide in and out; the chosen day is ringed; an
 //   islander's river starts at their landing. Over a drop the day's notable happening by its kind's
 //   rank (a landing as a boat, a building as the mallet, a critical need in 朱; 蓬莱 groups landings
-//   as N人登岛), with +N for more; under it the day's weather, the kind that held longest.
+//   as N人登岛), with +N for more; under it the day's weather, the kind that held longest. The river
+//   runs to today, or to the last day the record names (the debug panel's placeholder days, which
+//   are entries like any other and so are saved too).
+//
+// Focus: the dialog itself takes the keyboard's focus on opening (not its ×, which Space or Enter
+// would press) and gives it back on closing, only to where the keyboard had it; while it is open no
+// key but its own reaches the page (GameUi routes them).
 //
 // Rules: it reads the game's record (Chronicle.ts) and turns each entry into words by its kind's
 // row (data/record.ts), so a new kind never changes this file. It rebuilds only when the record or
-// the view changed. The days it knows are the record's (since the game was installed on the page).
+// the view changed. The days it knows are the record's, which the save keeps, so a resumed game's
+// record goes on from where it was saved.
 
 const VIS = 7, DAY_STEP = 146;
 const RIVER = 'M380 742 C560 728 760 756 960 742 C1160 728 1360 756 1540 742 C1360 760 1160 736 960 750 C760 764 560 736 380 742 Z';

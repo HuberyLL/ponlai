@@ -11,8 +11,8 @@ import { t } from './i18n/i18n.ts';
 
 // The weather in the top row: a live icon for now and a brush stroke for the next 24 hours.
 //
-// The weather in the top row (docs/explanation/ui.md, Weather forecast; the design canvas's WeatherAnim): the
-// weather now as one live icon in parts, and the next 24 game hours as one brush stroke beside it.
+// The weather in the top row (docs/explanation/ui.md, Weather forecast): the weather now as one live
+// icon in parts, and the next 24 game hours as one brush stroke beside it.
 //
 // - The live icon is the sun (or moon), a cloud and a cloud behind, each part's weight and place
 //   blended from the kinds of the front under way (data/weather.ts `live`): a cloud slides in and
@@ -25,7 +25,8 @@ import { t } from './i18n/i18n.ts';
 //   small icon stands at each turn of the weather (the middle of its front), in the kind turned to
 //   (its night face by night); of two turns closer than 20 px the first keeps its place and the
 //   worse kind stays. The turns are the engine's auto chain read ahead (Game.forecast), read again
-//   each game minute.
+//   each game minute. With auto weather off the sky holds, and the stroke has no marks but a front
+//   still under way.
 //
 // Rules: it writes only what changed (the stroke as it moves a quarter pixel, a mark when it moves a
 // tenth of a pixel); its label for screen readers says the weather now and its turns.
@@ -40,7 +41,7 @@ const smooth = ( a: number, b: number, x: number ) => {
 const f2 = ( v: number ) => v.toFixed( 2 );
 const hourOfDay = ( t: number ) => ( ( t % 24 ) + 24 ) % 24;
 
-// the live icon's parts, from the design canvas: rays and a ring for the sun, the moon's crescent,
+// the live icon's parts: rays and a ring for the sun, the moon's crescent,
 // the cloud's line and its base, and the faint cloud behind
 const RAYS = 'M24.8 16 Q26.6 17.15 28.4 16 Q26.6 14.85 24.8 16 Z M22.22 22.22 Q22.62 24.37 24.77 24.77 Q24.37 22.62 22.22 22.22 Z M16 24.8 Q14.85 26.6 16 28.4 Q17.15 26.6 16 24.8 Z M9.78 22.22 Q7.63 22.62 7.23 24.77 Q9.38 24.37 9.78 22.22 Z M7.2 16 Q5.4 14.85 3.6 16 Q5.4 17.15 7.2 16 Z M9.78 9.78 Q9.38 7.63 7.23 7.23 Q7.63 9.38 9.78 9.78 Z M16 7.2 Q17.15 5.4 16 3.6 Q14.85 5.4 16 7.2 Z M22.22 9.78 Q24.37 9.38 24.77 7.23 Q22.62 7.63 22.22 9.78 Z';
 const CORE = 'M16 9.4 a6.6 6.6 0 1 0 0.01 0 Z M16.5 11 a4.8 4.8 0 1 0 0.01 0 Z';

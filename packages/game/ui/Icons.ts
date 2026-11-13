@@ -3,8 +3,7 @@
 // The interface's icons: white line art drawn with the brush (docs/explanation/ui.md, Principles: icons are
 // the buttons, white line art with no label). Each is an SVG body in its own view box, filled with
 // `currentColor`, so its colour comes from the element that holds it (缟, 精白 on hover, 苍, 朱).
-// They come from the design canvas's boards, their coordinates kept to a tenth of a unit (an
-// eighth of a pixel at 40 px); bamboo was drawn after the boards, in the same brush. An icon is
+// Their coordinates are kept to a tenth of a unit (an eighth of a pixel at 40 px). An icon is
 // data like the rows that name it: a new building or resource adds its line here, and a row
 // without one shows the 未绘 glyph (`b_none`) until it is drawn.
 
