@@ -1,0 +1,372 @@
+import type { DayKey, DayKeys, KeyValues } from '../post/DayKeys.ts';
+import type { GradeChanges } from '../post/GradeLut.ts';
+import type { ToneCurve } from '../post/ToneCurve.ts';
+import type { SwellParams } from '../ocean/OceanSpectrum.ts';
+import { NEUTRAL_LOOK } from './NeutralLook.ts';
+
+// The look the renderer draws with: the numbers chosen for a picture, one set per system, handed
+// in by whoever owns the picture. The renderer holds the types (here), the code that reads the
+// numbers and registers their tunables (the reader modules beside this one: SeaLook.ts,
+// DayLook.ts, AmbientLook.ts, ExposureLook.ts, DisplayLook.ts, HazeLook.ts, SkyLook.ts) and a
+// neutral set (NeutralLook.ts), which it draws with when nobody installed one. The island's
+// numbers are the island's (packages/island/look/), installed by the page's entry (PageSettings.ts)
+// after the settings and before any reader loads.
+//
+// A reader takes its system's numbers once, as its module loads (`readLook`), into the constants
+// it has always exported, so every consumer reads at the moment it always did. That is why the
+// look is installed first: `installLook` after a reader has loaded would leave that reader on the
+// neutral set and the rest on the installed one, so it throws and names the first reader. It is
+// installed once, as the settings are (Settings.ts): a second install of another set throws. The
+// same set installed again changes nothing and passes: tools/dusk-grid.mjs installs the island's
+// look in node's own modules (tools/island-look.mjs) and again in those of its `--src` tree, which
+// by default is the same tree, so the same modules and the same set. A
+// reader registers its tunables (debug/Tune.ts) on tables of its own, copies of the ones it was
+// handed, so an installed set stays as it was written.
+//
+// Headless: types and two functions, no three.js and nothing of the page. The world's chunk
+// worker and the headless game never load it (tools/verify-layers.mjs).
+
+/** A span of the sun's elevation (degrees): [ whole, none ] or [ from, to ], as its reader says. */
+export type Span = readonly [ number, number ];
+export type Rgb = { r: number; g: number; b: number };
+type Triple = readonly [ number, number, number ];
+
+// ---- the sea (SeaLook.ts)
+
+export interface SeaLook {
+	/** The strengths of the sea's large-scale detail: the gusts' contrast, the slicks, the windrows. */
+	detail: { gust: number; slick: number; streak: number };
+	/** The distant swell under the weather's own sea. */
+	swell: Readonly<SwellParams>;
+}
+
+// ---- the day (DayLook.ts)
+
+/** A dusk share's windows: the clear evening's, the clear morning's and the clouded sky's. */
+export interface DuskWindow { evening: Span; morning: Span; clouded: Span }
+export interface DayLook {
+	/** The highest elevation at which the key may turn from the sun toward the moon. */
+	handoffTop: number;
+	/** The elevation at which the moon's key starts to rise, in full two degrees lower. */
+	moonKeyTop: number;
+	/** Where each of the dusk's shares comes in (the reader's DUSK_WINDOWS says which is which). */
+	duskWindows: {
+		display: Pick<DuskWindow, 'evening' | 'morning'>;
+		exposure: DuskWindow;
+		stars: Pick<DuskWindow, 'evening'>;
+		sky: DuskWindow;
+		ambient: DuskWindow;
+		yunpeng: DuskWindow;
+		cloudMoon: DuskWindow;
+	};
+	/** The daylight's window in which a clouded sky's display and stars take the night. */
+	cloudedDaylight: Span;
+	/** How deep under all of it (stops, over 0) each night layer comes in at its window's day end. */
+	duskDepth: { sky: number; ambient: number; stars: number; haze: number; cloudMoon: number };
+	/** Over how many degrees at the window's night end the night layers ease in. */
+	duskEase: number;
+	/** The exposure by the sun's elevation: [ elevation, exposure ], ascending. */
+	exposure: readonly ( readonly [ number, number ] )[];
+	/** The stops a clear night's metered exposure lies above the twilight's. */
+	nightMeterLift: number;
+	/** The night's own gain over the night sky's exposure. */
+	nightExposureGain: number;
+	/** The exposure the night sky's own light keeps its displayed brightness at. */
+	nightSkyExposure: number;
+}
+
+// ---- the environment light (AmbientLook.ts)
+
+export interface AmbientKnobs {
+	skySpecular: number;
+	skyBounce: number;
+	sunBounce: number;
+	directionality: number;
+	aoStrength: number;
+}
+/** The ambient grade's columns, the skies of the weather's blend. */
+export type AmbientColumn = 'clear' | 'fair' | 'cloudy' | 'overcast';
+/** A row of the ambient grade: per sky, its changes over the knobs at no grade. */
+export type AmbientRowLook = { at: number } & Partial<Record<AmbientColumn, Partial<AmbientKnobs>>>;
+export interface AmbientLook {
+	/** The grade by the sun's elevation (degrees, descending), setting side and rising side. */
+	grade: readonly AmbientRowLook[];
+	gradeRising: readonly AmbientRowLook[];
+	/** A gain on the grade's `sunBounce` at every hour. */
+	sunBounceGain: number;
+	/** The weather's gain on the land's ambient light under overcast's deck: the sun's part, the moon's. */
+	overcastLand: number;
+	overcastMoonLand: number;
+	/** The low key's lift: the shading elevation at the key's (ascending), and the corner's half width. */
+	keyLift: { rows: readonly { at: number; shading: number }[]; join: number };
+}
+
+// ---- the exposure (ExposureLook.ts)
+
+export interface ExposureKey extends Record<string, number> {
+	// κ, stops: where a white diffuser under the frame's typical light lands in the exposed image
+	key: number;
+	// κ_H, stops: the highest the frame's bright band (Y's 90th to 97th percentile) lands
+	highlight: number;
+	// β: the sky's share of the meter (its own exposure's, against the scene's)
+	sky: number;
+	// τ, seconds: the adaptation's time constant while the exposure rises (the view grew darker)
+	adaptUp: number;
+	// τ, seconds: the adaptation's time constant while the exposure falls (the view grew brighter)
+	adaptDown: number;
+}
+/** A key some of whose values are another key's: `shares` names, per value, the key (by `name`)
+ * it reads that value from, so the two hold one number and one tunable. */
+export type SharingKey<T extends KeyValues> = DayKey<T> & { readonly shares?: Partial<Record<keyof T, string>> };
+export interface ExposureLook {
+	keys: {
+		day: readonly SharingKey<ExposureKey>[];
+		rising: readonly SharingKey<ExposureKey>[];
+		cloudy: readonly SharingKey<ExposureKey>[];
+		night: ExposureKey;
+	};
+	/** Overcast's key on top of the clouded one (stops), toward a high and toward a low sun. */
+	overcastKey: number;
+	overcastKeyLow: number;
+	/** Where overcast's key passes from its low sun's value to its high sun's (degrees). */
+	overcastKeySpan: Span;
+	/** The share of a clear sky's light the overcast deck lets onto the land by night (0..1]. */
+	deckLandThrough: number;
+	/** The share of that darkness an overcast night keeps on screen. */
+	overcastNight: number;
+	/** Where overcast holds the clouded keys from (degrees). */
+	overcastHeld: number;
+}
+
+// ---- the display (DisplayLook.ts)
+
+export type BloomKey = {
+	threshold: number; knee: number; share: number; cap: number;
+	skyThreshold: number; skyKnee: number; skyShare: number; skyCap: number;
+	w0: number; w1: number; w2: number; w3: number; w4: number; w5: number; w6: number; w7: number;
+};
+export type DesaturationKey = { amount: number; cool: number };
+export interface DisplayLook {
+	shadeContrast: DayKeys<{ pivot: number; slope: number }>;
+	desaturation: DayKeys<DesaturationKey>;
+	coolShare: { from: number; to: number };
+	highlightGrey: { amount: number; from: number; to: number };
+	/** The bloom's and the vignette's strengths. */
+	strengths: { bloom: number; vignette: number };
+	vignette: { inner: number; outer: number; depth: number };
+	whiteBalance: DayKeys<Rgb> & { readonly night: Rgb };
+	whiteOvercast: Rgb;
+	toneCurve: Readonly<ToneCurve>;
+	/** The base grade, as its changes over no grade (post/GradeLut.ts NEUTRAL_GRADE). */
+	baseGrade: GradeChanges;
+	/** The bloom's keys, and the key its uniforms start from. */
+	bloom: DayKeys<BloomKey>;
+	bloomStart: BloomKey;
+	purkinje: { retina: number; strength: number };
+}
+
+// ---- the haze (HazeLook.ts)
+
+export interface HazeKey {
+
+	// the deck's share (Weather.ts `deckLight` by day, the clouded share by night):
+	// under it the air is lit level, not as a clear sky's (VolumetricHaze.ts)
+	deck: number;
+	// overcast's share of that deck (a parked sky counting as overcast): its sky darker away from the
+	// sun and toward the horizon (VolumetricHaze.ts)
+	overcastDeck: number;
+	amount: number;
+	sigmaRed: number;
+	sigmaGreen: number;
+	sigmaBlue: number;
+	desaturate: number;
+	// the weather's gain over both shares of the light (1 in every key)
+	gain: number;
+	mist: number;
+	sunRayleigh: number;
+	rayleighWeight: number;
+	mieWeight: number;
+	top: number;
+	width: number;
+	aerosolShare: number;
+	aerosolHeight: number;
+	// the aerosol layer's top (m; Infinity for none): a low deck's base
+	aerosolTop: number;
+	skyDepth: number;
+	// the fog layer, optional so a key written elsewhere without them holds none:
+	// the share of the ground layer that is the fog layer (its density from `visibility`, its top
+	// `fogTop` and the width of its edge `fogWidth`), the share of the ground layer's light that is the droplets' (VolumetricHaze.ts), how
+	// far the extinction turns neutral, the droplets' multiple scattering (Wrenninge's a), the
+	// visibility at the sea (km) and the banks' threshold at the layer's top (FogNoise.ts `high`)
+	fogLayer?: number;
+	droplet?: number;
+	neutral?: number;
+	scatter?: number;
+	fogTop?: number;
+	fogWidth?: number;
+	visibility?: number;
+	fogCoverHigh?: number;
+
+}
+export type FullKey = Required<HazeKey>;
+/** The hours a haze look gives a key for: four with a medium's shape of their own (day, golden,
+ * night, mist), the morning, and the twilights before dawn and after sunset. */
+export const HAZE_KEY_NAMES = [ 'day', 'golden', 'night', 'mist', 'morning', 'earlyDawn', 'beforeDawn', 'afterSunset', 'afterSunsetDeep', 'afterSunsetClouded' ] as const;
+export type HazeKeyName = typeof HAZE_KEY_NAMES[ number ];
+/** Rows by the sun's elevation (degrees, ascending), each naming its key. */
+export type HazeRows = readonly ( readonly [ number, HazeKeyName ] )[];
+export type FogFields = { fogLayer: number; neutral: number; scatter: number; fogTop: number; fogWidth: number; visibility: number };
+export type HazeScale = { sigmaRed: number; sigmaGreen: number; sigmaBlue: number; aerosolScale: number; aerosolHeight: number; topScale: number; widthScale: number };
+export interface HazeLook {
+	keys: Record<HazeKeyName, FullKey>;
+	/** The rising sun's rows, the setting sun's, and the setting sun's under cloud (two rows at least). */
+	rising: HazeRows;
+	setting: HazeRows;
+	settingClouded: HazeRows;
+	/** The fog layer's fields where a key holds none. */
+	noFog: FogFields;
+	/** The deep sea fog, a switch beside the weather. */
+	seaFog: { neutral: number; scatter: number; fogTop: number; fogWidth: number; visibility: number; coverHigh: number };
+	/** Per sky of the weather's blend (clear, fair, cloudy, overcast): the share of the light's
+	 * colour kept, the gain, the scales on the hour's medium, whether a deck ends the aerosol layer
+	 * at its base, and the sun's share in the haze's Rayleigh light. */
+	keep: readonly number[];
+	gain: readonly number[];
+	scales: readonly HazeScale[];
+	decked: readonly boolean[];
+	sunRayleigh: readonly number[];
+}
+
+// ---- the sky (SkyLook.ts)
+
+/** A row of the light the sky lends the island: the colour it is drawn toward (linear, any level:
+ * the reader takes it at unit luminance), how far, and the gain. */
+export interface IslandSkyRow { at: number; tint?: Triple; amount?: number; gain?: number }
+/** A kind of sky as a row of the clouds' parameters; no `base` or `top`: the cloud model's shell. */
+export type CloudSkyLook = { base?: number; top?: number; type: number; spread: number; farFade: number };
+export type StreakKeys = { afterglow: Rgb; golden: Rgb; low: Rgb; predawn: Rgb; sunrise: Rgb; morning: Rgb; high: Rgb; night: Rgb };
+export interface SkyLook {
+	/** The colour a clouded sky's light to the island is drawn toward under a high sun, and how far. */
+	cloudLightTint: readonly [ number, number, number, number ];
+	/** The light the sky lends the island by the sun's elevation (degrees, descending): the setting
+	 * side, the setting side under cloud and the rising side. */
+	islandSky: { setting: readonly IslandSkyRow[]; clouded: readonly IslandSkyRow[]; rising: readonly IslandSkyRow[] };
+	/** The clear shade (an A/B, off by default): the gain's extra share by elevation, its tint and amount. */
+	clearShade: readonly { at: number; share: number }[];
+	clearShadeTint: readonly [ number, number, number, number ];
+	/** The low sun's shade (an A/B, off by default) and its tint. */
+	lowSun: { full: number; top: number; amount: number };
+	lowSunTint: Triple;
+	/** How far a deck draws the key toward white at the same luminance. */
+	keyDeckWhite: number;
+	/** The sky's light against the sun's, and the clear day's gain over it. */
+	skyLight: DayKeys<Rgb>;
+	clearSky: DayKeys<{ gain: number }>;
+	/** The clouds' row per sky of the blend (clear, fair, cloudy, overcast). */
+	cloudSkies: readonly CloudSkyLook[];
+	/** Per sky of the blend, each store's range under the moon: [ brightest, first percentile ], stops over the moonlight on the clouds. */
+	storeRange: Record<'dome' | 'layer' | 'panorama', readonly Span[]>;
+	/** The low sun's key: a gain by elevation (degrees, descending). */
+	lowKey: readonly { at: number; gain: number }[];
+	/** The distant sea's knee, times the sun's illuminance. */
+	seaKnee: number;
+	/** The key's hue: the caps of the depth that sets it (the setting sun's, the rising sun's), its
+	 * white (red over green, blue over green) and the onsets of the air's change in each ratio. */
+	keyHue: { depth: number; dawnDepth: number; white: readonly [ number, number ]; reddens: number; yellows: number };
+	/** The thin cloud layer's colours on its two shares. */
+	streakDirect: StreakKeys;
+	streakAmbient: StreakKeys;
+	/** The moon's key's colour (any level: its readers take it at unit luminance), and its red and
+	 * blue over green as written. */
+	moonKey: { colour: Triple; red: number; blue: number };
+	/** The moonlit sky's colour and the night's ambient's, at unit luminance; the night's ambient's share of the moon's key. */
+	moonSkyHue: Triple;
+	nightAmbientHue: Triple;
+	nightAmbientShare: number;
+	/** The island's moonlight's red and blue over green. */
+	moonHue: { red: number; blue: number };
+	/** The share of a cloud layer's diffuse transmission the land keeps as a light along the key. */
+	keyThroughCloud: number;
+}
+
+// ---- the ambient occlusion (look/OcclusionLook.ts)
+
+export interface OcclusionLook {
+	/** The least ambient occlusion a surface keeps where its own and the screen's multiply. */
+	floor: number;
+}
+
+// ---- the local lights (look/LocalLightsLook.ts)
+
+export interface LocalLightsLook {
+	/** The gain on every source's own intensity. */
+	gain: number;
+}
+
+// ---- the meadow's canopy (look/MeadowCanopyLook.ts)
+
+/** A canopy's medium: its extinction per metre along the key's ray, and the share of the key that
+ * passes between its blades whatever the path. */
+export type CanopyMedium = { density: number; open: number };
+export interface MeadowCanopyLook {
+	/** The level canopy over every point of the meadow. */
+	canopy: CanopyMedium;
+	/** The crowns that stand over their neighbours and over the ground. */
+	cast: CanopyMedium;
+}
+
+// ---- the wind on the plants (look/WindLook.ts)
+
+export interface WindLook {
+	/** The gusts' share of the wind's strength on the plants: S ( 1 + gustGain q ). */
+	gustGain: number;
+	/** The largest offset (m, each axis) a blade's gust sample takes from its root. */
+	gustJitter: number;
+	/** The plants' speed (m/s) by the mean wind 10 m up (m/s): the points of a line, ascending, two
+	 * at least. */
+	plantWind: readonly ( readonly [ number, number ] )[];
+	/** The plants' speed (m/s) at which a limb takes a load of 1. */
+	plantSpeed: number;
+	/** How much quicker than its kind's rate a plant may sway (a share of the rate). */
+	plantRateSpread: number;
+}
+
+// ---- the current look
+
+export interface Look {
+	sea: SeaLook;
+	day: DayLook;
+	ambient: AmbientLook;
+	exposure: ExposureLook;
+	display: DisplayLook;
+	haze: HazeLook;
+	sky: SkyLook;
+	occlusion: OcclusionLook;
+	localLights: LocalLightsLook;
+	meadowCanopy: MeadowCanopyLook;
+	wind: WindLook;
+}
+
+let installed: Look | null = null;
+let firstReader: string | null = null;
+
+/** Installs the look every reader takes its numbers from, once. Call it before any reader loads: it
+ * throws once one has read, naming the first, and when another set was installed before (the same
+ * set again passes: see the header). */
+export function installLook( look: Look ): void {
+
+	if ( installed === look ) return;
+	if ( firstReader !== null ) throw new Error( `installLook: the look was read before it was installed, first by ${ firstReader }: install it before any module that reads it loads` );
+	if ( installed !== null ) throw new Error( 'installLook: the look is installed once, before any module that reads it loads' );
+	installed = look;
+
+}
+
+/** The installed look's numbers for `system`, or the neutral set's where none was installed.
+ * `reader` names the calling module (its path in its package), for `installLook`'s error. */
+export function readLook<K extends keyof Look>( system: K, reader: string ): Look[ K ] {
+
+	firstReader ??= reader;
+	return ( installed ?? NEUTRAL_LOOK )[ system ];
+
+}

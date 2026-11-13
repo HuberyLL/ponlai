@@ -1,7 +1,7 @@
 // Fixed-camera A/B evidence for the integrated wet surfaces, impact rings and rain streaks.
 // Uses one WebGPU page; coordinate with other GPU probes/benchmarks before running:
 //   node tools/verify-weather-effects.mjs http://127.0.0.1:5190
-// Parked with the rain (src/sky/Weather.ts PARKED_WEATHER): out of the default checks until the
+// Parked with the rain (packages/render/sky/Weather.ts PARKED_WEATHER): out of the default checks until the
 // parked weathers are revived; it still runs against a debug build (the dev server or ?debug).
 // Its steps wait for the page's rendered frames (tools/page-eval.mjs, "Rendered frames").
 import assert from 'node:assert/strict';
@@ -9,7 +9,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
 import './island-look.mjs';
-import { DAY_PRESETS } from '../src/sky/DayCycle.ts';
+import { DAY_PRESETS } from '../packages/render/sky/DayCycle.ts';
 import { renderedFrames } from './page-eval.mjs';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';

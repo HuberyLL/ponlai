@@ -1,4 +1,4 @@
-// Checks the island's growth (src/world/IslandGrowth.ts) over many seeds, CPU only (plain node):
+// Checks the island's growth (packages/island/world/IslandGrowth.ts) over many seeds, CPU only (plain node):
 // the coast's shape at every checked step (traced by marching squares at 0.5 m over the land's
 // signed distance), that a grown land equals the same steps taken one at a time through a saved
 // land, that old land is never lost and that the land stays 16 m inside the lattice at the growth
@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
-import { GROWTH, LandLattice, growLand, nextPiece } from '../src/world/IslandGrowth.ts';
+import { GROWTH, LandLattice, growLand, nextPiece } from '../packages/island/world/IslandGrowth.ts';
 
 const args = process.argv.slice( 2 );
 const arg = ( name, fallback ) => {

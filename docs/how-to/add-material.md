@@ -27,7 +27,8 @@ silently.
 ## 3. Light it as every other surface
 
 A lit material is built on the island's lighting model, so the same light reaches it as every
-other surface. The modules named below are in `src/lighting/`, `src/ocean/` and `src/post/`; each
+other surface. The modules named below are in `packages/render/lighting/`, `packages/render/ocean/`
+and `packages/render/post/`; each
 header comment says more.
 
 1. Build the material on `GroundBounceLightingModel`, or read its uniforms (`AmbientGrade.ts`).

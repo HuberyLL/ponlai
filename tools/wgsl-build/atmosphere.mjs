@@ -1,4 +1,4 @@
-// tools/wgsl-build.mjs's entry for the atmosphere (src/sky/Atmosphere.ts): its bakes (the
+// tools/wgsl-build.mjs's entry for the atmosphere (packages/render/sky/Atmosphere.ts): its bakes (the
 // transmittance and multiple-scattering LUTs, the in-scatter table's two parts), the slices cut
 // from the table (the sky row and the fog table, each in two parts), the earth shadow's mean over
 // the azimuth, and the sky's radiance toward a fixed direction (`skyRadiance`, drawn as a
@@ -6,7 +6,7 @@
 
 import * as THREE from 'three/webgpu';
 import { vec3, vec4, normalize } from 'three/tsl';
-import { Atmosphere } from '../../src/sky/Atmosphere.ts';
+import { Atmosphere } from '../../packages/render/sky/Atmosphere.ts';
 
 const BAKES = [ 'transmittance', 'multiscat', 'table', 'table-mie', 'sky-row', 'sky-row-mie', 'fog-table', 'fog-table-mie', 'shadow-mean' ];
 

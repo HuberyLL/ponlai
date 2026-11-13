@@ -1,6 +1,6 @@
 // Vite plugin: `virtual:world-generator` exports WORLD_GENERATOR_HASH, a hash of every source file
-// the chunk worker imports (src/world/chunkWorker.ts: the chunks, the land and what the merge
-// shares with them), so a cached chunk (src/world/WorldCache.ts) is used only while the generator
+// the chunk worker imports (packages/island/world/chunkWorker.ts: the chunks, the land and what the merge
+// shares with them), so a cached chunk (packages/island/world/WorldCache.ts) is used only while the generator
 // would build the same one. The files are found by following the worker's relative
 // imports. A package file the generator imports is hashed by its contents when it is listed in
 // PACKAGE_FILES (a single file of its own, importing nothing: three's copy of meshoptimizer's
@@ -10,7 +10,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-const WORKER = 'src/world/chunkWorker.ts';
+const WORKER = 'packages/island/world/chunkWorker.ts';
 const MODULE = 'virtual:world-generator';
 const RESOLVED = '\0' + MODULE;
 // package files hashed by their contents, under node_modules/

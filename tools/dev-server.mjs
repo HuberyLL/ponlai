@@ -1,4 +1,4 @@
-// Stops a probe at once when its URL is not the Vite dev server. Probes that import /src/ modules
+// Stops a probe at once when its URL is not the Vite dev server. Probes that import the source modules
 // into the page need the dev server, which compiles them on request; a production preview does
 // not serve them, and without this check such a probe waited about 90 s and then timed out.
 // Called before the GPU lock is taken or a browser starts, so a wrong server costs nothing.
@@ -20,7 +20,7 @@ export async function requireDevServer( url, tool ) {
 
 	if ( ! ok ) {
 
-		console.error( `${ tool }: needs the dev server (npm run dev): it imports /src/ modules, which a production preview does not serve` );
+		console.error( `${ tool }: needs the dev server (npm run dev): it imports the source modules, which a production preview does not serve` );
 		process.exit( 1 );
 
 	}

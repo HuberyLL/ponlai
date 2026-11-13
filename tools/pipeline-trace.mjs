@@ -1,8 +1,8 @@
 // Which pipelines an action built, and for what: the page-side tracer that tools/page-eval.mjs puts
 // in every probe's and capture's scope as `pipelines`, and that tools/verify-first-use.mjs counts
-// with. The page itself only keeps the total (`P.pipelines.total`, src/debug/PipelineCounter.ts);
+// with. The page itself only keeps the total (`P.pipelines.total`, packages/render/debug/PipelineCounter.ts);
 // when it moves across an action, agents used to wrap the backend again in a script of their own to
-// learn what was built. This is that wrapper, once, tool-side (src/ stays as it is).
+// learn what was built. This is that wrapper, once, tool-side (the page's code stays as it is).
 //
 // Two layers, both calling through to what was there before, so they stack with PipelineCounter,
 // the frame profiler and Settled's async watch in any order:
@@ -18,7 +18,7 @@
 //   A device call outside them (the mipmap passes) has those fields null.
 // Every entry: `{ kind, async, label, at, frame, material, object, target, stack }`, `frame` being
 // `P.renderer.info.frame` (-1 before `__PONLAI__` exists) and `stack` the first 6 app frames
-// (`/src/` files, not `src/debug/`'s wrappers) below three's, as `function file:line`.
+// (files under `packages/` and `app/`, not the debug folders' wrappers) below three's, as `function file:line`.
 //
 // Installs. In a probe or a capture the tracer installs on first use (`pipelines.mark()`): it wraps
 // the device instance (not its prototype: Settled has already wrapped the instance, and a wrap of
@@ -62,8 +62,8 @@ function pipelineTrace( early ) {
 			const m = /at (?:(.*?) \()?(\S+?):(\d+):\d+\)?$/.exec( line.trim() );
 			// (the page's own wrappers of the backend, PipelineCounter and the frame profiler, are three's
 			// layer for this purpose: the caller is below them)
-			if ( ! m || ! m[ 2 ].includes( '/src/' ) || m[ 2 ].includes( '/node_modules/' ) || m[ 2 ].includes( '/src/debug/' ) ) continue;
-			const file = m[ 2 ].replace( /^.*?\/src\//, 'src/' ).replace( /\?.*$/, '' );
+			if ( ! m || ! /\/(packages|app)\//.test( m[ 2 ] ) || m[ 2 ].includes( '/node_modules/' ) || /\/packages\/\w+\/debug\//.test( m[ 2 ] ) ) continue;
+			const file = m[ 2 ].replace( /^.*?\/((?:packages|app)\/)/, '$1' ).replace( /\?.*$/, '' );
 			app.push( `${ m[ 1 ] ?? '<anonymous>' } ${ file }:${ m[ 3 ] }` );
 			if ( app.length === 6 ) break;
 

@@ -31,7 +31,7 @@
 // (`renderer.info.frame`, which three's loop bumps on the animation frames the page renders). An
 // animation frame is not one: the frame pacer skips the refreshes between its frames, and a paused
 // page in the test mode holds a due frame while two rendered frames are still queued on the GPU
-// (src/post/FramePacer.ts, "A paused page's queue"). A step that sets a state and waited a count of
+// (packages/render/post/FramePacer.ts, "A paused page's queue"). A step that sets a state and waited a count of
 // animation frames read the frame before it whenever the page did not tick after the state was set:
 // the handoff check, beside another page, read the key and the exposure a frame late on 6 of its
 // 324 samples, each a sample with no rendered frame after its clock was set. Rendered frames wait for

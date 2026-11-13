@@ -2,7 +2,7 @@
 // through its exits, that the world's chunk worker and the headless exits import only plain code, that the renderer and the island keep off the page, which files
 // write another module's state, that each layer names only the userData keys declared for it, and
 // that no module reads the look where none is installed. CPU only, no GPU, a few seconds (the page and state checks run
-// TypeScript's checker over src/).
+// TypeScript's checker over packages/ and app/).
 //   node tools/verify-layers.mjs
 //
 // The layers, lowest first: render (light, sky, weather, sea, the frame's passes, the generic
@@ -10,19 +10,18 @@
 // growth, its materials, plants, camera, characters, creatures), game (everything behind `?game`)
 // and app (the page's entry, which assembles the others). A file may import its own layer and the
 // layers below it, never one above: a lower layer defines an interface and the higher one fills
-// it. Which layer a file belongs to is not its folder's name: some files sit in another layer's
-// folder until the files move, so `tools/layers.json` maps every file under `src/` to its layer
-// (`files`). The three lower layers are packages, and each offers two exits (`exits`), files of
-// re-exports only: one for the page (render.ts, island.ts, game/index.ts) and a headless one for
-// the code that loads without three.js, in the chunk worker and in node (renderData.ts,
-// islandLand.ts, game/sim/index.ts). The renderer has a third, its setup exit (renderSetup.ts):
+// it. A file's folder is its layer: the three lower layers are packages, each a folder of
+// `packages/` (`packages/render/`, `packages/island/`, `packages/game/`), and the app layer is
+// `app/`. Each package offers two exits (`tools/layers.json`, `exits`), files of re-exports only:
+// one for the page (render/index.ts, island/index.ts, game/index.ts) and a headless one for the code that loads without three.js, in the chunk worker and in node (render/data.ts,
+// island/land.ts, game/sim/index.ts). The renderer has a third, its setup exit (render/setup.ts):
 // what the page needs before the renderer's other modules load (the settings, the look, the quality
 // tiers and the render scale they set), which loads in node too. The modules the page loads on
 // demand are lazy exits (`lazy`): the page exits leave them out, so they keep chunks of their own.
 //
 // Guarantees, each a failure (exit 1) when broken:
-// - Every code file under `src/` (.ts, .mts, .js, .mjs) has a layer in `tools/layers.json`, and
-//   every file named there exists: a new file is placed in a layer when it is added.
+// - Every code file under `packages/` (.ts, .mts, .js, .mjs) is in the folder of one of the three
+//   packages: a new file is placed in a layer by the folder it is added to.
 // - No import goes up a layer, except the pairs of files in KNOWN, which are printed but pass.
 //   KNOWN only shrinks: a pair in it that no longer imports upward fails, so the entry is removed
 //   with the change that removes the import. Imports are read with TypeScript's own pre-processor
@@ -40,19 +39,19 @@
 //   name is exported by two exits.
 //   The exits' own tests (the headless and setup ones load in node, the page ones neither await
 //   nor read the page at load) are tools/verify-exits.mjs.
-// - The test scenes: a file under `src/app/scenes/` (the scene page and the scenes it shows) imports
+// - The test scenes: a file under `app/scenes/` (the scene page and the scenes it shows) imports
 //   only the renderer's exits, the renderer's lazy exits and the files beside it, by any kind of
 //   import: a scene is built from the renderer alone, and the island's numbers reach its page only
-//   through the entry (src/ScenesBoot.ts).
+//   through the entry (app/ScenesBoot.ts).
 // - Each headless exit, the setup exit and every file they load (static imports and re-exports,
 //   `import type` left out) import relative paths only: no package, three.js least of all, so node
 //   and a worker load them as they are.
-// - The chunk worker (src/world/chunkWorker.ts) and everything it imports, followed through
+// - The chunk worker (packages/island/world/chunkWorker.ts) and everything it imports, followed through
 //   relative imports, imports no package except the files tools/vite-world-generator.mjs hashes:
 //   the same walk and the same exceptions as the build's world generator plugin, run here so the
 //   check fails before a build does. (Its files are hashed into the world's cache key, and a
 //   package such as three.js would not run in the worker's plain code.)
-// - The page check: the render and island layers and the game's headless simulation (game/sim/)
+// - The page check: the render and island layers and the game's headless simulation (packages/game/sim/)
 //   name none of the page's globals in PAGE (the address, the browser's storage, the document,
 //   window, navigator, the frame callbacks, workers, IndexedDB, fetch), outside the files in
 //   PAGE_NEEDS, each the one place of a need the renderer has of the browser and allowed only the
@@ -70,23 +69,23 @@
 //   through the import's binding; a method that mutates (`vector.copy( x )`) and a GUI bound to a
 //   field are not seen.
 // - The userData check: a file names only the `userData` keys the renderer declares
-//   (src/UserData.ts: the key, who sets it, who reads it, what it means) and, above the renderer,
+//   (packages/render/UserData.ts: the key, who sets it, who reads it, what it means) and, above the renderer,
 //   those its own layer declares it keeps to itself (`userData` in tools/layers.json: each layer's
-//   file and list, the island's world/IslandUserData.ts). Every key on the renderer's list is named
-//   by some file under src/, every key on a layer's list by a file of that layer, and no layer's
+//   file and list, the island's packages/island/world/IslandUserData.ts). Every key on the renderer's list is named
+//   by some file of the code, every key on a layer's list by a file of that layer, and no layer's
 //   list repeats a key of the renderer's. A key counts where it is written after the
 //   bag (`x.userData.key`, `x.userData[ 'key' ]`); one reached through an alias of the bag
 //   (`const data = material.userData`) or a computed name is not seen.
-// - The look checks: the renderer draws with the look its page installs (src/look/Look.ts), which
+// - The look checks: the renderer draws with the look its page installs (packages/render/look/Look.ts), which
 //   a module reads as it loads (`readLook(`), so a reader that loads where no look is installed
 //   takes the neutral one without a word. Neither that module nor any reader is among the files
 //   the chunk worker loads (the world is generated without the look, and no worker installs one).
-//   No reader is among the files the headless game loads (every src/ module tools/play-game.mjs
+//   No reader is among the files the headless game loads (every module tools/play-game.mjs
 //   and its fixture name, with what those load: the game is played without the look); look/Look.ts
 //   itself may be, through the setup exit, whose settings the game's words read (it reads nothing
 //   while no reader loads),
-//   and no reader is among the files an entry's first module (src/PageSettings.ts, and the scene
-//   page's src/ScenesBoot.ts) or the renderer's setup exit loads: the first installs the look and
+//   and no reader is among the files an entry's first module (app/PageSettings.ts, and the scene
+//   page's app/ScenesBoot.ts) or the renderer's setup exit loads: the first installs the look and
 //   must have run before the first reader does, and the second is what it installs the look through. The files a file loads are
 //   its static imports and re-exports followed through relative specifiers, `import type` left
 //   out (it is erased) and dynamic imports too (they load later).
@@ -100,13 +99,16 @@ import ts from 'typescript';
 import { worldGeneratorSources } from './vite-world-generator.mjs';
 
 const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
-const SRC = path.join( ROOT, 'src' );
+const SRC = ROOT;
+// the folders the layered code lives in, from the repository's root
+const CODE_ROOTS = [ 'packages', 'app' ];
+const outside = ( file ) => ! CODE_ROOTS.some( ( root ) => file.startsWith( `${ root }/` ) );
 const TABLE = path.join( ROOT, 'tools', 'layers.json' );
 const RANK = { render: 0, island: 1, game: 2, app: 3 };
 const CODE = /\.(ts|mts|js|mjs)$/;
 
-// Upward imports not yet turned round, as 'from -> to' (paths under src/). Remove an entry with
-// the change that removes its import; never add one.
+// Upward imports not yet turned round, as 'from -> to' (paths from the repository's root). Remove
+// an entry with the change that removes its import; never add one.
 const KNOWN = [];
 
 // The page's globals the lower layers must not name.
@@ -115,42 +117,42 @@ const PAGE = [ 'location', 'localStorage', 'sessionStorage', 'document', 'window
 // use. Workers start in the module that names their script: the build bundles a worker only from
 // a literal `new Worker( new URL( ... ) )`, so each layer's workers start in their own file.
 const PAGE_NEEDS = {
-	'post/FramePacer.ts': { need: 'frame pacing', names: [ 'requestAnimationFrame', 'cancelAnimationFrame' ] },
-	'world/WorldChunks.ts': { need: 'the world\'s workers', names: [ 'Worker', 'navigator' ] },
-	'ocean/ShoreWaves.ts': { need: 'the shore field\'s worker', names: [ 'Worker' ] },
-	'world/WorldCache.ts': { need: 'the world\'s cache', names: [ 'indexedDB', 'navigator' ] },
-	'FetchAsset.ts': { need: 'the assets\' fetch', names: [ 'fetch' ] },
-	'world/vegetation/LeafTexture.ts': { need: 'the textures\' canvas', names: [ 'document' ] },
-	'Settings.ts': { need: 'the settings\' parser', names: [ 'URLSearchParams' ] },
+	'packages/render/post/FramePacer.ts': { need: 'frame pacing', names: [ 'requestAnimationFrame', 'cancelAnimationFrame' ] },
+	'packages/island/world/WorldChunks.ts': { need: 'the world\'s workers', names: [ 'Worker', 'navigator' ] },
+	'packages/render/ocean/ShoreWaves.ts': { need: 'the shore field\'s worker', names: [ 'Worker' ] },
+	'packages/island/world/WorldCache.ts': { need: 'the world\'s cache', names: [ 'indexedDB', 'navigator' ] },
+	'packages/render/FetchAsset.ts': { need: 'the assets\' fetch', names: [ 'fetch' ] },
+	'packages/render/vegetation/LeafTexture.ts': { need: 'the textures\' canvas', names: [ 'document' ] },
+	'packages/render/Settings.ts': { need: 'the settings\' parser', names: [ 'URLSearchParams' ] },
 };
 
 // Module state written from another file, as 'owner file:variable' -> the files that write it
-// (paths under src/). Remove a writer, or the entry, with the change that ends its writes; never
-// add one.
+// (paths from the repository's root). Remove a writer, or the entry, with the change that ends its
+// writes; never add one.
 const STATE = {
-	'debug/DebugFlags.ts:debugFlags': [ 'post/SubmitBatch.ts', 'world/VegetationPrepass.ts' ],
-	'lighting/AmbientGrade.ts:ambient': [ 'lighting/AmbientRelight.ts' ],
-	'lighting/KeyCloud.ts:keyDeckShare': [ 'RenderStages.ts' ],
-	'lighting/SurfaceBRDF.ts:keyGlint': [ 'RenderStages.ts' ],
-	'ocean/Water.ts:keyChroma': [ 'RenderStages.ts' ],
-	'post/GTAO.ts:gtaoMap': [ 'post/Pipeline.ts' ],
-	'post/GTAO.ts:gtaoView': [ 'post/Pipeline.ts', 'post/PipelinePasses.ts' ],
-	'post/Jitter.ts:jitter': [ 'post/Pipeline.ts', 'post/TemporalAA.ts', 'post/fsr3/Fsr3Upscaler.ts' ],
-	'post/MeadowShade.ts:meadowDepthMap': [ 'post/Pipeline.ts' ],
-	'post/MeadowShade.ts:meadowGroundView': [ 'post/Pipeline.ts' ],
-	'post/MeadowShade.ts:meadowShade': [ 'post/Pipeline.ts' ],
-	'post/MeadowShade.ts:screenShadowView': [ 'post/Pipeline.ts', 'post/PipelinePasses.ts' ],
-	'post/Motion.ts:reactiveUniforms': [ 'post/TemporalAA.ts', 'weather/Lightning.ts' ],
-	'post/fsr3/MipBias.ts:fsr3MipBiasScale': [ 'post/fsr3/Fsr3Upscaler.ts' ],
-	'shared.ts:shared': [ 'RenderStages.ts', 'app/Diagnostics.ts', 'sky/SkyTrack.ts', 'weather/RainCollision.ts' ],
-	'sky/SkyRetune.ts:skyRetune': [ 'RenderStages.ts' ],
-	'world/VegetationShadow.ts:shadowWindOn': [ 'lighting/SunShadow.ts' ],
-	'world/WorldStart.ts:worldProgress': [ 'IslandStages.ts' ],
+	'packages/render/debug/DebugFlags.ts:debugFlags': [ 'packages/render/post/SubmitBatch.ts', 'packages/render/vegetation/VegetationPrepass.ts' ],
+	'packages/render/lighting/AmbientGrade.ts:ambient': [ 'packages/render/lighting/AmbientRelight.ts' ],
+	'packages/render/lighting/KeyCloud.ts:keyDeckShare': [ 'packages/render/RenderStages.ts' ],
+	'packages/render/lighting/SurfaceBRDF.ts:keyGlint': [ 'packages/render/RenderStages.ts' ],
+	'packages/render/ocean/Water.ts:keyChroma': [ 'packages/render/RenderStages.ts' ],
+	'packages/render/post/GTAO.ts:gtaoMap': [ 'packages/render/post/Pipeline.ts' ],
+	'packages/render/post/GTAO.ts:gtaoView': [ 'packages/render/post/Pipeline.ts', 'packages/render/post/PipelinePasses.ts' ],
+	'packages/render/post/Jitter.ts:jitter': [ 'packages/render/post/Pipeline.ts', 'packages/render/post/TemporalAA.ts', 'packages/render/post/fsr3/Fsr3Upscaler.ts' ],
+	'packages/render/post/MeadowShade.ts:meadowDepthMap': [ 'packages/render/post/Pipeline.ts' ],
+	'packages/render/post/MeadowShade.ts:meadowGroundView': [ 'packages/render/post/Pipeline.ts' ],
+	'packages/render/post/MeadowShade.ts:meadowShade': [ 'packages/render/post/Pipeline.ts' ],
+	'packages/render/post/MeadowShade.ts:screenShadowView': [ 'packages/render/post/Pipeline.ts', 'packages/render/post/PipelinePasses.ts' ],
+	'packages/render/post/Motion.ts:reactiveUniforms': [ 'packages/render/post/TemporalAA.ts', 'packages/render/weather/Lightning.ts' ],
+	'packages/render/post/fsr3/MipBias.ts:fsr3MipBiasScale': [ 'packages/render/post/fsr3/Fsr3Upscaler.ts' ],
+	'packages/render/shared.ts:shared': [ 'packages/render/RenderStages.ts', 'app/Diagnostics.ts', 'packages/render/sky/SkyTrack.ts', 'packages/render/weather/RainCollision.ts' ],
+	'packages/render/sky/SkyRetune.ts:skyRetune': [ 'packages/render/RenderStages.ts' ],
+	'packages/render/vegetation/VegetationShadow.ts:shadowWindOn': [ 'packages/render/lighting/SunShadow.ts' ],
+	'packages/island/world/WorldStart.ts:worldProgress': [ 'packages/island/IslandStages.ts' ],
 };
 // The pairs of STATE whose writer sits in another layer than the state's owner, as
 // 'owner file:variable <- writer': the scene's uniforms the page's diagnostics set.
 const ACROSS = [
-	'shared.ts:shared <- app/Diagnostics.ts',
+	'packages/render/shared.ts:shared <- app/Diagnostics.ts',
 ];
 
 for ( const a of process.argv.slice( 2 ) ) {
@@ -173,7 +175,7 @@ function walk( dir, out = [] ) {
 
 }
 
-/** The file a relative specifier names (under src/, with '/'), or null for a package. */
+/** The file a relative specifier names (from the repository's root, with '/'), or null for a package. */
 function resolve( from, spec ) {
 
 	if ( ! spec.startsWith( '.' ) ) return null;
@@ -183,7 +185,7 @@ function resolve( from, spec ) {
 
 }
 
-/** Each relative import of a file: its target (under src/) and its specifier, as written. */
+/** Each relative import of a file: its target (from the repository's root) and its specifier, as written. */
 function imports( file ) {
 
 	const text = readFileSync( path.join( SRC, file ), 'utf8' );
@@ -257,7 +259,7 @@ function loadClosure( entry ) {
 
 }
 
-/** TypeScript's program over src/ (tsconfig.json), which the page and the state checks read. */
+/** TypeScript's program over the code (tsconfig.json), which the page and the state checks read. */
 function typedProgram() {
 
 	const config = ts.getParsedCommandLineOfConfigFile( path.join( ROOT, 'tsconfig.json' ), {}, { ...ts.sys, onUnRecoverableConfigFileDiagnostic: ( d ) => { throw new Error( ts.flattenDiagnosticMessageText( d.messageText, '\n' ) ); } } );
@@ -280,7 +282,7 @@ function pageGlobals( table, program ) {
 	for ( const source of program.getSourceFiles() ) {
 
 		const file = path.relative( SRC, source.fileName ).split( path.sep ).join( '/' );
-		if ( file.startsWith( '..' ) || ! ( table[ file ] === 'render' || table[ file ] === 'island' || file.startsWith( 'game/sim/' ) ) ) continue;
+		if ( outside( file ) || ! ( table[ file ] === 'render' || table[ file ] === 'island' || file.startsWith( 'packages/game/sim/' ) ) ) continue;
 		const visit = ( node ) => {
 
 			if ( ts.isTypeNode( node ) ) return;
@@ -331,7 +333,7 @@ function stateWrites( program ) {
 		const statement = declaration.parent.parent;
 		if ( ! ts.isVariableStatement( statement ) || ! ts.isSourceFile( statement.parent ) ) return;
 		const owner = under( declaration.getSourceFile().fileName ), writer = under( source.fileName );
-		if ( owner.startsWith( '..' ) || owner === writer ) return;
+		if ( outside( owner ) || owner === writer ) return;
 		const key = `${ owner }:${ symbol.name }`;
 		if ( ! writes.has( key ) ) writes.set( key, new Set() );
 		writes.get( key ).add( writer );
@@ -339,7 +341,7 @@ function stateWrites( program ) {
 	};
 	for ( const source of program.getSourceFiles() ) {
 
-		if ( under( source.fileName ).startsWith( '..' ) ) continue;
+		if ( outside( under( source.fileName ) ) ) continue;
 		const visit = ( node ) => {
 
 			if ( ts.isBinaryExpression( node ) && node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && node.operatorToken.kind <= ts.SyntaxKind.LastAssignment ) note( node.left, source );
@@ -354,14 +356,14 @@ function stateWrites( program ) {
 
 }
 
-/** Every `userData` key named in the files under src/, as { file, line, key }. */
+/** Every `userData` key named in the files under packages/ and app/, as { file, line, key }. */
 function userDataKeys( program ) {
 
 	const hits = [];
 	for ( const source of program.getSourceFiles() ) {
 
 		const file = path.relative( SRC, source.fileName ).split( path.sep ).join( '/' );
-		if ( file.startsWith( '..' ) ) continue;
+		if ( outside( file ) ) continue;
 		const bag = ( node ) => ( ts.isPropertyAccessExpression( node ) && node.name.text === 'userData' ) || ( ts.isIdentifier( node ) && node.text === 'userData' );
 		const visit = ( node ) => {
 
@@ -379,8 +381,8 @@ function userDataKeys( program ) {
 
 }
 
-/** Each name a file under src/ takes from another file, as a map from the file it names (under
- * src/) to { name: [ the files that take it ] }: the names of its `import` and `import type`
+/** Each name a file of the code takes from another file, as a map from the file it names (from
+ * the repository's root) to { name: [ the files that take it ] }: the names of its `import` and `import type`
  * declarations and re-exports (the exported name, not a local alias), and of its dynamic imports
  * where the name is written at the import (`( await import( ... ) ).name`, `const { name } = await
  * import( ... )`, `import( ... ).Type` in a type). A namespace import (`import * as`) takes every
@@ -401,7 +403,7 @@ function takenNames( program ) {
 	for ( const source of program.getSourceFiles() ) {
 
 		const file = path.relative( SRC, source.fileName ).split( path.sep ).join( '/' );
-		if ( file.startsWith( '..' ) ) continue;
+		if ( outside( file ) ) continue;
 		const visit = ( node ) => {
 
 			if ( ts.isImportDeclaration( node ) && ts.isStringLiteralLike( node.moduleSpecifier ) ) {
@@ -455,17 +457,10 @@ function exportedNames( program, file ) {
 
 const failures = [];
 const layers = JSON.parse( readFileSync( TABLE, 'utf8' ) );
-const table = layers.files;
-const files = walk( SRC ).sort();
-
-// the table against the files
-for ( const f of files ) if ( ! ( f in table ) ) failures.push( `${ f }: no layer in tools/layers.json` );
-for ( const [ f, layer ] of Object.entries( table ) ) {
-
-	if ( ! files.includes( f ) ) failures.push( `tools/layers.json names ${ f }, which does not exist` );
-	if ( ! ( layer in RANK ) ) failures.push( `tools/layers.json: ${ f } has an unknown layer '${ layer }'` );
-
-}
+const files = CODE_ROOTS.flatMap( ( root ) => walk( path.join( SRC, root ) ) ).sort();
+// each file's layer, its folder: app/, or the package's folder under packages/
+const table = Object.fromEntries( files.map( ( f ) => [ f, f.startsWith( 'app/' ) ? 'app' : f.split( '/' )[ 1 ] ] ) );
+for ( const [ f, layer ] of Object.entries( table ) ) if ( ! ( layer in RANK ) || layer === 'app' && ! f.startsWith( 'app/' ) ) failures.push( `${ f }: not in the folder of a package (packages/render/, packages/island/, packages/game/)` );
 
 // the imports' direction
 const upward = new Map();
@@ -537,7 +532,7 @@ for ( const from of files ) {
 // neighbours only, whatever the kind of import
 const SCENES_DIR = 'app/scenes/';
 const sceneFiles = files.filter( ( f ) => f.startsWith( SCENES_DIR ) );
-if ( sceneFiles.length === 0 ) failures.push( `test scenes: no file under src/${ SCENES_DIR }` );
+if ( sceneFiles.length === 0 ) failures.push( `test scenes: no file under ${ SCENES_DIR }` );
 for ( const from of sceneFiles ) {
 
 	for ( const { spec } of importKinds( from ) ) {
@@ -578,16 +573,16 @@ try {
 }
 
 // the look checks: who reads the installed look (look/Look.ts `readLook`), and where they must not load
-const LOOK = 'look/Look.ts';
+const LOOK = 'packages/render/look/Look.ts';
 const lookReaders = files.filter( ( f ) => f !== LOOK && /\breadLook\(/.test( readFileSync( path.join( SRC, f ), 'utf8' ) ) );
 if ( ! files.includes( LOOK ) || lookReaders.length === 0 ) failures.push( `look check: ${ LOOK } or its readers (\`readLook(\`) not found` );
-const workerLoads = loadClosure( 'world/chunkWorker.ts' );
+const workerLoads = loadClosure( 'packages/island/world/chunkWorker.ts' );
 if ( workerLoads.has( LOOK ) ) failures.push( `look check: the chunk worker loads ${ LOOK } (the world is generated without the look: no worker installs one)` );
 for ( const f of lookReaders ) if ( workerLoads.has( f ) ) failures.push( `look check: the chunk worker loads ${ f }, which reads the look` );
-const entryLoads = loadClosure( 'PageSettings.ts' );
-if ( ! entryLoads.has( LOOK ) ) failures.push( `look check: PageSettings.ts does not load ${ LOOK }: the entry installs the look there` );
+const entryLoads = loadClosure( 'app/PageSettings.ts' );
+if ( ! entryLoads.has( LOOK ) ) failures.push( `look check: app/PageSettings.ts does not load ${ LOOK }: the entry installs the look there` );
 for ( const f of lookReaders ) if ( entryLoads.has( f ) ) failures.push( `look check: PageSettings.ts loads ${ f }, which reads the look before the entry installs it` );
-const SCENES_ENTRY = 'ScenesBoot.ts';
+const SCENES_ENTRY = 'app/ScenesBoot.ts';
 const scenesEntryLoads = loadClosure( SCENES_ENTRY );
 if ( ! scenesEntryLoads.has( LOOK ) ) failures.push( `look check: ${ SCENES_ENTRY } does not load ${ LOOK }: the scene page's entry installs the look there` );
 for ( const f of lookReaders ) if ( scenesEntryLoads.has( f ) ) failures.push( `look check: ${ SCENES_ENTRY } loads ${ f }, which reads the look before the entry installs it` );
@@ -595,11 +590,11 @@ const SETUP = [ ...exits ].find( ( [ , { side } ] ) => side === 'setup' )?.[ 0 ]
 const setupLoads = SETUP ? loadClosure( SETUP ) : new Set();
 if ( ! SETUP ) failures.push( 'look check: tools/layers.json names no setup exit, through which the entry installs the look' );
 for ( const f of lookReaders ) if ( setupLoads.has( f ) ) failures.push( `look check: the setup exit ${ SETUP } loads ${ f }, which reads the look before the entry installs it` );
-// the headless game: every src/ module tools/play-game.mjs and its fixture name, static or dynamic
+// the headless game: every module tools/play-game.mjs and its fixture name, static or dynamic
 const HEADLESS = [ 'tools/play-game.mjs', 'tools/game-fixture.mjs' ];
 const headlessLoads = new Set();
-for ( const tool of HEADLESS ) for ( const [ , f ] of readFileSync( path.join( ROOT, tool ), 'utf8' ).matchAll( /['"]\.\.\/src\/([^'"]+\.ts)['"]/g ) ) for ( const g of loadClosure( f ) ) headlessLoads.add( g );
-if ( ! headlessLoads.has( 'game/Session.ts' ) ) failures.push( `look check: ${ HEADLESS[ 0 ] } does not load game/Session.ts: the headless game's files were not found` );
+for ( const tool of HEADLESS ) for ( const [ , f ] of readFileSync( path.join( ROOT, tool ), 'utf8' ).matchAll( /['"]\.\.\/((?:packages|app)\/[^'"]+\.ts)['"]/g ) ) for ( const g of loadClosure( f ) ) headlessLoads.add( g );
+if ( ! headlessLoads.has( 'packages/game/Session.ts' ) ) failures.push( `look check: ${ HEADLESS[ 0 ] } does not load packages/game/Session.ts: the headless game's files were not found` );
 for ( const f of lookReaders ) if ( headlessLoads.has( f ) ) failures.push( `look check: the headless game loads ${ f }, which reads the look` );
 
 // the page check
@@ -681,17 +676,17 @@ for ( const { file, line, key } of userKeys ) {
 	const layer = table[ file ];
 	if ( key in USER_DATA ) continue;
 	if ( layer !== 'render' && userLists[ layer ] && key in userLists[ layer ].keys ) continue;
-	const own = layer === 'render' ? '' : userLists[ layer ] ? `, or src/${ userLists[ layer ].file } if the ${ layer } layer keeps it to itself` : `, or a list of the ${ layer } layer's own (tools/layers.json, userData) if it keeps it to itself`;
-	failures.push( `${ file }:${ line }: names userData.${ key }, which src/${ userLists.render?.file } does not declare (${ layer } layer): declare the key there${ own }` );
+	const own = layer === 'render' ? '' : userLists[ layer ] ? `, or ${ userLists[ layer ].file } if the ${ layer } layer keeps it to itself` : `, or a list of the ${ layer } layer's own (tools/layers.json, userData) if it keeps it to itself`;
+	failures.push( `${ file }:${ line }: names userData.${ key }, which ${ userLists.render?.file } does not declare (${ layer } layer): declare the key there${ own }` );
 
 }
 for ( const [ layer, { file, keys } ] of Object.entries( userLists ) ) {
 
 	for ( const key of Object.keys( keys ) ) {
 
-		if ( layer !== 'render' && key in USER_DATA ) failures.push( `src/${ file } declares '${ key }', which the renderer's list declares too: remove the entry` );
+		if ( layer !== 'render' && key in USER_DATA ) failures.push( `${ file } declares '${ key }', which the renderer's list declares too: remove the entry` );
 		const named = userKeys.some( ( hit ) => hit.key === key && ( layer === 'render' || table[ hit.file ] === layer ) );
-		if ( ! named ) failures.push( `src/${ file } declares '${ key }', which no file ${ layer === 'render' ? 'under src/' : `of the ${ layer } layer` } names: remove the entry` );
+		if ( ! named ) failures.push( `${ file } declares '${ key }', which no file ${ layer === 'render' ? 'of the code' : `of the ${ layer } layer` } names: remove the entry` );
 
 	}
 

@@ -1,6 +1,6 @@
 // GPU regression: air blockers bend at the water surface and submerged blockers occlude
 // the separate refracted leg; horizontal-floor irradiance preserves transmitted power.
-// Needs the Vite dev server: it imports /src/ modules into the page (tools/dev-server.mjs).
+// Needs the Vite dev server: it imports the source modules into the page (tools/dev-server.mjs).
 // The paused seek's map is read on the page's rendered frames (tools/page-eval.mjs, "Rendered frames").
 // Usage: node tools/verify-refracted-sun.mjs http://127.0.0.1:5190
 import { chromium } from 'playwright';
@@ -31,7 +31,7 @@ try {
 
 		try {
 
-			const module = await import( '/src/lighting/RefractedSun.ts' );
+			const module = await import( '/packages/render/lighting/RefractedSun.ts' );
 			const map = window.__PONLAI__.refractedSun;
 			if ( ! map ) throw new Error( 'RefractedSun integration is missing from the dev scene' );
 			const span = map.worldSpan.value.toArray(), size = map.target.width;

@@ -1,4 +1,4 @@
-// CPU checks of the frame graph (src/post/graph/): today's msaa4 graph and its variants declared
+// CPU checks of the frame graph (packages/render/post/graph/): today's msaa4 graph and its variants declared
 // on the compiler, the order, culling, hazard and determinism rules, both attachment-op tables,
 // AttachmentOps stacking with other wrappers of the command encoder, the runtime on a mock
 // renderer (histories, resizes, clear flags), its warm-up and its introspection (describe, dot,

@@ -7,51 +7,51 @@
 // Usage: node tools/wgsl-build.mjs <entry> [--out <dir>] [--features <a,b>] [--q "<query>"]
 //
 //   <entry>      a module in this repository (a path), or the name of one in tools/wgsl-build/:
-//                `fsr3` builds every kernel of src/post/fsr3/ as the page builds them
+//                `fsr3` builds every kernel of packages/render/post/fsr3/ as the page builds them
 //                `ambient-relight` the ambient light's relight and its debug view
-//                (src/lighting/AmbientRelight.ts)
+//                (packages/render/lighting/AmbientRelight.ts)
 //                `ambient-materials` the lit materials that read the ambient volume
-//                (src/lighting/AmbientSample.ts)
+//                (packages/render/lighting/AmbientSample.ts)
 //                `meadow` the displacement field's sprites and the meadow's blades
-//                (src/world/vegetation/Displacement.ts, src/world/Grass.ts)
+//                (packages/render/vegetation/Displacement.ts, packages/island/world/Grass.ts)
 //                `plants` the plants that bend in the wind: the bamboo's culms and leaves (its
 //                instanced draws' materials) and the yunpeng's whole and fading draws
-//                (src/world/BambooMaterials.ts, src/world/Yunpeng.ts)
+//                (packages/island/world/BambooMaterials.ts, packages/island/world/Yunpeng.ts)
 //                `falling-leaves` the falling leaves' step and prewarm kernels and draw
-//                (src/weather/FallingLeaves.ts)
+//                (packages/island/world/FallingLeaves.ts)
 //                `local-lights` the local lights' clusters kernel and the lit materials that
-//                bind the most (src/lighting/LocalLights.ts)
+//                bind the most (packages/render/lighting/LocalLights.ts)
 //                `haze` the volumetric haze's light kernel and the sky dome's haze
-//                (src/weather/VolumetricHaze.ts)
+//                (packages/render/weather/VolumetricHaze.ts)
 //                `night` the moon on the dome, the flare and its visibility, and the
-//                composite's rods' colour (src/sky/NightSky.ts, src/post/LightShafts.ts,
-//                src/post/Purkinje.ts)
+//                composite's rods' colour (packages/render/sky/NightSky.ts, packages/render/post/LightShafts.ts,
+//                packages/render/post/Purkinje.ts)
 //                `terrain` the island's ground, the stones and the sea floor
-//                (src/materials/TerrainMaterial.ts)
-//                `wave-maps` the caustics' splats at their focal planes (src/ocean/WaveMaps.ts)
+//                (packages/island/materials/TerrainMaterial.ts)
+//                `wave-maps` the caustics' splats at their focal planes (packages/render/ocean/WaveMaps.ts)
 //                `post` the post chain's own passes: the exposure's meter, the bloom's levels
-//                and the local tone's grid and slicing (src/post/Metering.ts, Exposure.ts,
+//                and the local tone's grid and slicing (packages/render/post/Metering.ts, Exposure.ts,
 //                PhysicalBloom.ts, LocalTone.ts)
-//                `clouds` the clouds' panorama, shadow and view kernels (src/sky/Clouds.ts)
+//                `clouds` the clouds' panorama, shadow and view kernels (packages/render/sky/Clouds.ts)
 //                `atmosphere` the atmosphere's bakes and slices, the earth shadow's mean and the
-//                sky's radiance (src/sky/Atmosphere.ts)
+//                sky's radiance (packages/render/sky/Atmosphere.ts)
 //                `sky` the materials that read the clear sky: the environment's panorama bake,
 //                the cloudless sky's irradiance and the dome, fogged, in the scene pass's MRT
-//                (src/sky/Sky.ts)
+//                (packages/render/sky/Sky.ts)
 //   --out        the output folder (default artifacts/wgsl/<entry name>/); the tool's own files in
 //                it (*.wgsl, bindings.txt, report.json) are replaced, nothing else is touched
 //   --features   the device features three sees (default none: WebGPU core). The page's device
 //                takes every feature its adapter has, and three's WGSL depends on some of them:
 //                `float32-filterable` (whether a 32-bit float texture gets a sampler),
 //                `texture-formats-tier1` (narrow storage formats, FSR 3's resources), `subgroups`
-//   --q          the page's query (its options, src/Settings.ts, which load knobs read as their
+//   --q          the page's query (its options, packages/render/Settings.ts, which load knobs read as their
 //                modules load: `aa=`, `quality=`, debug flags); default none
 //
 // The entry is loaded through Vite's SSR loader with the project's config (as the dev server
 // loads the page's modules: TypeScript, `import.meta.env`, the plugins' virtual modules), with the
-// query's options installed first as the page's entry installs them (src/Settings.ts
-// `installSettings`), then the island's look (tools/island-look.mjs) and the scene's uniforms (src/shared.ts `installShared`); any browser global a module touches as it loads fails the run. It
-// imports what it builds from `src/` and three as usual (Vite leaves three to node, so the tool
+// query's options installed first as the page's entry installs them (packages/render/Settings.ts
+// `installSettings`), then the island's look (tools/island-look.mjs) and the scene's uniforms (packages/render/shared.ts `installShared`); any browser global a module touches as it loads fails the run. It
+// imports what it builds from `packages/` and three as usual (Vite leaves three to node, so the tool
 // and the entry share one three) and its default export, given `{ renderer }`, returns the
 // shaders (or a promise of them) as `[ name, shader ]` pairs or an object of them, in the order
 // the page first builds them (r186 emits code from node state its builds share: AGENTS.md, the
@@ -525,12 +525,12 @@ const server = await createServer( {
 let list;
 try {
 
-	const { installSettings, parseSettings } = await server.ssrLoadModule( '/src/Settings.ts' );
+	const { installSettings, parseSettings } = await server.ssrLoadModule( '/packages/render/Settings.ts' );
 	installSettings( parseSettings( opts.q ?? '' ) );
-	// the island's look, as the page's entry installs it after the settings (src/look/Look.ts)
-	await installIslandLook( ( file ) => server.ssrLoadModule( `/src/${ file }` ) );
-	// the scene's uniforms, as the page's entry creates and installs them (src/shared.ts)
-	const { createShared, installShared } = await server.ssrLoadModule( '/src/shared.ts' );
+	// the island's look, as the page's entry installs it after the settings (packages/render/look/Look.ts)
+	await installIslandLook( ( file ) => server.ssrLoadModule( `/${ file }` ) );
+	// the scene's uniforms, as the page's entry creates and installs them (packages/render/shared.ts)
+	const { createShared, installShared } = await server.ssrLoadModule( '/packages/render/shared.ts' );
 	installShared( createShared() );
 	const mod = await server.ssrLoadModule( entry.url );
 	if ( typeof mod.default !== 'function' ) throw new Error( `${ entry.url } has no default export function` );

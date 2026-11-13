@@ -3,9 +3,9 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import './island-look.mjs';
-import { Wind, createWindUniforms, flutterWave, plantRate, plantWave, wave, weatherWind, CLOCK_PERIOD, GUST_TILE, GUST_TRAVEL, GUST_TIME_PERIOD, GUST_EVOLUTION, PLANT_RATE_BANDS, PLANT_RATE_SPREAD, REFERENCE_SPEED, REFERENCE_GUSTINESS, plantSpeedOf } from '../src/weather/Wind.ts';
-import { Weather, WIND_LEVELS, PREVAILING_HEADING } from '../src/sky/Weather.ts';
-import { debugFlags } from '../src/debug/DebugFlags.ts';
+import { Wind, createWindUniforms, flutterWave, plantRate, plantWave, wave, weatherWind, CLOCK_PERIOD, GUST_TILE, GUST_TRAVEL, GUST_TIME_PERIOD, GUST_EVOLUTION, PLANT_RATE_BANDS, PLANT_RATE_SPREAD, REFERENCE_SPEED, REFERENCE_GUSTINESS, plantSpeedOf } from '../packages/render/weather/Wind.ts';
+import { Weather, WIND_LEVELS, PREVAILING_HEADING } from '../packages/render/sky/Weather.ts';
+import { debugFlags } from '../packages/render/debug/DebugFlags.ts';
 
 const near = ( a, b, tolerance = 1e-9 ) => assert.ok( Math.abs( a - b ) <= tolerance, `${ a } != ${ b }` );
 const wind = new Wind( createWindUniforms(), { time: 12 } );
@@ -166,14 +166,15 @@ assert.notDeepEqual( current( frames ), held );
 // per CLOCK_PERIOD when the shader is built, so a rate passed by name is checked too) or, in Wind.ts, of `plantWave` (the plants'
 // sway on `plantClock`, at rates rounded to whole cycles per CLOCK_PERIOD) and `flutterWave` (the leaves', on `clock`, whole cycles per CLOCK_PERIOD), and the gusts' scroll and time are read only in Wind.ts, by
 // gustAt (windField and the sea's gusts), windBefore (the falling leaves' back-dated steps) and evolutionTime (the fog's banks, whose field repeats where it wraps): the noise repeats over GUST_TILE and GUST_TIME_PERIOD, where they wrap.
-const root = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '../src' );
+const root = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 const sources = [];
 const walk = ( dir ) => { for ( const e of readdirSync( dir, { withFileTypes: true } ) ) { const f = path.join( dir, e.name ); if ( e.isDirectory() ) walk( f ); else if ( f.endsWith( '.ts' ) ) sources.push( [ path.relative( root, f ), readFileSync( f, 'utf8' ) ] ); } };
-walk( root );
+walk( path.join( root, 'packages' ) );
+walk( path.join( root, 'app' ) );
 let reads = 0;
 for ( const [ file, text ] of sources ) {
 
-	if ( file === path.join( 'weather', 'Wind.ts' ) ) continue;
+	if ( file === path.join( 'packages', 'render', 'weather', 'Wind.ts' ) ) continue;
 	for ( const m of text.matchAll( /\b(?:wind|state|previous)\.(?:clock|plantClock)\b/g ) ) {
 
 		reads ++;

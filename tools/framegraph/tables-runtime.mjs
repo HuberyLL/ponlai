@@ -1,11 +1,11 @@
-// The frame graph's runtime (src/post/graph/FrameGraph.ts) on a CPU mock of three's renderer:
+// The frame graph's runtime (packages/render/post/graph/FrameGraph.ts) on a CPU mock of three's renderer:
 // ping-pong histories under a skippable writer, the initialisation of every target after a resize
 // (textures shared by two targets, depth sized by the graph), the clear flags a pass binds, the
 // second history texture, and the dev check of the rewrites that reached the encoder. Run by
 // tools/verify-framegraph.mjs.
 
 import assert from 'node:assert/strict';
-import { FrameGraph } from '../../src/post/graph/FrameGraph.ts';
+import { FrameGraph } from '../../packages/render/post/graph/FrameGraph.ts';
 
 const RENDER = { of: 'render' };
 const CANVAS = { of: 'canvas' };

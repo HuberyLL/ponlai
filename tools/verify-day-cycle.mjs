@@ -2,8 +2,8 @@
 // Run: node tools/verify-day-cycle.mjs
 import assert from 'node:assert/strict';
 import './island-look.mjs';
-import { DayCycle, DAY_PRESETS, NOON_ELEVATION, MOON, cloudMoonShare, displayNight, exposureNight, moonDirection, moonKeyShare, nightAmbientAt, nightAmbientShare, skyNight, starNight, sunElevationAt, morningHour, eveningHour, yunpengNightShare } from '../src/sky/DayCycle.ts';
-import { DAY_EXPOSURE, DUSK_WINDOWS, HANDOFF_TOP, MOON_KEY_TOP, NIGHT_EXPOSURE, NIGHT_EXPOSURE_GAIN, NIGHT_SKY_EXPOSURE, exposureAt } from '../src/look/DayLook.ts';
+import { DayCycle, DAY_PRESETS, NOON_ELEVATION, MOON, cloudMoonShare, displayNight, exposureNight, moonDirection, moonKeyShare, nightAmbientAt, nightAmbientShare, skyNight, starNight, sunElevationAt, morningHour, eveningHour, yunpengNightShare } from '../packages/render/sky/DayCycle.ts';
+import { DAY_EXPOSURE, DUSK_WINDOWS, HANDOFF_TOP, MOON_KEY_TOP, NIGHT_EXPOSURE, NIGHT_EXPOSURE_GAIN, NIGHT_SKY_EXPOSURE, exposureAt } from '../packages/render/look/DayLook.ts';
 
 const near = ( actual, expected, tolerance = 1e-10 ) => assert.ok( Math.abs( actual - expected ) <= tolerance, `${ actual } != ${ expected }` );
 const cycle = new DayCycle();

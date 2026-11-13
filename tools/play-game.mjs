@@ -30,12 +30,12 @@
 //   --out DIR       where the outputs go (default artifacts/play/<UTC stamp>/, git-ignored)
 //
 // What it guarantees. The game runs as the page runs it: in the page's own session around the
-// simulation (src/game/Session.ts, which Game.ts hosts beside the view), a frame of one tick at a
+// simulation (packages/game/Session.ts, which Game.ts hosts beside the view), a frame of one tick at a
 // time (Session.advance, a growth due asked for before the tick, so none after the last), the
 // leader's lines between ticks (Session.speak, checked as the speak bar's), the starting islanders
 // (--population's with them) landing at the start and the blueprints placed as the player's
 // (Session.place). What happened it reads from the one stream the page's record and interface read
-// (Session.listen, src/game/sim/events.ts): the record's entries, the islanders' words, each
+// (Session.listen, packages/game/sim/events.ts): the record's entries, the islanders' words, each
 // action's start and outcome (done, failed, interrupted, refused, replaced) and what it moved
 // between bags, each at the tick it happened; it never watches the state for changes. So what the
 // page's game does around the simulation (feeding the record, hearing, growing) is the session's,
@@ -59,7 +59,7 @@
 // the run with exit 1, its outputs written.
 //
 // Outputs, in the --out folder: transcript.md (day by day: the record's entries in the words of
-// the record page, src/game/ui/data/record.ts, the building one is about by its id; the islanders'
+// the record page, packages/game/ui/data/record.ts, the building one is about by its id; the islanders'
 // actions with their outcomes (an interrupted one as `interrupted: <reason>`), consecutive alike
 // ones merged, what they said, the brain's thoughts
 // when it is asynchronous, needs every six game hours, and a table per day), timeline.json (each
@@ -82,25 +82,25 @@ import './qos.mjs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { newGame } from '../src/game/sim/Sim.ts';
-import { StandInBrain } from '../src/game/sim/standin.ts';
-import { progressOf } from '../src/game/sim/buildings.ts';
-import { buildingKind, buildingKinds } from '../src/game/sim/registry.ts';
-import { Session } from '../src/game/Session.ts';
-import { RECORDED } from '../src/game/Chronicle.ts';
-import { stockOf } from '../src/game/sim/stock.ts';
-import { clockText, tickAt, timeOf } from '../src/game/sim/clock.ts';
-import { ageOf } from '../src/game/sim/life.ts';
-import { SECONDS_PER_GAME_DAY } from '../src/game/sim/types.ts';
+import { newGame } from '../packages/game/sim/Sim.ts';
+import { StandInBrain } from '../packages/game/sim/standin.ts';
+import { progressOf } from '../packages/game/sim/buildings.ts';
+import { buildingKind, buildingKinds } from '../packages/game/sim/registry.ts';
+import { Session } from '../packages/game/Session.ts';
+import { RECORDED } from '../packages/game/Chronicle.ts';
+import { stockOf } from '../packages/game/sim/stock.ts';
+import { clockText, tickAt, timeOf } from '../packages/game/sim/clock.ts';
+import { ageOf } from '../packages/game/sim/life.ts';
+import { SECONDS_PER_GAME_DAY } from '../packages/game/sim/types.ts';
 import { importCatalogues, inputAt } from './game-fixture.mjs';
 
-// The record's lines in the interface's words (src/game/ui/data/record.ts, its catalogue
+// The record's lines in the interface's words (packages/game/ui/data/record.ts, its catalogue
 // i18n/zh-CN.json): the page's bundler imports a catalogue as JSON, node as a module whose default
 // export it is.
 importCatalogues();
-const { recordKind } = await import( '../src/game/ui/data/record.ts' );
-const { BUILDINGS } = await import( '../src/game/ui/data/buildings.ts' );
-const { t } = await import( '../src/game/ui/i18n/i18n.ts' );
+const { recordKind } = await import( '../packages/game/ui/data/record.ts' );
+const { BUILDINGS } = await import( '../packages/game/ui/data/buildings.ts' );
+const { t } = await import( '../packages/game/ui/i18n/i18n.ts' );
 
 const HOUR = 3600;
 // rejected answers in a row that end the run
@@ -342,7 +342,7 @@ function activity( v ) {
 
 const outcomeOf = ( result ) => result.ok ? result.value ?? 'done' : result.reason;
 
-/** What happened, as the session hands it on (src/game/sim/events.ts), into the transcript and the
+/** What happened, as the session hands it on (packages/game/sim/events.ts), into the transcript and the
  * statistics; the record's own entries come through `readRecord`. */
 function onEvent( e ) {
 

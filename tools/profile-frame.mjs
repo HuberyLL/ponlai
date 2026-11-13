@@ -1,6 +1,6 @@
 // Frame profiler: plays a matrix of scenes (running clock, fixed weather, a slow camera orbit) in
 // headless Chrome with an uncapped frame rate (or at 60 Hz with `--vsync`), and reports the frame
-// interval, the GPU time per pass (timestamp queries, labelled by `src/debug/FrameProfiler.ts`
+// interval, the GPU time per pass (timestamp queries, labelled by `packages/render/debug/FrameProfiler.ts`
 // through `?profile`), the tick's JS time, hitches with their cause, and the startup. Runs under the machine-wide GPU lock (held
 // exclusively) and first checks that nothing else keeps the GPU busy (full-screen `--display`: once
 // its window is up, by the GPU time of the clients other than its Chrome and WindowServer; see
@@ -31,10 +31,10 @@
 //
 // The reference is a production build (`npm run build && npm run preview`, port 5191, the
 // default url); the dev server works for quick checks. The default viewport is a generic 4K
-// display (1920x1080 CSS at DPR 2). High is timed at its standard by default (src/Quality.ts: 4K
+// display (1920x1080 CSS at DPR 2). High is timed at its standard by default (packages/render/Quality.ts: 4K
 // output at 1440p's pixel count with MSAA): its render scale pinned at the dynamic rule's baseline
 // for the viewport (`dpr=1.3333333333333333` added to the query at the default; `dpr=1` for
-// `--w 2560 --h 1440 --scale 1`, a 2K display; src/post/RenderScale.ts `dynamicRange`), so
+// `--w 2560 --h 1440 --scale 1`, a 2K display; packages/render/post/RenderScale.ts `dynamicRange`), so
 // profiles and --compare measure the level every trade-off is judged at;
 // `--unpinned` leaves the tier's own rule (a dynamic one steering) (to see where it
 // settles, with --scale-settle and --scale-log). --accept, --display, --scales and a dpr of the
@@ -112,7 +112,7 @@
 //   and `on` (false for A, true for B), and is applied every `--block` frames in an A B B A B A A B
 //   pattern after both states were warmed: for example --toggle "s.water.mesh.visible = !on", or
 //   --toggle "s.flags.fastWater = on" for an optimisation that reads a flag of
-//   `src/debug/DebugFlags.ts` (the fastest and most precise A/B: no reload, no drain). Each frame
+//   `packages/render/debug/DebugFlags.ts` (the fastest and most precise A/B: no reload, no drain). Each frame
 //   counts for the state its tick ran in; GPU figures drop the first 2 frames after a change, frame
 //   intervals the first `--lag` (30: headless Chrome queues about two dozen frames, so a change
 //   reaches the rAF interval that much later).
@@ -242,8 +242,8 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { withGpuLock, leaseGpuLock, waitForIdleGpu, gpuClients, sampleGpuUtilisation } from './gpu-lock.mjs';
 import { announceHeadedRun, requireDisplayAllowed } from './display-gate.mjs';
-import { QUALITY as QUALITY_TABLE } from '../src/Quality.ts';
-import { dynamicRange, OUTPUT_PIXEL_RATIO_CAP } from '../src/post/RenderScale.ts';
+import { QUALITY as QUALITY_TABLE } from '../packages/render/Quality.ts';
+import { dynamicRange, OUTPUT_PIXEL_RATIO_CAP } from '../packages/render/post/RenderScale.ts';
 import { startLoadTimeline, markSlices, windowLoad } from './load-timeline.mjs';
 
 // ------------------------------------------------------------------ options
@@ -263,7 +263,7 @@ const positional = argv.filter( ( a, i ) => ! a.startsWith( '--' ) && ! ( i > 0 
 // Every scene runs its clock (a paused, still scene settles its clouds once and skips the march
 // and the shadow steps, so it under-measures) with fixed weather, the camera moving as in play.
 // Scenes sharing a query run in one page load unless --fresh; `change` scenes run last. The parked
-// weathers' scenes (`parked: true`; src/sky/Weather.ts PARKED_WEATHER) are left out of the default
+// weathers' scenes (`parked: true`; packages/render/sky/Weather.ts PARKED_WEATHER) are left out of the default
 // matrix and of --accept's: name them with --scenes (?profile reaches them on a production build).
 // The clouded skies' scenes are among them: the sky view, and the low deck's march where it costs,
 // its island view and its horizon, where the sky fills half the frame. Clear's horizon, the same
@@ -411,7 +411,7 @@ if ( DISPLAY ) requireDisplayAllowed( 'profile-frame --display' );
 if ( ( ACCEPT || SCALES.length ) && ( COMPARE || TOGGLE ) ) throw new Error( '--accept and --scales are for profile runs, not --compare or --toggle' );
 // the page reads the first of a repeated option, so a dpr in the url or --q would win over --scales
 if ( SCALES.length && [ new URL( URL_A ).search.slice( 1 ), EXTRA_Q ].some( ( q ) => new URLSearchParams( q ).has( 'dpr' ) ) ) throw new Error( '--scales sets the dpr option itself: remove dpr from the url and --q' );
-// High's standard pin: a profile or --compare of high times at its standard (src/Quality.ts: 1440p's
+// High's standard pin: a profile or --compare of high times at its standard (packages/render/Quality.ts: 1440p's
 // pixel count, the baseline of its dynamic rule for the viewport: 4/3 at the default 1920x1080@2, 1
 // at 2560x1440@1), its render scale pinned by the page's `dpr`, so every run measures the level
 // trade-offs are judged at.
@@ -1437,7 +1437,7 @@ async function prepare( page, scene, evalJs, establish ) {
 // How long a window's last frames may take to get their GPU timestamps (ms). Uncapped, the page
 // runs as far ahead of the GPU as Chrome lets it (about 120 frames: 3.5 s on the island at noon,
 // more for slower frames), and a frame is pending until its own read-back returns
-// (src/debug/FrameProfiler.ts `settle`), so this only guards against a page that stopped
+// (packages/render/debug/FrameProfiler.ts `settle`), so this only guards against a page that stopped
 // answering. A 6 s wait, with the profiler's own 4 s cutoff, left A/B runs without timed frames.
 const READBACK_WAIT_MS = 30000;
 

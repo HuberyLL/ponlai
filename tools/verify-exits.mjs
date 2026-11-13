@@ -10,12 +10,12 @@
 // anywhere else.
 //
 // Guarantees, each a failure (exit 1) when broken:
-// - Each headless exit (renderData.ts, islandLand.ts, game/sim/index.ts) and the setup exit
-//   (renderSetup.ts, which the headless game loads for its settings) loads in plain node, with its
+// - Each headless exit (render/data.ts, island/land.ts, game/sim/index.ts) and the setup exit
+//   (render/setup.ts, which the headless game loads for its settings) loads in plain node, with its
 //   types stripped and nothing installed first, without throwing, and every value name it
 //   re-exports is defined once it has loaded. (The page exits do not load in node, nor need to:
 //   modules of theirs read `import.meta.env`, which the bundler provides.)
-// - Every file a page exit (render.ts, island.ts, game/index.ts) or the setup exit loads, followed
+// - Every file a page exit (render/index.ts, island/index.ts, game/index.ts) or the setup exit loads, followed
 //   through its
 //   static imports and re-exports with `import type` left out, has no `await` at module scope and
 //   names none of the page's globals in PAGE at module scope. Module scope is the code that runs as
@@ -33,7 +33,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import ts from 'typescript';
 
 const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
-const SRC = path.join( ROOT, 'src' );
+const SRC = ROOT;
 const { exits } = JSON.parse( readFileSync( path.join( ROOT, 'tools', 'layers.json' ), 'utf8' ) );
 
 // The page's globals a module must not read as it loads: the address, the storage, the document,
@@ -50,7 +50,7 @@ for ( const a of process.argv.slice( 2 ) ) {
 const failures = [];
 const parse = ( file ) => ts.createSourceFile( file, readFileSync( path.join( SRC, file ), 'utf8' ), ts.ScriptTarget.Latest, true );
 
-/** The file a relative specifier names (under src/, with '/'), or null for a package. */
+/** The file a relative specifier names (from the repository's root, with '/'), or null for a package. */
 function resolve( from, spec ) {
 
 	if ( ! spec.startsWith( '.' ) ) return null;

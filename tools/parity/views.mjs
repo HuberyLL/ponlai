@@ -10,7 +10,7 @@
 // Groups: `parity` (the views every parity check runs; the default) and `taa` (6 close views for
 // the temporal anti-aliasing work: thin and moving detail); `all` is both. `special` holds the
 // parked weathers' views (`special: true`: the cloudy and overcast skies, the rain, the storm, the
-// fog and the weather front into rain; src/sky/Weather.ts PARKED_WEATHER): no other group lists them, so every default set is the
+// fog and the weather front into rain; packages/render/sky/Weather.ts PARKED_WEATHER): no other group lists them, so every default set is the
 // normal weathers' and a parked view is reached by name or by `special` (`all,special` is every
 // view). `normal` is `all`, kept as a name. tools/parity/gates.py --normal leaves special entries
 // unjudged. A clip belongs to the group of its view (clips.mjs).
@@ -29,14 +29,14 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import '../island-look.mjs';
-import { eveningHour, morningHour } from '../../src/sky/DayCycle.ts';
+import { eveningHour, morningHour } from '../../packages/render/sky/DayCycle.ts';
 
 // the hour, for a query, at which the morning's or the evening's sun stands `elevation` degrees up
 const morning = ( elevation ) => morningHour( elevation ).toFixed( 4 );
 const evening = ( elevation ) => eveningHour( elevation ).toFixed( 4 );
 
 const PRE = `const s = window.__PONLAI__;
-// the island's box: the camera's ground (src/camera/IslandGround.ts, merged from the chunks' ground
+// the island's box: the camera's ground (packages/island/camera/IslandGround.ts, merged from the chunks' ground
 // grids), which equals the box of the island's chunk meshes but never reads their vertices
 const isl = () => { const b = s.controls.ground.bounds;
 	return { cx: ( b.min.x + b.max.x ) / 2, cz: ( b.min.z + b.max.z ) / 2, rx: ( b.max.x - b.min.x ) / 2, rz: ( b.max.z - b.min.z ) / 2, top: b.max.y }; };

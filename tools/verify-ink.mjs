@@ -1,4 +1,4 @@
-// Checks of the interface's ink (src/game/ui/Ink.ts, its header has the rules), asserted on strokes
+// Checks of the interface's ink (packages/game/ui/Ink.ts, its header has the rules), asserted on strokes
 // drawn here as the page draws them (a centreline and half-widths, coverage anti-aliased over a
 // pixel), at high's scale (1.2 at 1920 x 1080 CSS pixels, device pixel ratio 2): the ink is the same
 // for the same stroke and seed and another for another seed; it never adds ink, and never reaches
@@ -8,7 +8,7 @@
 // Pure CPU; Node 22.18+ strips the imported TypeScript.
 // Run: node tools/verify-ink.mjs
 import assert from 'node:assert/strict';
-import { inkShares } from '../src/game/ui/Ink.ts';
+import { inkShares } from '../packages/game/ui/Ink.ts';
 
 const UNIT = 1.2 * 2;
 

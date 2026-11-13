@@ -3,9 +3,9 @@
 // without the contact shade, and checks geometry/placement invariance.
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
-import { boundedSceneField, localSkyVisibility, contactVisibilitySampler } from '../src/lighting/SkyOcclusion.ts';
-import { surfaceNets } from '../src/world/SurfaceNets.ts';
-import { VEGETATION_STRIDE } from '../src/world/types.ts';
+import { boundedSceneField, localSkyVisibility, contactVisibilitySampler } from '../packages/island/world/SkyOcclusion.ts';
+import { surfaceNets } from '../packages/island/world/SurfaceNets.ts';
+import { VEGETATION_STRIDE } from '../packages/island/world/types.ts';
 import { generateWorld } from './world-node.mjs';
 
 const plane = ( x, y, z ) => y;

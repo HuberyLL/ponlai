@@ -55,11 +55,11 @@ const REPO = path.resolve( TOOLS, '..' );
 // paths whose change can alter motion without touching a paused frame (prefixes end in '/'); the
 // dependencies because a three.js upgrade can change any shader, motion vectors included
 export const WATCH = {
-	motion: [ 'src/main.ts', 'src/RenderStages.ts', 'src/IslandStages.ts', 'src/app/', 'src/weather/', 'src/characters/', 'src/ocean/', 'src/game/view/', 'src/life/', 'package.json', 'package-lock.json' ],
+	motion: [ 'app/main.ts', 'packages/render/RenderStages.ts', 'packages/island/IslandStages.ts', 'app/', 'packages/render/weather/', 'packages/island/world/FallingLeaves.ts', 'packages/island/characters/', 'packages/render/ocean/', 'packages/game/view/', 'packages/island/life/', 'package.json', 'package-lock.json' ],
 	// the temporal graph aa=gt renders through: the resolve, its rest and jitter, the mode switch,
 	// motion vectors, the frame graph, what draws after the resolve and the events that reset history
-	gt: [ 'src/post/TemporalAA.ts', 'src/post/TemporalRest.ts', 'src/post/Jitter.ts', 'src/post/Antialiasing.ts', 'src/post/Motion.ts', 'src/post/Pipeline.ts',
-		'src/post/PipelinePasses.ts', 'src/post/PipelineDisplay.ts', 'src/post/AfterResolve.ts', 'src/post/SceneEvents.ts', 'package.json', 'package-lock.json' ],
+	gt: [ 'packages/render/post/TemporalAA.ts', 'packages/render/post/TemporalRest.ts', 'packages/render/post/Jitter.ts', 'packages/render/post/Antialiasing.ts', 'packages/render/post/Motion.ts', 'packages/render/post/Pipeline.ts',
+		'packages/render/post/PipelinePasses.ts', 'packages/render/post/PipelineDisplay.ts', 'packages/render/post/AfterResolve.ts', 'packages/render/post/SceneEvents.ts', 'package.json', 'package-lock.json' ],
 };
 // a camera move over the meadow (paused clock) and the islander walking under the running clock
 // (the walk, the wind in the meadow behind), each the first 16 frames

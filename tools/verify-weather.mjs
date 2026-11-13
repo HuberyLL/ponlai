@@ -1,10 +1,10 @@
 // Integrated weather evidence and contracts. CPU transition tests remain in verify-weather-state.
 // Run against the completed weather debug API, one WebGPU page at a time:
 //   node tools/verify-weather.mjs http://127.0.0.1:5190 [--coupling]
-// Its rain preset and the rain parts are parked with the rain (src/sky/Weather.ts PARKED_WEATHER):
+// Its rain preset and the rain parts are parked with the rain (packages/render/sky/Weather.ts PARKED_WEATHER):
 // out of the default checks until the parked weathers are revived; it still runs on a debug build.
 // Its steps wait for the page's rendered frames (tools/page-eval.mjs, "Rendered frames").
-// Overcast's direct light is checked on the key's floor under its closed deck (src/sky/Sky.ts
+// Overcast's direct light is checked on the key's floor under its closed deck (packages/render/sky/Sky.ts
 // `deckKeyFloor`), only for holding back a share of the clear day's key: the floor's level is a
 // tune (look/SkyLook.ts KEY_THROUGH_CLOUD), so the bound stays clear of it.
 import assert from 'node:assert/strict';
@@ -12,7 +12,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
 import './island-look.mjs';
-import { DAY_PRESETS } from '../src/sky/DayCycle.ts';
+import { DAY_PRESETS } from '../packages/render/sky/DayCycle.ts';
 import { renderedFrames } from './page-eval.mjs';
 
 const base = process.argv.slice( 2 ).find( ( arg ) => ! arg.startsWith( '--' ) ) || 'http://127.0.0.1:5190';
@@ -209,7 +209,7 @@ try {
 	const clear = report.presets[ 0 ], overcast = report.presets[ 3 ], rain = report.presets[ 4 ];
 	assert.ok( luma( clear.keyColor ) > 1e-5, 'Clear afternoon must have usable direct light' );
 	// (overcast's sun reaches the land through the deck alone: its key stays whole, `directVisibility`
-	// 1, and this frame's floor under the deck sets the land's direct light, src/sky/Sky.ts
+	// 1, and this frame's floor under the deck sets the land's direct light, packages/render/sky/Sky.ts
 	// `deckKeyFloor`: a share of what the cloud layer passes down, clamped at 1, where the deck would
 	// hold back nothing, so 0.95 checks that the deck does hold back a share of it without pinning
 	// the tune)

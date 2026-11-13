@@ -21,9 +21,9 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   when a change adds a layer, moves what one owns or changes a flow.
 - The documentation follows Diátaxis (<https://diataxis.fr>): each page is one of four kinds,
   holds only that kind and lives in that kind's folder of `docs/`. A tutorial
-  (`docs/tutorials/`, none yet) takes a newcomer through a first success, step by step. A how-to guide
-  (`docs/how-to/`) gives the steps for one task. Reference (`docs/reference/`) states facts to look
-  up: options, values, tables; a module's header comment is the reference beside its code.
+  (`docs/tutorials/`, none yet) takes a newcomer through a first success, step by step. A how-to
+  guide (`docs/how-to/`) gives the steps for one task. Reference (`docs/reference/`) states facts to
+  look up: options, values, tables; a module's header comment is the reference beside its code.
   Explanation (`docs/explanation/`) says what something is and why. `docs/README.md` lists every
   page. By convention a few files stay at the repository's top (`AGENTS.md`, `ARCHITECTURE.md`,
   `CREDITS.md`), and a README beside a tool documents that tool's folder. A page of one kind links
@@ -76,56 +76,62 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   `reference/` (`tools.md`, `url-options.md`, `look-values.md`, `glossary.md`).
 - `public/` (git-ignored): the game's assets, filled from the GitHub release `assets.lock.json`
   names (`tools/assets.mjs`, `tools/vite-assets.mjs`; `docs/reference/tools.md`, Assets).
-- `src/Boot.ts`, the entry: it loads `src/PageSettings.ts` (the address parsed, its problems
+- `packages/` and `app/`: the code, a folder per layer (`ARCHITECTURE.md`): the renderer
+  (`packages/render/`), the island (`packages/island/`), the game (`packages/game/`) and the page
+  that assembles them (`app/`).
+- `app/Boot.ts`, the entry: it loads `app/PageSettings.ts` (the address parsed, its problems
   warned, the tier chosen, the settings installed; the reloads and the browser's storage), then
-  `src/main.ts`. `src/Settings.ts` declares every URL option and is the one entrance every module
-  reads them through (`settings.get( 'name' )`; a new option is declared there,
+  `app/main.ts`. `packages/render/Settings.ts` declares every URL option and is the one entrance
+  every module reads them through (`settings.get( 'name' )`; a new option is declared there,
   `tools/verify-settings.mjs`). Below the page no module touches the browser's page (`location`,
   `window`, `document`, storage and the like): `tools/verify-layers.mjs`, its page check;
-  `src/FetchAsset.ts` fetches the assets. `src/Extensions.ts` holds the three declarations every
-  definition registered with the renderer states (a plant kind, a kind of local light, an extra
-  pass: its cost knob, its stand in the test mode, how it follows the land's growth;
-  `tools/verify-extensions.mjs`), and `src/UserData.ts` lists the `userData` keys the renderer
-  sets or reads, `src/world/IslandUserData.ts` those the island keeps to itself
-  (`tools/verify-layers.mjs` refuses one that is on neither list of its layer).
+  `packages/render/FetchAsset.ts` fetches the assets. `packages/render/Extensions.ts` holds the
+  three declarations every definition registered with the renderer states (a plant kind, a kind of
+  local light, an extra pass: its cost knob, its stand in the test mode, how it follows the land's
+  growth; `tools/verify-extensions.mjs`), and `packages/render/UserData.ts` lists the `userData`
+  keys the renderer sets or reads, `packages/island/world/IslandUserData.ts` those the island keeps
+  to itself (`tools/verify-layers.mjs` refuses one that is on neither list of its layer).
 - The packages' exits (`ARCHITECTURE.md`, rule 10): another package or the page imports the
-  renderer, the island and the game only through `src/render.ts`, `src/island.ts` and
-  `src/game/index.ts` (the page's; the game's loaded on demand) or `src/renderData.ts`,
-  `src/islandLand.ts` and `src/game/sim/index.ts` (the headless ones, free of three.js, for the
-  chunk worker and node), and the renderer's setup exit, `src/renderSetup.ts` (the settings, the
-  look and the quality tiers, which the page installs before the renderer loads). A name another
-  package newly needs is added to its package's exit; the modules loaded on demand are lazy exits
-  (`tools/layers.json`; `tools/verify-layers.mjs`, `tools/verify-exits.mjs`).
-- `src/main.ts`: the one place that assembles the page. It calls, in an order that is part of the
-  image, the renderer's stages (`src/RenderStages.ts`: the renderer, the sky, the sun, the sea, the
-  frame's passes, then what the island's data builds), the island's (`src/IslandStages.ts`: the
-  camera, the land, the world, the vegetation, the growth) and the page's own, and starts the game
-  from the parts they build. Each stage puts what it builds on its layer's one object. A frame's
-  work is in stages too: the renderer's (`createFrameStages`) and the island's
-  (`createIslandFrame`), which the page's tick (`app/Frame.ts`) calls in turn in a fixed order. The
-  renderer's `placeVegetation` places the registered plant kinds and closes their registry.
-- `src/app/`: the page's own parts (`Page.ts`): the camera's views (`CameraViews.ts`), the GUI
+  renderer, the island and the game only through `packages/render/index.ts`,
+  `packages/island/index.ts` and `packages/game/index.ts` (the page's; the game's loaded on demand)
+  or `packages/render/data.ts`, `packages/island/land.ts` and `packages/game/sim/index.ts` (the
+  headless ones, free of three.js, for the chunk worker and node), and the renderer's setup exit,
+  `packages/render/setup.ts` (the settings, the look and the quality tiers, which the page installs
+  before the renderer loads). A name another package newly needs is added to its package's exit; the
+  modules loaded on demand are lazy exits (`tools/layers.json`; `tools/verify-layers.mjs`,
+  `tools/verify-exits.mjs`).
+- `app/main.ts`: the one place that assembles the page. It calls, in an order that is part of the
+  image, the renderer's stages (`packages/render/RenderStages.ts`: the renderer, the sky, the sun,
+  the sea, the frame's passes, then what the island's data builds), the island's
+  (`packages/island/IslandStages.ts`: the camera, the land, the world, the vegetation, the growth)
+  and the page's own, and starts the game from the parts they build. Each stage puts what it builds
+  on its layer's one object. A frame's work is in stages too: the renderer's (`createFrameStages`)
+  and the island's (`createIslandFrame`), which the page's tick (`app/Frame.ts`) calls in turn in a
+  fixed order. The renderer's `placeVegetation` places the registered plant kinds and closes their
+  registry.
+- `app/`: the page's own parts (`Page.ts`): the camera's views (`CameraViews.ts`), the GUI
   (`Gui.ts`), the frame loop and the render scale (`Frame.ts`), the scene jump (`Scene.ts`) and the
   diagnostics (`Diagnostics.ts`). `window.__PONLAI__` and `window.__THREE_GAME_DIAGNOSTICS__`
   exist only on the dev server or with `?debug` / `?profile`.
-- `scenes.html`, `src/ScenesBoot.ts`, `src/app/scenes/`: the renderer's test scenes, a second page
+- `scenes.html`, `app/ScenesBoot.ts`, `app/scenes/`: the renderer's test scenes, a second page
   (`?scene=ball|empty|sea|plants`) built from the renderer's stages alone, with no island or game
   (`ScenePage.ts`; a scene is a module beside it, its type in `TestScene.ts`, the list in
   `index.ts`). Their files import only the renderer's exits (`tools/verify-layers.mjs`). The page
   draws with the renderer's neutral look (`renderLook=ponlai` installs the island's, in the entry)
-  and takes the island's inputs from `src/NeutralInputs.ts`: the probes, the bounce's ground and
-  the shore's fields of level open ground or of the open sea far from any shore. `tools/scenes.mjs`
-  shoots, reads and checks them.
-- `src/Quality.ts`: the quality tiers, every cost knob in one table (high the only active one);
-  `src/QualityDetect.ts` takes `?quality` or high (its GPU timing is parked with the lower tiers).
-- `src/shared.ts`: uniforms shared by the water, terrain and vegetation, which the entry creates
-  and installs before anything builds.
-- `src/camera/`: the island camera, which starts framing the land alone from its heading
+  and takes the island's inputs from `packages/render/NeutralInputs.ts`: the probes, the bounce's
+  ground and the shore's fields of level open ground or of the open sea far from any shore.
+  `tools/scenes.mjs` shoots, reads and checks them.
+- `packages/render/Quality.ts`: the quality tiers, every cost knob in one table (high the only
+  active one); `app/QualityDetect.ts` takes `?quality` or high (its GPU timing is parked with the
+  lower tiers).
+- `packages/render/shared.ts`: uniforms shared by the water, terrain and vegetation, which the entry
+  creates and installs before anything builds.
+- `packages/island/camera/`: the island camera, which starts framing the land alone from its heading
   (`IslandFraming.ts`, app/CameraViews.ts `placeOrbit`) and which the hand pans within the land's
   soft bounds, turns, tilts and zooms (`IslandCameraControls.ts`, the ground it grabs in
   `IslandGround.ts`), and the free flight.
-- `src/world/`: the world generated from the grown land (`IslandGrowth.ts`) in 16 m chunks
-  (`Chunks.ts`, `IslandSimplify.ts`, `ChunkDerived.ts`), built on a pool of workers
+- `packages/island/world/`: the world generated from the grown land (`IslandGrowth.ts`) in 16 m
+  chunks (`Chunks.ts`, `IslandSimplify.ts`, `ChunkDerived.ts`), built on a pool of workers
   (`WorldStart.ts`, `WorldChunks.ts`, `chunkWorker.ts`), cached per chunk (`WorldCache.ts`), merged
   (`ChunkMerge.ts`) and drawn (`World.ts`, the world fields' textures in `WorldFields.ts`), and
   grown in place (`Growth.ts`, the shoal of a coming piece in `SeabedRise.ts`). Its kinds: the
@@ -140,21 +146,27 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   islanders' building stock will come from (where its culms stand and the litter on its groves'
   floor, which the grass keeps off: `BambooGroves.ts`; the culms, instances of a few prototypes at
   two levels: `Bamboo.ts`, `BambooMaterials.ts`, their colours, which the probes see too, in
-  `BambooColours.ts`), the vegetation's depth prepass (`VegetationPrepass.ts`)
-  and the opaque scene's, for the ambient occlusion (`OpaquePrepass.ts`), and the ambient light's
-  probes, baked per chunk (`AmbientProbes.ts`). `src/world/vegetation/` holds what every plant kind
-  shares (material, coverage, leaf textures, instances, GPU cull, wind deforms, LOD, physics, the
-  registry of kinds in `Registry.ts` and the default plant a kind without art is drawn with in
-  `DefaultPlant.ts`, the trees' tubes and leaf cards in `TreeMesh.ts` and their bark and leaf
-  surfaces in `TreeSurfaces.ts`, the authored plants drawn as instances of a few prototypes with two
-  levels and a stipple between them in `PlantInstances.ts`, what a tree's leaves pass on of the key
-  in `LeafLight.ts`) and the islanders' trail through the meadow (`Trample.ts`, drawn as sprites
-  into the displacement field the blades read, `Displacement.ts`, a frame-graph pass).
-- `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
-  the key's visibility under cloud for the lit code without a sky (`KeyCloud.ts`: the land's floor
-  under a deck, which the islanders read; the sea takes the same floor from the sky, `Sky.ts`
-  `seaKeyFloor`), the refracted sun under water, the light every submerged material shares
-  (`Underwater.ts`), the air/water interface, sky occlusion, the meadow's canopy light and its
+  `BambooColours.ts`), the ambient light's probes, baked per chunk (`AmbientProbes.ts`), the sky's
+  occlusion over the land (`SkyOcclusion.ts`), the islanders' trail through the meadow
+  (`Trample.ts`, drawn as sprites into the displacement field the blades read,
+  `packages/render/vegetation/Displacement.ts`, a frame-graph pass) and the bamboo leaves the wind
+  takes off the island (`FallingLeaves.ts`: a fixed ring of leaves born round the view and stepped
+  on the GPU by one compute pass).
+- `packages/render/vegetation/`: what every plant kind shares (material, coverage, leaf textures,
+  instances, GPU cull, wind deforms, LOD, physics, the registry of kinds in `Registry.ts` and the
+  default plant a kind without art is drawn with in `DefaultPlant.ts`, the trees' tubes and leaf
+  cards in `TreeMesh.ts` and their bark and leaf surfaces in `TreeSurfaces.ts`, the authored plants
+  drawn as instances of a few prototypes with two levels and a stipple between them in
+  `PlantInstances.ts`, what a tree's leaves pass on of the key in `LeafLight.ts`), the vegetation's
+  light, shadow and wind motion (`VegetationLighting.ts`, `VegetationShadow.ts`, `WindMotion.ts`)
+  and its depth prepass (`VegetationPrepass.ts`).
+- `packages/render/util/`: the world generator's deterministic noise (`noise.ts`) and the
+  growth's work and uploads in steps of a fraction of a millisecond (`Steps.ts`, `Upload.ts`).
+- `packages/render/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`,
+  `SolarShadow.ts`), the key's visibility under cloud for the lit code without a sky (`KeyCloud.ts`:
+  the land's floor under a deck, which the islanders read; the sea takes the same floor from the
+  sky, `Sky.ts` `seaKeyFloor`), the refracted sun under water, the light every submerged material
+  shares (`Underwater.ts`), the air/water interface, the meadow's canopy light and its
   crowns' shade (`MeadowCanopy.ts`), the ambient light's probes on the GPU (`AmbientVolume.ts`: the
   lattice's buffer and uniforms, its output texture, its debug view), relit every frame by the sky's
   harmonics and the key into their irradiance (`AmbientRelight.ts`: the output's packing; the
@@ -168,34 +180,33 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   writes beside its colour for the exposure (`MeterLight.ts`). A new lit material takes all of
   these through the island's lighting model: `docs/how-to/add-material.md`, Light it as every
   other surface.
-- `src/materials/`: procedural textures (the gravel bake and the scans' texture arrays:
-  `ProceduralTextures.ts`), the terrain (`TerrainMaterial.ts`, its ground scans hex-tiled), the sea
-  floor's colour (`SeabedLook.ts`), wet surfaces, the meadow's habitat and soil-depth fields
+- `packages/render/materials/`: procedural textures (the gravel bake and the scans' texture
+  arrays: `ProceduralTextures.ts`), their hex tiling (`HexTiling.ts`) and wet surfaces
+  (`Wetness.ts`). `packages/island/materials/`: the terrain (`TerrainMaterial.ts`, its ground scans
+  hex-tiled), the sea floor's colour (`SeabedLook.ts`), the meadow's habitat and soil-depth fields
   (`Meadow.ts`), what a closed sky's light turns into in the sward (`SwardTint.ts`, shared by the
   blades and the turf).
-- `src/ocean/`: FFT ocean, shore waves, the share of each wave cascade a point of the sea keeps
-  (`WaveDamping.ts`), the wave maps and caustics the light under the water reads, baked by a pass
-  on the frame graph (`WaveMaps.ts`), water shading (`Water.ts`), the sea's optical properties as
-  plain numbers, which the page's uniforms, the ground bounce and the ambient probes read
-  (`SeaOptics.ts`: a change to them rebuilds the world's cache), the sea's large-scale detail
+- `packages/render/ocean/`: FFT ocean, shore waves, the share of each wave cascade a point of the
+  sea keeps (`WaveDamping.ts`), the wave maps and caustics the light under the water reads, baked by
+  a pass on the frame graph (`WaveMaps.ts`), water shading (`Water.ts`), the sea's optical
+  properties as plain numbers, which the page's uniforms, the ground bounce and the ambient probes
+  read (`SeaOptics.ts`: a change to them rebuilds the world's cache), the sea's large-scale detail
   (`SeaDetail.ts`: gusts, slicks, windrows), the water's refraction source (`Refraction.ts`), the
   storm sea.
-- `src/sky/`: atmosphere, environment bakes (`Sky.ts`; its colour nodes for the dome and the bakes
-  in `SkyDome.ts`, the bakes in `SkyBake.ts`, its state for a frame in `SkyTrack.ts`), volumetric
-  clouds (`Clouds.ts`; their model's constants and shared helpers in `CloudModel.ts`, their kernels
-  in `CloudKernels.ts`, the traced and resolved view in `CloudView.ts`, the shadow as surfaces and
-  the air read it in `CloudShadow.ts`), the thin cloud layer's fibres (`Streaks.ts`), the day cycle
-  (`DayCycle.ts`), the night sky and its data (`NightSky.ts`, `StarCatalog.ts`), the weather: its
-  sky presets, its wind's levels and heading and the auto chain (`Weather.ts`).
-- `src/weather/`: wind (`Wind.ts`: the weather's one wind, which every part reads from it, and the
-  one wind field all vegetation moves in), lightning, rain,
+- `packages/render/sky/`: atmosphere, environment bakes (`Sky.ts`; its colour nodes for the dome and
+  the bakes in `SkyDome.ts`, the bakes in `SkyBake.ts`, its state for a frame in `SkyTrack.ts`),
+  volumetric clouds (`Clouds.ts`; their model's constants and shared helpers in `CloudModel.ts`,
+  their kernels in `CloudKernels.ts`, the traced and resolved view in `CloudView.ts`, the shadow as
+  surfaces and the air read it in `CloudShadow.ts`), the thin cloud layer's fibres (`Streaks.ts`),
+  the day cycle (`DayCycle.ts`), the night sky and its data (`NightSky.ts`, `StarCatalog.ts`), the
+  weather: its sky presets, its wind's levels and heading and the auto chain (`Weather.ts`).
+- `packages/render/weather/`: wind (`Wind.ts`: the weather's one wind, which every part reads from
+  it, and the one wind field all vegetation moves in), lightning, rain,
   puddles, the air's haze and sea fog as one froxel volume lit by the atmosphere and shadowed by
   the sun's maps and the clouds (`VolumetricHaze.ts`, its keys by the hour and the weather in
-  `HazeKeys.ts`, its medium's closed form in `HazeDepth.ts`), the bamboo leaves the wind takes off
-  the island (`FallingLeaves.ts`: a fixed ring of leaves born round the view and stepped on the GPU
-  by one compute pass).
-- `src/look/`: the look the renderer draws with, passed in: the types of its tables, one set per
-  system, and the installed set with its reader (`Look.ts`: `installLook`, `readLook`), the
+  `HazeKeys.ts`, its medium's closed form in `HazeDepth.ts`).
+- `packages/render/look/`: the look the renderer draws with, passed in: the types of its tables, one
+  set per system, and the installed set with its reader (`Look.ts`: `installLook`, `readLook`), the
   renderer's neutral set, drawn with where nobody installed one (`NeutralLook.ts`), and per system
   the module that reads the installed numbers as it loads, with their tunables and the CPU code
   that reads only them; the shaders and the methods that take them stay in their modules. The
@@ -206,22 +217,23 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   (`SeaLook.ts`), the ambient occlusion's floor (`OcclusionLook.ts`), the local lights' gain
   (`LocalLightsLook.ts`), the meadow canopy's media (`MeadowCanopyLook.ts`) and the plants' answer
   to the wind (`WindLook.ts`).
-- `src/islandLook/`: the island's numbers for those tables, one file per system (`Sea.ts`,
+- `packages/island/look/`: the island's numbers for those tables, one file per system (`Sea.ts`,
   `Day.ts`, `Ambient.ts`, `Exposure.ts`, `Display.ts`, `Haze.ts`, `Sky.ts`, `Occlusion.ts`,
   `LocalLights.ts`, `MeadowCanopy.ts`, `Wind.ts`), numbers and pure
   functions of numbers only, gathered in `IslandLook.ts`. The entry installs them after the
   settings (`PageSettings.ts`), before any module that reads the look loads; a node tool that
   loads such modules installs them first (`tools/island-look.mjs`).
-- `src/post/`: the frame's passes and tidewater's display chain (`Pipeline.ts`; its options of the
-  graph's structure in `PostOptions.ts`, the display chain's materials in `PipelineDisplay.ts`, the
-  passes declared on the frame graph in `PipelinePasses.ts`; its bloom in `PhysicalBloom.ts`, the
-  colour the rods lend low light in `Purkinje.ts`), the pre-exposure every writer of the scene's
-  colour and metering light multiplies by and every scene-unit reader divides out
-  (`PreExposure.ts`; the sky's bakes and the
+- `packages/render/post/`: the frame's passes and tidewater's display chain (`Pipeline.ts`; its
+  options of the graph's structure in `PostOptions.ts`, the display chain's materials in
+  `PipelineDisplay.ts`, the passes declared on the frame graph in `PipelinePasses.ts`; its bloom in
+  `PhysicalBloom.ts`, the colour the rods lend low light in `Purkinje.ts`), the pre-exposure every
+  writer of the scene's colour and metering light multiplies by and every scene-unit reader divides
+  out (`PreExposure.ts`; the sky's bakes and the
   clouds' panorama store at a power of two of their own instead, `storeStops`, and their readers
   multiply by their read gain, Sky.ts `environmentRead` and the like), the key's screen-space shade
   over the vegetation's and the opaque scene's depth (`MeadowShade.ts`),
-  the screen-space ambient occlusion the ambient light takes (`GTAO.ts`, on in high),
+  the screen-space ambient occlusion the ambient light takes (`GTAO.ts`, on in high), over the
+  opaque scene's depth prepass (`OpaquePrepass.ts`),
   the sun's flare (added to the bloom, `PhysicalBloom.ts`) and the screen-space light shafts, off by
   default (`LightShafts.ts`), FSR 1, render scale and dynamic resolution (`RenderScale.ts`,
   `DynamicResolution.ts`), the frame pacer, the submit batching, the signal that a paused frame is
@@ -234,12 +246,12 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   scene jump clears (`SceneHistory.ts`), the scene's extra passes and the typed names of the scene
   passes that take latent draws (`ExtraPass.ts`) and the rain's streaks and the storm's spray
   drawn after the resolve (`AfterResolve.ts`).
-- `src/post/graph/`: the frame graph: its declarations and compiler (`GraphCompiler.ts`, pure
-  TypeScript, checked by `tools/verify-framegraph.mjs`), its runtime and warm-up (`FrameGraph.ts`,
-  `Compile.ts`), the derived attachment ops (`AttachmentOps.ts`) and the debug view
-  (`DebugView.ts`, `fgview`).
-- `src/three/`: every reach into three.js beyond its public interface, each a function named for
-  what it does, which the rest of the code calls instead of naming a private member or the
+- `packages/render/post/graph/`: the frame graph: its declarations and compiler (`GraphCompiler.ts`,
+  pure TypeScript, checked by `tools/verify-framegraph.mjs`), its runtime and warm-up
+  (`FrameGraph.ts`, `Compile.ts`), the derived attachment ops (`AttachmentOps.ts`) and the debug
+  view (`DebugView.ts`, `fgview`).
+- `packages/render/three/`: every reach into three.js beyond its public interface, each a function
+  named for what it does, which the rest of the code calls instead of naming a private member or the
   backend: the backend and its device, the GPU objects behind textures and attributes, the
   timestamp pools and the methods we wrap (`Backend.ts`), the renderer's attribute records
   (`Attributes.ts`), three's steps for building a draw ahead and a bloom's passes (`DrawBuilds.ts`),
@@ -248,18 +260,18 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   its first lit build made ahead (`ThreePatches.ts`), the start-up check of the renderer's members
   and the error naming what is missing (`Internals.ts`), and the list of the internals the code
   depends on (`three-internals.json`, checked by `tools/verify-three-internals.mjs`).
-- `src/post/fsr3/`: the TSL port of AMD's FSR 3.1.5 upscaler (`aa=fsr3`): the host's maths and frame
-  plan (`Host.ts`), its resources (`Resources.ts`) and bindings (`Bindings.ts`), one module per
-  upstream shader header, the kernels (`Passes.ts`); the page's integration, its passes on the
-  frame graph, rest and diagnostics (`Fsr3Upscaler.ts`) and its mip bias (`MipBias.ts`).
-- `src/characters/`: the islanders (figures assembled on the kit's rig, their looks and proportions;
-  the kit look's cel light and ears, the Hanming look's feather and woven surfaces in
+- `packages/render/post/fsr3/`: the TSL port of AMD's FSR 3.1.5 upscaler (`aa=fsr3`): the host's
+  maths and frame plan (`Host.ts`), its resources (`Resources.ts`) and bindings (`Bindings.ts`), one
+  module per upstream shader header, the kernels (`Passes.ts`); the page's integration, its passes
+  on the frame graph, rest and diagnostics (`Fsr3Upscaler.ts`) and its mip bias (`MipBias.ts`).
+- `packages/island/characters/`: the islanders (figures assembled on the kit's rig, their looks and
+  proportions; the kit look's cel light and ears, the Hanming look's feather and woven surfaces in
   `FigureSurfaces.ts`; their bodies by sex and age as growth curves in `Ages.ts`, which a figure
   takes on its rig and shape keys in `FigureAge.ts`).
-- `src/life/`: the island's creatures (`docs/explanation/art-direction.md`, Life), simulated per
-  frame on the rendering side: the wenyao's schools of flying fish (`Wenyao.ts`), the fish's mesh
-  and material (`FishGeometry.ts`, `FishMaterial.ts`).
-- `src/game/`: the game behind `?game` (`Game.ts`, the page's host of the game's session:
+- `packages/island/life/`: the island's creatures (`docs/explanation/art-direction.md`, Life),
+  simulated per frame on the rendering side: the wenyao's schools of flying fish (`Wenyao.ts`), the
+  fish's mesh and material (`FishGeometry.ts`, `FishMaterial.ts`).
+- `packages/game/`: the game behind `?game` (`Game.ts`, the page's host of the game's session:
   `Session.ts`, headless, runs the simulation with its record, hands the simulation's events to
   its listeners, checks the player's commands, keeps the leader's words as heard, the save, and the
   island's growth by the population, which it asks of the page's `world/Growth.ts`;
@@ -288,13 +300,14 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   scene in the camera's perspective (`Space.ts`: the words over the islanders and in flight),
   palette (`Palette.ts`), styles (`ui.css`) and the licences of its fonts (`fonts/`; our own brush
   fonts are assets, `public/fonts/`).
-- `src/debug/`: runtime A/B flags (`DebugFlags.ts`), the test mode's switch (`TestMode.ts`), the
-  frame profiler, the frame-rate readout, the pipeline counter (`PipelineCounter.ts`), the wind view
-  and its probe (`WindView.ts`, `WindArrows.ts`, `WindProbe.ts`), the lighting layer's light-only
-  and ambient-only views (`LightLayer.ts`), the scene's linear radiance over screen boxes
+- `packages/render/debug/` and `packages/island/debug/` (the island's: the wind's arrows and probe,
+  the chunks' borders): runtime A/B flags (`DebugFlags.ts`), the test mode's switch (`TestMode.ts`),
+  the frame profiler, the frame-rate readout, the pipeline counter (`PipelineCounter.ts`), the wind
+  view and its probe (`WindView.ts`, `WindArrows.ts`, `WindProbe.ts`), the lighting layer's
+  light-only and ambient-only views (`LightLayer.ts`), the scene's linear radiance over screen boxes
   (`Radiance.ts`) and what each cell of a grid shows (`RadianceAov.ts`, the kinds' codes in
-  `Classes.ts`, the island's kinds registered from `world/IslandClasses.ts`), and the named
-  numbers a script or the console can set on a running page (`Tune.ts`).
+  `Classes.ts`, the island's kinds registered from `packages/island/world/IslandClasses.ts`), and
+  the named numbers a script or the console can set on a running page (`Tune.ts`).
 - `tools/`: captures, profiling, the GPU lock and the probes (`docs/reference/tools.md`); the WGSL
   build (`wgsl-build.mjs`, its entries in `wgsl-build/`); the world's chunk checks
   (`verify-world-chunks.mjs`) and statistics (`verify-world-stats.mjs`), on the node helpers in
@@ -323,7 +336,7 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   clip repeats.
 - The test mode is a paused page, which runs MSAA whatever the tier runs (`Antialiasing.ts`),
   with every history-dependent effect frozen or off, shot once the page's `settled` signal holds
-  (`src/post/Settled.ts`). There a paused frame is
+  (`packages/render/post/Settled.ts`). There a paused frame is
   exactly repeatable and equals a fresh load's, and refactors are checked byte for byte (the parity
   MSAA sets, `tools/verify-scene-jump.mjs`, `tools/verify-growth-swap.mjs`). Under the temporal
   modes a paused page shows its rest image, its own jitter sequence averaged once converged
@@ -363,25 +376,26 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   textures through the one base node each material samples them by (`WorldFields.ts`), and other
   passes keep their materials across rebakes (`RainCollision.ts`).
 - Changes need to hold in the kept weathers only (clear, fair), and on high only
-  (4K output: 1920x1080 CSS pixels at DPR 2). The parked weathers (cloudy, overcast, rain, storm, fog:
-  `PARKED_WEATHER` in `src/sky/Weather.ts`) and quality tiers (medium, low: `PARKED_QUALITY` in
-  `src/Quality.ts`) are revived later as their own milestones: new work need not support them, but
-  must keep them compiling and loadable by name (`?weather=`, `?quality=`). The default checks
-  leave them out (`docs/reference/tools.md`, Parked weathers, Parked quality tiers). Changes are
-  judged at high's standard: 4K output at 60 fps with MSAA 4x, about 14 ms of GPU time a frame in
-  the normal scenes at the baseline; the dynamic resolution keeps 1440p's pixel count as its
-  baseline on any display (upscaled by FSR 1 on a 4K one, native on a 2K one), climbs to the
-  display's own ratio with headroom and drops to about 1080p's pixel count when busy, and a paused
-  page renders at the baseline (`src/Quality.ts`, profile-frame's default pin:
-  `docs/reference/tools.md`, Frame profiler).
+  (4K output: 1920x1080 CSS pixels at DPR 2). The parked weathers (cloudy, overcast, rain, storm,
+  fog: `PARKED_WEATHER` in `packages/render/sky/Weather.ts`) and quality tiers (medium, low:
+  `PARKED_QUALITY` in `packages/render/Quality.ts`) are revived later as their own milestones: new
+  work need not support them, but must keep them compiling and loadable by name (`?weather=`,
+  `?quality=`). The default checks leave them out (`docs/reference/tools.md`, Parked weathers,
+  Parked quality tiers). Changes are judged at high's standard: 4K output at 60 fps with MSAA 4x,
+  about 14 ms of GPU time a frame in the normal scenes at the baseline; the dynamic resolution keeps
+  1440p's pixel count as its baseline on any display (upscaled by FSR 1 on a 4K one, native on a 2K
+  one), climbs to the display's own ratio with headroom and drops to about 1080p's pixel count when
+  busy, and a paused page renders at the baseline (`packages/render/Quality.ts`, profile-frame's
+  default pin: `docs/reference/tools.md`, Frame profiler).
 - Quality tiers change the cost, never the mood: no knob alters the weather, clock or lighting
   state. High at 4K output is the reference image, the only active tier and the one every
   trade-off is judged on; every default in the modules is high's. A load knob is read
   once when materials and the frame graph are built, so a change of tier reloads the page.
 - Third-party code: files adapted from another project open with a `/*! ... */` notice (project,
   copyright line, licence) and the licence text sits next to them (see
-  `src/ocean/tidewater.LICENSE.txt`). Public-domain code (CC0, Unlicense) needs no notice; credit
-  it in a comment. Techniques borrowed without code are credited in a comment where they are used.
+  `packages/render/ocean/tidewater.LICENSE.txt`). Public-domain code (CC0, Unlicense) needs no
+  notice; credit it in a comment. Techniques borrowed without code are credited in a comment where
+  they are used.
 - `CREDITS.md` lists every third-party source (adapted code, assets with source, author, licence
   and processing, techniques); update it with any of these. npm dependencies are not listed (the
   build collects their licences into `dist/licenses/`); any other licence text that must ship goes
@@ -446,7 +460,7 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
 - Nested loops: pass both ranges to one `Loop()` call so the counters get distinct names.
 - Three TSL methods take their receiver out of order (r186): `t.mix( a, b )` is mix( a, b, t ),
   `x.step( edge )` is step( edge, x ), `x.smoothstep( low, high )` is smoothstep( low, high, x ).
-  Write the function form (`src/post/fsr3/Upsample.ts`).
+  Write the function form (`packages/render/post/fsr3/Upsample.ts`).
 - TSL may compile a `select()` of large operands into branches: a node first built inside one is
   declared in that branch only, and the shader silently draws nothing. Select between values
   built before it (`.toVar()`), or blend with 0/1 weights (`Water.ts`).

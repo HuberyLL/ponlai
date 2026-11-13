@@ -3,7 +3,7 @@
 //                                      [--sheets dir]
 // Run it before captures after any change to the world's generator.
 //
-// The world is generated per chunk (src/world/Chunks.ts): S = 16 m squares on the world grid, each
+// The world is generated per chunk (packages/island/world/Chunks.ts): S = 16 m squares on the world grid, each
 // from its window (the chunk grown by R = 32 m) of the land field alone. For every seed the runner
 // grows the land step by step (0 .. --steps), builds every chunk of every step on a pool of worker
 // threads (`buildChunk`, each job handed its window as the page's workers will be), and runs the
@@ -35,7 +35,7 @@
 //       cell lies 34.6 - 44 m from the chunk: the chunk is not in `dirtyChunks`, and rebuilt from
 //       the new land field it hashes as before. Prints the discs, how many changed the chunk's
 //       window (the far reads had something to see) and how many changed the chunk.
-//   R1  the shoal (src/world/SeabedRise.ts): between consecutive steps, the shown tiles the next
+//   R1  the shoal (packages/island/world/SeabedRise.ts): between consecutive steps, the shown tiles the next
 //       version moves (SeabedTile.ts `pendingFloors`), risen at R = 0, 0.25, 0.5, 0.75 and 1
 //       (`riseTile`): at R = 0 every point is the shown tile's bit for bit; at R = 1 every point is
 //       the next version's tile (or the floor under the new land) within 1e-5 in height, normal and
@@ -101,19 +101,19 @@ import { performance } from 'node:perf_hooks';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { crc32, deflateSync } from 'node:zlib';
-import { LandLattice, nextPiece, GROWTH } from '../src/world/IslandGrowth.ts';
+import { LandLattice, nextPiece, GROWTH } from '../packages/island/world/IslandGrowth.ts';
 import {
 	buildChunk, chunkBlock, chunkBox, chunkIsland, chunkKeys, contactStones, dirtyChunks, landField, landWindow,
 	parseChunkKey, windowFootprint, R, S,
-} from '../src/world/Chunks.ts';
-import { ISLAND_BOTTOM, islandSurfaceHeight, makeIslandSDF } from '../src/world/WorldShapes.ts';
-import { LIP_INFO, LIP_POINTS } from '../src/world/RimGround.ts';
-import { pendingFloors, riseTile, TILE_SIDE } from '../src/world/SeabedTile.ts';
-import { openSeaBeds, openSeaHeight, FLOOR_STEP, OPEN_LATTICE, SHELF_CEILING } from '../src/world/Bathymetry.ts';
-import { VEGETATION_STRIDE } from '../src/world/types.ts';
+} from '../packages/island/world/Chunks.ts';
+import { ISLAND_BOTTOM, islandSurfaceHeight, makeIslandSDF } from '../packages/island/world/WorldShapes.ts';
+import { LIP_INFO, LIP_POINTS } from '../packages/island/world/RimGround.ts';
+import { pendingFloors, riseTile, TILE_SIDE } from '../packages/island/world/SeabedTile.ts';
+import { openSeaBeds, openSeaHeight, FLOOR_STEP, OPEN_LATTICE, SHELF_CEILING } from '../packages/island/world/Bathymetry.ts';
+import { VEGETATION_STRIDE } from '../packages/island/world/types.ts';
 import { hashBuffers, meshClosure, positionKey } from './world-node.mjs';
 import { verifyCache } from './verify-cache.mjs';
-import { simplifierReady } from '../src/world/IslandSimplify.ts';
+import { simplifierReady } from '../packages/island/world/IslandSimplify.ts';
 
 // the island's simplifier (wasm) is ready before any chunk is built, in every thread
 await simplifierReady;

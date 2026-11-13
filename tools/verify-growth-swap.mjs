@@ -1,4 +1,4 @@
-// Regression probe for the island's growth in place (src/world/Growth.ts): a page grown by N steps
+// Regression probe for the island's growth in place (packages/island/world/Growth.ts): a page grown by N steps
 // must draw what a page freshly loaded on that land draws, bit for bit, in the test mode (paused,
 // MSAA: docs/reference/tools.md, Test mode; AGENTS.md, "The island grows in place"), and no swap may build a
 // pipeline.
@@ -99,7 +99,7 @@ const MEMORY_TOLERANCE = 2;
 const ALIASES = { island: 'island-fair-noon', cliffs: 'water-skim-cliffs', meadow: 'meadow-close' };
 const COMMON = 'debug&paused&t=12&dpr=1&quality=high&weather=fair&preset=noon&seed=1';
 const W = 1600, H = 900;
-// the camera's ground cell (src/camera/IslandGround.ts CELL)
+// the camera's ground cell (packages/island/camera/IslandGround.ts CELL)
 const GROUND_CELL = 0.5;
 
 // ------------------------------------------------------------------ options

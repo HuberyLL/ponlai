@@ -38,11 +38,11 @@ A tool is written to these rules:
   rule above), never by a count of frames of either kind.
 - Expensive results that depend only on the commit, the tool and the browser are stored and
   reused through `parity/reference.mjs`; record in the key everything that changes them.
-- A node tool that imports a module of `src/` that reads the look (anything that reaches
-  `src/look/`, such as `src/sky/DayCycle.ts`) imports `island-look.mjs` above that import: the
-  renderer draws with the look its page installs and with a neutral one where nobody did, so
-  without it the tool reads the neutral numbers, not the island's. A tool that loads the modules
-  through Vite's loader calls its `installIslandLook` after it installs the settings
+- A node tool that imports a module of `packages/` that reads the look (anything that reaches
+  `packages/render/look/`, such as `packages/render/sky/DayCycle.ts`) imports `island-look.mjs`
+  above that import: the renderer draws with the look its page installs and with a neutral one where
+  nobody did, so without it the tool reads the neutral numbers, not the island's. A tool that loads
+  the modules through Vite's loader calls its `installIslandLook` after it installs the settings
   (`tools/wgsl-build.mjs`).
 - CPU-heavy node tools import `qos.mjs` first. Python tools declare their dependencies inline (PEP
   723) and run with `uv run`; image metrics come from `parity/pixels.py`.

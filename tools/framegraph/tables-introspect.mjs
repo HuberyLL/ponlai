@@ -1,11 +1,11 @@
-// The frame graph's introspection (src/post/graph/FrameGraph.ts describe(), dot(), currentPass,
+// The frame graph's introspection (packages/render/post/graph/FrameGraph.ts describe(), dot(), currentPass,
 // the counters the diagnostics report) and the debug view's parsing (DebugView.ts), on a CPU mock
 // of three's renderer. Run by tools/verify-framegraph.mjs.
 
 import assert from 'node:assert/strict';
 import * as THREE from 'three/webgpu';
-import { FrameGraph } from '../../src/post/graph/FrameGraph.ts';
-import { parseDebugView } from '../../src/post/graph/DebugView.ts';
+import { FrameGraph } from '../../packages/render/post/graph/FrameGraph.ts';
+import { parseDebugView } from '../../packages/render/post/graph/DebugView.ts';
 
 const RENDER = { of: 'render' };
 const CANVAS = { of: 'canvas' };

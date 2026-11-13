@@ -1,12 +1,12 @@
 // tools/wgsl-build.mjs's entry for the meadow's blades and the displacement field they read
-// (src/world/Grass.ts, src/world/vegetation/Displacement.ts), in the order a frame draws them: the
+// (packages/island/world/Grass.ts, packages/render/vegetation/Displacement.ts), in the order a frame draws them: the
 // field's sprites (the frame graph's first pass), then the near blades and the far ones, built
 // from an empty plan (no anchors: the blades' shaders do not depend on the land). Under a
 // temporal mode (`--q aa=taa`) the blades also read the field of the frame before.
 
-import { createDisplacementField } from '../../src/world/vegetation/Displacement.ts';
-import { trailCurve } from '../../src/world/vegetation/Trample.ts';
-import { GROWTH } from '../../src/world/IslandGrowth.ts';
+import { createDisplacementField } from '../../packages/render/vegetation/Displacement.ts';
+import { trailCurve } from '../../packages/island/world/Trample.ts';
+import { GROWTH } from '../../packages/island/world/IslandGrowth.ts';
 
 export default async function () {
 
@@ -17,8 +17,8 @@ export default async function () {
 	// modules make their nodes in.
 	const displacementField = createDisplacementField( 2 * GROWTH.half );
 	displacementField?.source( trailCurve );
-	const { buildGrass, plantGrass } = await import( '../../src/world/Grass.ts' );
-	const { shared } = await import( '../../src/shared.ts' );
+	const { buildGrass, plantGrass } = await import( '../../packages/island/world/Grass.ts' );
+	const { shared } = await import( '../../packages/render/shared.ts' );
 	if ( displacementField ) shaders.push( [ 'displacement-sprite', { material: displacementField.mesh.material, object: displacementField.mesh } ] );
 	const grass = buildGrass( plantGrass( new Float32Array( 0 ) ), shared );
 	for ( const mesh of grass.children ) shaders.push( [ mesh.name, { material: mesh.material, object: mesh } ] );

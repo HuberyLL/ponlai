@@ -7,9 +7,9 @@
 
 import assert from 'node:assert/strict';
 import { BLOOM_PASSES, bloomTable, compilePipeline, compileToday, declareTemporal } from './tables-passes.mjs';
-import { GraphDecl, compileGraph } from '../../src/post/graph/GraphCompiler.ts';
-import { AttachmentOps, opsModeFromURL } from '../../src/post/graph/AttachmentOps.ts';
-import { parseSettings } from '../../src/Settings.ts';
+import { GraphDecl, compileGraph } from '../../packages/render/post/graph/GraphCompiler.ts';
+import { AttachmentOps, opsModeFromURL } from '../../packages/render/post/graph/AttachmentOps.ts';
+import { parseSettings } from '../../packages/render/Settings.ts';
 
 const col = ( resource, load, store, resolve = null ) => ( { resource, load, store, resolve } );
 const dep = ( resource, write, load, store ) => ( { resource, write, load, store } );

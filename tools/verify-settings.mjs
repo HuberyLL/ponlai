@@ -1,4 +1,4 @@
-// Checks the page's settings (src/Settings.ts) against their documentation and the entry that
+// Checks the page's settings (packages/render/Settings.ts) against their documentation and the entry that
 // installs them, and the addresses the tools build against them. CPU only (plain `node`, which
 // strips the module's types), well under a second.
 //   node tools/verify-settings.mjs            check
@@ -15,7 +15,7 @@
 // - Every option the prose writes with a value (a backticked `name=...` or `?name`) is declared, or
 //   starts with a declared prefix: the prose names no option the page does not read.
 // - The page installs the settings before any module that reads them loads: index.html loads
-//   /src/Boot.ts, and Boot.ts imports PageSettings.ts (which installs them) before it imports
+//   /app/Boot.ts, and Boot.ts imports PageSettings.ts (which installs them) before it imports
 //   main.ts dynamically. (A static import of main.ts there, or the install moved into main.ts,
 //   would let a bundle evaluate the shared chunks main.ts imports first, and every module in them
 //   that reads a setting as it loads would take the default.)
@@ -27,9 +27,9 @@
 //   parseSettings tests the parser). A usage a tool needs is declared, not changed in the tool.
 //   Queries assembled from separate pieces (profile-frame.mjs's list) are outside this scan.
 // - No option is declared in a layer above the lowest layer whose code reads it (the layers of
-//   tools/layers.json, render lowest, then island, game, app): the owner the table prints is a
+//   code's folders, render lowest, then island, game, app): the owner the table prints is a
 //   layer that reads it. A read is a call `<any>.get( 'name' )`, `.has`, `.getAll` or `.prefixed`
-//   (a prefix), or `numberSetting( 'name', ... )`, in a file under `src/`, comments left out; a
+//   (a prefix), or `numberSetting( 'name', ... )`, in a file under `packages/` or `app/`, comments left out; a
 //   read through a helper of its own (WorldStart.ts `intParam`) is not seen.
 //
 // Output: a summary line, then the failures. Exit 0 when everything passes, 1 otherwise or on an
@@ -56,7 +56,7 @@ for ( const a of process.argv.slice( 2 ) ) {
 
 }
 
-const { SETTINGS, SETTING_PREFIXES, parseSettings, settingProblems } = await import( path.join( ROOT, 'src', 'Settings.ts' ) );
+const { SETTINGS, SETTING_PREFIXES, parseSettings, settingProblems } = await import( path.join( ROOT, 'packages', 'render', 'Settings.ts' ) );
 
 const code = ( v ) => `\`${ v }\``;
 const number = ( n ) => n === Infinity ? 'any' : n === - Infinity ? 'any' : String( n );
@@ -111,7 +111,7 @@ else {
 			writeFileSync( DOC, doc );
 			console.log( `verify-settings: rewrote the table in ${ path.relative( ROOT, DOC ) }` );
 
-		} else failures.push( `${ path.relative( ROOT, DOC ) }: the table of every option differs from src/Settings.ts: run node tools/verify-settings.mjs --write` );
+		} else failures.push( `${ path.relative( ROOT, DOC ) }: the table of every option differs from packages/render/Settings.ts: run node tools/verify-settings.mjs --write` );
 
 	}
 
@@ -130,17 +130,24 @@ for ( const [ , token ] of prose.matchAll( /`([^`\n]+)`/g ) ) {
 }
 const prefixes = Object.keys( SETTING_PREFIXES );
 const declared = ( name ) => Object.hasOwn( SETTINGS, name ) || prefixes.some( ( p ) => name.startsWith( p ) );
-for ( const name of Object.keys( SETTINGS ) ) if ( ! named.has( name ) ) failures.push( `option ${ name }: declared in src/Settings.ts, but the prose of url-options.md never names it` );
-for ( const prefix of prefixes ) if ( ! [ ...named ].some( ( n ) => n.startsWith( prefix ) ) ) failures.push( `prefix ${ prefix }: declared in src/Settings.ts, but the prose of url-options.md never uses it` );
-for ( const [ name, token ] of valued ) if ( ! declared( name ) ) failures.push( `url-options.md writes \`${ token }\`, but no option ${ name } is declared in src/Settings.ts` );
+for ( const name of Object.keys( SETTINGS ) ) if ( ! named.has( name ) ) failures.push( `option ${ name }: declared in packages/render/Settings.ts, but the prose of url-options.md never names it` );
+for ( const prefix of prefixes ) if ( ! [ ...named ].some( ( n ) => n.startsWith( prefix ) ) ) failures.push( `prefix ${ prefix }: declared in packages/render/Settings.ts, but the prose of url-options.md never uses it` );
+for ( const [ name, token ] of valued ) if ( ! declared( name ) ) failures.push( `url-options.md writes \`${ token }\`, but no option ${ name } is declared in packages/render/Settings.ts` );
 
 // each option's layer against its readers'
 const RANK = { render: 0, island: 1, game: 2, app: 3 };
-const LAYERS = JSON.parse( readFileSync( path.join( ROOT, 'tools', 'layers.json' ), 'utf8' ) ).files;
+// each code file's layer, its folder: app/, or the package's folder under packages/
+const LAYERS = {};
+for ( const root of [ 'packages', 'app' ] ) for ( const f of readdirSync( path.join( ROOT, root ), { recursive: true } ) ) {
+
+	const file = `${ root }/${ f.split( path.sep ).join( '/' ) }`;
+	if ( /\.(ts|mts|js|mjs)$/.test( file ) ) LAYERS[ file ] = root === 'app' ? 'app' : file.split( '/' )[ 1 ];
+
+}
 const lowest = new Map();
 for ( const [ file, layer ] of Object.entries( LAYERS ) ) {
 
-	const text = readFileSync( path.join( ROOT, 'src', file ), 'utf8' ).replace( /^\s*\/\/.*$/gm, '' );
+	const text = readFileSync( path.join( ROOT, file ), 'utf8' ).replace( /^\s*\/\/.*$/gm, '' );
 	for ( const m of text.matchAll( /\.(?:get|has|getAll|prefixed)\(\s*'([^']+)'|\bnumberSetting\(\s*'([^']+)'/g ) ) {
 
 		const name = m[ 1 ] ?? m[ 2 ];
@@ -154,17 +161,17 @@ for ( const [ file, layer ] of Object.entries( LAYERS ) ) {
 for ( const [ name, spec ] of [ ...Object.entries( SETTINGS ), ...Object.entries( SETTING_PREFIXES ) ] ) {
 
 	const low = lowest.get( name );
-	if ( low && RANK[ spec.layer ] > RANK[ low.layer ] ) failures.push( `option ${ name }: declared in the ${ spec.layer } layer, but src/${ low.file } in the ${ low.layer } layer reads it` );
+	if ( low && RANK[ spec.layer ] > RANK[ low.layer ] ) failures.push( `option ${ name }: declared in the ${ spec.layer } layer, but ${ low.file } in the ${ low.layer } layer reads it` );
 
 }
 
 // the entry's order
 const html = readFileSync( path.join( ROOT, 'index.html' ), 'utf8' );
-if ( ! /<script[^>]*\bsrc="\/src\/Boot\.ts"/.test( html ) ) failures.push( 'index.html: does not load /src/Boot.ts as its script' );
-const boot = readFileSync( path.join( ROOT, 'src', 'Boot.ts' ), 'utf8' ).replace( /^\s*\/\/.*$/gm, '' );
+if ( ! /<script[^>]*\bsrc="\/app\/Boot\.ts"/.test( html ) ) failures.push( 'index.html: does not load /app/Boot.ts as its script' );
+const boot = readFileSync( path.join( ROOT, 'app', 'Boot.ts' ), 'utf8' ).replace( /^\s*\/\/.*$/gm, '' );
 const install = boot.search( /^import '\.\/PageSettings\.ts';$/m ), page = boot.search( /^await import\( '\.\/main\.ts' \);$/m );
-if ( install < 0 || page < 0 || install > page ) failures.push( 'src/Boot.ts: must import \'./PageSettings.ts\' first, then `await import( \'./main.ts\' )`' );
-if ( /^import[^;]*'\.\/main\.ts'/m.test( boot ) ) failures.push( 'src/Boot.ts: imports main.ts statically (its shared chunks would load before the settings are installed)' );
+if ( install < 0 || page < 0 || install > page ) failures.push( 'app/Boot.ts: must import \'./PageSettings.ts\' first, then `await import( \'./main.ts\' )`' );
+if ( /^import[^;]*'\.\/main\.ts'/m.test( boot ) ) failures.push( 'app/Boot.ts: imports main.ts statically (its shared chunks would load before the settings are installed)' );
 
 // the tools' addresses
 let queries = 0;
@@ -199,7 +206,7 @@ for ( const file of readdirSync( path.join( ROOT, 'tools' ), { recursive: true }
 
 }
 
-console.log( `verify-settings: ${ Object.keys( SETTINGS ).length } options and ${ prefixes.length } prefix declared, ${ lowest.size } read in src/, ${ named.size } names in the docs' prose, ${ valued.size } written with a value, ${ queries } tool queries checked` );
+console.log( `verify-settings: ${ Object.keys( SETTINGS ).length } options and ${ prefixes.length } prefix declared, ${ lowest.size } read in the code, ${ named.size } names in the docs' prose, ${ valued.size } written with a value, ${ queries } tool queries checked` );
 if ( failures.length ) {
 
 	console.log( `FAIL (${ failures.length })` );

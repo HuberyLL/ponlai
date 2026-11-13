@@ -1,7 +1,7 @@
 // The browser and the readiness that tools/capture.mjs and tools/capture-clip.mjs share.
 //
 // Profile slots. Each capture runs in a persistent browser profile instead of a fresh one, so the
-// page's world cache (IndexedDB, src/world/WorldCache.ts) and the browser's GPU shader cache hit
+// page's world cache (IndexedDB, packages/island/world/WorldCache.ts) and the browser's GPU shader cache hit
 // from the second load on: a cache miss generates the island again (about 3 s alone, a minute
 // under a busy CPU) and compiles every shader again. A profile serves one browser at a time, so
 // the profiles are slots, `<root>/<browser build>/<n>`, each taken with its own lock: the
@@ -79,7 +79,7 @@
 // - Stopping the loop for each grab also waits for a sky bake in flight and drains the GPU queue,
 //   so work landing late on a busy GPU is in the next grab rather than frames later.
 // - A paused page of the temporal modes (taa, taau, fsr3, gt) is ready once its rest has converged
-//   (src/post/TemporalRest.ts: a fixed jitter sequence averaged with exact weights after 8 settle
+//   (packages/render/post/TemporalRest.ts: a fixed jitter sequence averaged with exact weights after 8 settle
 //   frames, none while a bake or transition runs, then held), so it is not compared at all: the
 //   loop is stopped on the held rest and shot ("converged"), the way engines test a temporal
 //   image (a deterministic convergence, then a tolerance in the comparison: diff-set --temporal).
@@ -98,7 +98,7 @@
 //   rendered frames instead (READY_FRAMES, 60, for a running one). `wait` and `settle` (ms) add
 //   fixed delays before and after the floor.
 // - Before the grabs a paused page also waits for its own settled signal (waitForSettled, which
-//   capture.mjs and verify-scene-jump call; verify-growth-swap waits for it too): src/post/Settled.ts holds it false
+//   capture.mjs and verify-scene-jump call; verify-growth-swap waits for it too): packages/render/post/Settled.ts holds it false
 //   while a pipeline compiles asynchronously or a sun shadow redraw is due, and until 8 quiet frames
 //   share the scene's key, so the grabs start on the frame the page keeps. Stability alone met that
 //   only through the loading screen, which a fresh load lifts once the sun's map has drawn: frames
@@ -121,7 +121,7 @@
 //
 // Stopping the loop. Headless, Chrome itself back-pressures the page only once seconds of frames
 // are queued (no vsync, no frame-rate limit), so a paused page in the test mode bounds its own queue
-// to two frames (src/post/FramePacer.ts, "A paused page's queue"): before that, two pages at once
+// to two frames (packages/render/post/FramePacer.ts, "A paused page's queue"): before that, two pages at once
 // each queued hundreds of frames of work, and every read-back and screenshot waited behind it. A
 // running page is not bounded. `stopLoop` stops the frame loop (`__PONLAI__.loop.stop()`: no more
 // frames, then the queue drained) before the shot; the pixels are the same frame's, the shot waits
@@ -520,7 +520,7 @@ export function samePixels( a, b ) {
 
 }
 
-/** Waits, with the frame loop running, until the page's settled signal holds (src/post/Settled.ts:
+/** Waits, with the frame loop running, until the page's settled signal holds (packages/render/post/Settled.ts:
  * the paused page will draw the same frame from now on; see Readiness by stability above) and
  * returns the record a capture's JSON keeps as `ready.settled`: { settled, framesWaited, wallMs },
  * with the signal's `settle` block when it did not hold within `timeout` (ms; no error: the

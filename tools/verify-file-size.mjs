@@ -7,7 +7,7 @@
 // are counted over the whole file, its header comment included.
 //
 // Guarantees, each a failure (exit 1) when broken:
-// - No code file under src/ (.ts, .mts, .js, .mjs) has more than LIMIT lines, except those in
+// - No code file under packages/ or app/ (.ts, .mts, .js, .mjs) has more than LIMIT lines, except those in
 //   KNOWN, the files over it when the check was written.
 // - KNOWN only shrinks: a listed file may not grow past the count recorded for it (a change that
 //   shortens one lowers its count with it), and one that is back within the limit, or gone, fails
@@ -20,17 +20,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
-const SRC = path.join( ROOT, 'src' );
+const SRC = ROOT;
 const LIMIT = 1500;
 const CODE = /\.(ts|mts|js|mjs)$/;
 
-// The files over LIMIT (paths under src/) and the most lines each may have. Lower a count, or
+// The files over LIMIT (paths from the repository's root) and the most lines each may have. Lower a count, or
 // remove the entry, with the change that shortens the file; never raise one or add an entry.
 const KNOWN = {
-	'weather/VolumetricHaze.ts': 1809,
-	'world/Grass.ts': 1746,
-	'ocean/Water.ts': 1645,
-	'post/graph/FrameGraph.ts': 1525,
+	'packages/render/weather/VolumetricHaze.ts': 1809,
+	'packages/island/world/Grass.ts': 1746,
+	'packages/render/ocean/Water.ts': 1645,
+	'packages/render/post/graph/FrameGraph.ts': 1525,
 };
 
 for ( const a of process.argv.slice( 2 ) ) {
@@ -63,7 +63,7 @@ function lines( file ) {
 }
 
 const failures = [];
-const files = walk( SRC ).sort();
+const files = [ 'packages', 'app' ].flatMap( ( root ) => walk( path.join( SRC, root ) ) ).sort();
 const counts = new Map( files.map( ( f ) => [ f, lines( f ) ] ) );
 for ( const [ file, count ] of counts ) {
 
@@ -80,7 +80,7 @@ for ( const [ file, most ] of Object.entries( KNOWN ) ) {
 
 }
 
-console.log( `verify-file-size: ${ files.length } files under src/, limit ${ LIMIT } lines, ${ Object.keys( KNOWN ).length } listed over it` );
+console.log( `verify-file-size: ${ files.length } files under packages/ and app/, limit ${ LIMIT } lines, ${ Object.keys( KNOWN ).length } listed over it` );
 for ( const [ file, most ] of Object.entries( KNOWN ) ) {
 
 	const count = counts.get( file );
