@@ -19,7 +19,8 @@
 // verify-layers, verify-exits, verify-settings, verify-file-size, verify-headers (the modules'
 // header first lines), verify-tool-manuals (the tools' manuals and `--help`),
 // verify-three-internals and verify-kit (tools/repo/), tools/verify-no-binaries.mjs (every file in
-// the index), verify-skill-links (tools/repo/), the game's verify-game, verify-i18n and verify-ink
+// the index), verify-licences (REUSE and the notices' SPDX tags; it needs uv) and
+// verify-skill-links (tools/repo/), the game's verify-game, verify-i18n and verify-ink
 // (tools/game/), the renderer's verify-framegraph, verify-day-cycle, verify-weather-state,
 // verify-wind, verify-local-lights, verify-extensions and verify-look-params (tools/render/), then
 // tools/repo/verify-lint.mjs, and the docs' lint (`npm run lint:docs`) when a Markdown file is
@@ -82,6 +83,7 @@ const checks = [
 	[ 'verify-three-internals', node( 'repo/verify-three-internals.mjs' ) ],
 	[ 'verify-kit', node( 'repo/verify-kit.mjs' ) ],
 	[ 'verify-no-binaries', node( 'verify-no-binaries.mjs' ) ],
+	[ 'verify-licences', node( 'repo/verify-licences.mjs' ) ],
 	[ 'verify-skill-links', node( 'repo/verify-skill-links.mjs' ) ],
 	[ 'verify-game', node( 'game/verify-game.mjs' ) ],
 	[ 'verify-i18n', node( 'game/verify-i18n.mjs' ) ],

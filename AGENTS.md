@@ -151,7 +151,8 @@ WGSL or GLSL strings; TSL's `mix`, `step`, `smoothstep` in the function form; no
 through its exits (a newly needed name is added there), a `userData` key on its layer's list; a
 plant kind, a kind of local light or an extra pass declares its cost knob, test-mode stand and
 growth; three's internals only in `packages/render/three/`; nothing binary or over 1 MiB in git;
-`npm run lint:docs` before a commit that changes Markdown.
+REUSE, and SPDX tags in every `/*!` notice; `npm run lint:docs` before a commit that changes
+Markdown.
 
 ## Checks run by hand
 

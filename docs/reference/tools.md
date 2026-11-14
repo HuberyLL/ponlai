@@ -145,6 +145,7 @@ not give: automation, A/B statistics and our own pass names.
 | Which file does something: every source file under `packages/`, `app/` and `tools/` with its header's first line | `tools/repo/code-map.mjs` |
 | Which assets a commit runs with, whether `public/` matches them, and how to publish a change | `tools/repo/assets.mjs` |
 | No asset and no binary file in git | `tools/verify-no-binaries.mjs` |
+| Every file's copyright and licence (REUSE), and the SPDX tags in each third-party notice | `tools/repo/verify-licences.mjs` |
 | The direction of imports between the layers | `tools/repo/verify-layers.mjs` |
 | The packages' exits load without doing work or reading the page | `tools/repo/verify-exits.mjs` |
 | The page's settings against their docs and the tools' addresses | `tools/repo/verify-settings.mjs` |
