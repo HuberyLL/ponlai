@@ -12,10 +12,9 @@ tuning of its own. A material pushed to fix something the light or the image got
 that error in its albedo. When the light is corrected later, every such material is wrong again,
 each in its own way.
 
-The renderer's own project recorded this failure (commit `07283bc9`): grass, stone and bamboo
-were tuned one by one against finished frames, each carried a share of the light's errors, and
-every change of the light broke them again. The fix was to keep the materials at measured values
-and move the style into global knobs on the light and the image.
+The failure is common: grass, stone and wood tuned one by one against finished frames each carry
+a share of the light's errors, and every change of the light breaks them again. The fix is to keep
+the materials at measured values and move the style into global knobs on the light and the image.
 
 A second, older form of the same loop: an exposure metered from the frame's luminance reads the
 albedo too, so a dark material darkens nothing on screen; authors then push albedos darker to make
