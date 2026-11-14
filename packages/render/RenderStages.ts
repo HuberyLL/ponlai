@@ -14,8 +14,7 @@
 //   a stage holds no await of its own, so the frames and microtasks between two stages stay the
 //   entry's to order.
 // - What the island gives a stage comes as an argument typed by the renderer's own types: this
-//   file names none of the island's things (one argument keeps the island in its name only:
-//   `createWater`'s `islandSea`, the open sea's range and the reflector's top).
+//   file names none of the island's things.
 // - The registered plant kinds are placed by a stage too (`placeVegetation`: the scene, the
 //   wind's motion flag, the two depth prepasses), which closes their registry; the sun's caster box
 //   and the rain's collision bake read the same registry (`vegetationCasters`,
@@ -981,7 +980,7 @@ export function bakeRainCollision<L>( render: RenderParts, vegetation: Vegetatio
 }
 
 /** The water's surface, over the land's box and what the game holds above it. */
-export function createWater( render: RenderParts, { fields, landBox, islandSea, heldOpaque }: { fields: SceneFields; landBox: Bounds; islandSea: { readonly openSea: { readonly from: number; readonly to: number }; readonly reflectorTop: number }; heldOpaque: THREE.Box3[] } ) {
+export function createWater( render: RenderParts, { fields, landBox, seaShape, heldOpaque }: { fields: SceneFields; landBox: Bounds; seaShape: { readonly openSea: { readonly from: number; readonly to: number }; readonly reflectorTop: number }; heldOpaque: THREE.Box3[] } ) {
 
 	const { quality, renderer, waterScene, rainScene, afterScene, sky, sunShadow, applySkyFill, fft, waveMaps, seaDetail, pipeline, shoreWaves } = render;
 
@@ -995,7 +994,7 @@ export function createWater( render: RenderParts, { fields, landBox, islandSea, 
 	render.stormSea = stormSea;
 	render.water = new Water( {
 		fft, sky, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves,
-		land: landBox, ...islandSea, sunShadow, storm: stormSea, detail: seaDetail,
+		land: landBox, ...seaShape, sunShadow, storm: stormSea, detail: seaDetail,
 		sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, underwater: pipeline.textures.underwater, quality: quality.water,
 		refraction: { color: pipeline.textures.refraction, depth: pipeline.textures.refractionDepth },
 	} );

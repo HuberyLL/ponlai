@@ -145,7 +145,7 @@ export async function startScenePage( look: Look ): Promise<void> {
 			fields: neutral.fields,
 			landBox: { x0: Math.min( reach.min.x, - 1 ), z0: Math.min( reach.min.z, - 1 ), x1: Math.max( reach.max.x, 1 ), z1: Math.max( reach.max.z, 1 ) },
 			// at sea no shelf: the floor's depth everywhere, the open sea's deepening past the farthest view
-			islandSea: { openSea: ground.kind === 'land' ? { from: 400, to: 800 } : OPEN_SEA_DEEPENING, reflectorTop: reach.max.y + 1 },
+			seaShape: { openSea: ground.kind === 'land' ? { from: 400, to: 800 } : OPEN_SEA_DEEPENING, reflectorTop: reach.max.y + 1 },
 			heldOpaque: [],
 		} ),
 		afterWater( { render, sizing } ) {

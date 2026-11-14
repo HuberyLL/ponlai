@@ -145,7 +145,7 @@ await startScene( host, { look: PAGE_LOOK, defaults: sceneDefaults( GAME ) }, {
 		render.mark( 'villagers' );
 
 	},
-	water: () => ( { fields: island.fields, landBox: island.landBox, islandSea: ISLAND_SEA, heldOpaque: island.heldOpaque } ),
+	water: () => ( { fields: island.fields, landBox: island.landBox, seaShape: ISLAND_SEA, heldOpaque: island.heldOpaque } ),
 	async afterWater( { sizing } ) {
 
 		createGrowth( render, island, { landOptions, game: page.game, framing: page.framing } );

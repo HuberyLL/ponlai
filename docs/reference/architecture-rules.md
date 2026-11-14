@@ -240,9 +240,9 @@ The renderer's names hold no proper name of this island: what it shares with a s
 what it is (the dusk window of what glows by night, the sky light lent to the land, the distance to
 the scene's path in the growth's input). Ordinary words for an open-air scene stay its own: the
 meadow's shade, canopy and depth pass, the blade family's ambient tint (`swardTint`), the debug
-view's kinds and the grade's bands. One parameter still carries the island's word: the sea's inputs
-from the land's shape in `createWater` (`islandSea`). The debug flags are one open object for every
-layer, and the renderer's header lists the island's flags with its own.
+view's kinds and the grade's bands. The sea's inputs from the land's shape are named `seaShape`. The
+debug flags are one open object for every layer, and the renderer's header lists the island's flags
+with its own.
 
 **Why:** the renderer is to be usable without this island, and a test scene builds it alone. A
 renderer that imports the island cannot be built, read or checked without it, and every change to
