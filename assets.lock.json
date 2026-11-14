@@ -1,10 +1,10 @@
 {
 	"repo": "HuberyLL/ponlai",
-	"release": "assets-v3",
+	"release": "assets-v4",
 	"archive": {
-		"name": "ponlai-assets-v3.tar.gz",
-		"size": 17875141,
-		"sha256": "fef7b2401ac3783f55fb0407bee7bfcd3e40b69ee58b23a6871896bcca0faf54"
+		"name": "ponlai-assets-v4.tar.gz",
+		"size": 14631113,
+		"sha256": "8bd314a4e62f8da79ac6033def9ff6f6660fd4ef6a1cdddd345b40efdd05e7fa"
 	},
 	"files": {
 		"characters/hanming/Hanming.bin": {
@@ -70,14 +70,6 @@
 		"sky/stars.bin": {
 			"size": 72776,
 			"sha256": "098c1697276cb8bf0fdadbe3257206c9e1d282f34b428bfcf5a883e9202428b1"
-		},
-		"textures/ground/grove_albedo.jpg": {
-			"size": 833711,
-			"sha256": "3dd6875cb3908e022a3c45ebbffa5e84c670ff2691fbbb6dc9ea4bff88523800"
-		},
-		"textures/ground/grove_detail.png": {
-			"size": 2409078,
-			"sha256": "b767b21d1a116b22c37746a512955f622b76c6c5a88cd1477913186dc5fce8f2"
 		},
 		"textures/ground/meadow_albedo.jpg": {
 			"size": 1206953,

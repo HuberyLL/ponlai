@@ -68,7 +68,7 @@ import { hasGpuFeature } from '../three/Backend.ts';
 //   batch stays one render object and its depth copy draws the same bands.
 // - A band's cap never cuts a part its records keep any of: a record goes into the band of the
 //   least cap at or above its count (less 0.001, a hair against the vertex stage's rounding), and
-//   the first band, which also takes any record over its cap (`flags.grassLod = false`), draws the
+//   the first band, which also takes any record over its cap (the meadow without its LOD, the default), draws the
 //   batch's index count of the view (`CullRange.indexCount`, its nearest record's parts). The image
 //   is the one-draw image but for the split (docs/reference/three-behaviour.md, Split draws).
 //   `flags.grassCull = false` draws every tuft through the same storage path, and

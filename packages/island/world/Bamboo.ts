@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { type Shared, AIR_DENSITY, REFERENCE_SPEED, logLaw, CROWN_DRAG, runSteps, PLANT_PART, PlantInstances, levelDraws, type PlantDraw, type PlantInstance, type PlantPool, type KindGrowth, type VegetationKind, BRANCH_ATTRIBUTES, MeshBuilder, UP, branchValues, leafLayout, smooth, sprayValues, streamAt, type LeafAtlas } from '../../render/index.ts';
 import { BAMBOO_PARTS, bambooMaterials } from './BambooMaterials.ts';
-import { GROVES, plantCulms, plantShoots, type CulmSite, type ShootSite } from './BambooGroves.ts';
+import { GROVES, plantCulms, type CulmSite } from './BambooGroves.ts';
 import { mulberry32, type Rng } from '../../render/data.ts';
 import { SEABED_TILE } from './SeabedTile.ts';
 import { islandSurfaceHeight } from './WorldShapes.ts';
@@ -35,8 +35,6 @@ import type { WorldData } from './types.ts';
 //   the point's share of its height, as BambooGroves.ts `groveSky`), so a grove is dark inside; the
 //   material takes it only without the ambient volume, which sees the canopy itself
 //   (BambooMaterials.ts).
-// - The young bamboo on the groves' floor (BambooGroves.ts `plantShoots`): a few sprays fanning out
-//   and drooping from a low point, in the leaves' draws, darker the deeper in a grove (BAMBOO.shoot).
 // Each culm bends in the one wind from its own foot (its instance's), most at its top (`leafSway` x,
 // its yield ( 1 - stiffness ) eta^2, and w, eta, the share of its height) and by its wind load, its
 // crown's drag over its stiffness (`culmLoad`: its height over its radius to the fourth), each at
@@ -51,7 +49,7 @@ import type { WorldData } from './types.ts';
 //
 // Drawn as instances (vegetation/PlantInstances.ts): a few prototypes, each one upright culm with
 // its branches and leaves built at the origin (BAMBOO.prototypes: a band of heights by a band of
-// girths, each from a fixed seed, so the same on every page), and the young shoots' one; every site
+// girths, each from a fixed seed, so the same on every page); every site
 // an instance of the nearest, scaled to its height and girth, turned to the way it leans, leaning
 // and bowing by its site (`stemAxis`, the curve this module built each culm along), its age, grove
 // and leaf tone carried per instance (`look`). The instance's wind is read at its own foot, so each
@@ -77,7 +75,6 @@ export const BAMBOO = {
 	sprayStiffness: 0.3, // a spray's stiffness on its branch (Deform.ts sprayBend)
 	branchStiffness: 0.3, // a branch's stiffness k_b at its foot radius `branchRadius` (m), growing with it (Deform.ts branchBend)
 	branchRadius: 0.004,
-	shoot: { cards: 5, card: [ 0.3, 0.48 ] as const, tone: [ 0.45, 0.85 ] as const, height: 0.42, width: 0.03 }, // a young shoot's leaves (`shoot`), its prototype's height and the width it changes level by (m)
 	// the culms' prototypes: bands of a culm's height over GROVES.height (all a site can take,
 	// BambooGroves.ts culmAt) by bands of its girth over its height's ( height / GROVES.slender / 2 )
 	prototypes: { heights: 4, height: [ 0.68, 1.1 ] as const, girths: 2, girth: [ 0.85, 1.15 ] as const },
@@ -93,11 +90,6 @@ const REF = { height: 7.2, radius: 0.02 };
 // Society Interface 11, 2014: a 12.0 mm wall at a 13.7 cm diameter, and the mean modulus of its
 // flexure specimens outside the innermost tissue ( r / a > 0.15 ), 10.56 GPa).
 const CULM_WALL = 12.0 / 137, CULM_MODULUS = 10.56e9;
-// A shoot's wind load (`instances`): a shoot is a few sprays from a point, with no stem to derive a
-// stiffness from; set so it leans in a fair wind as it did before the culms' load was derived
-// (about 10 degrees), not from a measurement.
-const SHOOT_LOAD = 0.55;
-
 /** A culm's wind load, its main bend's load in fair's mean wind (Deform.ts mainBend's lambda_0,
  * PLANT_BEND): lambda_0 = F0 H^2 / EI0, the crown's drag over the culm's stiffness at its foot. The
  * culm: H tall, a hollow tube of foot radius r (`radius`), its wall CULM_WALL of its diameter, so
@@ -129,7 +121,7 @@ const WOOD_LIMBS = [ 'branchFrom', 'branchTo' ];
 const culmLayout = () => new MeshBuilder( { culm: 1, [ PLANT_PART ]: 2, leafSway: 4, branchFrom: 4, branchTo: 4 }, WOOD_LIMBS );
 const leavesLayout = () => leafLayout( { [ PLANT_PART ]: 2, ...BRANCH_ATTRIBUTES }, LIMBS );
 type Branch = ReturnType<typeof branchValues>;
-// a vertex on no branch: the culm's, and the cards of a top tuft or a shoot
+// a vertex on no branch: the culm's, and the cards of a top tuft
 const NONE = branchValues();
 
 /** A prototype's culm, upright at the origin and turned to +x (its instances lean and turn it). */
@@ -349,31 +341,10 @@ function spray( b: Build, c: Culm, from: THREE.Vector3, out: THREE.Vector3, size
 
 }
 
-/** The young shoots' prototype (BambooGroves.ts `plantShoots`): a few leaf sprays fanning out and
- * drooping from a low point (BAMBOO.shoot), their tone the instance's (its `look` z). */
-function shoot( b: Build ): void {
-
-	const P = BAMBOO.shoot, rng = b.rng, level = b.level;
-	const c = upright( P.height, 0.004 );
-	const top = new THREE.Vector3( 0, P.height, 0 );
-	const kept = Math.max( 1, Math.round( P.cards * level.cards ) );
-	for ( let k = 0; k < P.cards; k ++ ) {
-
-		const az = ( k / P.cards ) * Math.PI * 2 + ( rng() - 0.5 ) * 0.8;
-		const out = new THREE.Vector3( Math.cos( az ), - 0.25 - 0.35 * rng(), Math.sin( az ) ).normalize();
-		const size = P.card[ 0 ] + ( P.card[ 1 ] - P.card[ 0 ] ) * rng();
-		// (the far level every other card)
-		if ( level.cards === 1 || k % 2 === 0 ) spray( b, c, top.clone().addScaledVector( out, 0.02 ), out, size * Math.sqrt( P.cards / kept ), 1, NONE );
-
-	}
-
-}
-
 // ------------------------------------------------------------------ the prototypes and instances
 
-// the culms' prototypes, ( height band, girth band ) as height * girths + girth; the shoots' last
+// the culms' prototypes, ( height band, girth band ) as height * girths + girth
 const CULM_PROTOTYPES = BAMBOO.prototypes.heights * BAMBOO.prototypes.girths;
-const SHOOT = CULM_PROTOTYPES;
 // a band's middle, of `count` over [ lo, hi ]
 const bandMiddle = ( [ lo, hi ]: readonly [ number, number ], count: number, k: number ) => lo + ( hi - lo ) * ( k + 0.5 ) / count;
 const bandOf = ( [ lo, hi ]: readonly [ number, number ], count: number, x: number ) => Math.min( count - 1, Math.max( 0, Math.floor( ( x - lo ) / ( hi - lo ) * count ) ) );
@@ -388,22 +359,21 @@ function prototypeCulm( k: number ): Culm {
 
 }
 
-/** A prototype's two meshes at a level (`leaves` alone for the shoots), from its fixed seed. */
-function prototypeMesh( k: number, level: Level ): { culms: THREE.BufferGeometry | null; leaves: THREE.BufferGeometry } {
+/** A prototype's two meshes at a level, from its fixed seed. */
+function prototypeMesh( k: number, level: Level ): { culms: THREE.BufferGeometry; leaves: THREE.BufferGeometry } {
 
 	const b: Build = { culms: culmLayout(), leaves: leavesLayout(), rng: mulberry32( 0xba3b00 + k ), level };
-	if ( k === SHOOT ) shoot( b );
-	else culm( b, prototypeCulm( k ) );
-	const name = `${ k === SHOOT ? 'shoot' : `culm ${ k }` } ${ level === NEAR ? 'near' : 'far' }`;
-	return { culms: b.culms.count > 0 ? b.culms.geometry( `bamboo ${ name }` ) : null, leaves: b.leaves.geometry( `bamboo leaves ${ name }` ) };
+	culm( b, prototypeCulm( k ) );
+	const name = `culm ${ k } ${ level === NEAR ? 'near' : 'far' }`;
+	return { culms: b.culms.geometry( `bamboo ${ name }` ), leaves: b.leaves.geometry( `bamboo leaves ${ name }` ) };
 
 }
 
 /** The sites' instances, in their order: each culm of the prototype nearest its height and girth. */
-function instances( sites: { culms: CulmSite[]; shoots: ShootSite[] } ): PlantInstance[] {
+function instances( sites: Sites ): PlantInstance[] {
 
-	const P = BAMBOO.prototypes, S = BAMBOO.shoot;
-	const culms = sites.culms.map( ( site ): PlantInstance => {
+	const P = BAMBOO.prototypes;
+	return sites.culms.map( ( site ): PlantInstance => {
 
 		const q = site.height / GROVES.height, g = site.radius / ( site.height / GROVES.slender / 2 );
 		const k = bandOf( P.height, P.heights, q ) * P.girths + bandOf( P.girth, P.girths, g );
@@ -418,20 +388,12 @@ function instances( sites: { culms: CulmSite[]; shoots: ShootSite[] } ): PlantIn
 		};
 
 	} );
-	const shoots = sites.shoots.map( ( site ): PlantInstance => ( {
-		prototype: SHOOT, x: site.x, y: site.y, z: site.z, yaw: site.turn,
-		height: site.height, scale: site.height / S.height, girth: 1, limb: 1,
-		lean: 0, bow: 0, load: SHOOT_LOAD,
-		width: S.width, reach: S.card[ 1 ],
-		look: [ 0, 0, S.tone[ 0 ] + ( S.tone[ 1 ] - S.tone[ 0 ] ) * site.light, 0 ],
-	} ) );
-	return [ ...culms, ...shoots ];
 
 }
 
 // ------------------------------------------------------------------ the page's bamboo
 
-export type Sites = { culms: CulmSite[]; shoots: ShootSite[] };
+export type Sites = { culms: CulmSite[] };
 
 /** What a growth step prepared: the sites and their pool, or null where the sites did not change. */
 export type BambooPrepared = { sites: Sites; pool: PlantPool } | null;
@@ -445,12 +407,11 @@ const chunkBox = ( ci: number, cj: number ) => ( { x0: ci * SEABED_TILE, z0: cj 
  * the rim ground's distance from the cliff's edge), a row of cells a step. */
 function* plantSteps( data: WorldData ): Generator<void, Sites> {
 
-	const sites: Sites = { culms: [], shoots: [] };
+	const sites: Sites = { culms: [] };
 	for ( const { ci, cj } of [ ...data.islands ].sort( order ) ) {
 
 		const box = chunkBox( ci, cj );
 		sites.culms.push( ...yield* plantCulms( data.rimGround, islandSurfaceHeight, box ) );
-		sites.shoots.push( ...yield* plantShoots( data.rimGround, islandSurfaceHeight, box ) );
 
 	}
 	return sites;
@@ -470,10 +431,10 @@ export class Bamboo {
 	constructor( sites: Sites, surfaces: { shared: Shared; atlas: LeafAtlas } ) {
 
 		const draws: PlantDraw[] = [];
-		for ( let k = 0; k <= SHOOT; k ++ ) {
+		for ( let k = 0; k < CULM_PROTOTYPES; k ++ ) {
 
 			const near = prototypeMesh( k, NEAR ), far = prototypeMesh( k, FAR );
-			if ( near.culms && far.culms ) draws.push( ...levelDraws( 0, k, near.culms, far.culms, true ) );
+			draws.push( ...levelDraws( 0, k, near.culms, far.culms, true ) );
 			draws.push( ...levelDraws( 1, k, near.leaves, far.leaves, false ) );
 
 		}
@@ -489,7 +450,7 @@ export class Bamboo {
 
 	}
 
-	/** The culms and shoots standing now (for the diagnostics). */
+	/** The culms standing now (for the diagnostics). */
 	sites(): Sites {
 
 		return this.shown;
@@ -501,7 +462,7 @@ export class Bamboo {
 	* prepare( data: WorldData, renderer: THREE.WebGPURenderer | null ): Generator<void, BambooPrepared> {
 
 		const sites = yield* plantSteps( data );
-		if ( sameSites( sites.culms, this.shown.culms ) && sameSites( sites.shoots, this.shown.shoots ) ) return null;
+		if ( sameSites( sites.culms, this.shown.culms ) ) return null;
 		return { sites, pool: yield* this.plants.prepare( instances( sites ), renderer ) };
 
 	}
@@ -518,7 +479,7 @@ export class Bamboo {
 }
 
 // Whether two lists of sites are the same, field by field.
-function sameSites<T extends CulmSite | ShootSite>( a: readonly T[], b: readonly T[] ): boolean {
+function sameSites( a: readonly CulmSite[], b: readonly CulmSite[] ): boolean {
 
 	if ( a.length !== b.length ) return false;
 	for ( let k = 0; k < a.length; k ++ ) {

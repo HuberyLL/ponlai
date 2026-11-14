@@ -109,11 +109,11 @@ export const PROBE_NEAR = 8;
 // ------------------------------------------------------------------ albedos (linear)
 
 // the meadow seen from above: the blades' mean albedo (Meadow.ts LAWN x LAWN_GAIN), their own,
-// whose blue is about a ninth of their green (Grass.ts meadowMean)
+// whose blue is about a ninth of their green (Grass.ts BLADE_COLOUR)
 const LAWN_TOP = [ 0.0700 * 0.926, 0.0978 * 0.926, 0.0109 * 0.926 ];
-// a grove's floor: its ground scan's mean as TerrainMaterial.ts shows it (GROUND_SCANS.grove:
-// saturation 0.8, gain 0.355)
-const GROVE_FLOOR = scanLook( [ 0.2918, 0.2482, 0.1198 ], 0.8, 0.355 );
+// a grove's floor: the island's soil as TerrainMaterial.ts shows it (the meadow scan's mean,
+// GROUND_OCHRE's balance and GROUND_SCANS.meadow's gain)
+const GROVE_FLOOR = [ 0.118, 0.094, 0.013 ];
 // the cliff's stone: TerrainMaterial.ts's rock at its mean tint, above the water times the
 // rock's gain (materials/Meadow.ts `groundGains`)
 const ROCK = [ ( 0.124 + 0.188 ) / 2, ( 0.13 + 0.19 ) / 2, ( 0.126 + 0.176 ) / 2 ], ROCK_GAIN = 1.6;
@@ -136,13 +136,6 @@ const LEAF = leafAlbedo( LEAF_COLOURS, LEAF_SHARE ).map( ( v ) => 1.3 * v );
 // where a culm's branches start, of its height (Bamboo.ts BAMBOO.branches), and its longest
 // branch (BAMBOO.branch): a crown's leaves stand about 0.6 of that round its axis
 const BRANCHES = 0.55, BRANCH = 0.12;
-
-function scanLook( mean: number[], saturation: number, gain: number ): number[] {
-
-	const luma = 0.2126 * mean[ 0 ] + 0.7152 * mean[ 1 ] + 0.0722 * mean[ 2 ];
-	return mean.map( ( v ) => ( luma + ( v - luma ) * saturation ) * gain );
-
-}
 
 function leafAlbedo( colours: readonly ( readonly number[] )[], share: readonly number[] ): number[] {
 

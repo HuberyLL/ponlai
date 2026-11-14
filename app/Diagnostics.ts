@@ -43,12 +43,11 @@ export function islandHandles( render: RenderParts, island: IslandParts, page: P
 					return { data: image.data, size: image.width, extent: MEADOW_EXTENT };
 
 				},
-				// where the bamboo's culms and shoots stand on the current land ( x, z, ... flat), for tools that keep a
+				// where the bamboo's culms stand on the current land ( x, z, ... flat), for tools that keep a
 				// view clear of the groves
 				bambooSites: () => {
 
-					const { culms, shoots } = bamboo.sites();
-					return [ ...culms, ...shoots ].flatMap( ( c ) => [ c.x, c.z ] );
+					return bamboo.sites().culms.flatMap( ( c ) => [ c.x, c.z ] );
 
 				},
 				// where the yunpeng's clumps stand on the current land ( x, z, size per clump) and their lights

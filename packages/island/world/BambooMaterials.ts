@@ -329,7 +329,7 @@ export const LEAF_TRANSLUCENCY = tuneUniform( 'lighting.vegetation.bambooTranslu
 
 /** The leaves' material: the trees' leaf material on the atlas over a plant draw's prototype
  * (PlantInstances.ts), swaying with each culm (from its foot), fluttering, toned by the plant's
- * `look` z (a shoot's depth in its grove); half translucent (`LEAF_TRANSLUCENCY`: the strength of
+ * `look` z (a culm's depth in its grove); half translucent (`LEAF_TRANSLUCENCY`: the strength of
  * the light through them, VegetationLighting; a leaf's diffuse does not wrap), firmer leaves than
  * the meadow's blades. */
 export function leafMaterial( shared: Shared, atlas: LeafAtlas, plants: PlantInstances ): THREE.MeshStandardNodeMaterial {

@@ -59,7 +59,7 @@ export default function ( { renderer } ) {
 	const tex = {
 		soil: createSoilTexture(), heights: layer( DETAIL_LAYER.heights ), gravel: layer( DETAIL_LAYER.gravel ),
 		normalsA: layer( DETAIL_LAYER.normalsA ), normalsB: layer( DETAIL_LAYER.normalsB ),
-		scanAlbedo: array( 'scanAlbedo', 3 ), scanDetail: array( 'scanDetail', 3 ),
+		scanAlbedo: array( 'scanAlbedo', 2 ), scanDetail: array( 'scanDetail', 2 ),
 	};
 	const waveMaps = new WaveMaps( renderer, { cascades: 3, sizes: [ 250, 50, 10 ], derivatives: array( 'derivatives', 3 ) } );
 	const shore = plain( 'shore' ), rim = plain( 'rim' );

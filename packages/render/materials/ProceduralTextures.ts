@@ -200,8 +200,6 @@ export const DETAIL_LAYER = { heights: 0, normalsA: 1, normalsB: 2, gravel: 3 } 
 // The scans' texels on a side. One array per map (colour, detail), a layer per scan, keeps a
 // material that reads several within WebGPU's 16 sampled textures.
 const SCAN_SIZE = 1024;
-/** The scans' smallest mip, 1x1: each layer's own mean colour. */
-export const SCAN_TOP_MIP = Math.log2( SCAN_SIZE );
 
 // A scan's pixels, decoded as stored (no colour conversion; the detail maps carry no alpha, so
 // the canvas's premultiplied storage keeps them exact), bottom row first as a loaded texture's

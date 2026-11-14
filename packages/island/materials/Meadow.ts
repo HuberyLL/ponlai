@@ -36,7 +36,7 @@ export const SWARD_HEIGHT = 0.45;
 
 interface MeadowSample { growth: number; tone: number }
 
-// Linear albedo of the lawn as a whole, a deep olive green: the blades' mean (Grass.ts meadowMean)
+// Linear albedo of the lawn as a whole, a deep olive green: the blades' mean (Grass.ts BLADE_COLOUR)
 // over LAWN_GAIN. The tone's knob (`groundGains.lawnGain`) lightens or darkens the blades (Grass.ts)
 // and the turf together. The land's bounce reads it (BounceGround.ts), and the ambient light's
 // bake holds a copy (AmbientProbes.ts LAWN_TOP).

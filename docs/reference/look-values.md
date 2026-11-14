@@ -48,5 +48,4 @@ Linear diffuse albedo of the island's main surfaces.
 | --- | --- |
 | The meadow's blades | about 0.08, a sunlit leaf's |
 | The cliff's stone | about 0.1, darker than real limestone (0.2 to 0.35) on purpose |
-| The grass ground between the blades | about a twentieth above the blades' mean, grained by a scanned ground's value, about +-15 % in all |
-| The bamboo groves' litter | about a third brighter than the grass ground |
+| The soil between the blades and under the groves | about 0.09, a yellow-brown earth, grained by a scanned ground |

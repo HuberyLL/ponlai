@@ -45,7 +45,7 @@ export type { UnderwaterLight, UnderwaterModelOptions } from './lighting/Underwa
 export { AMBIENT_KNOBS } from './look/AmbientLook.ts';
 export { heightBlend, hexReadScan } from './materials/HexTiling.ts';
 export type { HexScan } from './materials/HexTiling.ts';
-export { DETAIL_SIZE, SCAN_TOP_MIP, bakeProceduralTextures } from './materials/ProceduralTextures.ts';
+export { DETAIL_SIZE, bakeProceduralTextures } from './materials/ProceduralTextures.ts';
 export type { DetailTextures } from './materials/ProceduralTextures.ts';
 export { DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness } from './materials/Wetness.ts';
 export type { OceanFFT } from './ocean/OceanFFT.ts';
