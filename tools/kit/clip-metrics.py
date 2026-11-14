@@ -105,6 +105,7 @@ import os  # noqa: E402
 import sys  # noqa: E402
 from concurrent.futures import ProcessPoolExecutor  # noqa: E402
 from threshold_rules import find_rule  # noqa: E402
+from project import project  # noqa: E402
 
 # The application scheduling policy on macOS (tools/kit/qos.mjs says why): the main process
 # re-executes itself in place under taskpolicy -a; the workers are new processes, which do not
@@ -123,7 +124,7 @@ def pool_context():
 		import shlex
 		import shutil
 		import tempfile
-		folder = tempfile.mkdtemp( prefix='ponlai-qos-' )
+		folder = tempfile.mkdtemp( prefix=project()[ 'machine' ][ 'tempPrefix' ] + 'qos-' )
 		atexit.register( shutil.rmtree, folder, True )
 		shim = os.path.join( folder, 'python.sh' )
 		with open( shim, 'w' ) as f:

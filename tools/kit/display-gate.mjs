@@ -16,12 +16,13 @@
 //   deny            ends the permission now
 //   status          says whether headed runs are allowed now (the default command)
 //
-// The permission is a file under the user's home, `.ponlai/display-allowed`, holding the time it
-// ends (`GATE_FILE`). Scripts read it through this module: `requireDisplayAllowed( label )` throws
-// unless headed runs are allowed now, and `profile-frame --display` refuses without it.
-// `announceHeadedRun( { label, scenes, minutes } )` posts a desktop notification (osascript) and
-// then waits 10 s before the window opens, without asking for a reply. A notification that fails
-// is logged on stderr and never stops the run.
+// The permission is a file under the user's home, `.ponlai/display-allowed` (the folder is the
+// configuration's `machine.home`), holding the time it ends (`GATE_FILE`). Scripts read it through
+// this module: `requireDisplayAllowed( label )` throws unless headed runs are allowed now, and
+// `profile-frame --display` refuses without it. `announceHeadedRun( { label, scenes, minutes } )`
+// posts a desktop notification titled with the configuration's `name` (osascript: macOS only;
+// elsewhere it fails and is logged) and then waits 10 s before the window opens, without asking for
+// a reply. A notification that fails is logged on stderr and never stops the run.
 //
 // Output: one line on stdout, `headed runs allowed until <local time>` or `headed runs not
 // allowed`. `allow` writes the file; `deny` removes it.
@@ -36,8 +37,9 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import PROJECT from '../project.mjs';
 
-export const GATE_FILE = path.join( os.homedir(), '.ponlai', 'display-allowed' );
+export const GATE_FILE = path.join( os.homedir(), PROJECT.machine.home, 'display-allowed' );
 
 /** When the permission for headed runs ends, or null if they are not allowed now. */
 export function displayAllowedUntil() {
@@ -69,8 +71,9 @@ export function requireDisplayAllowed( label = 'a headed run' ) {
 // so whoever uses the machine sees it coming. A failed notification never stops a run.
 export async function announceHeadedRun( { label, scenes, minutes } ) {
 
-	const text = `${ label }: a headed run takes the screen in 10 s, ${ scenes } scenes, about ${ minutes } min`.replace( /\\/g, '\\\\' ).replace( /"/g, '\\"' );
-	await new Promise( ( resolve ) => execFile( 'osascript', [ '-e', `display notification "${ text }" with title "Ponlai"` ], ( error ) => {
+	const quote = ( t ) => t.replace( /\\/g, '\\\\' ).replace( /"/g, '\\"' );
+	const text = quote( `${ label }: a headed run takes the screen in 10 s, ${ scenes } scenes, about ${ minutes } min` );
+	await new Promise( ( resolve ) => execFile( 'osascript', [ '-e', `display notification "${ text }" with title "${ quote( PROJECT.name ) }"` ], ( error ) => {
 
 		if ( error ) console.error( `[display-gate] notification failed: ${ error.message.split( '\n' )[ 0 ] }` );
 		resolve();

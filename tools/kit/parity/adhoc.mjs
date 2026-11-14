@@ -43,8 +43,9 @@ import { ROOT } from '../root.mjs';
 const { VIEWS, viewNames, expandViews, ANCHOR_NAMES } = viewTable;
 const NAME = /^[A-Za-z0-9_-]+$/;
 
-// the page's scene options: what a scene jump may change (the configuration's `sceneOptions`)
-const SCENE_OPTIONS = ( () => {
+// the page's scene options: what a scene jump may change (the configuration's `sceneOptions`; a
+// project without them cannot group views by page, and loadSignature says so)
+const SCENE_OPTIONS = PROJECT.sceneOptions && ( () => {
 
 	const m = readFileSync( path.join( ROOT, PROJECT.sceneOptions ), 'utf8' ).match( /const SCENE_OPTIONS = \[([^\]]*)\]/ );
 	if ( ! m ) throw new Error( `adhoc.mjs: SCENE_OPTIONS not found in ${ PROJECT.sceneOptions }` );
@@ -164,6 +165,7 @@ export function viewQuery( name, common ) {
 /** What a page must have been loaded with to reach the query by a scene jump. */
 export function loadSignature( query ) {
 
+	if ( ! SCENE_OPTIONS ) throw new Error( 'adhoc.mjs: this project has no scene options (tools/project.mjs: sceneOptions is null)' );
 	return firstWins( pairs( query ) ).filter( ( [ k ] ) => ! SCENE_OPTIONS.has( k ) ).map( ( [ , p ] ) => p ).sort().join( '&' );
 
 }

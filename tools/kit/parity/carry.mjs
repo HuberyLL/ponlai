@@ -16,7 +16,7 @@
 //     --from <A>, --to <B>   the two commits (any form git resolves)
 //     --url <url>            a preview of B, where the paused sets and spot checks are captured
 //     --carry-url <url>      a preview of A, for what A's store lacks for the checks
-//     --root <dir>           the store's root; default artifacts/parity
+//     --root <dir>           the store's root; default artifacts/parity (`output.parity`)
 //     --tiers <a,b>          default high
 //     --views, --clips, --only  baseline.mjs's selection of entries
 //     --all                  evaluate every condition and carry nothing
@@ -86,7 +86,7 @@ import { BUILD_INPUTS, describeKeyChange, keyMatches, setKey, stable, toolVersio
 import { decodePng, compareFrames } from '../capture-browser.mjs';
 import { viewTable, clipTable } from './tables.mjs';
 import PROJECT from '../../project.mjs';
-import { ROOT } from '../root.mjs';
+import { ROOT, outputDir } from '../root.mjs';
 
 const HERE = path.dirname( fileURLToPath( import.meta.url ) );
 const REPO = ROOT, TOOLS = path.join( ROOT, 'tools' );
@@ -526,7 +526,7 @@ async function cli( argv ) {
 	const { entries } = await import( './baseline.mjs' );
 	const list = entries( { tiers: o.tiers ?? 'high', views: o.views, clips: o.clips, only: o.only } );
 	const targets = list.flatMap( ( e ) => [ { side: 'baseline', e }, { side: 'gt', e } ] );
-	const carry = await planCarry( { from: o.from, to: o.to, storeRoot: o.root ?? path.join( REPO, 'artifacts', 'parity' ), targets, url: o.url, fromUrl: o[ 'carry-url' ],
+	const carry = await planCarry( { from: o.from, to: o.to, storeRoot: o.root ?? outputDir( REPO, 'parity' ), targets, url: o.url, fromUrl: o[ 'carry-url' ],
 		gtAa: 'gt', jobs: o.jobs, all: o.all, recheck: o.recheck } );
 	for ( const t of targets ) {
 

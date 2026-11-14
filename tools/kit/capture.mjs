@@ -16,7 +16,8 @@
 //   node tools/kit/capture.mjs overview --q "paused&t=12&dpr=1" --eval-ready "D.exposure"
 //
 // Options:
-//   name                  the file name under artifacts/captures/ (default `shot`)
+//   name                  the file name under artifacts/captures/ of the working directory (the
+//                         configuration's `output.captures`; default `shot`)
 //   --url base            the server (default http://127.0.0.1:5190/, the dev server)
 //   --q query             the page's query (default `paused&t=12&dpr=1`; docs/reference/url-options.md)
 //   --w, --h, --scale     the viewport in CSS pixels and its device pixel ratio (1600, 900, 1)
@@ -119,6 +120,7 @@ import { launchCapture, waitForScene, waitForSettled, waitForStable, stableOptio
 import { evalSource, runInPage } from './page-eval.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import PROJECT from '../project.mjs';
+import { outputDir } from './root.mjs';
 
 /** The scene jump contract's version this tool drives (`__PONLAI__.sceneJump`, app/Scene.ts). */
 const SCENE_JUMP = 1;
@@ -415,7 +417,8 @@ if ( ! worker ) {
 
 	const query = opt( 'q', PROJECT.query );
 	const url = `${ baseUrl }?${ query }`;
-	await mkdir( 'artifacts/captures', { recursive: true } );
+	const captures = outputDir( '', 'captures' ); // under the working directory
+	await mkdir( captures, { recursive: true } );
 	const session = await openPage( { viewport: { width: W, height: H }, deviceScaleFactor: Number( opt( 'scale', 1 ) ) } );
 	try {
 
@@ -423,7 +426,7 @@ if ( ! worker ) {
 		session.begin();
 		await loadToWorld( session.page, url );
 		await acquireGpuLock( `capture ${ name }`, { shared: sharedFor( query ) } );
-		const shot = await captureView( session, { url, query, evals: [], steps: argEvals, readySteps: readyEvals, out: `artifacts/captures/${ name }`, mode: 'load' } );
+		const shot = await captureView( session, { url, query, evals: [], steps: argEvals, readySteps: readyEvals, out: `${ captures }/${ name }`, mode: 'load' } );
 		console.log( report( shot ) );
 		if ( failed( shot.record ) ) process.exitCode = 1;
 

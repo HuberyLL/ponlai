@@ -20,7 +20,8 @@
 //   --auto      with clean: only if the last clean is 6 h old (job.mjs's background run)
 //
 // What it removes, in the main checkout (git's common directory, where every worktree's tools write
-// their artifacts) and the temp folders:
+// their artifacts) and the temp folders. artifacts/ below is the configuration's output folder
+// (tools/project.mjs `output`: `root`, and `captures`, `profiles` and `storage` in it):
 // - bulk: images and videos of 256 KB or more (captures, clip frames, crops: .png .jpg .jpeg .webm
 //   .mp4 .mov .exr .raw .rgba .bin) and browser profiles left in a task folder, under the folders of
 //   artifacts/ the configuration lists (tools/project.mjs `storage.folders`), once older than
@@ -64,7 +65,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import PROJECT from '../project.mjs';
-import { ROOT } from './root.mjs';
+import { ROOT, outputDir } from './root.mjs';
 
 const HOUR = 3600e3;
 const DAY = 24 * HOUR;
@@ -214,7 +215,7 @@ function linksOf( file, main, linked ) {
 
 		let name = token;
 		try { name = decodeURIComponent( token ); } catch { /* as written */ }
-		for ( const base of [ path.dirname( file ), main, path.join( main, 'artifacts' ) ] ) linked.add( path.resolve( base, name ) );
+		for ( const base of [ path.dirname( file ), main, outputDir( main ) ] ) linked.add( path.resolve( base, name ) );
 
 	}
 
@@ -222,7 +223,7 @@ function linksOf( file, main, linked ) {
 
 function scanArtifacts( main, live, now, o, items ) {
 
-	const artifacts = path.join( main, 'artifacts' );
+	const artifacts = outputDir( main );
 	const linked = new Set();
 	const bulk = [];
 	for ( const root of GENERATED ) {
@@ -343,7 +344,7 @@ function trimItem( slot, now, items, locked ) {
 
 function scanProfiles( main, now, o, items ) {
 
-	const root = process.env.PONLAI_CAPTURE_PROFILES ? path.resolve( process.env.PONLAI_CAPTURE_PROFILES ) : path.join( main, 'artifacts/.capture-profiles' );
+	const root = process.env.PONLAI_CAPTURE_PROFILES ? path.resolve( process.env.PONLAI_CAPTURE_PROFILES ) : outputDir( main, 'profiles' );
 	for ( const e of list( root ) ) if ( e.isDirectory() ) {
 
 		const dir = path.join( root, e.name );
@@ -505,7 +506,7 @@ function apply( { items } ) {
 
 }
 
-const stateDir = ( main ) => path.join( main, 'artifacts', '.storage' );
+const stateDir = ( main ) => outputDir( main, 'storage' );
 
 function lastClean( main ) {
 

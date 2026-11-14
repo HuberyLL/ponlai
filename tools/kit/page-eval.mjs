@@ -44,8 +44,11 @@ import PROJECT from '../project.mjs';
 import { ROOT } from './root.mjs';
 
 // the page's globals (the project's configuration names them) and the module that gives `pipelines`
+// (a project without one: an eval that uses `pipelines` fails with that message)
 const { handle: HANDLE, diagnostics: DIAGNOSTICS } = PROJECT.page;
-const { installScript } = await import( pathToFileURL( path.join( ROOT, PROJECT.pipelines ) ).href );
+const NO_TRACER = 'this project has no pipeline tracer (tools/project.mjs: pipelines is null)';
+const installScript = PROJECT.pipelines ? ( await import( pathToFileURL( path.join( ROOT, PROJECT.pipelines ) ).href ) ).installScript
+	: () => `( () => { throw new Error( ${ JSON.stringify( NO_TRACER ) } ); } )()`;
 
 // (installed in the page on first use only: a probe that never asks pays nothing)
 const TRACE = installScript();

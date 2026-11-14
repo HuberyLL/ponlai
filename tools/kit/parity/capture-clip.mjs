@@ -27,7 +27,7 @@
 //   --gt-jitters <n>        with --aa gt: renders averaged per frame; default 32, 64 for one frame
 //   --quality <tier>        default high
 //   --size <W>x<H>[@<dpr>]  default 1728x1117@2
-//   --out <dir>             default artifacts/clips/<name>
+//   --out <dir>             default artifacts/clips/<name> (the configuration's `output.clips`)
 //   --timeout <ms>          the page's waits; default 240000
 //   --stable-*, --ready-frames <n>, --wait <ms>, --settle <ms>  readiness, as tools/kit/capture.mjs
 //   --runs <file.csv>       append a line to a run log; default the PARITY_RUNS variable, else none
@@ -101,7 +101,7 @@ import { acquireGpuLock, releaseGpuLock, gpuUtilisation } from '../gpu-lock.mjs'
 import { viewTable, clipTable } from './tables.mjs';
 import { launchCapture, waitForScene, waitForStable, stableOptions, decodePng, compareFrames, pngShooter } from '../capture-browser.mjs';
 import PROJECT from '../../project.mjs';
-import { ROOT } from '../root.mjs';
+import { ROOT, outputDir } from '../root.mjs';
 
 const REPO = ROOT;
 const { VIEWS, viewEval } = viewTable;
@@ -169,7 +169,7 @@ if ( dense.some( ( r ) => r.length !== 2 || r.some( ( x ) => ! Number.isInteger(
 // the clip's own crops (clips.mjs `crops`) over the view's
 const crops = options.crops ? options.crops.split( ',' ).filter( Boolean ) : clip.crops ?? view.crops ?? [];
 const timeout = Number( options.timeout ?? 240000 );
-const outDir = path.resolve( options.out ?? path.join( REPO, 'artifacts/clips', name ) );
+const outDir = path.resolve( options.out ?? path.join( outputDir( REPO, 'clips' ), name ) );
 // the crop box in CSS px (384 device px at a ratio of 2, as the parity crops)
 const BOX = 192;
 // A paused one-frame clip's shots before it fails for want of two that agree (see the header).
