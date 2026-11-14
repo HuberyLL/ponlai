@@ -33,7 +33,7 @@ the module's header.
    - An item's row in the top row: [ui/data/resources.ts](../../packages/game/ui/data/resources.ts).
    - A building's model: [view/GameView.ts](../../packages/game/view/GameView.ts). One placed off
      the island or standing above 3 m tells the water
-     ([Materials](../bindings/building-aaa-stylised-realism.md#materials), Tell the water).
+     ([Materials](../bindings/building-cinematic-stylised-realism.md#materials), Tell the water).
    - A building the player places also needs its row in the build bar
      ([ui/data/buildings.ts](../../packages/game/ui/data/buildings.ts)). Where it stands there and
      what it costs are the design's, so a kind without a row has no default and cannot be chosen.

@@ -1,5 +1,5 @@
 ---
-name: building-aaa-stylised-realism
+name: building-cinematic-stylised-realism
 description: Builds or fixes a stylised-realism picture on a physically based renderer, and decides where a change to the picture goes, when grass reads too dark, a frame looks flat or grey, a colour cast covers everything, the distance is too clear or too milky, or a new material does not sit with the rest. Keeps materials at physically plausible values, puts the style in three places only (the content chosen, global light knobs per weather and hour, the image), works in the order content, materials, light, air, exposure, tone, grade, and sends a wrong look to the earliest layer that can cause it. Use with three.js WebGPU renderers, or any physically based renderer, whenever a material, the light, the air, the exposure, the tone mapping or the grade is changed to improve or fix the look.
 ---
 
@@ -51,9 +51,9 @@ Why, and the sources: [background.md](background.md). The knobs of this renderer
 
 Steps marked "(binding: X)" need facts about the project: where its look is described, its kept
 weathers and main view, where measured look values live, its named departures, and its tools for
-the picture. Read section X of `docs/bindings/building-aaa-stylised-realism.md` when you reach the
-step. If the project's `AGENTS.md` or `CLAUDE.md` names another file for this skill, that file
-wins.
+the picture. Read section X of `docs/bindings/building-cinematic-stylised-realism.md` when you
+reach the step. If the project's `AGENTS.md` or `CLAUDE.md` names another file for this skill,
+that file wins.
 
 No binding: find each fact in the project (its art direction or style guide, README, the look's
 tables or settings, its capture tools) and ask the user for what you cannot find. When the work
