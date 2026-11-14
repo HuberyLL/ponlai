@@ -6,18 +6,18 @@ sources. The cases are commits of the project this skill was distilled from, cit
 ## Why one place per fact
 
 An agent cannot tell which of two copies is current. Claude Code's memory page says that when two
-instructions contradict each other the model may pick one arbitrarily. Copies also drift: in the
-source project a page listed every file with a line on what it does, kept by hand beside headers
-that already said it, and it fell behind whenever a file moved (`02106623`). The fix was not to
-keep the page more carefully but to print it from the headers (`54bf9049`), and to make the
+instructions contradict each other the model may pick one arbitrarily. Copies also drift: a page that
+lists every file with a line on what it does, kept by hand beside headers
+that already say it, falls behind whenever a file moves. The fix is not to
+keep the page more carefully but to print it from the headers, and to make the
 header's first line a checked sentence so the printed map stays usable.
 
 ## Why the always-loaded file holds so little
 
-What a rules file holds is read on every turn, whether the turn needs it or not. In the source
-project the rules file had grown to about 49,000 characters: every change read the whole file
-map, every module's rules and a long list of shader pitfalls, and a rule was hard to find among
-them (`05ae8599`). It became an index of rules every change follows, with the detail moved to
+What a rules file holds is read on every turn, whether the turn needs it or not. A rules file
+that grows to tens of thousands of characters makes every change read the whole file map, every
+module's rules and a long list of pitfalls, and a rule is hard to find among them. The cure is an
+index of rules every change follows, with the detail moved to
 where it is owned: module headers, a reference page, the architecture page. Claude Code's memory
 page gives the same advice for its own files (a size target, multi-step procedures and rules for
 one part of the codebase moved to skills or scoped rules) and adds that longer files reduce
@@ -27,11 +27,11 @@ context-engineering article describes both, used together.
 ## Why the architecture page is short
 
 The architecture page is read before a structural change, and a reader has to get through it to
-find the structure. In the source project it had grown to several hundred lines, mostly detail
-its modules' headers already stated (`d655a90c`). It now holds an overview, a map of the folders
+find the structure. One that grows to several hundred lines is mostly detail its modules' headers
+already state. It should hold an overview, a map of the folders
 and one sentence per rule across the layers; each rule's full text, its reason, what enforces it
-and the mistake it came from went to a reference page under the same number (`9f92fefa`), and
-facts of one module went to that module's header (`161f8a58`). Numbers of dropped rules stay
+and the mistake it came from go to a reference page under the same number, and
+facts of one module go to that module's header. Numbers of dropped rules stay
 unused, so every reference by number stays true.
 
 ## Why the current state only
@@ -47,10 +47,10 @@ Instruction files are context, not enforced configuration (Claude Code's memory 
 is loaded when the model judges it relevant (Claude Code's skills page). A rule that must hold has
 to be held by something that runs. The order (architecture, types, lint, test, text) prefers what
 makes the mistake impossible over what catches it, and what catches it over what asks for care.
-Docs need the same: in the source project a path check that read only Markdown paths into one
-folder let a moved tool leave stale mentions in comments, strings and prose; widened to every
-tracked text file, it found one at once (`e042475c`). Skills loaded through tracked links are
-checked so that nothing private is forced in beside them (`4449ee1a`).
+Docs need the same: a path check that reads only Markdown paths into one folder lets a moved
+tool leave stale mentions in comments, strings and prose; one that reads every tracked text file
+finds them. Skills loaded through tracked links are
+checked so that nothing private is forced in beside them.
 
 ## Why an inventory before a rewrite
 
