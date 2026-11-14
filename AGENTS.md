@@ -90,12 +90,10 @@ writing-tools-and-checks (tools and checks), writing-tsl-and-passes (TSL, passes
 - A URL option is declared in `Settings.ts` and read through it only (rule 14; partly:
   `verify-settings`, `verify-layers`). The renderer, the island and the game's rules never touch the
   browser's globals; they are given what they need (rule 13).
-- A file adapted from another project opens with a `/*! ... */` notice (source, SPDX copyright and
-  licence tags), each licence's text in `LICENSES/` (REUSE). Public-domain code (CC0, Unlicense)
-  needs no notice; it and a technique borrowed without code are credited in a comment where used.
-- `CREDITS.md` lists every third-party source (adapted code, assets with source, author, licence and
-  processing, techniques) but npm dependencies (the build collects theirs in `dist/licenses/`). No
-  reference images in git, no unlicensed third-party art.
+- Licences follow REUSE: third-party code opens with a `/*! ... */` notice (source, SPDX copyright
+  and licence tags), each licence's text in `LICENSES/`. `CREDITS.md` lists the sources whose licence
+  asks for a notice or credit, assets included; a technique, a paper or public-domain code is
+  credited in a comment where used. No reference images in git, no unlicensed third-party art.
 - No asset in git: what the page loads lives in the git-ignored `public/`, loads through
   `import.meta.env.BASE_URL`, ships in a GitHub release (`assets-v<N>`, never changed once
   published) pinned by `assets.lock.json`, the new lock in the commit whose code needs it

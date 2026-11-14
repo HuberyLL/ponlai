@@ -21,7 +21,9 @@ homes in this repository:
 | Design page | `docs/design/` (art direction and its subject pages, game design, game UI) |
 | How-to guide | `docs/how-to/`: one task's steps in this project that no skill covers; a method used across tasks is a skill |
 | Module header | The header comment of each file under `packages/` and `app/` |
-| Third-party sources | `CREDITS.md` |
+| Third-party sources whose licence asks for a notice or credit | `CREDITS.md` |
+| A file's copyright and licence | SPDX tags in its `/*! ... */` notice, `REUSE.toml`, `LICENSES/` |
+| A technique, paper or talk | A comment where it is used |
 
 - A rule in a rules file is one line. What enforces it is recorded in the file's lists (Checks,
   below); the mistake behind it goes in the commit message that adds it, never in the file.

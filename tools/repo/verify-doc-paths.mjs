@@ -18,8 +18,7 @@
 // `*`, and a template (`tools/${ name }`, `tools/<name>`) up to its first `$` or `<`, which must
 // exist as a folder. A path written relative to another file (`../docs/x.md`, `./probe.mjs`) is not
 // checked here: imports fail on their own, and lychee checks the Markdown links. The licence files
-// name docs of other projects and are skipped, as are the docs paths in CREDITS.md (an SDK's
-// licence page); its tool paths are ours and are checked. ABSENT lists the paths written on purpose
+// name docs of other projects and are skipped. ABSENT lists the paths written on purpose
 // for a folder that has no file yet, each with its reason and the files allowed to name it.
 //
 // One more check keeps the rules files and the architecture page honest: in every tracked
@@ -53,7 +52,6 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 const FILE = /`([\w./-]+\.(?:ts|mjs|js|json|html|py|css|txt))`/g;
 
 const SKIP = /(LICENSE|LICENCE|package-lock\.json$)/;
-const OTHERS = /^CREDITS\.md$/;
 const ABSENT = new Map( [] );
 const PATH = /(?<![\w./@-])(?:docs|skills|tools)\/[\w./*$<{-]*/g;
 
@@ -86,7 +84,6 @@ for ( const line of out.split( '\n' ).filter( Boolean ) ) {
 	if ( SKIP.test( file ) ) continue;
 	for ( const written of rest.join( ':' ).match( PATH ) ?? [] ) {
 
-		if ( OTHERS.test( file ) && written.startsWith( 'docs/' ) ) continue;
 		paths ++;
 		files.add( file );
 		if ( ABSENT.get( target( written ).path )?.includes( file ) ) continue;
