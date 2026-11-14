@@ -21,6 +21,7 @@ import { liftKey } from './KeyLift.ts';
 import { glossAlpha, specularGGX, fresnel90, keyGlint, glintDirection, glintNormalisation } from './SurfaceBRDF.ts';
 import { environmentBRDF } from './EnvironmentBRDF.ts';
 import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
+import { onSceneDispose } from '../SceneDispose.ts';
 
 // Sunlight bounced off the ground, one diffuse bounce, baked into a map over the island.
 //
@@ -320,6 +321,7 @@ export function installGroundBounce( bounce: GroundBounce ): GroundBounce {
 	return installed = bounce;
 
 }
+onSceneDispose( 'ground bounce', () => { installed = null; } );
 
 /** The ground bounce's irradiance at the surface being lit, at the ambient grade's `sunBounce`
  * (none where none is installed). */

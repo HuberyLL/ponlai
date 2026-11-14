@@ -8,7 +8,7 @@
 //
 // Usage:
 //   node tools/render/scenes.mjs <baseUrl> <outDir> [--scenes ball,sea] [--times a,b] [--views a,b]
-//       [--look neutral|ponlai] [--verify] [--write-ref | --check] [--ref <dir>]
+//       [--look neutral|ponlai] [--verify] [--rebuild n] [--write-ref | --check] [--ref <dir>]
 //       [--q "extra&query"] [--size 1920x1080@2] [--timeout 240000]
 //   node tools/render/scenes.mjs http://127.0.0.1:5190/ artifacts/scenes/run --check
 //
@@ -20,6 +20,8 @@
 //   --views a,b   only these of each scene's views (default every one)
 //   --look l      neutral (the renderer's neutral look, the default) or ponlai (the island's look)
 //   --verify      takes every shot three ways, which must agree to the pixel
+//   --rebuild n   on each scene's page, disposes the scene and starts it again n times, then takes
+//                 every shot again, which must equal the first to the pixel
 //   --check       compares every shot with the reference image of its name
 //   --write-ref   writes the run's shots as the reference (with --verify, only when it passed)
 //   --ref dir     the reference folder (default artifacts/scenes/reference/<look>/, git-ignored)
@@ -50,6 +52,13 @@
 //   reverse order (so each shot is taken twice, each time after another scene before it), and on a
 //   fresh page loaded at that time. So a shot repeats, and a jump to a time draws what a load of
 //   that time draws.
+// - `--rebuild n`: after the first page's shots, the page disposes its scene and starts a new one
+//   n times (`__PONLAI__.rebuild()`: packages/render/assemble/StartScene.ts `dispose`,
+//   packages/render/SceneDispose.ts), then every shot is taken again in the same order. Each must
+//   equal the first to the pixel, with the same draw calls, triangles, geometries and textures in
+//   the diagnostics (not the compute calls, which a bake in the frame shot adds to): so a scene
+//   started after another's dispose draws as the page's first did, and the disposed one left
+//   nothing drawing.
 // - `--check`: a shot without a reference fails. `--write-ref` writes a `reference.json` in each
 //   scene's folder (the commit served, the browser and the size), so a run that writes some scenes
 //   leaves the others' records as they were. A reference holds for the browser and the size it was
@@ -76,7 +85,7 @@
 // slot (tools/kit/capture-browser.mjs `launchCapture`).
 //
 // Cost: a second or two per page load, a minute or two per scene; `--verify` takes every shot three
-// times.
+// times, `--rebuild` twice and n scene starts more.
 //
 // Exit codes: 0 passed; 1 a check failed (a difference, a missing reference, a shot still
 // changing, a page error); 2 bad usage.
@@ -90,7 +99,7 @@ import { renderedFrames } from '../kit/page-eval.mjs';
 
 const argv = process.argv.slice( 2 );
 const flags = new Set( [ 'verify', 'write-ref', 'check' ] );
-const known = [ ...flags, 'scenes', 'times', 'views', 'look', 'ref', 'q', 'size', 'timeout' ];
+const known = [ ...flags, 'scenes', 'times', 'views', 'look', 'ref', 'q', 'size', 'timeout', 'rebuild' ];
 const options = {}, positional = [];
 for ( let i = 0; i < argv.length; i ++ ) {
 
@@ -116,6 +125,8 @@ const size = ( options.size ?? '1920x1080@2' ).match( /^(\d+)x(\d+)(?:@([\d.]+))
 if ( ! size ) usage( `bad --size ${ options.size }` );
 const [ , W, H, scale = '1' ] = size.map( ( s, i ) => i ? Number( s ) : s );
 const timeout = Number( options.timeout ?? 240000 );
+const rebuilds = options.rebuild === undefined ? 0 : Number( options.rebuild );
+if ( ! Number.isInteger( rebuilds ) || rebuilds < 0 ) usage( `bad --rebuild ${ options.rebuild } (a whole number)` );
 let base = positional[ 0 ];
 if ( ! base.endsWith( '/' ) ) base += '/';
 const outDir = path.join( path.resolve( positional[ 1 ] ), look );
@@ -234,7 +245,9 @@ const selected = ( names, wantedNames, what, scene ) => {
 
 };
 
-const all = [], shots = new Map();
+const all = [], shots = new Map(), counts = new Map();
+// what the diagnostics count of a shot's frame: the work drawn and the memory held
+const countsOf = ( diag ) => JSON.stringify( [ 'calls', 'triangles', 'geometries', 'textures' ].map( ( k ) => [ k, diag[ k ] ] ) );
 const verifyDir = path.join( outDir, 'verify' );
 let shotCount = 0;
 try {
@@ -266,10 +279,43 @@ try {
 			const record = { scene, time: time.name, view, query: queryOf( scene, time ), look, light: shot.read.light, exposure: shot.read.exposure, preExposure: shot.read.preExposure, readings };
 			all.push( record );
 			shots.set( key, shot.png );
+			counts.set( key, countsOf( shot.diag ) );
 			await writeFile( path.join( outDir, `${ key }.png` ), shot.png );
 			await writeFile( path.join( outDir, `${ key }.json` ), JSON.stringify( { browser: capture.version, viewport: { width: W, height: H, scale }, ...record, ready: shot.ready, diag: shot.diag, errors }, null, 1 ) );
 			console.log( `${ key } ${ shot.ready.status } ${ ( ( Date.now() - t0 ) / 1000 ).toFixed( 1 ) } s` );
 			if ( shot.ready.status !== 'exact' ) fail( `${ key }: not still when shot (${ shot.ready.status } after ${ shot.ready.framesWaited } frames, ${ shot.ready.maxSeen } levels)` );
+
+		}
+		// ---------------------------------------------------------------- the same page, its scene started again
+		if ( rebuilds ) {
+
+			await slot( `${ scene } rebuild` );
+			t0 = Date.now();
+			for ( let i = 0; i < rebuilds; i ++ ) {
+
+				await page.evaluate( () => window.__PONLAI__.rebuild() );
+				await renderedFrames( page, 1, { timeout } );
+
+			}
+			console.log( `${ scene }: started ${ rebuilds } times more in ${ ( ( Date.now() - t0 ) / 1000 ).toFixed( 1 ) } s` );
+			for ( const { time, view, key } of order ) {
+
+				await slot( `${ key } rebuilt` );
+				await jump( page, queryOf( scene, time ) );
+				const shot = await shoot( page, view );
+				shotCount ++;
+				if ( ! samePixels( shots.get( key ), shot.png ) ) {
+
+					await mkdir( path.dirname( path.join( verifyDir, key ) ), { recursive: true } );
+					await writeFile( path.join( verifyDir, `${ key }.rebuilt.png` ), shot.png );
+					fail( `${ key }: the shot after ${ rebuilds } scene starts differs from the first: ${ difference( shots.get( key ), shot.png ) }` );
+
+				}
+				const now = countsOf( shot.diag );
+				if ( now !== counts.get( key ) ) fail( `${ key }: the counts after ${ rebuilds } scene starts differ from the first: ${ now } against ${ counts.get( key ) }` );
+				console.log( `${ key } rebuilt ${ shot.ready.status }` );
+
+			}
 
 		}
 		if ( errors.length ) fail( `${ scene }: page errors: ${ errors.slice( 0, 4 ).join( ' | ' ) }` );

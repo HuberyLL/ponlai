@@ -1,6 +1,7 @@
 import { TEMPORAL } from './Antialiasing.ts';
 import { motionState, taaCut } from './Motion.ts';
 import { restEpoch } from './TemporalRest.ts';
+import { onSceneDispose } from '../SceneDispose.ts';
 
 // The page's scene events for the temporal modes: what changes the scene says so in one call.
 //
@@ -99,6 +100,15 @@ export const sceneEvents = {
 };
 
 const cutListeners: ( ( reason: string ) => void )[] = [];
+// a disposed scene's listeners and events go with it, and the rest's epoch starts over
+onSceneDispose( 'scene events', () => {
+
+	cutListeners.length = 0;
+	sceneEvents.last = null;
+	sceneEvents.count = 0;
+	Object.assign( restEpoch, { value: 0, scene: 0, reason: null } );
+
+} );
 
 /** Called with the reason whenever an event that cuts is raised, in every anti-aliasing mode. */
 export function onSceneCut( listener: ( reason: string ) => void ): void {

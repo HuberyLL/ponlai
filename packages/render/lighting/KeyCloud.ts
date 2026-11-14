@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { float, mix, uniform } from 'three/tsl';
+import { onSceneDispose } from '../SceneDispose.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -32,6 +33,7 @@ export function setKeyCloud( cloud: ( position: V3 ) => F, floor: F ): void {
 	keyFloor = floor;
 
 }
+onSceneDispose( 'key cloud', () => { keyCloud = null; keyFloor = null; } );
 
 /** The clouds' transmittance along the key and the land's floor, or null before the sky has set
  * them. */

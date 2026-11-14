@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { positionView, vec4 } from 'three/tsl';
 import { followPlantDraw } from '../vegetation/PlantInstances.ts';
+import { onSceneDispose } from '../SceneDispose.ts';
 
 // The opaque scene's depth prepass, for the screen-space occlusion and the screen-space shade.
 //
@@ -41,6 +42,13 @@ import { followPlantDraw } from '../vegetation/PlantInstances.ts';
 /** The opaque copies' scene: drawn in a pass of its own after the vegetation's depth (Pipeline.ts). */
 export const opaquePrepassScene = new THREE.Scene();
 opaquePrepassScene.name = 'opaque prepass';
+// a disposed scene's copies go with it (its renderer freed what they held)
+onSceneDispose( 'opaque prepass', () => {
+
+	opaquePrepassScene.clear();
+	opaquePrepassScene.onBeforeRender = THREE.Object3D.prototype.onBeforeRender;
+
+} );
 
 // whether a mesh takes a copy
 function eligible( object: THREE.Object3D ): object is THREE.Mesh {

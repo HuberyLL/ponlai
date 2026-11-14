@@ -1,5 +1,6 @@
 import { PRE_EXPOSURE_PENDING } from './PreExposure.ts';
 import { TemporalRest, restKey } from './TemporalRest.ts';
+import { onSceneDispose } from '../SceneDispose.ts';
 
 // The page's settled signal: true once a paused page will draw the same frame from now on.
 //
@@ -75,6 +76,8 @@ type AsyncCreate = ( ...args: unknown[] ) => Promise<unknown>;
 
 // the device's async pipeline creations in flight (null: not watched)
 let compiling: number | null = null;
+// the next scene's renderer has a device of its own to watch
+onSceneDispose( 'pipelines watched', () => { compiling = null; } );
 
 /** Counts the device's async pipeline creations in flight, from now on (once per page). The two
  * calls are passed through unchanged. */

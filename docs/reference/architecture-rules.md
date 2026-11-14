@@ -277,8 +277,11 @@ game itself) are lazy exits, imported dynamically, so they stay in chunks of the
 An exit loads its whole package, so a module does nothing as it loads but declare and register: no
 `await` and no read of the page. A module may still hold state at module level (uniforms, buffers,
 tables) and compute constants from the settings as it loads, so that state is one per process: a
-page holds one renderer, and the parts that would clash say so (a second light table and a second
-install of the shared uniforms throw).
+page holds one renderer at a time, and the parts that would clash say so (a second light table and
+a second install of the shared uniforms throw while a scene holds them). A module that holds a
+scene's state registers, as it loads, the release that puts it back as the page loaded it
+([SceneDispose.ts](../../packages/render/SceneDispose.ts)); a running scene's `dispose()` runs them,
+so a scene started after it on the same page draws as a fresh load does.
 
 **Why:** what a package offers is a list that can be read and reviewed, and a change inside a
 package cannot break another.
@@ -286,7 +289,8 @@ package cannot break another.
 **Enforced by:** [verify-layers.mjs](../../tools/repo/verify-layers.mjs) for the imports and the
 lazy exits ([tools/repo/layers.json](../../tools/repo/layers.json));
 [verify-exits.mjs](../../tools/repo/verify-exits.mjs) for what a module does as it loads, and it
-loads the headless and setup exits in node.
+loads the headless and setup exits in node; [scenes.mjs](../../tools/render/scenes.mjs) `--rebuild`
+for a scene started after another's dispose.
 
 **Came from:** a module that worked as it loaded made the order of the imports part of the
 program.

@@ -16,8 +16,9 @@
 // - It reads no browser global (ARCHITECTURE.md, rule 13): the window, the loading screen and the
 //   page's globals come through the host (SceneHost.ts; in a browser, render/browser.ts's
 //   `browserHost`).
-// - One page holds one renderer (the modules' state: `shared`, the settings, the local lights'
-//   table): a second `startScene` follows the first's `dispose()`.
+// - One page holds one renderer at a time (the modules' state: `shared`, the settings, the local
+//   lights' table): a second `startScene` follows the first's `dispose()`, which puts the modules
+//   back as the page loaded them (SceneDispose.ts), so the second draws as a fresh load does.
 // - The tools' contract (docs/bindings/writing-tools-and-checks.md, Build) is kept by every page it
 //   assembles: on debug pages the handles and the diagnostics globals with `settled`, the loading
 //   screen lifted once the scene shows, `establishScene` and `loop.step`.
@@ -27,6 +28,7 @@ import { settings as params, type SettingsQuery } from '../Settings.ts';
 import { qualityProfile, type QualityTier } from '../Quality.ts';
 import type { Look } from '../look/Look.ts';
 import { createShared, installShared, type Shared } from '../shared.ts';
+import { releaseScene, startingScene } from '../SceneDispose.ts';
 import { setAssetBase } from '../FetchAsset.ts';
 import type { ExtraPass } from '../post/ExtraPass.ts';
 import type { PipelineCount } from '../debug/PipelineCounter.ts';
@@ -149,6 +151,7 @@ export async function startScene( host: SceneHost, options: StartOptions, conten
 	const globals: SceneGlobals = { ...DEFAULT_GLOBALS, ...options.globals };
 	if ( options.assetBase !== undefined ) setAssetBase( options.assetBase );
 	const { look } = options;
+	startingScene();
 	// the scene's uniforms, which every material reads: made from the caller's look and installed
 	// before anything builds
 	const shared = createShared( look );
@@ -279,6 +282,7 @@ export async function startScene( host: SceneHost, options: StartOptions, conten
 			running.dispose();
 			render.renderer.dispose();
 			render.renderer.domElement.remove();
+			releaseScene();
 
 		},
 	} ) as RunningScene;

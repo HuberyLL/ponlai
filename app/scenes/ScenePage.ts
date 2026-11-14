@@ -16,7 +16,8 @@
 //   `?debug` / `?profile`. `__PONLAI__.establishScene( query )` jumps to a scene's hour and weather
 //   as a fresh load of that query draws it, the camera back at the scene's first view;
 //   `__PONLAI__.scenePage` holds the scene's own handles: its `views`, `times` and `readings`,
-//   `setView( name )` and `read()`, which measures the readings the view's frame holds.
+//   `setView( name )` and `read()`, which measures the readings the view's frame holds;
+//   `__PONLAI__.rebuild()` disposes the scene and starts it again on the same page.
 // - A scene stands on level ground or in the open sea (TestScene.ts `SceneGround`). Ground has no
 //   end, so its sea is never seen: the water's surface is built, as the frame's passes need it,
 //   and hidden. The open sea is far from any shore and equally deep everywhere (the fields, the
@@ -164,6 +165,14 @@ export async function startScenePage( look: Look ): Promise<void> {
 		handles: () => ( {
 			everyFrame: () => ( { scene: testScene.name, view: shownView } ),
 			handles: () => ( {
+				// disposes the running scene and builds it again in the same page, as a fresh load of its
+				// address builds it (tools/render/scenes.mjs `--rebuild` checks the frames it draws)
+				rebuild: async () => {
+
+					await running.dispose();
+					await startScenePage( look );
+
+				},
 				// the test scene's own handles
 				scenePage: {
 					name: testScene.name, about: testScene.about,
