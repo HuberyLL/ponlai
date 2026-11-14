@@ -76,9 +76,9 @@ The cast the texts give so far:
 
 - The islanders are the people of 含明, west of Penglai, who stitch birds' feathers into clothes and
   drink the dew (拾遗记 卷十).
-- Their gear covers what a figure cannot do well, as Frostpunk's winter clothes do: a woven bamboo
-  hat (笠: the pointed 斗笠 and the flat crowned 箬笠) over a head with no hair and no worked face, in
-  the brim's shade.
+- Their gear covers what a figure cannot do well, a face and hair: a woven bamboo hat (笠: the
+  pointed 斗笠 and the flat crowned 箬笠) over a head with no hair and no worked face, in the brim's
+  shade.
 - White feathers are stitched into a short-sleeved top worn open over the bare chest and belly and
   into shorts to mid-thigh, with bare arms and legs and straw sandals: little cloth, as on an island
   short of everything. No sash or headcloth: a headcloth reads as a bandit's.

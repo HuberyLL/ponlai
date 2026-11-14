@@ -1,7 +1,6 @@
 # Background: why the method works this way
 
-The reasons behind the rules in [SKILL.md](SKILL.md). The costs quoted come from rounds of this
-kind of work recorded in the renderer's own project.
+The reasons behind the rules in [SKILL.md](SKILL.md).
 
 ## Diagnose first
 
@@ -16,7 +15,6 @@ The light a region shows depends on where the sun stands against the view: a fie
 sun behind the camera is lit flat, the same field seen across the sun shows its shade. A row that
 compares a reference region with a region of yours under another sun angle or elevation measures
 the geometry, not the look, and every value fitted to it is wrong in a way no later step reveals.
-About six hours of one round went into fitting such rows.
 
 ## Upstream first
 
@@ -35,8 +33,8 @@ knob varies with shows this in minutes.
 ## Short run before the long one
 
 A long fit that starts from a wrong assumption (a knob that does not move the gap, a view that
-does not repeat, a unit mix-up) fails only at its end. In one recorded round of 12.5 hours, about
-7 went to such a run; a few minutes of a short run would have shown the problem.
+does not repeat, a unit mix-up) fails only at its end, after most of the time it took; a few
+minutes of a short run show the problem.
 
 ## Stop when the fit will not close
 
@@ -47,9 +45,8 @@ ends hides that and leaves values that break at other hours and weathers.
 ## Never fit materials
 
 A material fitted to a finished frame takes on the share of the light's errors the frame shows,
-and breaks when the light is corrected. The renderer's own project recorded this (commit
-`07283bc9`). Materials take measured, physically plausible values; the light, the air and the
-image carry the look.
+and breaks when the light is corrected. Materials take measured, physically plausible values;
+the light, the air and the image carry the look.
 
 ## Good enough on the whole frame
 

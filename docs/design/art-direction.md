@@ -78,8 +78,7 @@ SIGGRAPH 2020; "Real-Time Samurai Cinema", SIGGRAPH 2021).
   chunky and rounded in form, with real materials (wood grain, rope, fired clay). They bridge
   nature and the people.
 - The people: [Life and islanders](life-and-islanders.md#the-islanders).
-- All three share one lighting, one grade and one palette, so they read as one place (as in Alba,
-  Sky and Tchia).
+- All three share one lighting, one grade and one palette, so they read as one place.
 
 ## The light
 
