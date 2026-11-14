@@ -8,7 +8,7 @@ description: Finds the values of the light, air and image knobs of a physically 
 Your reference images show the light, colour and air you want; your frame does not. This skill
 finds which knobs make the gap and fits their values to many measured points. It sets light, air
 and image knobs only. Material values and content are decided elsewhere (the skill
-`building-aaa-stylised-realism`). Why each rule holds: [background.md](background.md).
+`building-cinematic-stylised-realism`). Why each rule holds: [background.md](background.md).
 
 ## Rules most often broken without notice
 

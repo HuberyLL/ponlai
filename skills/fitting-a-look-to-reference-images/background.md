@@ -32,7 +32,7 @@ the geometry, not the look, and every value fitted to it is wrong in a way no la
 The layers depend on each other in one direction: the exposure scales everything, the light falls
 on every surface, the air covers what lies far. A downstream knob fitted before an upstream one
 absorbs the upstream error and must be fitted again when the upstream one moves. The order is the
-one the skill `building-aaa-stylised-realism` uses for every change to the picture.
+one the skill `building-cinematic-stylised-realism` uses for every change to the picture.
 
 ## Form before parameters
 

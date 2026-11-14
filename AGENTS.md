@@ -55,7 +55,7 @@ sun and the sky give it (deep clear water, chunky stone, a lush meadow that move
 ## Skills
 
 Each is `skills/<name>/SKILL.md`, with this project's facts in `docs/bindings/<name>.md`:
-building-aaa-stylised-realism (the look, materials), diagnosing-nonrepeating-frames (frames that
+building-cinematic-stylised-realism (the look, materials), diagnosing-nonrepeating-frames (frames that
 differ by run), diagnosing-visual-defects (on-screen faults), fitting-a-look-to-reference-images
 (light, air, image values), measuring-performance-changes (speed, frame time),
 verifying-rendering-changes (rendering changes), writing-docs-and-skills (docs, rules, skills),
