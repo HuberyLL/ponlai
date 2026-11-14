@@ -6,7 +6,8 @@
 // between them (main.ts).
 import { reloadWith } from './PageSettings.ts';
 import { DAY_PRESETS, type DayPreset, WEATHER_PRESETS, isParkedWeather, type WeatherName, WIND_LEVELS, type WindLevel, LOCAL_TONE, FrameStats, shared, AMBIENT_KNOBS, type AmbientView, markSkyRetune, type AAMode, AA_MODE, renderEvent, debugViewChoices, type RenderParts } from '../packages/render/index.ts';
-import { settings as params, numberSetting, type QualityTier, ACTIVE_QUALITY } from '../packages/render/setup.ts';
+import { numberSetting, type QualityTier, ACTIVE_QUALITY } from '../packages/render/setup.ts';
+import { settings as params } from './AppSettings.ts';
 import GUI from 'lil-gui';
 import { qualityLines } from './QualityDetect.ts';
 import { soilUniforms, setSoilStrength, groundGains, PROPORTION_NAMES, type ProportionName, characterLook, type IslandParts } from '../packages/island/index.ts';

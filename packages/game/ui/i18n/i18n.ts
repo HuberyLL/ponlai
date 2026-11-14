@@ -1,7 +1,7 @@
 import i18next from 'i18next';
 import en from './en.json';
 import zh from './zh-CN.json';
-import { settings } from '../../../render/setup.ts';
+import { settings } from '../../GameSettings.ts';
 
 // The interface's languages, on i18next: every word the player reads is a catalogue's key.
 //

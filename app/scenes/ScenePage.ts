@@ -5,9 +5,9 @@
 // place that assembles it, through the renderer's assembly (render/index.ts `startScene`), on the
 // renderer's neutral inputs (NeutralInputs.ts) where the island hands its world's, with the look its
 // entry picked (`startScenePage`). It draws no island, no game and no GUI.
-// - The scene is `scene=<name>` (index.ts). The scene's options (`weather`, `hour`, `preset`,
-//   `paused`, ...) are the island page's and read the same way (render/index.ts `sceneOptions`), with a
-//   load at noon where the query names no hour.
+// - The scene is `scene=<name>`, which the entry reads and hands over (index.ts). The scene's
+//   options (`weather`, `hour`, `preset`, `paused`, ...) are the island page's and read the same
+//   way (render/index.ts `sceneOptions`), with a load at noon where the query names no hour.
 // - The frame is the renderer's frame stages with nothing of a world's between them, at the tier's
 //   nominal render scale (no dynamic scale: the scenes are shot paused). The canvas is sized before
 //   the haze's bake, as it was before the assembly existed.
@@ -29,15 +29,14 @@
 import * as THREE from 'three/webgpu';
 import { startScene, bakeRainCollision, defaultPlant, placeVegetation, vegetationCasters, neutralBounceGround, neutralFields, neutralLattice, neutralSeaLattice, OPEN_SEA_SHORE, Vegetation, renderEvent, type SceneContext } from '../../packages/render/index.ts';
 import { browserHost } from '../../packages/render/browser.ts';
-import { settings as params, type Look } from '../../packages/render/setup.ts';
+import type { Look } from '../../packages/render/setup.ts';
 import { SCENES } from './index.ts';
 import type { ReadingContext, SceneReading, Triple } from './TestScene.ts';
 
 /** Builds the scene the address names and starts its frame loop, drawn with `look` (the entry's
  * pick: ScenesBoot.ts). */
-export async function startScenePage( look: Look ): Promise<void> {
+export async function startScenePage( name: string, look: Look ): Promise<void> {
 
-	const name = params.get( 'scene' ) ?? '';
 	const host = browserHost( { canvasHost: document.getElementById( 'app' )!, loading: document.getElementById( 'loading' ) } );
 	const testScene = Object.hasOwn( SCENES, name ) ? SCENES[ name ] : null;
 	if ( ! testScene ) {
@@ -170,7 +169,7 @@ export async function startScenePage( look: Look ): Promise<void> {
 				rebuild: async () => {
 
 					await running.dispose();
-					await startScenePage( look );
+					await startScenePage( name, look );
 
 				},
 				// the test scene's own handles

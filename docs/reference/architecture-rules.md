@@ -384,21 +384,22 @@ while it is there.
 
 ## Rule 14: Outside settings are checked once, at one entrance
 
-This is rule 3 on the rendering side. The address's options are declared once, in one schema
-([Settings.ts](../../packages/render/Settings.ts)): a name, a type, a range, a default and the layer
-that owns it. That schema is a renderer file and declares the island's, the game's and the page's
-options too, so an upper layer's new option is an edit to the renderer. The entry parses the address
-through that schema and installs the settings before any module that reads them loads; no other
-module parses an option. The installed settings never change on a page. How they are read, where
-nothing installed them and what may change on a running page:
-[Settings.ts](../../packages/render/Settings.ts), its header.
+This is rule 3 on the rendering side. Each option of the address is declared once, with a name, a
+type, a range and a default, in the table of the lowest layer that reads it: the renderer's in
+[Settings.ts](../../packages/render/Settings.ts), the island's, the game's and the page's beside
+their code, so an upper layer's new option leaves the renderer as it is. The entry merges the tables
+(a name two layers declare throws), parses the address against them and installs the settings before
+any module that reads them loads; no other module parses an option. A layer reads by its own names
+and those below it, so a lower layer cannot read an upper layer's option. The installed settings
+never change on a page. How they are read, where nothing installed them and what may change on a
+running page: [Settings.ts](../../packages/render/Settings.ts), its header.
 
 **Why:** one entrance reports a mistyped option, and the docs' list of the options is written from
-the schema rather than kept by hand.
+the tables rather than kept by hand.
 
 **Enforced by:** [verify-layers.mjs](../../tools/repo/verify-layers.mjs) fails on an address read
 outside the entrance. [verify-settings.mjs](../../tools/repo/verify-settings.mjs) fails when
-[url-options.md](url-options.md) and the schema differ, and when an option's layer is above a
+[url-options.md](url-options.md) and the tables differ, and when an option's layer is above a
 layer that reads it. It sees an option read by its name through the settings' entrance, not one
 read through a helper that takes the name as an argument.
 

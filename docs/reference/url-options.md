@@ -605,12 +605,16 @@ and none of the island's or the game's.
 
 ## Every option
 
-The page reads its options through one entrance, `packages/render/Settings.ts`, which declares each
-one with what it takes, its default and the layer of the code that owns it. The entry parses the
-address once and warns in the console, as `[settings] ?name=value: why`, about each option nobody
-declared and each value outside what its reader tells apart; the page then goes on as it would
-without the warning. This table is written from the declarations (`node tools/repo/verify-settings.mjs
---write`, which `npm run check` runs without `--write` to keep the two equal).
+The page reads its options through one entrance, `packages/render/Settings.ts`. Each layer declares
+its own options there or beside its code, each with what it takes and its default: the renderer in
+`packages/render/Settings.ts`, the island in `packages/island/IslandSettings.ts`, the game in
+`packages/game/GameSettings.ts` and the page in `app/AppSettings.ts`, which merges the four. A
+project that uses the renderer alone reads only the renderer's options. The table's Owner column is
+the layer whose table declares the option. The entry parses the address once and warns in the
+console, as `[settings] ?name=value: why`, about each option nobody declared and each value outside
+what its reader tells apart; the page then goes on as it would without the warning. This table is
+written from the declarations (`node tools/repo/verify-settings.mjs --write`, which `npm run check`
+runs without `--write` to keep the two equal).
 
 <!-- every-option:start (written by tools/repo/verify-settings.mjs --write) -->
 
@@ -619,20 +623,6 @@ without the warning. This table is written from the declarations (`node tools/re
 | `paused` | named (its value unread) | running | render | pauses the scene and both clocks; with it the page is in the test mode |
 | `t` | a number from 0 | 0 | render | the scene time (s) |
 | `dpr` | a number from 0 | the display's ratio, capped | render | pins the canvas's pixel ratio |
-| `polar` | a number | 40 | app | the island view's tilt (degrees) |
-| `az` | a number | 180 | app | the island view's heading (degrees) |
-| `dist` | a number from 0 | frames the land | app | the island view's distance from the default pivot (m) |
-| `cameraInput` | `on`, `off`, named bare | on | island | `off`: the hand does not move the island camera; named bare, as `on` |
-| `gui` | named (its value unread) | hidden | app | shows the GUI |
-| `camera` | `orbit`, `free` | orbit | app | the island camera or the free flight |
-| `nearFov` | a number, 1 to 179, or `off` | 42 | app | the island view's fov at its closest zoom (degrees; `off`: 27 at every distance) |
-| `nearFovFrom` | a number from 0 | 50 | app | the distance the fov widens from (m) |
-| `seed` | a whole number | 1 | island | the world's seed |
-| `grow` | a whole number from 0 | the save's pieces under `game`, else 0 | island | growth steps after the starting island (up to `GROWTH.maxSteps`) |
-| `worldCache` | `on`, `off`, `0`, named bare | on | island | `off` or `0`: generates every chunk instead of reading the browser's cache |
-| `bamboo` | a comma list | the default groves | island | another look of the bamboo: `cover,height` |
-| `approach` | a number, 0 to 1 | 0 | island | the progress toward the next piece, its shoal put on at once |
-| `soil` | `0`, `1` | on | app | `0`: the ground without its soil layer |
 | `hour` | a number | golden-hour (8 under `game`) | render | the hour of the day |
 | `preset` | `dawn`, `sunrise`, `noon`, `golden-hour`, `sunset`, `dusk`, `midnight` | golden-hour | render | the hour by its sun |
 | `dayLength` | a number from 30 | 2880 (1440 under `game`) | render | seconds per day |
@@ -645,13 +635,10 @@ without the warning. This table is written from the declarations (`node tools/re
 | `dayFog` | named (its value unread) | off | render | the day's fog layer under a clear or fair sky |
 | `seaFog` | named (its value unread) | off | render | the deep sea fog |
 | `quality` | `low`, `medium`, `high` | high | render | the quality tier (medium and low parked) |
-| `autoQuality` | `detect`, `off` | parked | app | the GPU timing that chose the tier (parked: read by the tier's reload only) |
-| `autoQualitySlow` | a number from 0.01 | 1 | app | scales the GPU timing's measured time (parked) |
 | `aa` | `msaa`, `taa`, `taau`, `fsr3`, `off`, `gt` | the tier's (high: msaa) | render | the anti-aliasing mode (`gt` on debug pages only) |
 | `msaa` | `1`, `2`, `4` | none | render | the older alias of `aa`: `4` msaa, `1` and `2` off |
 | `fsrDebug` | named (its value unread) | off | render | FSR 3's debug view over its output, under `aa=fsr3` (debug pages only) |
 | `taaResolve` | `off` | on | render | `off`: the temporal modes without their resolve (debug pages only) |
-| `terrainHex` | `0` | on | island | `0`: the cliff's plain triplanar tiling |
 | `post` | a comma list of `legacy`, `inline-composite`, `three-fsr`, `store-scene` | none | render | the frame graph without the first performance round's changes |
 | `gpuTimer` | `off` | on | render | `off`: the dynamic resolution without its timestamp queries |
 | `drsStore` | `on`, `off` | on, off in an automated browser | render | whether the dynamic resolution starts from the scale it last held |
@@ -668,20 +655,37 @@ without the warning. This table is written from the declarations (`node tools/re
 | `testMode` | `0` | on with `paused` | render | `0`: a paused page outside the test mode |
 | `profile` | named bare, `frames` | off | render | loads the frame profiler (`frames`: without GPU timestamps) |
 | `vegPrepass` | `0`, `coverage` | on | render | the vegetation's depth prepass: off, or with coverage kept |
-| `chunkBorders` | named (its value unread) | off | island | shows the world's chunks as lines |
 | `ambientProbes` | `off`, `sky`, `bounce`, `irradiance` | off | render | shows the ambient light's probes (debug pages only) |
 | `windView` | named bare, `arrows`, `plants` | off | render | makes the vegetation's wind visible (debug pages only) |
-| `renderLook` | `neutral`, `ponlai` | the page's own | app | the look the renderer draws with, over the page's own: `neutral` (the renderer's) on the island's page, `ponlai` (the island's) on the test scenes' (debug pages only) |
-| `scene` | `ball`, `empty`, `sea`, `plants` | none | app | the test scene `scenes.html` shows |
+| `cameraInput` | `on`, `off`, named bare | on | island | `off`: the hand does not move the island camera; named bare, as `on` |
+| `seed` | a whole number | 1 | island | the world's seed |
+| `grow` | a whole number from 0 | the save's pieces under `game`, else 0 | island | growth steps after the starting island (up to `GROWTH.maxSteps`) |
+| `worldCache` | `on`, `off`, `0`, named bare | on | island | `off` or `0`: generates every chunk instead of reading the browser's cache |
+| `bamboo` | a comma list | the default groves | island | another look of the bamboo: `cover,height` |
+| `approach` | a number, 0 to 1 | 0 | island | the progress toward the next piece, its shoal put on at once |
+| `terrainHex` | `0` | on | island | `0`: the cliff's plain triplanar tiling |
+| `chunkBorders` | named (its value unread) | off | island | shows the world's chunks as lines |
 | `look` | `kit` | Hanming | island | `kit`: the islanders' earlier kit look |
 | `islander` | `stock`, `subtle`, `medium`, `strong`, `real` | the look's own | island | the islanders' proportions |
 | `body` | text | M30 | island | the scene's walker's sex and age |
 | `bodies` | a comma list | the simulation's three | game | a new game's islanders' sexes and ages |
-| `game` | named (its value unread) | off | app | the island as a game |
 | `load` | named (its value unread) | off | game | resumes the saved game |
 | `new` | named (its value unread) | off | game | starts a new game |
 | `autosave` | `on`, `off` | on, off in an automated browser | game | whether the page keeps the save itself |
 | `lang` | text | zh-CN | game | the interface's language (`zh-CN`, `en`) |
+| `polar` | a number | 40 | app | the island view's tilt (degrees) |
+| `az` | a number | 180 | app | the island view's heading (degrees) |
+| `dist` | a number from 0 | frames the land | app | the island view's distance from the default pivot (m) |
+| `gui` | named (its value unread) | hidden | app | shows the GUI |
+| `camera` | `orbit`, `free` | orbit | app | the island camera or the free flight |
+| `nearFov` | a number, 1 to 179, or `off` | 42 | app | the island view's fov at its closest zoom (degrees; `off`: 27 at every distance) |
+| `nearFovFrom` | a number from 0 | 50 | app | the distance the fov widens from (m) |
+| `soil` | `0`, `1` | on | app | `0`: the ground without its soil layer |
+| `autoQuality` | `detect`, `off` | parked | app | the GPU timing that chose the tier (parked: read by the tier's reload only) |
+| `autoQualitySlow` | a number from 0.01 | 1 | app | scales the GPU timing's measured time (parked) |
+| `renderLook` | `neutral`, `ponlai` | the page's own | app | the look the renderer draws with, over the page's own: `neutral` (the renderer's) on the island's page, `ponlai` (the island's) on the test scenes' (debug pages only) |
+| `scene` | `ball`, `empty`, `sea`, `plants` | none | app | the test scene `scenes.html` shows |
+| `game` | named (its value unread) | off | app | the island as a game |
 | `tier.<knob>` | text | the tier's | render | overrides one knob of the tier (`tier.post.hazeGrid.width=128`) |
 
 <!-- every-option:end -->

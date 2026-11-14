@@ -100,10 +100,10 @@ Readiness comes from the page:
 
 The page's agreements, the only ways a tool meets it:
 
-- The URL options, declared in `packages/render/Settings.ts` and listed in
-  `docs/reference/url-options.md`. A tool sets the page's state through them (`--q`); a node tool
-  that loads the modules installs them as the page does
-  (`installSettings( parseSettings( query ) )`, `tools/render/wgsl-build.mjs` `--q`).
+- The URL options, declared in each layer's settings table (`packages/render/Settings.ts`'s header)
+  and listed in `docs/reference/url-options.md`. A tool sets the page's state through them (`--q`);
+  a node tool that loads the modules installs them as the page does (`installSettings(
+  parseSettings( query ) )`, `tools/render/wgsl-build.mjs` `--q`).
 - The handles the page mounts on `window` on debug pages: `__PONLAI__` (the page's parts and its
   controls), `__PONLAI_WORLD__` (`ready` and `ms`, set as the world starts: `app/WorldBoot.ts`) and,
   with `?profile`, `__PONLAI_PROFILE__` (the frame profiler's readings). The scene page mounts the

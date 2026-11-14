@@ -22,7 +22,7 @@
 import { QUALITY_CHOICE, PAGE_LOOK } from './PageSettings.ts';
 import { startScene, type ExtraPass, type RenderParts } from '../packages/render/index.ts';
 import { browserHost } from '../packages/render/browser.ts';
-import { settings as params } from '../packages/render/setup.ts';
+import { settings as params } from './AppSettings.ts';
 import { FallingLeaves, leavesPass, setSoilStrength, ISLAND_SEA, islandBounceGround, Villagers, loadVillager, PROPORTIONS, createIslandCamera, createTrample, createCharacterShadow, type IslandParts, bakeIslandGround, awaitWorld, createLand, createWorld, createWorldViews, createVegetation, createGrowth, holdOpaque } from '../packages/island/index.ts';
 import { topFromTiles } from '../packages/game/sim/index.ts';
 import { worldJob, landOptions } from './WorldBoot.ts';

@@ -43,7 +43,7 @@ homes in this repository:
 
 - `npm run check`, before every commit (`tools/check.mjs`, its header lists every check). Among
   them, for docs: `tools/repo/verify-headers.mjs` (each module's header opens with one sentence),
-  `tools/repo/verify-settings.mjs` (the URL options page against `packages/render/Settings.ts`; `--write`
+  `tools/repo/verify-settings.mjs` (the URL options page against the layers' settings tables; `--write`
   rewrites its table of every option),
   `tools/repo/verify-skill-links.mjs` (the skills' links under `.claude/`, their frontmatter, size,
   reference files and bindings, and the root's index of them),

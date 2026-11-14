@@ -53,8 +53,8 @@ export interface SceneJumpContent {
 	sceneOptions?: readonly string[];
 	/** the page's value of a load-time option, where it is not the address's */
 	pageValue?( key: string ): string[] | null;
-	/** the page's part of a jump to a query, after the scene's options are set: its camera, say */
-	jump?( query: SettingsQuery ): Promise<void> | void;
+	/** the page's part of a jump to a query (read by the page's own names), after the scene's options are set: its camera, say */
+	jump?( query: SettingsQuery<string> ): Promise<void> | void;
 	/** registers the page's histories, between the renderer's and its light's */
 	histories?(): void;
 }
