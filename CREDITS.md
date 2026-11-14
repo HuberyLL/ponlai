@@ -59,9 +59,8 @@ given in `public/` (`tools/repo/assets.mjs`). A file made by a tool says how in 
 
 - *Rock Face 03*, Dario Barresi and Rico Cilliers,
   [Poly Haven](https://polyhaven.com/a/rock_face_03), CC0-1.0: `public/textures/rock/`.
-- *Brown Mud Leaves 01* and *Forest Ground 01*, Rob Tuytel,
-  [Poly Haven](https://polyhaven.com/a/brown_mud_leaves_01)
-  ([2](https://polyhaven.com/a/forrest_ground_01)), CC0-1.0: `public/textures/ground/`.
+- *Brown Mud Leaves 01*, Rob Tuytel,
+  [Poly Haven](https://polyhaven.com/a/brown_mud_leaves_01), CC0-1.0: `public/textures/ground/`.
 - *CGI Moon Kit*, Ernie Wright, NASA's Scientific Visualization Studio,
   [SVS 4720](https://svs.gsfc.nasa.gov/4720/), public domain; credit: NASA's Scientific
   Visualization Studio. `public/sky/moon/`.
