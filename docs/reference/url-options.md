@@ -618,7 +618,7 @@ without the warning. This table is written from the declarations (`node tools/re
 | --- | --- | --- | --- | --- |
 | `paused` | named (its value unread) | running | render | pauses the scene and both clocks; with it the page is in the test mode |
 | `t` | a number from 0 | 0 | render | the scene time (s) |
-| `dpr` | a number from 0 | the display's ratio, capped | app | pins the canvas's pixel ratio |
+| `dpr` | a number from 0 | the display's ratio, capped | render | pins the canvas's pixel ratio |
 | `polar` | a number | 40 | app | the island view's tilt (degrees) |
 | `az` | a number | 180 | app | the island view's heading (degrees) |
 | `dist` | a number from 0 | frames the land | app | the island view's distance from the default pivot (m) |
@@ -642,8 +642,8 @@ without the warning. This table is written from the declarations (`node tools/re
 | `wind` | `light`, `gentle`, `fresh`, `strong` | the sky's | render | the wind's level; holds the weather |
 | `windDir` | a number | the sky's (40) | render | the wind's heading (degrees); holds the weather |
 | `clouds` | a number, 0 to 1 | the weather's | render | overrides the cloud coverage |
-| `dayFog` | named (its value unread) | off | app | the day's fog layer under a clear or fair sky |
-| `seaFog` | named (its value unread) | off | app | the deep sea fog |
+| `dayFog` | named (its value unread) | off | render | the day's fog layer under a clear or fair sky |
+| `seaFog` | named (its value unread) | off | render | the deep sea fog |
 | `quality` | `low`, `medium`, `high` | high | render | the quality tier (medium and low parked) |
 | `autoQuality` | `detect`, `off` | parked | app | the GPU timing that chose the tier (parked: read by the tier's reload only) |
 | `autoQualitySlow` | a number from 0.01 | 1 | app | scales the GPU timing's measured time (parked) |
@@ -654,9 +654,9 @@ without the warning. This table is written from the declarations (`node tools/re
 | `terrainHex` | `0` | on | island | `0`: the cliff's plain triplanar tiling |
 | `post` | a comma list of `legacy`, `inline-composite`, `three-fsr`, `store-scene` | none | render | the frame graph without the first performance round's changes |
 | `gpuTimer` | `off` | on | render | `off`: the dynamic resolution without its timestamp queries |
-| `drsStore` | `on`, `off` | on, off in an automated browser | app | whether the dynamic resolution starts from the scale it last held |
-| `frameRate` | a number from 0, or `auto` | auto | app | the frame rate the loop holds (0: every refresh) |
-| `frameFallback` | `0` | on | app | `0`: `auto` keeps the tier's rate |
+| `drsStore` | `on`, `off` | on, off in an automated browser | render | whether the dynamic resolution starts from the scale it last held |
+| `frameRate` | a number from 0, or `auto` | auto | render | the frame rate the loop holds (0: every refresh) |
+| `frameFallback` | `0` | on | render | `0`: `auto` keeps the tier's rate |
 | `submits` | `each` | batched | render | `each`: three's own submit per pass |
 | `submitBatch` | a comma list | SubmitBatch.ts's | render | the submit batching's policy: `hold,wait,idle` |
 | `fgOps` | `derived`, `legacy`, `store`, `off` | derived | render | the frame graph's attachment ops |

@@ -21,6 +21,7 @@ import {
 import { SCENE_RADIANCE_SCALE, MOON_GLINT_RADIUS } from '../lighting/Radiometry.ts';
 import { tuneUniform } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
+import { assetUrl } from '../FetchAsset.ts';
 import { STAR_CELLS, CELL_SLOTS, CELL_COUNT, MILKY_WAY_WIDTH, MILKY_WAY_HEIGHT, skyWords, starRecords, loadNightSkyData } from './StarCatalog.ts';
 
 type F = THREE.Node<'float'>;
@@ -385,7 +386,7 @@ export class NightSky {
 	constructor() {
 
 		const loader = new THREE.TextureLoader();
-		const base = import.meta.env.BASE_URL + 'sky/moon/';
+		const base = assetUrl( 'sky/moon/' );
 		const load = ( name: string, colorSpace: string ): [ THREE.Texture, Promise<void> ] => {
 
 			let map!: THREE.Texture;

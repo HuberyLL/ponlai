@@ -322,7 +322,7 @@ export class Villagers implements TrampleWalker {
 	}
 
 	/** The walker as constructed: standing, its clips from their start, its heading taken afresh on
-	 * the next update (a scene jump, app/Scene.ts `establishScene`: a paused clock never finishes a
+	 * the next update (a scene jump, packages/render/assemble/SceneJump.ts `establishScene`: a paused clock never finishes a
 	 * cross-fade the scene before began). */
 	reset(): void {
 

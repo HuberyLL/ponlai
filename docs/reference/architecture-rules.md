@@ -75,13 +75,13 @@ count that was not a number fell back to 1, and a key named `__proto__` broke a 
 
 ## Rule 4: Determinism and path independence
 
-The simulation, the world and its growth, the weather, the wind and every state integrated over
-time (the wind's travel, the fog's time) are functions of the land, the seeds, the scene clock, the
-weather and the calls made. They never depend on the path taken, the thread count or the frame
-rate. A grown page holds the world a fresh load of its land holds. A scene jump (`establishScene`
-in [app/Scene.ts](../../app/Scene.ts)) holds the scene a fresh load of the same query holds. The
-world's chunks and the growth's swap keep the rule for generation: see the headers of
-[Chunks.ts](../../packages/island/world/Chunks.ts) and
+The simulation, the world and its growth, the weather, the wind and every state integrated over time
+(the wind's travel, the fog's time) are functions of the land, the seeds, the scene clock, the
+weather and the calls made. They never depend on the path taken, the thread count or the frame rate.
+A grown page holds the world a fresh load of its land holds. A scene jump (`establishScene` in
+[SceneJump.ts](../../packages/render/assemble/SceneJump.ts)) holds the scene a fresh load of the
+same query holds. The world's chunks and the growth's swap keep the rule for generation: see the
+headers of [Chunks.ts](../../packages/island/world/Chunks.ts) and
 [Growth.ts](../../packages/island/world/Growth.ts).
 
 Rendering may keep a history-dependent effect (a temporal resolve, exposure adaptation, lighting or
@@ -298,8 +298,11 @@ Only the page builds across packages: [app/main.ts](../../app/main.ts) for the i
 stages, functions that take its layer's object and what they need as arguments and put what they
 build on that object ([RenderStages.ts](../../packages/render/RenderStages.ts),
 [IslandStages.ts](../../packages/island/IslandStages.ts): their headers give the stages and their
-order). The page calls the stages in one fixed order, which is part of the image (rule 4), because
-the order materials first build in changes their code. A part reaches another through what it was
+order). Both pages build through the renderer's assembly (`startScene`,
+[StartScene.ts](../../packages/render/assemble/StartScene.ts)), which calls the renderer's stages in
+one fixed order and the page's content in named slots between them; the island's page calls the
+island's stages from those slots. The order is part of the image (rule 4), because the order
+materials first build in changes their code. A part reaches another through what it was
 given or through a registry the other owns (rule 18). A state that changes has one owner, the only
 one that writes it; the others read it or call the owner's operation (rule 8, on the rendering
 side).
@@ -337,6 +340,10 @@ focus and visibility (the frame-rate readout, the island camera's two controls a
 
 A few needs have one module each, and no other file may use them:
 
+- a running scene's host in a browser page: the window's size and events, the document's
+  visibility, the storage, the loading screen and the globals the tools read
+  ([BrowserHost.ts](../../packages/render/assemble/BrowserHost.ts)), behind the renderer's browser
+  exit (`render/browser.ts`), which only the page imports;
 - the frame's pacing ([FramePacer.ts](../../packages/render/post/FramePacer.ts));
 - the asset fetches ([FetchAsset.ts](../../packages/render/FetchAsset.ts));
 - the world's cache in IndexedDB ([WorldCache.ts](../../packages/island/world/WorldCache.ts));
@@ -404,8 +411,9 @@ weather, a new scene, the page shown again), and the land grows.
   scene registers how it is cleared in the table of histories
   ([SceneHistory.ts](../../packages/render/post/SceneHistory.ts)), which a cut and a jump walk in
   the order registered and which names none of them. A jump clears the renderer's entries, then the
-  island's, then the renderer's light, because the page calls the three registration functions in
-  that order ([app/Scene.ts](../../app/Scene.ts)).
+  island's, then the renderer's light, because the jump calls the three registration functions in
+  that order ([SceneJump.ts](../../packages/render/assemble/SceneJump.ts)), the island's through the
+  page's jump content ([app/Scene.ts](../../app/Scene.ts)).
 - The land's growth has no such table yet. The growth
   ([Growth.ts](../../packages/island/world/Growth.ts)) takes its followers as the named fields of one
   interface (`GrowthPage`), and only the plant kinds follow it through a registry (rule 18). A new
@@ -478,8 +486,9 @@ judgement, left to review. A new material follows
 - Time is the scene clock's, in seconds. The hour of the day is derived from it by one function, and
   a per-frame update reads the clock's step, never the wall clock. Three cadences are the exception:
   the sky's cross-fade between two bakes, the interval between periodic sky bakes and the interval
-  between redraws of the refracted sun's map follow the wall clock's step, which the page hands the
-  renderer's frame stages as well (`environmentDt`, [app/Frame.ts](../../app/Frame.ts)). They decide
+  between redraws of the refracted sun's map follow the wall clock's step, which the frame hands the
+  renderer's frame stages as well (`environmentDt`,
+  [SceneFrame.ts](../../packages/render/assemble/SceneFrame.ts)). They decide
   when a bake or a redraw lands, not what it draws: on a paused page a sky bake is due only when the
   clock, the weather or the hour changed, the refracted sun's map is drawn exactly once the light
   rests, and the settled signal waits until the cross-fade has ended and nothing is due. A stepped

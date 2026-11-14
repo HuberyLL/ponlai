@@ -48,7 +48,7 @@
 //
 // One page per set: only load-time options (tier, aa, size and ratio, the debug switches in --q)
 // need a new page. Each page loads the first view it is given and reaches each later one by
-// `__PONLAI__.establishScene( <the view's full query> )`, whose contract (app/Scene.ts) is that the
+// `__PONLAI__.establishScene( <the view's full query> )`, whose contract (packages/render/assemble/SceneJump.ts) is that the
 // frame equals a fresh load's, byte for byte wherever the fresh load repeats. The jump resets the
 // scene's options and camera, not what an eval changed besides (GUI settings, Tune, debug flags, a
 // uniform). So after a view with an eval of its own (an ad-hoc view's js; adhoc.mjs `jumpClean`) the

@@ -167,7 +167,7 @@ async function open( query ) {
 }
 
 // Jumps the page to a time: the scene established, the loop running, a frame rendered at the
-// jump's camera before a view moves it (as a load renders its first frames: app/Scene.ts).
+// jump's camera before a view moves it (as a load renders its first frames: packages/render/assemble/SceneJump.ts).
 async function jump( page, query ) {
 
 	await page.evaluate( async ( q ) => {

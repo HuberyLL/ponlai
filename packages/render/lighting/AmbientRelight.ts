@@ -624,7 +624,7 @@ export class AmbientRelight {
 	private readonly kernel: THREE.ComputeNode;
 	private copy: Copy | null = null;
 	/** whether the output has been written: until the sky's first projection it holds zeros, and no
-	 * shown or settled frame may light the island with it (app/Frame.ts's reveal and settled signal wait) */
+	 * shown or settled frame may light the island with it (assemble/StartScene.ts's reveal and the settled signal wait) */
 	ready = false;
 
 	constructor( { renderer, volume, shared, sky, weights, cloud, seaCloud, keyHeight, dayWindows, grade, sunElevation, rising, clouded, overcast, moon }: AmbientRelightOptions ) {

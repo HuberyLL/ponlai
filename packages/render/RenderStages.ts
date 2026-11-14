@@ -23,9 +23,9 @@
 // The frame's stages (`createFrameStages`) are the renderer's work in a frame, cut where the
 // scene's own work goes between: whether the frame is held, the scene clock, the day and the
 // weather, the sky and its light, the local lights, the weather's effects with the sky's bake, the
-// sun's maps and the sea, the relight, the draw and the submit. A page's tick calls them in that
-// order, once each (app/Frame.ts), with the island's between them (IslandStages.ts
-// `createIslandFrame`).
+// sun's maps and the sea, the relight, the draw and the submit. The frame's tick calls them in that
+// order, once each (assemble/SceneFrame.ts), with a page's content between them (the island's:
+// IslandStages.ts `createIslandFrame`).
 // - The order of the statements inside a frame stage, and of the stages, is part of the image and
 //   of what a stepped clip repeats: a statement reads what the ones before it wrote in the same
 //   frame (the sky's state, the wind, the scene clock). New per-frame work goes into the stage

@@ -22,7 +22,9 @@
 // one for the page (render/index.ts, island/index.ts, game/index.ts) and a headless one for the code that loads without three.js, in the chunk worker and in node (render/data.ts,
 // island/land.ts, game/sim/index.ts). The renderer has a third, its setup exit (render/setup.ts):
 // what the page needs before the renderer's other modules load (the settings, the look, the quality
-// tiers and the render scale they set), which loads in node too. The modules the page loads on
+// tiers and the render scale they set), which loads in node too, and a fourth, its browser exit
+// (render/browser.ts): the host a running scene takes from a browser page, which only the app layer
+// imports. The modules the page loads on
 // demand are lazy exits (`lazy`): the page exits leave them out, so they keep chunks of their own.
 //
 // Guarantees, each a failure (exit 1) when broken:
@@ -124,6 +126,7 @@ const PAGE_NEEDS = {
 	'packages/render/FetchAsset.ts': { need: 'the assets\' fetch', names: [ 'fetch' ] },
 	'packages/render/vegetation/LeafTexture.ts': { need: 'the textures\' canvas', names: [ 'document' ] },
 	'packages/render/Settings.ts': { need: 'the settings\' parser', names: [ 'URLSearchParams' ] },
+	'packages/render/assemble/BrowserHost.ts': { need: 'a running scene\'s host in a browser page', names: [ 'window', 'document', 'navigator' ] },
 };
 
 // Module state written from another file, as 'owner file:variable' -> the files that write it
@@ -144,16 +147,14 @@ const STATE = {
 	'packages/render/post/MeadowShade.ts:screenShadowView': [ 'packages/render/post/Pipeline.ts', 'packages/render/post/PipelinePasses.ts' ],
 	'packages/render/post/Motion.ts:reactiveUniforms': [ 'packages/render/post/TemporalAA.ts', 'packages/render/weather/Lightning.ts' ],
 	'packages/render/post/fsr3/MipBias.ts:fsr3MipBiasScale': [ 'packages/render/post/fsr3/Fsr3Upscaler.ts' ],
-	'packages/render/shared.ts:shared': [ 'packages/render/RenderStages.ts', 'app/Diagnostics.ts', 'packages/render/sky/SkyTrack.ts', 'packages/render/weather/RainCollision.ts' ],
+	'packages/render/shared.ts:shared': [ 'packages/render/RenderStages.ts', 'packages/render/sky/SkyTrack.ts', 'packages/render/weather/RainCollision.ts' ],
 	'packages/render/sky/SkyRetune.ts:skyRetune': [ 'packages/render/RenderStages.ts' ],
 	'packages/render/vegetation/VegetationShadow.ts:shadowWindOn': [ 'packages/render/lighting/SunShadow.ts' ],
 	'packages/island/world/WorldStart.ts:worldProgress': [ 'packages/island/IslandStages.ts' ],
 };
 // The pairs of STATE whose writer sits in another layer than the state's owner, as
-// 'owner file:variable <- writer': the scene's uniforms the page's diagnostics set.
-const ACROSS = [
-	'packages/render/shared.ts:shared <- app/Diagnostics.ts',
-];
+// 'owner file:variable <- writer': none left.
+const ACROSS = [];
 
 for ( const a of process.argv.slice( 2 ) ) {
 
@@ -492,7 +493,7 @@ for ( const [ key, pair ] of upward ) if ( ! known.has( key ) ) failures.push( `
 for ( const key of KNOWN ) if ( ! upward.has( key ) ) failures.push( `KNOWN lists ${ key }, which no longer imports upward: remove the entry` );
 
 // the exits
-const exits = new Map(); // file -> { layer, side: 'page' | 'headless' | 'setup' }
+const exits = new Map(); // file -> { layer, side: 'page' | 'headless' | 'setup' | 'browser' }
 for ( const [ layer, sides ] of Object.entries( layers.exits ) ) for ( const [ side, file ] of Object.entries( sides ) ) exits.set( file, { layer, side } );
 const lazy = new Set( layers.lazy );
 for ( const layer of Object.keys( RANK ).filter( ( l ) => l !== 'app' ) ) if ( ! layers.exits[ layer ]?.page || ! layers.exits[ layer ]?.headless ) failures.push( `tools/repo/layers.json: the ${ layer } package has no page or no headless exit` );
@@ -521,6 +522,8 @@ for ( const from of files ) {
 		if ( table[ from ] === table[ to ] || table[ to ] === 'app' ) continue;
 		across ++;
 		const exit = exits.get( to );
+		// the renderer's browser exit (render/browser.ts) is the page's alone
+		if ( exit?.side === 'browser' && table[ from ] !== 'app' ) failures.push( `${ from }: imports ${ to }, the browser's host, which only the page (app/) takes: a package is handed what it needs of the browser` );
 		if ( exit || lazy.has( to ) ) continue;
 		failures.push( `${ from }: imports ${ to } across packages: import it from ${ Object.values( layers.exits[ table[ to ] ] ).join( ' or ' ) }, the ${ table[ to ] } package's exits` );
 
