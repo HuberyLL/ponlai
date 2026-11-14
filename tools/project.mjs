@@ -1,11 +1,15 @@
 // The project's values that the generic tools in tools/kit/ read, so that a kit tool names no part
 // of this project: the globals the page mounts and its loading screen (the page's agreements:
-// docs/bindings/writing-tools-and-checks.md, Build), the dev server's address and the capture's
-// default query, what a stored reference depends on and what may carry it over, where the views'
-// and clips' tables are, where the scene's options are listed, the module that adds the pipeline
-// tracer to a page's eval, what the disk clean ages out and the servers serve.mjs starts. A kit
-// tool imports this file and nothing else outside tools/kit/ (tools/repo/verify-kit.mjs checks
-// that, and that no page global is named in the kit). Paths are written from the repository's root.
+// docs/bindings/writing-tools-and-checks.md, Build), the project's name, where the tools write and
+// the names they share on the machine (the GPU lock, the jobs' registry, temp folders), the dev
+// server's address and the capture's default query, what a stored reference depends on and what may
+// carry it over, where the views' and clips' tables are, where the scene's options are listed, the
+// module that adds the pipeline tracer to a page's eval, what the disk clean ages out and the servers
+// serve.mjs starts. A kit tool imports this file and nothing else outside tools/kit/; the kit's
+// Python tools read it through tools/kit/project.py (tools/repo/verify-kit.mjs checks that, and that
+// no page global, output folder or the project's name is written in the kit). Paths are written from
+// the repository's root. Another project may set `tables` (or one of its two), `sceneOptions` and
+// `pipelines` to null: a tool that needs one then fails saying the project has none.
 export default Object.freeze( {
 
 	page: Object.freeze( {
@@ -25,6 +29,45 @@ export default Object.freeze( {
 		// the first too: packages/render/post/Pipeline.ts freezes the exposure while it is set)
 		clip: '__PONLAI_CLIP__',
 		clipNotes: '__PONLAI_CLIP_NOTES__',
+	} ),
+
+	// the project's name: the title of the notices the tools post (tools/kit/display-gate.mjs)
+	name: 'Ponlai',
+
+	// where the tools write: the folder `root` under a checkout's top, and each kind of output in a
+	// folder under it (which checkout's top: each tool's header; the main checkout's for the shared
+	// ones, `profiles` and `storage`). The project's git-ignore holds `root`.
+	output: Object.freeze( {
+		root: 'artifacts',
+		// tools/kit/capture.mjs, by name
+		captures: 'captures',
+		// tools/kit/parity/capture-clip.mjs, by clip
+		clips: 'clips',
+		// tools/kit/compare-captures.py's crops and metrics
+		comparison: 'comparison',
+		// the logs of tools/kit/job.mjs and tools/kit/serve.mjs
+		jobs: 'jobs',
+		// the reference store of tools/kit/parity/baseline.mjs and carry.mjs
+		parity: 'parity',
+		// the capture browsers' profiles (tools/kit/capture-browser.mjs), in the main checkout
+		profiles: '.capture-profiles',
+		// the disk clean's state and log (tools/kit/storage.mjs), in the main checkout
+		storage: '.storage',
+	} ),
+
+	// the names the tools give what they share across the checkouts on this machine; changing one
+	// parts the sessions that still use the old one, so a running machine keeps them
+	machine: Object.freeze( {
+		// the GPU lock's folder, in the user's temp folder (tools/kit/gpu-lock-impl.mjs); its files are
+		// named after it. Two projects that render on one GPU may share it by naming the same lock.
+		gpuLock: 'ponlai-gpu.lock',
+		// the jobs' registry, beside the lock (tools/kit/job.mjs)
+		jobs: 'ponlai-jobs',
+		// the prefix of the run folders the tools make in the system's temp folder and remove (probe's
+		// fresh browser profile, clip-metrics' scheduling shim)
+		tempPrefix: 'ponlai-',
+		// the per-user folder under the home folder: the display gate's permission
+		home: '.ponlai',
 	} ),
 
 	// the dev server a page tool opens without a URL, and the query of a capture or probe without one

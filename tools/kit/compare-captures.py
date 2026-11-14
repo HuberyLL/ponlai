@@ -13,7 +13,8 @@ the tool with an assertion.
 Output: per region its box and the metrics of each image (pixels.metrics in tools/kit/pixels.py,
 which `tools/kit/img.py stats` reports too: mean RGB, luma mean and spread, local contrast) as JSON
 on stdout and in artifacts/comparison/metrics.json, and in artifacts/comparison/ each region's
-before and after crops and a pair with both side by side.
+before and after crops and a pair with both side by side (the folder under the working directory
+is the configuration's output.comparison, tools/project.mjs).
 
 GPU lock and browser: neither; it reads two PNG files. Cost: under a second.
 
@@ -32,11 +33,12 @@ import json  # noqa: E402
 from PIL import Image, ImageDraw  # noqa: E402
 
 from pixels import metrics  # noqa: E402
+from project import project  # noqa: E402
 
 
 before, after = [Image.open(path).convert("RGB") for path in sys.argv[1:3]]
 assert before.size == after.size == (1672, 941), "Use matching overview cameras at 1672 x 941"
-out = Path("artifacts/comparison")
+out = Path(project()["output"]["root"]) / project()["output"]["comparison"]
 out.mkdir(parents=True, exist_ok=True)
 regions = {
     "cliff": (320, 600, 1100, 790),

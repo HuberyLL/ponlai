@@ -22,8 +22,9 @@
 // - The browser build is in the path because a profile does not move between browser versions:
 //   Playwright's Chromium is named by its install folder (`chromium-1243`), a CHROME_PATH browser
 //   by its `--version` output.
-// - The root is `artifacts/.capture-profiles` of the main checkout (git's common directory), so
-//   every worktree shares the warm slots; PONLAI_CAPTURE_PROFILES moves it. Safe to delete.
+// - The root is `artifacts/.capture-profiles` of the main checkout (git's common directory; the
+//   configuration's `output.profiles`), so every worktree shares the warm slots;
+//   PONLAI_CAPTURE_PROFILES moves it. Safe to delete.
 // - What the profile keeps cannot change a capture: the world cache is keyed on the generator's
 //   sources, options and browser (a hit is byte-identical to a miss), and each preview port is its
 //   own origin with its own entry; the shader cache is keyed on the shader. The HTTP cache
@@ -140,7 +141,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { createHash } from 'node:crypto';
 import PROJECT from '../project.mjs';
-import { ROOT as REPO } from './root.mjs';
+import { ROOT as REPO, outputDir } from './root.mjs';
 
 // the page's globals and its loading screen, as the project's configuration names them, for the
 // page code below (passed in: a closure run in the page sees nothing of node's scope)
@@ -165,7 +166,7 @@ function profileRoot() {
 		if ( path.basename( common ) === '.git' ) main = path.dirname( common );
 
 	} catch { /* not a git checkout: this one */ }
-	return path.join( main, 'artifacts/.capture-profiles' );
+	return outputDir( main, 'profiles' );
 
 }
 

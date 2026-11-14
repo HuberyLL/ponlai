@@ -52,7 +52,8 @@
 // followed) and runs git worktree prune.
 //
 // Output: the served checkout's line, then `<url>  log <path>  (stop: node tools/kit/job.mjs stop
-// <path>)`. The log is artifacts/jobs/serve-<mode>-<port>.log in the calling checkout
+// <path>)`. The log is artifacts/jobs/serve-<mode>-<port>.log in the calling checkout (the
+// configuration's `output.jobs`)
 // (serve-<mode>-sha-<12 hex>-<port>.log for `--sha`). On a failure the log's tail is printed.
 //
 // GPU lock and browser: neither; it starts a server (a detached job that outlives this process:
@@ -70,7 +71,7 @@ import { existsSync, readFileSync, readdirSync, mkdirSync, symlinkSync, writeFil
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import PROJECT from '../project.mjs';
-import { ROOT } from './root.mjs';
+import { ROOT, outputDir } from './root.mjs';
 
 // This checkout's root and the job tool beside this file; the checkout it serves is `caller`, below.
 const here = ROOT;
@@ -372,7 +373,7 @@ async function serve( p, log ) {
 
 for ( ;; ) {
 
-	const log = join( caller, 'artifacts', 'jobs', `serve-${ mode }${ tag ? `-sha-${ tag }` : '' }-${ port }.log` );
+	const log = join( outputDir( caller, 'jobs' ), `serve-${ mode }${ tag ? `-sha-${ tag }` : '' }-${ port }.log` );
 	const url = `http://127.0.0.1:${ port }/`;
 	const result = await serve( port, log );
 	if ( result === 'ready' ) {

@@ -20,7 +20,8 @@
 //   node tools/kit/job.mjs start --wait -- npm run build
 //
 // Options:
-//   --log file           the job's log (default <repo top>/artifacts/jobs/<UTC stamp>-<command>.log)
+//   --log file           the job's log (default <repo top>/artifacts/jobs/<UTC stamp>-<command>.log;
+//                        the folder is the configuration's `output.jobs`)
 //   --wait               with start: waits on the job within the budget
 //   --lines n            the log's last lines shown (start --wait 20; wait, status, list 5)
 //   --role agent|main    the budget: agent 240 s (the default), main 3300 s
@@ -83,9 +84,10 @@
 // then one line for the lock as a whole. A condition's wait prints `done after Xs`, `still waiting
 // after Xs` or `timer ended after Xs`, each with the budget and role. `stop` prints what it
 // stopped. Every `run` and `start` registers itself in `<tmp>/ponlai-jobs/<runner pid>.json` (the
-// log, the runner's and the command's pids, cwd, command, start time); `<tmp>` is the GPU lock's
-// temporary root, so a scratch `PONLAI_GPU_LOCK_DIR` moves the registry with the lock. The runner
-// removes its entry after the end line; `list` and `stop` prune entries whose runner is gone.
+// log, the runner's and the command's pids, cwd, command, start time; the folder's name is the
+// configuration's `machine.jobs`); `<tmp>` is the GPU lock's temporary root, so a scratch
+// `PONLAI_GPU_LOCK_DIR` moves the registry with the lock. The runner removes its entry after the end
+// line; `list` and `stop` prune entries whose runner is gone.
 //
 // GPU lock and browser: neither; it reads the lock's state to show where a job stands. Cost: under
 // a second, plus the wait.
@@ -104,12 +106,14 @@ import { fileURLToPath } from 'node:url';
 import { estimateWaits, etaText, LOCK_DIR, lockState } from './gpu-lock.mjs';
 import { appPolicy } from './qos.mjs';
 import { autoClean } from './storage.mjs';
+import PROJECT from '../project.mjs';
+import { outputDir } from './root.mjs';
 
 const BUDGETS = { agent: 240, main: 3300 };
 const STILL_RUNNING = 124;
 const POLL_MS = 1000;
 const CONDITION_POLL_MS = 2000;
-const REGISTRY = path.join( path.dirname( LOCK_DIR ), 'ponlai-jobs' );
+const REGISTRY = path.join( path.dirname( LOCK_DIR ), PROJECT.machine.jobs );
 const BEGIN = performance.timeOrigin;
 
 const sleep = ( ms ) => new Promise( ( r ) => setTimeout( r, Math.max( 0, ms ) ) );
@@ -152,12 +156,13 @@ function repoTop( dir ) {
 
 }
 
-// <repo top>/artifacts/jobs/<UTC stamp>-<slug>.log, numbered when the same command starts twice in a second
+// <repo top>/artifacts/jobs/<UTC stamp>-<slug>.log (the folder: the configuration's `output.jobs`),
+// numbered when the same command starts twice in a second
 function defaultLog( cmd ) {
 
 	const stamp = new Date().toISOString().replace( /[-:]/g, '' ).replace( /\.\d+Z$/, 'Z' );
 	const slug = cmd.join( ' ' ).replace( /\S*\//g, '' ).toLowerCase().replace( /[^a-z0-9]+/g, '-' ).replace( /^-|-$/g, '' ).slice( 0, 48 ).replace( /-$/, '' ) || 'job';
-	const dir = path.join( repoTop( process.cwd() ), 'artifacts', 'jobs' );
+	const dir = outputDir( repoTop( process.cwd() ), 'jobs' );
 	let file = path.join( dir, `${ stamp }-${ slug }.log` );
 	for ( let i = 2; existsSync( file ); i ++ ) file = path.join( dir, `${ stamp }-${ slug }-${ i }.log` );
 	return file;

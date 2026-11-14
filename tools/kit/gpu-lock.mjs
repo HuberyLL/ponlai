@@ -64,10 +64,11 @@
 // and `queue, in turn:`. `gpu` prints `{ utilisation, clients }`. `log` prints per group the
 // requests, waits and holds (median, p95, total; lease uses and yields, take-overs, timeouts,
 // abandoned and stale holds apart) and the longest waits with the holds that overlapped them. The
-// log itself, `ponlai-gpu.lock.log.jsonl` beside the lock (rotated to `.log.1.jsonl` past 4 MB),
-// holds a JSON line per request, grant, release, timeout and abandoned request: time, pid, label,
-// mode, `class` (the level), `source`, ticket, `ppid` and `cwd`, the wait or hold in ms, and why a
-// hold ended when its holder did not end it (`handed`, `yielded`, `stale`, `lease`).
+// log itself, `ponlai-gpu.lock.log.jsonl` beside the lock (the lock's name is the configuration's
+// `machine.gpuLock`; rotated to `.log.1.jsonl` past 4 MB), holds a JSON line per request, grant,
+// release, timeout and abandoned request: time, pid, label, mode, `class` (the level), `source`,
+// ticket, `ppid` and `cwd`, the wait or hold in ms, and why a hold ended when its holder did not
+// end it (`handed`, `yielded`, `stale`, `lease`).
 //
 // GPU lock and browser: `run` takes the lock (alone, or a slot with --shared) for its command's
 // whole run; the other commands take nothing and open no browser. Cost: under a second, except the

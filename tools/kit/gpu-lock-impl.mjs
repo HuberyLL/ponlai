@@ -34,6 +34,7 @@ import { execFile, execFileSync, spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import PROJECT from '../project.mjs';
 
 // The lock's design.
 //
@@ -244,7 +245,8 @@ function tempRoot() {
 /** This implementation's version: the entry (gpu-lock.mjs) loads the highest on the machine. */
 export const LOCK_VERSION = 5;
 
-export const LOCK_DIR = path.join( process.env.PONLAI_GPU_LOCK_DIR || tempRoot(), 'ponlai-gpu.lock' );
+// the lock's name is the configuration's (`machine.gpuLock`), the same in every copy of the project
+export const LOCK_DIR = path.join( process.env.PONLAI_GPU_LOCK_DIR || tempRoot(), PROJECT.machine.gpuLock );
 const OWNER = path.join( LOCK_DIR, 'owner.json' );
 const MEMBERS = path.join( LOCK_DIR, 'shared' );
 const WAITING = `${ LOCK_DIR }.waiting`;
