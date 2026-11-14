@@ -1,6 +1,6 @@
 ---
 name: fitting-a-look-to-reference-images
-description: Finds the values of the light, air and image knobs of a physically based renderer (exposure, tone, sun and sky light, ambient balance, haze and fog, white balance, grade) that bring a rendered frame to the reader's own reference images, when the picture's light, colour or fog differs from them. Diagnoses where each gap comes from before changing anything, measures by region class with each row's view geometry, works upstream first, checks a function's form before fitting its parameters, fits many points numerically after a short trial run, stops when a fit will not close, and judges good enough on the whole frame. Use with three.js WebGPU renderers, or any renderer with tunable look knobs, whenever a look is matched to reference images or photographs by changing light, air or image values.
+description: Finds the values of the light, air and image knobs of a physically based renderer (exposure, tone, sun and sky light, ambient balance, haze and fog, white balance, grade) that bring a rendered frame to the reader's own reference images, when the picture's light, colour or fog differs from them. Gets reference images shot as still, lossless, unfiltered frames with their sun and time recorded, diagnoses where each gap comes from before changing anything, measures by region class with each row's view geometry, works upstream first, checks a function's form before fitting its parameters, fits many points numerically after a short trial run, stops when a fit will not close, and judges good enough on the whole frame. Use with three.js WebGPU renderers, or any renderer with tunable look knobs, whenever a look is matched to reference images or photographs by changing light, air or image values.
 ---
 
 # Fitting a look to reference images
@@ -12,6 +12,9 @@ and image knobs only. Material values and content are decided elsewhere (the ski
 
 ## Rules most often broken without notice
 
+- A reference image is shot for the fit: lossless, at native resolution, with nothing laid over
+  it, and with its time, weather and sun written down. A flaw in it never shows in the rows; it
+  shows as a fit that will not close.
 - Diagnose before you change anything. Spend the first part of the work (on a full scene, an hour
   or two) measuring only: where does each gap come from, and which change can move it.
 - Every measured row carries its view geometry: the angle between the view and the sun, the sun's
@@ -48,6 +51,7 @@ per step.
 Copy this checklist and keep it up to date:
 
 ```text
+- [ ] 0. Get the reference images
 - [ ] 1. Match the views
 - [ ] 2. Measure rows by region class
 - [ ] 3. Diagnose each gap
@@ -57,6 +61,32 @@ Copy this checklist and keep it up to date:
 - [ ] 7. Judge the whole frame
 - [ ] 8. Record
 ```
+
+### 0. Get the reference images
+
+Skip this step when the images are given; check them against it, and ask for what is missing.
+
+1. Choose sources at the standard you aim for: photographs of the kind of place you are making,
+   or frames you shoot yourself from games or films whose look you want. Never images found
+   online: they are recompressed, resized and often graded again.
+2. Shoot lossless at the display's native resolution: PNG, or the screenshot tool's uncompressed
+   copy (many tools save JPEG by default). Use standard dynamic range output with HDR off, and
+   leave brightness and gamma at their defaults: a frame shot otherwise is not the image a viewer
+   sees.
+3. Turn off what is laid over the image: the interface, filters and photo-mode looks, vignette,
+   depth of field, film grain, chromatic aberration, motion blur, lens dirt. Keep the source's own
+   tone and grade: they are part of its look. Use its highest quality settings, with dynamic
+   resolution and upscaling off where it allows.
+4. Shoot still frames: a pause, or a photo mode with time frozen, so a view can be shot again. Keep
+   a photo mode's field of view and exposure at their defaults and write down any you change.
+5. Write down with each image what step 1 needs: the time of day, the weather, the sun's elevation
+   and its angle to the view (from the shadows when the source does not show it), the settings and
+   the field of view. What is not written when the image is shot cannot be recovered.
+6. Shoot sets, not single images: one view at several hours and weathers, each frame holding the
+   region classes step 2 measures (sunlit ground and its shade, sky near and away from the sun,
+   far land, sea).
+7. Keep the images out of the repository and within their licence: frames of a game and other
+   people's photographs are for comparison, never shipped.
 
 ### 1. Match the views (binding: Views)
 
