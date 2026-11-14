@@ -1,7 +1,7 @@
 /*!
  * Portions adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater).
- * Copyright (c) 2026 DRG Software Solutions LLC
- * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
@@ -22,6 +22,8 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
+// The sky's colour nodes: the dome's colour, the bakes' panoramas and the deck's glow.
+//
 // The sky's colour nodes (Sky.ts, whose header says what the sky draws and why): the dome's colour
 // toward each pixel (`domeColour`), the bakes' toward each texel of their panoramas (`bakeColour`,
 // the distant sea's body in `seaNode`), the closed deck's glow (`glowToward`) and the mean cloud

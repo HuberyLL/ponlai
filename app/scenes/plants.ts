@@ -1,3 +1,5 @@
+// A patch of plants: one plant kind drawn with the default plant, lit, shadowed and measured.
+//
 // A patch of plants: one plant kind registered without art of its own, so the registry draws it with
 // the default plant (vegetation/DefaultPlant.ts), scattered over a 32 m square of level grey
 // ground, and an upright post among them whose shade falls across them. It shows a plant kind

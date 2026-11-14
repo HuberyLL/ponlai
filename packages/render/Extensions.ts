@@ -1,5 +1,7 @@
 import type { QualityProfile } from './Quality.ts';
 
+// What every registered definition declares: its cost knob, its test-mode stand and its growth.
+//
 // What every registered definition declares. The renderer is extended at named points, each a
 // registry its owner reads in the order registered and never by name: a kind of plant
 // (vegetation/Registry.ts), a kind of local light (lighting/LocalLights.ts), a pass of the
@@ -12,7 +14,7 @@ import type { QualityProfile } from './Quality.ts';
 //
 // The declarations are statements, not hooks: the registries do not act on them. They say where
 // to look (the knob to turn in a cost test, the switch the test mode holds the effect by, the
-// follower that carries it through a growth); tools/verify-extensions.mjs registers definitions of
+// follower that carries it through a growth); tools/render/verify-extensions.mjs registers definitions of
 // its own at every point and checks that one without them is refused.
 //
 // This module imports types only, so the CPU-only tools can load it under plain node.

@@ -2,11 +2,13 @@ import { tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from '../sky/SkyRetune.ts';
 import type { DayLook, Span } from './Look.ts';
 
+// The day's windows built from a look's table: the key's handoff, dusk and the night's layers.
+//
 // The day's windows built from a look's table (look/Look.ts `DayLook`): where the key turns from
 // the sun to the moon, the dusk's windows, how deep under all of it each night layer comes in and
 // the ease at the window's night end. Like the exposure (look/ExposureLook.ts), they are taken as
 // an argument where the renderer's sky stage creates them (RenderStages.ts `createSky`), so two
-// made from two tables hold their own numbers (tools/verify-look-params.mjs) and this module holds
+// made from two tables hold their own numbers (tools/render/verify-look-params.mjs) and this module holds
 // none at module level. sky/DayCycle.ts reads them for the night's shares, each share's function
 // taking them as its first argument; its header says how the day runs. The day cycle
 // (`DayCycle.windows`) and the sky (`Sky.dayWindows`) carry them to the sky's track, the ambient

@@ -1,5 +1,7 @@
 import type { AmbientLook, AmbientRowLook } from '../../render/setup.ts';
 
+// The island's environment-light look: the ambient grade's table and the low key's lift.
+//
 // The island's environment-light look (packages/island/look/: the island's numbers for the renderer's
 // look tables, look/Look.ts; look/AmbientLook.ts makes the grade's tables and the lift from these): the ambient grade's table by the
 // sun's elevation and the weather's skies, with the gains under overcast's deck, and the low key's

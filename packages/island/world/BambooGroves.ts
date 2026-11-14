@@ -2,6 +2,8 @@ import { fbm2, hash3i, mulberry32, noise3, smoothstep, type Bounds } from '../..
 import { sampleRimGround } from './RimGround.ts';
 import type { RimGroundField } from './types.ts';
 
+// Where the bamboo stands: groves, lobes and lone culms over the whole island.
+//
 // Where the bamboo stands (Bamboo.ts builds the culms): over the whole island, as a running bamboo
 // left to itself takes a hillside. Its rhizomes carry it out in groves, dense inside and of an even
 // height, whose edges run out in lobes and tongues where the rhizomes advanced, a few culms

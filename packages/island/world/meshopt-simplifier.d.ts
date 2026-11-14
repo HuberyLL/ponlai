@@ -1,3 +1,5 @@
+// Types for the part of meshoptimizer's simplifier that IslandSimplify.ts uses.
+//
 // The part of meshoptimizer's simplifier (three's copy, examples/jsm/libs) that IslandSimplify.ts
 // uses: @types/three declares no types for it.
 declare module 'three/examples/jsm/libs/meshopt_simplifier.module.js' {

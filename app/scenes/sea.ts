@@ -1,3 +1,5 @@
+// The open sea: the water alone, with two balls in it, under the sky and the wind.
+//
 // The open sea: the water alone, far from any shore and equally deep everywhere, with two balls in
 // it, one floating high on the surface and one sunk to its middle, so the waterline, the light under
 // the surface and the refraction through it show on plain surfaces. It shows the far sea against the

@@ -1,3 +1,5 @@
+// The page's control panel (lil-gui): the scene's folders, the look's and the haze's.
+//
 // The page's control panel (lil-gui): the scene's folders (time, weather, wind, camera, ground,
 // islander, quality) and, once the frame's passes and the haze exist, the look's and the haze's.
 // Its handlers call the renderer's and the island's operations; the game adds its own folder

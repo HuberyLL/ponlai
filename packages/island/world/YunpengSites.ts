@@ -5,6 +5,8 @@ import { RIM_REACH, sampleRimGround } from './RimGround.ts';
 import { shoreDistance } from './ShoreSample.ts';
 import type { RimGroundField } from './types.ts';
 
+// Where the yunpeng stands: single clumps in the meadow, sparse, from a world lattice.
+//
 // Where the yunpeng stands (Yunpeng.ts builds its clumps): single clumps in the meadow, sparse, an
 // accent and never a stand (tall and glowing, a drift of them would hide the islanders by night).
 //

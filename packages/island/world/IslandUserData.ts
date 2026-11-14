@@ -1,8 +1,10 @@
 import type { UserDataKey, UserDataName } from '../../render/index.ts';
 
+// The `userData` keys the island keeps to itself, set and read above the renderer.
+//
 // The `userData` keys the island keeps to itself: set and read above the renderer, which never
 // names them. A file of the island names a key of the renderer's list (packages/render/UserData.ts, whose
-// types the renderer's exit offers) or of this one, and nothing else (tools/verify-layers.mjs, its
+// types the renderer's exit offers) or of this one, and nothing else (tools/repo/verify-layers.mjs, its
 // userData check, which also fails on a key here that no file of the island names). A key the
 // renderer reads belongs on its list, not here; one spelt as a key of the renderer's does not
 // compile.
@@ -35,11 +37,11 @@ export const ISLAND_USER_DATA = {
 		means: 'the meadow group\'s current plan of roots',
 	},
 	edgeRoots: {
-		on: 'object', sets: 'world/Grass.ts', reads: 'tools/parity/views.mjs',
+		on: 'object', sets: 'world/Grass.ts', reads: 'tools/island/parity/views.mjs',
 		means: 'the meadow\'s roots at its edges, for the views that look at them',
 	},
 	flowerHeads: {
-		on: 'object', sets: 'world/Grass.ts', reads: 'tools/parity/views.mjs',
+		on: 'object', sets: 'world/Grass.ts', reads: 'tools/island/parity/views.mjs',
 		means: 'the meadow\'s flower heads (none), for the views that look for them',
 	},
 	update: {

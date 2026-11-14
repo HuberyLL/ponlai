@@ -1,3 +1,5 @@
+// A scalar field on a 2D grid over world xz, with bilinear lookup and an exact distance transform.
+//
 // A scalar field on a regular 2D grid over world xz, with bilinear lookup, plus the exact
 // Euclidean signed distance transform (Felzenszwalb & Huttenlocher) used to turn masks into
 // distance fields and to round the island footprint's corners (morphological open / close).

@@ -2,6 +2,8 @@ import type { Place, PlaceOption } from './places.ts';
 import type { Sim } from './Sim.ts';
 import type { ActionResult, Villager } from './types.ts';
 
+// The game's content as registered definitions: needs, items, places, options and buildings.
+//
 // The game's content as registered definitions (ARCHITECTURE.md, "Content is registered
 // definitions"): a need, an item and its uses, a kind of place, an option at a place, a kind of
 // building. Each is one definition, registered once (`register`: the game's own in content/), and
@@ -27,7 +29,7 @@ import type { ActionResult, Villager } from './types.ts';
 // Content is registered before any simulation is made (a body's needs are made at its landing, so
 // a need registered later is missing from the bodies already there). Registering takes all of a
 // call's definitions or none, and returns its undoing, so a check can add content of its own and
-// take it away again (tools/verify-game.mjs); the game's content stays for the page's life.
+// take it away again (tools/game/verify-game.mjs); the game's content stays for the page's life.
 
 /** A need of the body: 0..NEED_MAX (needs.ts), starting at `start` and falling `perDay` a game
  * day. */

@@ -6,6 +6,8 @@ import { tune } from '../debug/Tune.ts';
 import { PREVAILING_HEADING, type WeatherState } from '../sky/Weather.ts';
 import type { WindLook } from '../look/Look.ts';
 
+// The weather's one wind, integrated on the CPU, and the wind field all vegetation moves in.
+//
 // The weather's one wind, integrated on the CPU, what every part of the scene takes from it, and
 // the one wind field all vegetation moves in.
 //
@@ -62,8 +64,10 @@ import type { WindLook } from '../look/Look.ts';
 // fair day, and a stronger wind sends them faster. Much faster and, seen from the island camera's
 // height, the gusts would flicker rather than run. The gust q is the noise mapped to 0..1. The wind's strength on the plants
 // is linear in their speed, w = U_p ( 1 + gustGain q ) (`windStrength`), so a light breeze shows its gusts and a
-// gale does not press everything flat at once. (Gusts as a noise field scrolled with the wind:
-// CREDITS.md.)
+// gale does not press everything flat at once. (Gusts as a noise field scrolled with the wind: Eric
+// Wohllaib, "Procedural Grass in 'Ghost of Tsushima'", GDC 2021, 2D Perlin noise scrolled in the
+// wind's direction; Bill Rockenbeck, "Blowing from the West: Simulating Wind in Ghost of
+// Tsushima", GDC 2021, the wind's strength varied by time-varying Perlin noise.)
 // `windField` gives the gust and the limbs' load from it (`plantLoad`); still air is the rest pose.
 // The meadow's blades read the gust at their root moved by a small offset of their own
 // (`gustJitter`), so a gust's edge frays across neighbouring blades, and take the wind gusted there
@@ -97,7 +101,7 @@ import type { WindLook } from '../look/Look.ts';
 // The wrapped clocks may differ by a wrap between the two: every shader reads them only through
 // functions periodic in their wrap (`wave` at whole cycles per CLOCK_PERIOD, of `clock` and `plantClock` alike, `flutterWave` of `clock`, `plantWave`
 // of `plantClock` at rates rounded to whole cycles per CLOCK_PERIOD, the gust noise's period over GUST_TILE and GUST_TIME_PERIOD), so the difference of the two poses is the frame's motion alone
-// (tools/verify-wind.mjs checks the sources).
+// (tools/render/verify-wind.mjs checks the sources).
 // The URL option `windView` shows this field and every plant's answer to it, and
 // `__PONLAI__.windProbe` measures them (packages/render/debug/WindView.ts, WindProbe.ts; docs/reference/url-options.md).
 // `debugFlags.windFreeze = true` holds the vegetation's wind (its clocks and gust scroll, previous
@@ -149,7 +153,7 @@ export const GUST_TRAVEL = 1.8;
 // `WindLook`). The wind takes them where it is created, not as this module loads: `windResponse`
 // makes them from a look's table, `createWindUniforms` carries them in both of the vegetation's
 // wind states (`response`), and every function here reads them from the state or the response it
-// is given, so two winds made from two tables hold their own (tools/verify-look-params.mjs). The
+// is given, so two winds made from two tables hold their own (tools/render/verify-look-params.mjs). The
 // numbers reach the shaders as literals, as before.
 // The gust q's mean (`gustAt`): the gust noise is symmetric about 0, so q about 1/2.
 export const GUST_MEAN = 0.5;
@@ -225,7 +229,7 @@ export type WindState = ReturnType<typeof vegetationWind>;
 /** A wind state's values as two vec4s, ( direction, breeze, clock ) and ( gust scroll, gust time,
  * plant clock, plants' speed ), and the state read back from two such nodes with the wind's
  * `response`: a debug kernel's per-step wind (packages/island/debug/WindProbe.ts), so the scrolls
- * stay read here alone (tools/verify-wind.mjs). */
+ * stay read here alone (tools/render/verify-wind.mjs). */
 export const WIND_STATE_VEC4S = 2;
 export function packWindState( state: WindState ): number[] {
 

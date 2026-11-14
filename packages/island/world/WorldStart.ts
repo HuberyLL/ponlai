@@ -1,3 +1,5 @@
+// The world's generation started as the page's modules load, chunk by chunk, nearest first.
+//
 // The world's generation needs nothing from the page, so its workers start as the page's modules
 // load: the page's entry calls `startWorld` (WorldBoot.ts, which main.ts imports early, after the
 // page's settings), so they run while the adapter, renderer, sky, textures and frame graph

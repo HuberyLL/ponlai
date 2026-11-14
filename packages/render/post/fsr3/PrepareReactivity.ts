@@ -1,8 +1,8 @@
 /*!
  * Adapted from the AMD FidelityFX SDK 2.3.0, FSR 3 upscaler 3.1.5 (upscalers/fsr3/include/gpu/
  * fsr3upscaler/ffx_fsr3upscaler_prepare_reactivity.h).
- * Copyright (C) 2026 Advanced Micro Devices, Inc.
- * Licensed under the MIT License; see ./FidelityFX.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc.
+ * SPDX-License-Identifier: MIT
  */
 
 import { If, float, uint, vec2, vec4, ivec2, bool, abs, min, max, length, round, select } from './Tsl.ts';
@@ -15,6 +15,8 @@ import {
 } from './Common.ts';
 import type { Fsr3Bindings } from './Bindings.ts';
 
+// FSR 3's reactivity pass: disocclusions, shading change, reactiveness and new locks.
+//
 // Prepares what the accumulation weighs by, at render size: disocclusions (this depth against the
 // reconstructed previous depth), the shading change (the dilated reactive mask or the
 // shading-change pass), the reactiveness (motion divergence or the transparency mask), the

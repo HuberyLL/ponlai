@@ -1,7 +1,7 @@
 /*!
  * Portions adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater).
- * Copyright (c) 2026 DRG Software Solutions LLC
- * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
@@ -16,6 +16,8 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
+
+// The white water at the rock: the shore's wave fields as textures and the foam they drive.
 
 // The white water at the rock (see the note at the class): `omega` the one frequency (rad/s) its
 // phase takes the incident wave at (a 3.1 s wave's: the waves that reach the rock run about 3.3 s

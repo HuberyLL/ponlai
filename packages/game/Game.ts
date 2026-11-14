@@ -18,12 +18,14 @@ import { Session } from './Session.ts';
 import { stockOf } from './sim/stock.ts';
 import type { EntityId, IslandInput, Items } from './sim/types.ts';
 
+// The island as a game (?game): the headless session hosted on the page, with its view and UI.
+//
 // The island as a game (?game): the game around its simulation runs headless in a session
 // (Session.ts: the simulation of packages/game/sim, which runs the islanders' bodies, their needs and the
 // places they act at; its record, Chronicle.ts; the brain in its slot, the stand-in of plain rules by
 // default, sim/standin.ts; the leader's words; the save's contents; the island's growth), and the
 // page hosts it here: GameView draws the islanders and the chest into the scene.
-// The player's interface is 蜃光 (ui/GameUi.ts, docs/explanation/ui.md): the top row (day and time, pause and play,
+// The player's interface is 蜃光 (ui/GameUi.ts, docs/design/ui.md): the top row (day and time, pause and play,
 // the weather and its forecast, the island's stock, the record), the islanders' tags and marks, the
 // speak bar, the build bar (which hands a building the simulation knows to the placement in the
 // scene, Placement.ts) and the record (沧海录), whose history the session keeps. The debug panel's Game folder (GameDebug.ts) and
@@ -47,7 +49,7 @@ import type { EntityId, IslandInput, Items } from './sim/types.ts';
 // docs/reference/url-options.md.
 //
 // Rules: without ?game the page stays the art-review scene, unchanged. The game follows
-// docs/explanation/game-design.md: nothing is built ahead of that design. The brain's
+// docs/design/game-design.md: nothing is built ahead of that design. The brain's
 // tools are the five actions (sim/actions.ts). Thinking is asynchronous to the world: `think( id )`
 // asks the brain with the islander's perception, the simulation never waits for the answer, the
 // body goes on with what it is doing meanwhile, and the answer's tool calls run on the body when it
@@ -67,7 +69,7 @@ import type { EntityId, IslandInput, Items } from './sim/types.ts';
 // post/SceneEvents.ts), so the temporal anti-aliasing cuts its history or converges a paused frame
 // again.
 //
-// The island grows with the population (docs/explanation/game-design.md, "How the island grows"; Session.ts):
+// The island grows with the population (docs/design/game-design.md, "How the island grows"; Session.ts):
 // the session asks the page's island to grow once a step is due (`island.grow`, world/Growth.ts's
 // instant swap) and tells it each frame how near the next step is (`island.approach`, the sea
 // floor's rise over the coming piece). The swap hands the new land to `setIsland`, which is the

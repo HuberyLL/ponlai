@@ -1,3 +1,5 @@
+// The scene's radiometric units and the sun's sizes: the radiance scale and the disk's radii.
+
 // All scene-linear radiance and irradiance use the same unit scale. Keeping sunlight below
 // fp16's finite range must not change its brightness relative to the sky or its reflections.
 // Exposure and display-space bloom thresholds undo this scale in Pipeline.

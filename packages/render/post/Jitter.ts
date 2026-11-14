@@ -3,6 +3,8 @@ import { renderGroup, uniform } from 'three/tsl';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { ffxFsr3UpscalerGetJitterPhaseCount } from './fsr3/Host.ts';
 
+// The temporal modes' sub-pixel jitter: a Halton (2, 3) shift of the camera's projection.
+//
 // The temporal modes' sub-pixel jitter (Antialiasing.ts: aa=taa|taau): each frame the scene half
 // of the frame graph (its jittered span, from the opaque scene to the overlay) renders with the
 // camera's projection shifted by a fraction of a render pixel, so successive frames sample each

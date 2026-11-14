@@ -1,13 +1,15 @@
 /*!
  * Adapted from the AMD FidelityFX SDK 2.3.0, FSR 3 upscaler 3.1.5 (upscalers/fsr3/include/gpu/
  * fsr3upscaler/ffx_fsr3upscaler_sample.h and ffx_fsr3upscaler_reproject.h).
- * Copyright (C) 2026 Advanced Micro Devices, Inc.
- * Licensed under the MIT License; see ./fidelityfx-fsr3.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc.
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
 import { Fn, float, vec2, vec4, ivec2, texture, textureLoad, floor, min, max, clamp, sin, cos, select } from 'three/tsl';
 
+// The running resolve's history fetch: FSR 3.1's clamped Lanczos 2 sample.
+//
 // The running resolve's history fetch (TemporalAA.ts: taa, taau): FSR 3.1's history sample, a
 // Lanczos 2 over the 4 x 4 texels around the reprojected position, clamped to the 2 x 2 nearest
 // texels (upstream's deringing). All four channels go through it, the accumulated weight in alpha

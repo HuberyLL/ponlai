@@ -1,13 +1,15 @@
 /*!
  * Adapted from the AMD FidelityFX SDK 2.3.0, FSR 3 upscaler 3.1.5 (upscalers/fsr3/include/gpu/spd/
  * ffx_spd.h).
- * Copyright (C) 2026 Advanced Micro Devices, Inc.
- * Licensed under the MIT License; see ./FidelityFX.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc.
+ * SPDX-License-Identifier: MIT
  */
 
 import { If, ivec2, uint, uvec2, workgroupBarrier } from './Tsl.ts';
 import { ffxRemapForWaveReduction, type N } from './Core.ts';
 
+// The Single Pass Downsampler (SPD): a texture's mips 0..11 in one dispatch.
+//
 // Single Pass Downsampler (SPD): one 256-thread workgroup reduces a 64 x 64 tile to mips 0..5
 // (mip 0 is half the source), and the last workgroup to finish reduces the 64 x 64 texels of mip 5
 // to mips 6..11. The user (the luminance and shading-change pyramids) supplies the callbacks, as

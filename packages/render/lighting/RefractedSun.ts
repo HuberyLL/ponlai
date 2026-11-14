@@ -13,6 +13,8 @@ type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 type M4 = THREE.Node<'mat4'>;
 
+// The key light's shadow below the water: a map drawn along the sun refracted at the surface.
+//
 // The key light's shadow below the water: a map drawn along the sun refracted at the mean surface,
 // read by submerged receivers (and the sea floor's stones, which cast only here). It redraws when
 // the key light has turned by its angle gate (0.03 degrees on high; the quality tier sets it), and

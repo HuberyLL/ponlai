@@ -5,6 +5,8 @@ import {
 import { jitter } from './Jitter.ts';
 import { preExposedRGBA } from './PreExposure.ts';
 
+// Rain after the resolve: the temporal modes draw the rain unjittered after the resolve.
+//
 // Rain after the resolve (Antialiasing.ts `AFTER_RESOLVE`: aa=taa|taau). The rain's streaks, its
 // splashes, its veil and the storm's spray are thin, fast or brief, and translucent: drawn into the jittered frame they leave
 // no motion of their own a history can follow, so the resolve either kept its history under them

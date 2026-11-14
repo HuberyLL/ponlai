@@ -11,6 +11,8 @@ import { LOCAL_LIGHTS } from './LocalLights.ts';
 import { MEADOW_CANOPY } from './MeadowCanopy.ts';
 import { WIND } from './Wind.ts';
 
+// The island's look: its numbers for every table of the renderer's look, gathered in one object.
+//
 // The island's look: its numbers for every table of the renderer's look (look/Look.ts), one file
 // per system beside this one, each holding numbers and pure functions of numbers and importing
 // only the renderer's types. The page's entry picks it (PageSettings.ts) and the page hands it to

@@ -2,6 +2,8 @@ import { isNeed, needs } from './registry.ts';
 import { SECONDS_PER_GAME_DAY } from './types.ts';
 import type { Needs } from './types.ts';
 
+// An islander's needs: each registered need falls every tick and is raised by what answers it.
+//
 // An islander's needs, 0..NEED_MAX each: the needs registered (registry.ts; today's in content/),
 // in the order registered, each starting where its definition says and falling every tick by its
 // rate a day, raised by what answers it (an item's use: registry.ts ItemDef, `raiseNeed`). They
@@ -14,7 +16,7 @@ import type { Needs } from './types.ts';
 
 export const NEED_MAX = 100;
 /** a need at or below this is critical: the interface raises its alert and the record notes it
- * (docs/explanation/ui.md, Islanders), and below LOW_NEED its bar turns toward the alert's colour */
+ * (docs/design/ui.md, Islanders), and below LOW_NEED its bar turns toward the alert's colour */
 export const CRITICAL_NEED = 20;
 export const LOW_NEED = 50;
 

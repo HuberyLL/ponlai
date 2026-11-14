@@ -1,8 +1,8 @@
 /*!
  * Adapted from the AMD FidelityFX SDK 2.3.0, FSR 3 upscaler 3.1.5 (upscalers/fsr3/include/gpu/
  * fsr3upscaler/ffx_fsr3upscaler_accumulate.h).
- * Copyright (C) 2026 Advanced Micro Devices, Inc.
- * Licensed under the MIT License; see ./FidelityFX.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc.
+ * SPDX-License-Identifier: MIT
  */
 
 import { If, float, vec2, vec3, vec4, ivec2, bool, max, min, length, normalize, round } from './Tsl.ts';
@@ -17,6 +17,8 @@ import { ComputeUpsampledColorAndWeight } from './Upsample.ts';
 import type { Fsr3Bindings } from './Bindings.ts';
 import type { Fsr3ShaderOptions } from './Host.ts';
 
+// FSR 3's accumulation: the history reprojected, clipped and blended with this frame's colour.
+//
 // The accumulation: reprojects the history, updates the locks (thin-feature protection), weighs
 // the history against this frame's upsampled colour, clips the history to the rectification box
 // and blends, storing colour and lock for the next frame (and the output when RCAS is off).

@@ -1,7 +1,7 @@
 /*!
  * Portions adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater), src/world/Fish.js.
- * Copyright (c) 2026 DRG Software Solutions LLC
- * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
@@ -11,9 +11,11 @@ import { type ShoreField, hash3i, mulberry32, type Rng } from '../../render/data
 import { fishGeometry, wingRoot, type Anatomy } from './FishGeometry.ts';
 import { makeFishMaterial, type Skin } from './FishMaterial.ts';
 
+// The wenyao: schools of flying fish off the island that swim, take flight and glide.
+//
 // The wenyao: the Shanhaijing's flying fish ("shaped like a carp, a fish's body with a bird's
 // wings, blue-grey markings, a white head and a red beak ... it flies by night"), in schools off
-// the island (docs/explanation/art-direction.md, Life). The body and the ways are a real flying fish's
+// the island (docs/design/life-and-islanders.md, The cast). The body and the ways are a real flying fish's
 // (Exocoetidae, a four-winged one): a slender, round fish of the surface waters, its long pectoral
 // fins and its pelvic fins spread as wings in flight and folded along its flank in the water, the
 // tail fin's lower lobe the longer. The fantasy is the text's: the white head, the red snout and

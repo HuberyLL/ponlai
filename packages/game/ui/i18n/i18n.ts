@@ -3,15 +3,22 @@ import en from './en.json';
 import zh from './zh-CN.json';
 import { settings } from '../../../render/setup.ts';
 
+// The interface's languages, on i18next: every word the player reads is a catalogue's key.
+//
 // The interface's languages, on i18next (https://www.i18next.com). Every word the player reads is a
 // key of a catalogue here, one JSON file per language: zh-CN.json is the source, written with the
 // game and complete, and the language shown by default; en.json is a snapshot of it, kept but not
 // maintained while the game is in development, so a key it lacks shows the Chinese (i18next's
-// fallback, key by key). An English version made for release fills it (docs/explanation/ui.md: never mixed).
+// fallback, key by key). An English version made for release fills it (docs/design/ui.md: never mixed).
 //
 // The language is a load knob, read once from `?lang=` (zh-CN or en; none or another: zh-CN): the
 // data tables resolve their rows' words when they load (data/*.ts) and the parts build their fixed
 // labels once, so a change of language reloads the page (the debug panel's Interface folder does).
+// The English page is laid out with the Chinese page's measures and letter spacing, untuned.
+//
+// What is content rather than the interface's words stays out of the catalogues: the islanders'
+// names (sim/Sim.ts) and what people say (the player's lines, the islanders' answers, the debug
+// panel's placeholder days and hearing brain).
 //
 // Writing text:
 // - A new string is a key in zh-CN.json, read through `t( 'part.key' )`; the keys are typed from
@@ -26,7 +33,7 @@ import { settings } from '../../../render/setup.ts';
 //   with `lookup`, which falls back to the id where the catalogue has no row.
 // - Interpolation is not HTML-escaped: the interface sets text, never markup.
 //
-// Rules: no player-facing string is written in code outside these files (tools/verify-i18n.mjs
+// Rules: no player-facing string is written in code outside these files (tools/game/verify-i18n.mjs
 // fails on a Chinese literal elsewhere and reports where en.json has drifted from zh-CN.json). A
 // call costs a few microseconds, so per-frame code calls `t` only when what it says changed, and
 // fixed words are taken once.

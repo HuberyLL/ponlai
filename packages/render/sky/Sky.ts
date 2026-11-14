@@ -1,7 +1,7 @@
 /*!
  * Portions adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater).
- * Copyright (c) 2026 DRG Software Solutions LLC
- * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
@@ -31,6 +31,8 @@ import { setKeyCloud } from '../lighting/KeyCloud.ts';
 import { bakeColour, dirToEquirect, discCloudTransmittance, domeColour, equirectToDir, lendIsland } from './SkyDome.ts';
 import { abortSlices, bake, finishSlices, runSlices, startSlices, type Slice } from './SkyBake.ts';
 import { trackSky } from './SkyTrack.ts';
+
+// The sky: atmosphere, clouds, night sky and the baked environment, from one cloud field.
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;

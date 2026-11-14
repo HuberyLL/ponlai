@@ -1,3 +1,5 @@
+// Runtime switches for timing a change inside one page, exposed in debug builds.
+//
 // Runtime switches for timing a change inside one page (debug builds expose them as
 // window.__PONLAI__.flags). An optimisation under development keeps its old path and reads a flag
 // where it chooses between the two, every frame:
@@ -5,7 +7,7 @@
 //   import { debugFlags } from './DebugFlags.ts';
 //   const mesh = debugFlags.lowPolyGrass ? newGrass : oldGrass;   // or skip a pass, pick a material
 //
-// and tools/profile-frame.mjs flips it every few frames with --toggle "s.flags.lowPolyGrass = on",
+// and tools/render/profile-frame.mjs flips it every few frames with --toggle "s.flags.lowPolyGrass = on",
 // after warming both paths, to A/B it in seconds without a reload. A shader change keeps both
 // materials (or both nodes) built and swaps them on the flag, rather than branching inside one
 // shader, so each side runs its own pipeline. A missing flag reads as undefined: the old path
@@ -29,7 +31,7 @@
 //
 // `shadowWind = false` casts the plants' shadows in their rest pose (vegetation/VegetationShadow.ts) and
 // brings back the sun's map's stepped redraws (lighting/SunShadow.ts); on unless false, the swayed
-// shadows redrawn every frame. Read every frame; its cost: node tools/profile-frame.mjs <url>
+// shadows redrawn every frame. Read every frame; its cost: node tools/render/profile-frame.mjs <url>
 // --toggle "s.flags.shadowWind = on".
 //
 // `windFreeze = true` holds the vegetation's wind while the scene clock runs (Wind.ts): the plants
@@ -75,7 +77,7 @@
 // `grassMask = true` (at load) paints the blades flat red, for the cover of `img.py stats --cover`;
 // `grassMask = 'exact'` draws them unlit in a red far above the scene's radiance, each pixel's
 // cover exact in the opaque colour, `grassMask = 'albedo'` unlit in their diffuse colour and
-// `grassMask = 'lean'` as 'exact' with each leaf's lean in green and blue (tools/meadow-light.mjs).
+// `grassMask = 'lean'` as 'exact' with each leaf's lean in green and blue (tools/island/meadow-light.mjs).
 // `bareGround = true` (at load) hides the blades, keeps their cast out of the sun's map and lights
 // the turf as bare ground (world/Grass.ts BARE_GROUND): with `lightOnly`, the light bare ground
 // takes beside the sward, at the same pixels as a frame with the blades.

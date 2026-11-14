@@ -2,6 +2,8 @@ import * as THREE from 'three/webgpu';
 import BloomNode from 'three/addons/tsl/display/BloomNode.js';
 import { bloomDraws, buildDrawsNow, pipelineQuad, renderWithAsyncPipelines, type NodeState } from '../../three/DrawBuilds.ts';
 
+// Ahead-of-time pipeline compiles, so no frame stalls on building a pipeline.
+//
 // Ahead-of-time pipeline compiles (the frame graph's warm-up, FrameGraph.warm, the sky's and the
 // shadow maps', `compileLatentInto`, and the sun map's first redraw, `compileByRendering`):
 // every draw the frame will make, built and handed to WebGPU's async pipeline creation before the

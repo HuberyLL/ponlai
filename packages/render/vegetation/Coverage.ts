@@ -4,6 +4,8 @@ import { ALPHA_TO_COVERAGE, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { LEAF_ALPHA_TEST } from './LeafTexture.ts';
 
+// How vegetation's cut-outs and blades cover a pixel by anti-aliasing mode, and its tag.
+//
 // How the vegetation's cut-outs and thin blades cover a pixel, by the anti-aliasing mode
 // (post/Antialiasing.ts), and the tag that finds vegetation materials:
 // - `ALPHA_TO_COVERAGE` picks the coverage path by the scene's samples; single-sampled, leaves take

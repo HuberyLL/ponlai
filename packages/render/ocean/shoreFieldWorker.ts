@@ -1,3 +1,5 @@
+// The rocky shore's wave fields of a grown island, computed off the main thread.
+//
 // The rocky shore's wave fields of a grown island (ShoreWaveField.ts), off the main thread: a job is
 // the shore's distance field and the swell's direction, the reply the two fields' texels
 // (transferred). ShoreWaves.ts `fieldsFor` runs one worker per growth step.

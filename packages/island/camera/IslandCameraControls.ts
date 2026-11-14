@@ -4,6 +4,8 @@ import { IslandGround } from './IslandGround.ts';
 import type { GroundGrid } from '../world/ChunkDerived.ts';
 import { SHELF_REACH } from '../world/Bathymetry.ts';
 
+// The island's camera controls: grab, orbit and zoom by hand, or held at the island's framing.
+//
 // The island's camera, in the manner of a management or island-building game (Islanders,
 // Dorfromantik; Anno, Frostpunk and Planet Zoo differ mostly in which button does what). The hand
 // moves it while `handInput` is on (main.ts: on unless the query says `cameraInput=off`, the GUI's
@@ -53,8 +55,9 @@ import { SHELF_REACH } from '../world/Bathymetry.ts';
 //   frames; now it trails by one input sample.
 // - Input is applied once, at the start of the tick that draws it (`advance( dt, time )`), never
 //   between frames. A drag is read one input sample interval (at most 8 ms) behind the frame's
-//   vblank, between the two pointer samples around that time (input resampling): read at its
-//   newest sample, a 125 Hz mouse moved the view unevenly from one frame to the next.
+//   vblank, between the two pointer samples around that time (input resampling, as Android's
+//   `InputTransport` does with its `RESAMPLE_LATENCY`): read at its newest sample, a 125 Hz mouse
+//   moved the view unevenly from one frame to the next.
 // - The limits constrain input only: the pivot over the land's convex hull grown by the shelf's
 //   reach, 14 m (the land and its ring of shallows, which the island view frames; recomputed when
 //   the land grows: `setIsland`), past which a pull goes on against a resistance that grows with

@@ -5,6 +5,8 @@ type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
+// The frame's exposure target, in stops, from the metering histograms and the sky.
+//
 // The frame's exposure target, in stops (EV = log2 of the factor that scales scene radiance into
 // the exposed image), from the metering histograms (Metering.ts) and the sky. The meter reads the
 // light falling on the scene, not the light leaving it, so the albedo stays out of it: a dark

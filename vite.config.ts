@@ -1,32 +1,15 @@
 import { defineConfig, type Plugin } from 'vite';
-import { assets } from './tools/vite-assets.mjs';
-import { worldGeneratorHash } from './tools/vite-world-generator.mjs';
+import { assets } from './tools/repo/vite-assets.mjs';
+import { worldGeneratorHash } from './tools/repo/vite-world-generator.mjs';
 
-// Licence texts that must travel with the built site: MIT asks for the full notice in every copy,
-// and the /*! */ headers kept in the bundle only point to these files.
+// Licence texts that must travel with the built site: MIT asks for the full notice in every copy.
+// The /*! */ notices kept in the bundle carry the copyright lines and the SPDX licence; the texts
+// of the licences are LICENSES/ (one per SPDX id, REUSE), every file of it shipped as it is.
+const LICENCE_DIR = 'LICENSES';
 const LICENCE_FILES: Record<string, string> = {
 	'licenses/LICENSE.txt': 'LICENSE',
 	'licenses/CREDITS.md': 'CREDITS.md',
-	'licenses/tidewater.LICENSE.txt': 'packages/render/ocean/tidewater.LICENSE.txt',
-	'licenses/FidelityFX.LICENSE.txt': 'packages/render/post/fsr3/FidelityFX.LICENSE.txt',
-	'licenses/tidewater-sky.LICENSE.txt': 'packages/render/sky/tidewater.LICENSE.txt',
-	'licenses/tidewater-weather.LICENSE.txt': 'packages/render/weather/tidewater.LICENSE.txt',
-	'licenses/hoskins-hash.LICENSE.txt': 'packages/render/materials/hoskins-hash.LICENSE.txt',
-	'licenses/three-geospatial.LICENSE.txt': 'packages/render/sky/three-geospatial.LICENSE.txt',
-	'licenses/a-starry-sky.LICENSE.txt': 'packages/render/sky/a-starry-sky.LICENSE.txt',
-	'licenses/LightningStrike.LICENSE.txt': 'packages/render/weather/LightningStrike.LICENSE.txt',
-	'licenses/VolumetricCloudsCS1.LICENSE.txt': 'packages/render/sky/VolumetricCloudsCS1.LICENSE.txt',
-	'licenses/threejs-conference.LICENSE.txt': 'packages/render/weather/threejs-conference.LICENSE.txt',
-	'licenses/tidewater-materials.LICENSE.txt': 'packages/render/materials/tidewater.LICENSE.txt',
-	'licenses/tidewater-lighting.LICENSE.txt': 'packages/render/lighting/tidewater.LICENSE.txt',
-	'licenses/tidewater-post.LICENSE.txt': 'packages/render/post/tidewater.LICENSE.txt',
-	'licenses/tidewater-fsr2.LICENSE.txt': 'packages/render/post/tidewater-fsr2.LICENSE.txt',
-	'licenses/godot-rain-shader.LICENSE.txt': 'packages/render/materials/godot-rain-shader.LICENSE.txt',
-	'licenses/hextile-demo.LICENSE.txt': 'packages/render/materials/hextile-demo.LICENSE.txt',
-	'licenses/fsr.LICENSE.txt': 'packages/render/post/fsr.LICENSE.txt',
-	'licenses/fidelityfx-fsr3.LICENSE.txt': 'packages/render/post/fidelityfx-fsr3.LICENSE.txt',
-	'licenses/meshoptimizer.LICENSE.txt': 'packages/island/world/meshoptimizer.LICENSE.txt',
-	// the game interface's fonts (OFL: the licence travels with the font files the build copies)
+	// the game interface's fonts: the OFL with each font's notice, beside the font files
 	'licenses/LXGWWenKaiGB.OFL.txt': 'packages/game/ui/fonts/LXGWWenKaiGB.OFL.txt',
 	'licenses/MaShanZheng.OFL.txt': 'packages/game/ui/fonts/MaShanZheng.OFL.txt',
 };
@@ -38,14 +21,17 @@ function licences(): Plugin {
 		apply: 'build',
 		async generateBundle() {
 
-			for ( const [ fileName, source ] of Object.entries( LICENCE_FILES ) ) {
+			const files = { ...LICENCE_FILES };
+			for ( const name of ( await this.fs.readdir( LICENCE_DIR ) ).sort() ) files[ `licenses/${ name }` ] = `${ LICENCE_DIR }/${ name }`;
+
+			for ( const [ fileName, source ] of Object.entries( files ) ) {
 
 				let contents: string | Uint8Array = await this.fs.readFile( source );
 				if ( fileName === 'licenses/CREDITS.md' ) {
 
 					// Release credits live beside the shipped notices, not in the source tree.
 					let text = new TextDecoder().decode( contents );
-					for ( const [ shipped, from ] of Object.entries( LICENCE_FILES ) ) {
+					for ( const [ shipped, from ] of Object.entries( files ) ) {
 
 						text = text.replaceAll( `](${ from })`, `](${ shipped.replace( 'licenses/', '' ) })` );
 
@@ -65,7 +51,7 @@ function licences(): Plugin {
 
 export default defineConfig( {
 	base: './',
-	// assets(): fills the git-ignored public/ from the assets release (tools/vite-assets.mjs);
+	// assets(): fills the git-ignored public/ from the assets release (tools/repo/vite-assets.mjs);
 	// the world generator's source hash, for the world cache (packages/island/world/WorldCache.ts)
 	plugins: [ licences(), assets(), worldGeneratorHash() ],
 	server: {

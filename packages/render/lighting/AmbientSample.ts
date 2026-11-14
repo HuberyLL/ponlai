@@ -7,6 +7,8 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 import { tune } from '../debug/Tune.ts';
 import { IRRADIANCE_SLABS, type AmbientVolume } from './AmbientVolume.ts';
 
+// How the island's lit materials read the ambient volume for their ambient diffuse light.
+//
 // How the island's lit materials read the ambient volume (AmbientVolume.ts, relit every frame by
 // AmbientRelight.ts) for their ambient diffuse light, in place of the environment's irradiance: the
 // probes see the land, so a grove's floor darkens, light reaches it from its open side, and a face

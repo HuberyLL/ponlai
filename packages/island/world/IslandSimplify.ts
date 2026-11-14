@@ -1,6 +1,7 @@
-/*! meshoptimizer (https://github.com/zeux/meshoptimizer), the simplifier three.js ships as
+/*! REUSE-IgnoreStart: the meshoptimizer code three bundles, not this file.
+ * meshoptimizer (https://github.com/zeux/meshoptimizer), the simplifier three.js ships as
  * examples/jsm/libs/meshopt_simplifier.module.js. Copyright (c) 2016-2026 Arseny Kapoulkine.
- * MIT License: licenses/meshoptimizer.LICENSE.txt */
+ * MIT License: licenses/MIT.txt REUSE-IgnoreEnd */
 
 // The island's chunk mesh simplified in its job (Chunks.ts `buildChunk`), its borders locked.
 //
@@ -24,7 +25,7 @@
 //   line 0.03 wide where it crosses a whole number in a groove (negative curvature), an iso-line
 //   of two interpolated attributes. On the close walls those thin lines still change shape where
 //   triangles merged; a heavier curvature weight moved them as much, at a sixth more triangles.
-// - Measured on seed 1 (tools/verify-chunk-derived.mjs prints the drawn and meshed counts): the
+// - Measured on seed 1 (tools/island/verify-chunk-derived.mjs prints the drawn and meshed counts): the
 //   island keeps about half of its triangles at growth step 0 and two fifths at step 12, where
 //   positions alone would keep a sixth; the plateau goes furthest, so the share kept falls as the
 //   island grows. The simplifier adds a few hundredths of a second to a chunk's job.

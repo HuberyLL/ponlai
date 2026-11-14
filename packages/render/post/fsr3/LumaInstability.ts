@@ -1,8 +1,8 @@
 /*!
  * Adapted from the AMD FidelityFX SDK 2.3.0, FSR 3 upscaler 3.1.5 (upscalers/fsr3/include/gpu/
  * fsr3upscaler/ffx_fsr3upscaler_luma_instability.h).
- * Copyright (C) 2026 Advanced Micro Devices, Inc.
- * Licensed under the MIT License; see ./FidelityFX.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc.
+ * SPDX-License-Identifier: MIT
  */
 
 import { If, float, vec2, vec4, max, sign } from './Tsl.ts';
@@ -12,6 +12,8 @@ import {
 } from './Common.ts';
 import type { Fsr3Bindings } from './Bindings.ts';
 
+// FSR 3's luma instability: pixels whose luma flips back toward a recent frame's.
+//
 // Luma instability at render size: a luma that flips back towards one of the last three frames'
 // (an oscillation the accumulation should not chase) marks the pixel unstable, unless it moves,
 // was disoccluded, is reactive or changed its shading. Also shifts the four-frame luma history.

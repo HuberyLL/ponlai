@@ -8,7 +8,9 @@ import { t } from './i18n/i18n.ts';
 import { ResourceRow } from './ResourceRow.ts';
 import type { UiShared } from './Shared.ts';
 
-// The top row (docs/explanation/ui.md, Top row): at the left the day in calligraphy and the time in the brush
+// The top row: the day and time, pause and play, the weather, the resources and the record.
+//
+// The top row (docs/design/ui.md, Top row): at the left the day in calligraphy and the time in the brush
 // numerals (08:00, the game's clock: telling time in 时辰 is not decided), pause and play (the
 // game runs at one speed; the current one 缟, the other 苍) and the weather with its forecast (Forecast.ts); at the
 // right the island's resources (ResourceRow.ts) and the record's scroll (沧海录), split by brush

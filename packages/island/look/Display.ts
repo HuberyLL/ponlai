@@ -1,6 +1,8 @@
 import type { DayKey } from '../../render/index.ts';
 import type { BloomKey, DesaturationKey, DisplayLook, Rgb } from '../../render/setup.ts';
 
+// The island's display look: contrast, grade, bloom, vignette, white balance and tone curve.
+//
 // The island's display look (packages/island/look/: the island's numbers for the renderer's look
 // tables, look/Look.ts; look/DisplayLook.ts makes the display's tables from these): the shade's contrast, the desaturation,
 // overcast's highlights toward grey, the bloom's and the vignette's strengths, the vignette's
@@ -153,9 +155,9 @@ export const DISPLAY: DisplayLook = {
 	// - The warm hues (red to yellow) times 1.15: the earth, the bark and the low sun's light keep
 	//   their colour under the softer curve; they also turn 8 degrees toward red, so the golden hour's
 	//   light reads orange where the curve's shoulder turns it yellow (a degree or so on the day's
-	//   rock and meadow). The red flowers times 1.15 over that, which the cooler
-	//   white balance and the softer curve had cut by about a fifth; their band also turns red-orange
-	//   4 degrees toward red.
+	//   rock and meadow). The `flowers` band (the red the parked flowers had; the meadow draws
+	//   none now) times 1.15 over that, which the cooler white balance and the softer curve had cut by
+	//   about a fifth; it also turns red-orange 4 degrees toward red.
 	// - The sky's blue times 1.2: the noon sky read pale and grey over the brighter curve.
 	// - The green times 0.95 and turned 3.5 degrees toward yellow: the cool noon white balance
 	//   (`whiteBalance`) already takes the sunlit meadow from yellow-green to

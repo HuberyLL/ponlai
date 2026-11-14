@@ -1,3 +1,5 @@
+// The display's tone curve: a rational function per channel, solved from six constraints.
+//
 // The display's tone curve, one per channel in the curve's space (ToneSpace.ts), on the exposed
 // colour directly: a rational function of the third degree over the third,
 //   y = clamp( ( a x^3 + b x^2 + c x ) / ( d x^3 + e x^2 + f x + 1 ), 0, 1 )

@@ -5,13 +5,15 @@ import { gradeOf, type GradeParams } from '../post/GradeLut.ts';
 import type { ToneCurve } from '../post/ToneCurve.ts';
 import type { BloomKey, DesaturationKey, DisplayLook, Rgb } from './Look.ts';
 
+// The display's tables built from a look's table: tone curve, grade, bloom and vignette.
+//
 // The display's tables built from a look's table (look/Look.ts `DisplayLook`): the shade's
 // contrast, the desaturation, overcast's highlights toward grey, the bloom's and the vignette's
 // strengths, the vignette's shape, the white balance, the tone curve's three settings, the base
 // grade, the bloom's keys and the rods' colour at night (`createDisplayTables`). Like the exposure
 // (look/ExposureLook.ts), they are taken as an argument where the renderer's stage creates them
 // (RenderStages.ts `createSeaAndPipeline`, which hands them to the frame's passes: post/Pipeline.ts
-// `look`), so two made from two tables hold their own numbers (tools/verify-look-params.mjs) and
+// `look`), so two made from two tables hold their own numbers (tools/render/verify-look-params.mjs) and
 // this module holds none at module level. post/PipelineDisplay.ts builds the display chain's shader
 // from them, post/Pipeline.ts `updateDisplay` keys them by the sun and the weather each frame, and
 // the methods that read them are their modules' (post/ToneCurve.ts, post/GradeLut.ts,

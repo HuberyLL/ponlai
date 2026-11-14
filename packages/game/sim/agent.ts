@@ -7,6 +7,8 @@ import { checkArgs } from './schema.ts';
 import type { Sim } from './Sim.ts';
 import type { ActionCall, ActionOutcome, ActionResult, EntityId, Items, Villager } from './types.ts';
 
+// The agent loop's frame: a brain's tool calls checked at one entrance and run on the body.
+//
 // The agent loop's frame: a brain thinks from what an islander perceives and answers with tool
 // calls, which run on the islander's body. The tools are the five actions (actions.ts).
 //
@@ -18,7 +20,7 @@ import type { ActionCall, ActionOutcome, ActionResult, EntityId, Items, Villager
 // refused for them rather than acted on. A refused call is kept with its tool alone, never with
 // arguments it was refused for, so nothing unchecked reaches the state or the save.
 //
-// Perception is what a person would perceive, never the world's state (docs/explanation/game-design.md,
+// Perception is what a person would perceive, never the world's state (docs/design/game-design.md,
 // "Perception"): the time; the places and people in sight (within SIGHT, no occlusion yet), each
 // by its id and kind, and what shows on them, as numbers, with no positions or distances (never
 // the islander itself); the places stood at and their open `do` options; what others did to it

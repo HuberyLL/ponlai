@@ -1,7 +1,7 @@
 /*!
  * Portions adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater).
- * Copyright (c) 2026 DRG Software Solutions LLC
- * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
@@ -14,6 +14,8 @@ import { bandPush, bandToDisplay } from './BandMatrix.ts';
 import { tuneApply, tuneUniform } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
 
+// The atmosphere's clear-sky scattering: transmittance and multiple-scattering LUTs in TSL.
+//
 // Hillaire 2020, "A Scalable and Production Ready Sky and Atmosphere Rendering Technique":
 // tidewater's transmittance and multiple-scattering LUTs, ported to TSL fragment passes, the
 // latter's sun axis denser near the horizon (`multipleScattering`). Distances are kilometres. This

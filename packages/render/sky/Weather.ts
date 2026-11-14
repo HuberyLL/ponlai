@@ -1,5 +1,7 @@
+// Weather presets, their blending and the auto-weather chain.
+//
 // Weather presets, their blending and the auto-weather chain. Bad weather dims and desaturates the
-// existing light; it never adds a grey screen veil (docs/explanation/art-direction.md). A weather change moves
+// existing light; it never adds a grey screen veil (docs/design/sea-and-sky.md, The parked weathers). A weather change moves
 // the whole sky from one preset's values to the next's (a front, in time alone: the clouds are one
 // model whose parameters the skies set, Clouds.ts), and the island's lighting follows its
 // progress. No tier or knob alters the weather state (Quality.ts).
@@ -24,7 +26,7 @@
 //   and turns it to a new heading: the prevailing 40 degrees plus an offset, nine times in ten a
 //   triangular one within +-40 degrees (most often near 0), one time in ten from the opposite
 //   quadrant (180 +- 45). Over hundreds of hours the wind is gentle 70 % of the time, fresh 13 %,
-//   light 14 % and strong 3 % (tools/verify-weather-state.mjs measures it). The wind's draws take
+//   light 14 % and strong 3 % (tools/render/verify-weather-state.mjs measures it). The wind's draws take
 //   a random stream of their own, so the sky's sequence is the one it was before the wind had
 //   levels.
 //
@@ -32,14 +34,14 @@
 // that order each turn), so its future is known: `forecast` reads it ahead without moving it (the
 // game's forecast, packages/game/ui/Forecast.ts). The chain counts its dwell down by the frames' steps
 // from the frame after a front ends, so a turn comes up to a step either side of the time read
-// ahead (tools/verify-weather-state.mjs); the forecast is read again as the weather moves on.
+// ahead (tools/render/verify-weather-state.mjs); the forecast is read again as the weather moves on.
 //
 // The weather the page runs is a fine day's: clear and fair. Cloud comes and goes between the two
 // and no further.
 //
 // Parked weathers (`PARKED_WEATHER`: cloudy, overcast, rain, storm, fog) slowed every line of work
 // down. Cloudy and overcast wait for the clouds' own milestone (a deck's form and its light under it);
-// rain, storm and fog until the game needs them as pressure (docs/explanation/game-design.md). They are
+// rain, storm and fog until the game needs them as pressure (docs/design/game-design.md). They are
 // out of the rotation: the auto chain
 // never reaches them, the production page refuses them (main.ts falls back to fair) and the default
 // checks skip them. Their code stays and keeps compiling; debug builds (the dev server, `?debug`)
@@ -83,7 +85,7 @@ const smooth01 = ( t: number ) => {
  * the sun's part takes it at the sun's elevation (`sun`), the moon's at the moon's own (`moon`), by
  * the moon's `share` of that light. A closed deck and the day's keys take the moon's light as they
  * take the sun's, so a deep night's gain is the day's at the moon's height. Written so that a share
- * of 0 gives `sun` and a share of 1 `moon` exactly (tools/verify-weather-state.mjs). */
+ * of 0 gives `sun` and a share of 1 `moon` exactly (tools/render/verify-weather-state.mjs). */
 export function withMoon( sun: number, moon: number, share: number ): number {
 
 	return sun * ( 1 - share ) + moon * share;

@@ -3,6 +3,24 @@
 The page's URL options, by group, with the debug views and console handles that go with them.
 The tools that load pages with these options: [Tools](tools.md).
 
+Contents:
+
+- [View and capture](#view-and-capture)
+- [The island](#the-island)
+- [Sky and weather](#sky-and-weather)
+- [Quality, anti-aliasing and the frame](#quality-anti-aliasing-and-the-frame)
+- [Debug flags](#debug-flags)
+- [The lighting layer](#the-lighting-layer)
+- [Radiance](#radiance)
+- [Tunable parameters](#tunable-parameters)
+- [The test scenes](#the-test-scenes)
+- [Ambient light, occlusion and other views](#ambient-light-occlusion-and-other-views)
+- [Wind and haze](#wind-and-haze)
+- [Islanders](#islanders)
+- [Profiling](#profiling)
+- [Game](#game)
+- [Every option](#every-option): the generated table of every option
+
 ## View and capture
 
 - `paused`, `t` (scene time), `dpr` (render pixel ratio, pinned), `polar`, `az` (the island
@@ -17,7 +35,7 @@ The tools that load pages with these options: [Tools](tools.md).
   A paused page lifts its loading screen at once, without the fade, so a capture of a paused frame
   never catches the screen over it.
 - `paused` also puts the page in the test mode (`packages/render/debug/TestMode.ts`;
-  `docs/reference/tools.md`, Test mode); `testMode=0` keeps a paused page out of it, as the clips
+  `docs/reference/test-mode.md`); `testMode=0` keeps a paused page out of it, as the clips
   do.
 
 ## The island
@@ -58,6 +76,17 @@ The tools that load pages with these options: [Tools](tools.md).
   `await growth.approachNow( p )`; `growth.rise.state` holds the approach, R (`r`, its `target`, the
   R last `written`), the pending `tiles`, their largest `rise` (m), the `writes` and the last one's
   `ms`.
+- `worldCache=off` (generate every chunk of the island instead of loading it from the browser's
+  IndexedDB cache, as on a first visit; `packages/island/world/WorldChunks.ts`). The cache keeps one
+  record per chunk, so a land grown by a piece reloads the chunks the piece did not reach; the
+  diagnostics' `worldCache` counts the records read (`hits`, of the chunks and the land). It keeps
+  the records of the two land versions loaded last (a seed and `grow` step each) and deletes the
+  rest after a load, so going back to an older step rebuilds the chunks it does not share with them.
+- `terrainHex=0` (the cliff's plain triplanar tiling and smooth layer masks; for an A/B inside one
+  page each cliff material swaps to its other variant through `material.userData.terrainVariant`,
+  as `TerrainMaterial.ts` shows: the flag itself is read only when the material is built).
+- `chunkBorders` shows the world's 16 m chunks as lines above the sea and the meadow (also the
+  GUI's Ground folder, `chunk borders`), to tell a seam from a chunk border.
 
 ## Sky and weather
 
@@ -93,7 +122,7 @@ The tools that load pages with these options: [Tools](tools.md).
 
 - `quality` (low, medium, high: the tier of every knob in `packages/render/Quality.ts`; without it
   high, the only active tier: medium and low are parked, see `docs/reference/tools.md`, Parked
-  quality tiers), `tier.<knob>=<value>`
+  weathers and quality tiers), `tier.<knob>=<value>`
   overrides one knob for an A/B (e.g. `tier.post.hazeGrid.width=128`). The GPU timing that once
   chose the tier (`app/QualityDetect.ts`, `autoQuality`, and `autoQualitySlow`, a factor on the
   time it measures) is parked with them: the load reads neither for the tier, and the GUI's quality
@@ -134,21 +163,12 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   whose rest averages `tier.taa.gtJitters` jittered frames (64 by default, 32 per frame of a
   motion clip) with a box filter, without the sharpening (the dither kept).
   `loop.step`'s `converge( i )`, where it returns true, holds the scene after frame i's tick and
-  renders it until the rest has converged; `tools/capture-clip.mjs --aa gt [--gt-jitters n]`
-  captures it that way, and so does a clip of one frame (`--clip rest`) under `aa=taa|taau` (their
-  own rest sequence). After `loop.step`, `loop.start()` resumes the clock with a first delta of at
-  most one frame.
+  renders it until the rest has converged;
+  `tools/kit/parity/capture-clip.mjs --aa gt [--gt-jitters n]` captures it that way, and so does a
+  clip of one frame (`--clip rest`) under `aa=taa|taau` (their own rest sequence). After
+  `loop.step`, `loop.start()` resumes the clock with a first delta of at most one frame.
 - `taaResolve=off` (debug builds): the temporal modes without their resolve, the jittered frame
   shown as it renders, through the output passes with the grade's vignette and dither.
-- `worldCache=off` (generate every chunk of the island instead of loading it from the browser's
-  IndexedDB cache, as on a first visit; `packages/island/world/WorldChunks.ts`). The cache keeps one
-  record per chunk, so a land grown by a piece reloads the chunks the piece did not reach; the
-  diagnostics' `worldCache` counts the records read (`hits`, of the chunks and the land). It keeps
-  the records of the two land versions loaded last (a seed and `grow` step each) and deletes the
-  rest after a load, so going back to an older step rebuilds the chunks it does not share with them.
-- `terrainHex=0` (the cliff's plain triplanar tiling and smooth layer masks; for an A/B inside one
-  page each cliff material swaps to its other variant through `material.userData.terrainVariant`,
-  as `TerrainMaterial.ts` shows: the flag itself is read only when the material is built).
 - `post=legacy` (or a comma list of `inline-composite`, `three-fsr`, `store-scene`: the frame graph
   without the first performance round's changes).
 - `gpuTimer=off` (high's dynamic resolution without its timestamp queries: it then steers by the
@@ -355,7 +375,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   as the code makes it, 0 to 1 forces it to that value; the twilight's are weights on the sun's
   light; the names and what each one forces: `packages/render/sky/DayCycle.ts` DUSK_FORCES, the
   values the code gave them since a script cleared it, on debug pages only: `duskShares`;
-  `tools/dusk-grid.mjs` sets and reads them).
+  `tools/island/dusk-grid.mjs` sets and reads them).
 - `renderLook=neutral` (debug pages only) loads the renderer with its neutral look in place of the
   island's (`packages/render/look/NeutralLook.ts`: gains of 1, no grade, no vignette, no bloom,
   clean air, one exposure key all day, nothing done for the night). The tunables then start from the
@@ -388,8 +408,8 @@ and none of the island's or the game's.
   `window.__THREE_GAME_DIAGNOSTICS__` with its `settled`. `__PONLAI__.scenePage` holds the scene's
   own: its `views`, `times` (each a name and the query that reaches it) and `readings`,
   `setView( name )`, and `read()`, which gives every reading the frame holds (the scene's linear
-  radiance over its box, the exposure, the key and the sky's irradiance). `tools/scenes.mjs` shoots
-  and reads them (`docs/reference/tools.md`, Test scenes).
+  radiance over its box, the exposure, the key and the sky's irradiance). `tools/render/scenes.mjs`
+  shoots and reads them (its header).
 
 ## Ambient light, occlusion and other views
 
@@ -407,8 +427,8 @@ and none of the island's or the game's.
   `grassLod:false`, and `grassMask:true`, which paints the blades flat red for `img.py stats
   --cover` (`packages/island/world/Grass.ts`), or `grassMask:exact`, which draws them unlit in a red
   far above any radiance, so each pixel's cover is exact in the opaque colour, or
-  `grassMask:albedo`, unlit in their own diffuse colour (both for `tools/meadow-light.mjs`); the
-  look taken off comes back by `clearShade:true`, `lowSun:true`, `tone:0.5`, `filmNight:true`;
+  `grassMask:albedo`, unlit in their own diffuse colour (both for `tools/island/meadow-light.mjs`);
+  the look taken off comes back by `clearShade:true`, `lowSun:true`, `tone:0.5`, `filmNight:true`;
   `localTone:false` builds the display chain without its local tone mapping; `streaks:<n>` scales
   the thin cloud layer's amount (0 turns it off) and `streakMask:true` paints its pixels for `img.py
   stats --mask` (`packages/render/sky/SkyTrack.ts`, `SkyDome.ts`). The metered exposure is shifted
@@ -447,15 +467,13 @@ and none of the island's or the game's.
   sources touching one cluster), `overflowed` (clusters with more than `perCluster`, whose farthest
   are dropped), `clusterBytes` and `tableBytes`; `__PONLAI__.localLights.sources` lists every
   source, and `__PONLAI__.yunpengSites()` where the yunpeng's clumps stand on the current land ( x,
-  z, size per clump) with their lights. `node tools/verify-local-lights.mjs [seed]` checks the
+  z, size per clump) with their lights. `node tools/render/verify-local-lights.mjs [seed]` checks the
   clusters' CPU sort, slices and lookup (plain `node`).
 - Under the temporal modes `flags.mv.camera` / `object` = false leave a source out of the motion
   vectors, `flags.jitter = false` the jitter, `s.taaCut( reason )` cuts the history and
   `s.motionCheck()` lists the materials whose motion vectors are missing or partial.
 - `vegPrepass=0` (the single coverage pass), `vegPrepass=coverage` (the prepass with coverage kept
   in the shaded draw).
-- `chunkBorders` shows the world's 16 m chunks as lines above the sea and the meadow (also the
-  GUI's Ground folder, `chunk borders`), to tell a seam from a chunk border.
 - `ambientProbes=sky|bounce|irradiance` shows the ambient light's probes (debug pages; also the
   GUI's Ground folder, `ambient probes`; `packages/render/lighting/AmbientVolume.ts`): a small unlit
   sphere at each probe, where it was baked, coloured by its harmonics at the sphere's normal (`sky`
@@ -555,13 +573,8 @@ and none of the island's or the game's.
   `zh-CN`, the default, or `en`, a snapshot whose missing words show in Chinese:
   `packages/game/ui/i18n/`). The page's own `weather` option and auto weather work in the game as
   without it.
-- The player's interface is 蜃光 (`packages/game/ui/GameUi.ts`, its spec `docs/explanation/ui.md`):
-  the top row (day and time, pause and play, the weather now and the next 24 game hours read ahead
-  from the auto chain, the island's resources, the record's scroll), a click on an islander for
-  their tag and ring (again, or on open ground, lets go; Esc too), the speak bar (Enter opens it and
-  sends; the words fly to the islander selected, or to everyone in view), the build bar (the mallet
-  at the bottom right; groups, buildings, `/` to search, 1-9 to choose, the arrows to scroll, Esc
-  and Enter) and the record (沧海录: the scroll; Esc, the arrows). Choosing the chest in the build bar
+- The player's interface, its parts and its keys: [Game UI](../design/ui.md)
+  (`packages/game/ui/GameUi.ts`). Choosing the chest in the build bar
   arms its placement in the scene: a ring on the turf previews the spot (green, or red with the
   reason in the bar), a click places it (`packages/game/Placement.ts`). Space pauses only the game
   clock, the GUI's hour, clock pause and time preset are off (the game's clock owns the time of
@@ -596,10 +609,10 @@ The page reads its options through one entrance, `packages/render/Settings.ts`, 
 one with what it takes, its default and the layer of the code that owns it. The entry parses the
 address once and warns in the console, as `[settings] ?name=value: why`, about each option nobody
 declared and each value outside what its reader tells apart; the page then goes on as it would
-without the warning. This table is written from the declarations (`node tools/verify-settings.mjs
+without the warning. This table is written from the declarations (`node tools/repo/verify-settings.mjs
 --write`, which `npm run check` runs without `--write` to keep the two equal).
 
-<!-- every-option:start (written by tools/verify-settings.mjs --write) -->
+<!-- every-option:start (written by tools/repo/verify-settings.mjs --write) -->
 
 | Option | Takes | Without it | Owner | What it sets |
 | --- | --- | --- | --- | --- |

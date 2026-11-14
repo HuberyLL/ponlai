@@ -1,8 +1,9 @@
 /*!
  * Adapted from three.js's FSR1Node (examples/jsm/tsl/display/FSR1Node.js), a port of AMD FidelityFX
  * Super Resolution 1 (ffx_fsr1.h: EASU and RCAS).
- * Copyright (c) 2021 Advanced Micro Devices, Inc.; Copyright © 2010-2026 three.js authors
- * Licensed under the MIT License; see ./fsr.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2021 Advanced Micro Devices, Inc.
+ * SPDX-FileCopyrightText: Copyright © 2010-2026 three.js authors
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
@@ -17,6 +18,8 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
+// FSR 1 for the frame graph's upscale: EASU as its own pass and RCAS in the canvas pass.
+//
 // FSR 1 for the frame graph's upscale, split differently from three's FSR1Node: EASU (edge-adaptive
 // upsampling) runs as its own pass (the graph's `easu`) into a canvas-sized texture the graph owns,
 // and RCAS (contrast-adaptive sharpening) is a function the canvas pass calls before it adds the

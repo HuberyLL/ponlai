@@ -2,6 +2,8 @@ import { REVISION, Mesh, MeshStandardNodeMaterial, PlaneGeometry } from 'three/w
 import type { Camera, Light, Node, RenderTarget, Scene, WebGPURenderer } from 'three/webgpu';
 import { missing } from './Internals.ts';
 
+// Cache-key patches for three's node and pipeline caches: one shader per target layout.
+//
 // Cache-key patches for three r186's node and pipeline caches, so a material drawn into targets
 // of different layouts (another MRT, other attachment formats or names) gets a shader and a
 // pipeline per layout. Installed by main.ts right after `renderer.init()`, before any material
@@ -23,7 +25,7 @@ import { missing } from './Internals.ts';
 // textures, and a key read then would miss the build's cache entry (leaking it) or evict another
 // layout's. (A render object never changes its build: three makes a new one when its key changes.)
 //
-// `tools/verify-frame-graph-gpu.mjs` checks the patches (both orders of an MRT and a plain draw, a
+// `tools/render/verify-frame-graph-gpu.mjs` checks the patches (both orders of an MRT and a plain draw, a
 // swapped layout). On another three revision, or a renderer without the members they patch, they
 // throw, naming the entry of `three-internals.json` (Internals.ts `missing`): re-check them on a
 // three upgrade (docs/how-to/upgrade-three.md).

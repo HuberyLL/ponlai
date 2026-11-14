@@ -1,8 +1,8 @@
 /*!
  * Adapted from the AMD FidelityFX SDK 2.3.0, FSR 3 upscaler 3.1.5 (upscalers/fsr3/include/gpu/fsr1/
  * ffx_fsr1.h, the RCAS part).
- * Copyright (C) 2026 Advanced Micro Devices, Inc.
- * Licensed under the MIT License; see ./FidelityFX.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc.
+ * SPDX-License-Identifier: MIT
  */
 
 import { float, vec2, vec3, ivec2, abs, max, min } from './Tsl.ts';
@@ -11,6 +11,8 @@ import {
 	ffxAsUInt32Cpu, ffxPackHalf2x16, type N,
 } from './Core.ts';
 
+// FSR 1's robust contrast-adaptive sharpening (RCAS) as the FSR 3 upscaler includes it.
+//
 // FSR 1's robust contrast-adaptive sharpening (RCAS) as the FSR 3 upscaler includes it: the host's
 // `FsrRcasCon` and the 32-bit `FsrRcasF` (FSR_RCAS_F), with FSR_RCAS_DENOISE on as
 // ffx_fsr3upscaler_rcas.h defines it, and FSR_RCAS_PASSTHROUGH_ALPHA off (the upscaler does not

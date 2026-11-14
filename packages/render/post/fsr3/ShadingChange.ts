@@ -1,8 +1,8 @@
 /*!
  * Adapted from the AMD FidelityFX SDK 2.3.0, FSR 3 upscaler 3.1.5 (upscalers/fsr3/include/gpu/
  * fsr3upscaler/ffx_fsr3upscaler_shading_change.h).
- * Copyright (C) 2026 Advanced Micro Devices, Inc.
- * Licensed under the MIT License; see ./FidelityFX.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc.
+ * SPDX-License-Identifier: MIT
  */
 
 import { If, float, vec2, abs, max } from './Tsl.ts';
@@ -10,6 +10,8 @@ import { ffxSaturate, type N } from './Core.ts';
 import { iShadingChangeMipStart, ShadingChangeRenderSize, ClampUv, IsOnScreen } from './Common.ts';
 import type { Fsr3Bindings } from './Bindings.ts';
 
+// FSR 3's shading change at half the render size, from the shading-change pyramid.
+//
 // The shading change at half the render size: the largest | difference x sign sum | over the
 // shading-change pyramid's levels 0..2 at the jittered position.
 //

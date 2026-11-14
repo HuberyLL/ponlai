@@ -9,14 +9,14 @@ import { AttachmentOps } from './AttachmentOps.ts';
 import { compileBound, compileChain, compileLatent, compileNodes, compileQuad, sceneOf } from './Compile.ts';
 import { ownDepthClears } from '../../three/ThreePatches.ts';
 
-// The frame graph's runtime: it owns the graph's textures and render targets, their sizes and
-// lifetimes, and executes the compiled passes in order with three's own executors (a scene render,
-// a QuadMesh, a RenderPipeline and the rtt / bloom passes it updates on the way, three's nodes that
-// render passes of their own (a bloom chain), a compute dispatch, or a callback). The graph
-// decides which passes run (`when`), binds each pass's target and MRT, clears or loads its
-// attachments, and rewrites the stores and resolves three records (AttachmentOps); at the frame's
-// end it swaps ping-pong histories and makes the persistent copies. See GraphCompiler.ts for the
-// model.
+// The frame graph's runtime: its textures and targets, and the compiled passes run in order.
+// It owns the graph's textures and render targets, their sizes and lifetimes, and executes the
+// compiled passes in order with three's own executors (a scene render, a QuadMesh, a RenderPipeline
+// and the rtt / bloom passes it updates on the way, three's nodes that render passes of their own
+// (a bloom chain), a compute dispatch, or a callback). The graph decides which passes run (`when`),
+// binds each pass's target and MRT, clears or loads its attachments, and rewrites the stores and
+// resolves three records (AttachmentOps); at the frame's end it swaps ping-pong histories and
+// makes the persistent copies. See GraphCompiler.ts for the model.
 //
 // Textures exist from their declaration (TSL nodes bind them while the passes are built), at 1x1
 // until `setExtents` sizes them. Each distinct tuple of attachments a pass writes is one
@@ -53,7 +53,7 @@ import { ownDepthClears } from '../../three/ThreePatches.ts';
 // render inside a pass (a bloom chain), and the objects and kernels owners register as run only at
 // times (`latent( pass, objects, kernels )`: the rain, the bolts, the storm's spray and foam, the game's
 // props and islanders). A new
-// pass, or a draw that first shows later, joins it the same way; `tools/verify-first-use.mjs`
+// pass, or a draw that first shows later, joins it the same way; `tools/render/verify-first-use.mjs`
 // counts the pipelines any step still creates. A miss is not harmless: a material built twice under
 // two keys can be emitted with the first build's uniform names in a layout function (r186), an
 // invalid shader. Priming (rendering a pass once at startup) covers only what the walker cannot

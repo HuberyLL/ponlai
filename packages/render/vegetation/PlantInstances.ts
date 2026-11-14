@@ -5,6 +5,8 @@ import { stippleThreshold } from './Coverage.ts';
 import { LEVEL_SWITCH, levelFade, switchScale } from './Lod.ts';
 import { VegetationCull, poolBuffers, poolSteps, type CullBatchInput, type CullBuffers, type CullPayload, type CullPool } from './VegetationCull.ts';
 
+// Plants drawn as instances of a few prototypes, at two levels of detail, culled on the GPU.
+//
 // Plants drawn as instances of a few prototypes, at two levels of detail, culled on the GPU: the
 // path any authored plant (a mesh of stem, branches and leaf cards, made once) takes. Today the
 // bamboo (Bamboo.ts) and the yunpeng (Yunpeng.ts); the meadow keeps its own blades generated per

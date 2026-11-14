@@ -14,6 +14,8 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
+// Screen-space ambient occlusion by GTAO: the metre-scale shade the probes are too coarse for.
+//
 // Screen-space ambient occlusion: a soft, metre-scale loss of the ambient light where the grass,
 // the culms and the ground's relief close the sky over a point, the shade within the meadow's
 // blades, a grove's leaves and culms and the rock's relief, which the ambient volume's 2 m probes
@@ -106,7 +108,7 @@ type V4 = THREE.Node<'vec4'>;
 // relations above not at all, and the blur still averaged the pattern's phases (the floor at a
 // grove's edge a touch blotchier when zoomed in).
 //
-// Cost (tools/profile-frame.mjs --compare, production builds at high's baseline, four of the kept
+// Cost (tools/render/profile-frame.mjs --compare, production builds at high's baseline, four of the kept
 // scenes, with the earlier 5x5 blur in one pass): the opaque depth and the three AO passes together take about 3 % of the frame's GPU time
 // (3.8 % on the meadow close-up), half what they took with three slices over the copies drawn into
 // the scene's 4x depth (5.5-6.5 %); the opaque pass, which had tested against those copies, takes
@@ -146,7 +148,7 @@ type V4 = THREE.Node<'vec4'>;
 // temporal modes with the meadow's shade. `flags=gtao:false` builds without it (nothing here is
 // declared, compiled or drawn, and the frame is the one without it to the byte), `flags=gtao` with
 // it on a tier whose knob is off. At run time `flags.gtao = false` skips its passes and the receivers
-// read 1, so tools/profile-frame.mjs --toggle "s.flags.gtao = on" times it. Its knobs are
+// read 1, so tools/render/profile-frame.mjs --toggle "s.flags.gtao = on" times it. Its knobs are
 // `__PONLAI__.gtao` in debug builds; the AO map is shown with `fgview=gtao.r` (and the undenoised
 // one with `fgview=gtaoRaw.r`; graph/DebugView.ts).
 

@@ -10,6 +10,8 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type B = THREE.Node<'bool'>;
 
+// The sun's soft shadow: a rotated Poisson disk of comparison samples with a fixed penumbra.
+//
 // The sun's soft shadow: a Poisson disk of POISSON_POINTS points of POISSON_RADIUS map texels' radius,
 // turned per screen pixel by a fixed hash (the same every frame, so a paused frame repeats), each
 // point one hardware comparison sample (a 2x2 bilinear comparison) whose comparison depth is the

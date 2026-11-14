@@ -1,6 +1,8 @@
 import { PRE_EXPOSURE_PENDING } from './PreExposure.ts';
 import { TemporalRest, restKey } from './TemporalRest.ts';
 
+// The page's settled signal: true once a paused page will draw the same frame from now on.
+//
 // The page's settled signal (`__THREE_GAME_DIAGNOSTICS__.settled`, debug builds): true once a paused
 // page will draw the same frame from now on, under every anti-aliasing mode, so a capture can be
 // taken as soon as it holds instead of after a fixed wait or frame count (a bake that lands late

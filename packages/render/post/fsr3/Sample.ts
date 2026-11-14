@@ -1,8 +1,8 @@
 /*!
  * Adapted from the AMD FidelityFX SDK 2.3.0, FSR 3 upscaler 3.1.5 (upscalers/fsr3/include/gpu/
  * fsr3upscaler/ffx_fsr3upscaler_sample.h).
- * Copyright (C) 2026 Advanced Micro Devices, Inc.
- * Licensed under the MIT License; see ./FidelityFX.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc.
+ * SPDX-License-Identifier: MIT
  */
 
 import { Fn, float, int, vec2, ivec2, abs, min, max, sin, clamp, floor, select } from './Tsl.ts';
@@ -10,6 +10,8 @@ import { ffxFract, type N } from './Core.ts';
 import { FSR3UPSCALER_EPSILON } from './Common.ts';
 import type { Fsr3Bindings } from './Bindings.ts';
 
+// FSR 3's resampling kernels: bilinear and Lanczos 2 over a 4 x 4 fetch with deringing.
+//
 // The upscaler's resampling kernels: bilinear, Lanczos 2 (reference, LUT and FSR 1's
 // approximation) over a 4 x 4 fetch with deringing, and the macros that declare a fetch and a
 // sample function for a texture.

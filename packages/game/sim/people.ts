@@ -7,7 +7,9 @@ import type { Sim } from './Sim.ts';
 import { planar } from './maths.ts';
 import type { Notice, Vec2, Villager } from './types.ts';
 
-// The people system: the other islanders as places (docs/explanation/game-design.md, "People"). A person is a
+// The people system: the other islanders as places that move, and what islanders notice.
+//
+// The people system: the other islanders as places (docs/design/game-design.md, "People"). A person is a
 // place that moves, one per living islander by its id (v2), of kind `person`, and offers the
 // options registered at `person` (registry.ts; today give and follow: content/person.ts) to
 // whoever stands beside them (within PERSON_REACH). There is no action of their own: what passes

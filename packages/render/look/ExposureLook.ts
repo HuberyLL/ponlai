@@ -4,10 +4,12 @@ import { tune, tuneKeys } from '../debug/Tune.ts';
 import { cloudedShare } from '../sky/Weather.ts';
 import type { DayLook, ExposureKey, ExposureLook, SharingKey } from './Look.ts';
 
+// The exposure built from a look's tables: its keys by the sun's elevation and the weather.
+//
 // The exposure built from a look's tables (look/Look.ts `ExposureLook`, and the exposure by the
 // sun's elevation in `DayLook`): the exposure takes its tables as an argument where the renderer's
 // sky stage creates it (RenderStages.ts `createSky`), so two exposures made from two tables hold
-// their own numbers (tools/verify-look-params.mjs) and this module holds none at module level. What
+// their own numbers (tools/render/verify-look-params.mjs) and this module holds none at module level. What
 // it makes (`Exposure`): the exposure's keys by the sun's elevation, the rising sun, the clouded
 // day and the night, overcast's keys on top of them, and `keysAt`, which reads them for a frame;
 // post/Exposure.ts turns the keys into the target and the adaptation (its header says what each key

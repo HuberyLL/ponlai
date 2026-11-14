@@ -1,12 +1,14 @@
 /*!
  * Adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater).
- * Copyright (c) 2026 DRG Software Solutions LLC
- * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
 import { float } from 'three/tsl';
 
+// The water's refraction source: the scene below the water only, drawn at half density.
+//
 // The water's refraction source (tidewater's RefractionPass, 4811ba4): the scene below the water
 // only, drawn by the frame graph's `refraction` pass (Pipeline.ts) right after the opaque pass, with
 // the same (jittered) camera through a wider view, at half the render's pixel density. The water

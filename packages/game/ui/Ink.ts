@@ -1,10 +1,14 @@
 import type { Frame } from './Brush.ts';
 
-// The ink of the interface's long strokes (docs/explanation/ui.md, Principles: every line is a brush stroke): a
-// stroke keeps its outline exactly (Brush.ts) and the ink only leaves it, as a brush's does.
+// The ink of the interface's long strokes: the tail runs dry as a brush's does.
+//
+// The ink of the interface's long strokes (docs/design/ui.md, Ink): a stroke keeps its outline
+// exactly (Brush.ts) and the ink only leaves it, as a brush's does.
 //
 // - Its tail runs dry (飞白): from halfway on, streaks of bare paper open along the stroke, the outer
-//   bristles first and more toward the exit, until the tip parts into a few threads. How dry comes
+//   bristles first and more toward the exit, three quarters dry at the exit, until the tip parts
+//   into a few threads. A gauge (a need's bar) does not dry: its ends say the value and the whole,
+//   so they must stay exact (`InkStroke.dry` 0). How dry comes
 //   with the stroke's length in widths: a short stroke never runs out of ink, so an icon's strokes
 //   stay as drawn. A thin stroke on screen dries half as much (its streaks would be crumbs).
 // - Through the stroke, past the first press, a few thin gaps of bare paper run along it.
@@ -24,7 +28,7 @@ import type { Frame } from './Brush.ts';
 // deepest in, blending into the next deepest over a couple of pixels where strokes join. Sizes are
 // in the interface's units (`unit` device pixels each), so a stroke keeps its look at any scale;
 // noise comes from hashes of positions and the stroke's seed, so a stroke inks the same every time.
-// Pure TypeScript (no DOM), checked by tools/verify-ink.mjs; InkPath.ts draws it into the page.
+// Pure TypeScript (no DOM), checked by tools/game/verify-ink.mjs; InkPath.ts draws it into the page.
 
 /** A stroke to ink: its frame in device pixels, the seed its marks come from, and how dry its tail
  * runs as a share of the style's (1 by default; 0 for a gauge, whose ends must stay exact). */

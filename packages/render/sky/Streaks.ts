@@ -2,8 +2,8 @@
  * Adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater): the cirrus
  * fibres of its `Clouds.js` (sparse seeds drawn out along a meandering flow by line integral
  * convolution, hooked tails downwind of tufts) and their footprint-filtered lookup.
- * Copyright (c) 2026 DRG Software Solutions LLC
- * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
@@ -17,6 +17,8 @@ type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
+// The thin cloud layer's fibres, baked once into a tileable texture by line integral convolution.
+//
 // The thin cloud layer's fibres (Clouds.ts `streaksAt`), baked once into a mipmapped, tileable
 // texture, x along the drift. Sparse seeds, gathered in tufts by a fractal noise of 5 cells a tile,
 // are drawn out by line integral convolution (Cabral and Leedom 1993, "Imaging Vector Fields Using

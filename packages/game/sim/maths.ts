@@ -1,14 +1,16 @@
 import type { Vec2 } from './types.ts';
 
+// The rules' maths in exact operations only, so every engine computes the simulation alike.
+//
 // The rules' maths, in exact operations only. + − × ÷ and Math.sqrt are correctly rounded by
 // IEEE 754, and floor / ceil / round / trunc / abs / min / max / sign / fround / imul are exact,
 // so every engine computes them alike; Math's transcendental functions (sin, cos, atan2, log, exp,
 // pow) and hypot are not specified to the last bit and differ by an ulp between engines (V8 in node
 // and in the page differed for atan2 and sin / cos on a few per cent of inputs), which a game
 // compounds over its ticks. So the simulation (packages/game/sim) calls none of them
-// (tools/verify-game.mjs checks its source): directions are unit vectors, distances go through
+// (tools/game/verify-game.mjs checks its source): directions are unit vectors, distances go through
 // `planar`, and the few functions it needs are series in exact operations here, deterministic to
-// the bit and within a few ulp of the true value (tools/verify-game.mjs measures it). The same holds for
+// the bit and within a few ulp of the true value (tools/game/verify-game.mjs measures it). The same holds for
 // what the rules call outside it (characters/Ages.ts, checked with it), except the island the grid
 // takes from the world's generator (grid.ts, world/WorldShapes.ts), which is not held to this.
 

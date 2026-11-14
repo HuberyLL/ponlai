@@ -1,15 +1,15 @@
 /*!
  * The lunar disk is adapted from three-geospatial by Shota Matsuda
  * (https://github.com/takram-design-engineering/three-geospatial).
- * Copyright (c) 2024 Shota Matsuda
- * Licensed under the MIT License; see ./three-geospatial.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2024 Shota Matsuda
+ * SPDX-License-Identifier: MIT
  *
  * Earthshine is adapted from a-starry-sky by David Evans (https://github.com/Dante83/a-starry-sky).
- * Copyright (c) 2018-2026 David Evans
- * Licensed under the MIT License; see ./a-starry-sky.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026 David Evans
+ * SPDX-License-Identifier: MIT
  *
  * The moon's colour and heights come from NASA's Scientific Visualization Studio CGI Moon Kit
- * (public domain), processed by tools/build-moon-textures.py.
+ * (public domain), processed by tools/island/build-moon-textures.py.
  */
 
 import * as THREE from 'three/webgpu';
@@ -27,13 +27,16 @@ type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
+// The night sky: a real sky's stars and Milky Way, fixed, and the moon.
+//
 // The night sky: stars, Milky Way and moon. The stars and Milky Way are a real sky, the one seen
 // from 38 degrees south at a local sidereal time of 14h (DayCycle.ts STARS), fixed: they neither
 // turn through the night nor drift over the year; procedural grain and faint stars only add detail
 // below the catalogue and the map. Stars are points with a natural spread of brightness, kept below
 // white except the brightest few; only those near the horizon scintillate. The night is
-// art-directed (docs/explanation/art-direction.md): the sky's colours are drawn as authored, and any
-// night-vision shift is the post chain's (Purkinje.ts, off by default), over the whole frame.
+// art-directed (docs/design/night.md, The night sky): the sky's colours are drawn as authored, and any
+// night-vision shift is the post chain's (Purkinje.ts, at the look's strength: on at night in the
+// island's look, off in the renderer's neutral look), over the whole frame.
 
 // The drawn disk's angular radius: five times the true moon's (Radiometry.ts MOON_GLINT_RADIUS,
 // 0.0045 rad), about 2.6 degrees across, a look choice so the disk reads as the night's light
@@ -259,7 +262,7 @@ const starLayer = ( c: V3, footprint: F, conserve: boolean, cells: number, occup
 // The kit's mean lunar radius in metres: heights over it give slopes on the unit sphere.
 const LUNAR_RADIUS = 1737400;
 // Mean linear luminance of the colour map's near side, weighted by projected area on the disk
-// (printed by tools/build-moon-textures.py). Dividing by it keeps the disk's brightness in
+// (printed by tools/island/build-moon-textures.py). Dividing by it keeps the disk's brightness in
 // moonColor, so the map only redistributes it into maria, highlands and craters.
 const NEAR_SIDE_LUMINANCE = 0.397;
 // Oren-Nayar (roughness 1) radiance at normal incidence and view: the full moon's centre.
@@ -373,7 +376,7 @@ export class NightSky {
 	readonly relief = uniform( 1.4 );
 	// Strength of the earthshine over a-starry-sky's (an art control).
 	readonly earthshine = uniform( 1 );
-	// The near side's colour and LOLA heights (see tools/build-moon-textures.py). Loading
+	// The near side's colour and LOLA heights (see tools/island/build-moon-textures.py). Loading
 	// starts with the sky; the first bake waits for it, so no frame shows an untextured moon.
 	readonly colorMap: THREE.Texture;
 	readonly heightMap: THREE.Texture;

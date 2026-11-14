@@ -4,6 +4,8 @@ import { debugFlags } from './DebugFlags.ts';
 import { CLASSES, useClasses } from './Classes.ts';
 import { diffuseOcclusion } from '../lighting/AmbientGrade.ts';
 
+// The lighting layer's debug views, for measuring and tuning the light on its own.
+//
 // The lighting layer's debug views, for measuring and tuning the light on its own (debug builds,
 // read at load from `flags=`):
 //   lightOnly:1    every lit surface's diffuse albedo is 0.5 grey (the terrain above and under the
@@ -27,7 +29,7 @@ import { diffuseOcclusion } from '../lighting/AmbientGrade.ts';
 //   albedoOnly     every lit surface drawn unlit in its own diffuse albedo (what its lighting takes,
 //                  a darkening folded into it included), none of the light: the image is the
 //                  albedo itself, so a material's albedo is read where it lies on screen (the turf
-//                  between the meadow's blades: tools/meadow-light.mjs). Overrides the two above.
+//                  between the meadow's blades: tools/island/meadow-light.mjs). Overrides the two above.
 //   occlusionOnly  every lit surface drawn unlit in the occlusion its ambient diffuse takes, grey:
 //                  the material's own (vertex AO, the turf's roots, a pocket's) times the screen's
 //                  where it receives it, graded and floored (lighting/AmbientGrade.ts

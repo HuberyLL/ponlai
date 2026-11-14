@@ -1,3 +1,5 @@
+// The empty scene: the sky and level grey ground alone, read through a day.
+//
 // The empty scene's light: the sky and level grey ground without end, and nothing else. It shows
 // what the sky and the key give a scene by themselves through the day: the sky's luminance toward
 // the sun, away from it and overhead, and the ground's light under it, at eight hours of a clear

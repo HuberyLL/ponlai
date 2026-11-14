@@ -1,8 +1,8 @@
 /*!
  * Adapted from the AMD FidelityFX SDK 2.3.0, FSR 3 upscaler 3.1.5 (upscalers/fsr3/include/gpu/
  * fsr3upscaler/ffx_fsr3upscaler_prepare_inputs.h).
- * Copyright (C) 2026 Advanced Micro Devices, Inc.
- * Licensed under the MIT License; see ./FidelityFX.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc.
+ * SPDX-License-Identifier: MIT
  */
 
 import { If, float, vec2, vec3, ivec2, min, max } from './Tsl.ts';
@@ -14,6 +14,8 @@ import {
 import type { Fsr3Bindings } from './Bindings.ts';
 import type { Fsr3ShaderOptions } from './Host.ts';
 
+// FSR 3's first pass: dilated depth and motion, reconstructed previous depth and luma.
+//
 // The first pass at render size: the nearest depth of each 3 x 3 neighbourhood (the dilated depth)
 // and the motion vector there (the dilated motion), the nearest depth scattered to where it was
 // last frame (the reconstructed previous depth, an atomic min), the farthest depth in metres and

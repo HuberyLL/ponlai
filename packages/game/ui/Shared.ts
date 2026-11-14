@@ -6,6 +6,8 @@ import type { BuildingRow } from './data/buildings.ts';
 import { RESOURCES, resourceStock, withItems } from './data/resources.ts';
 import type { ResourceRow } from './data/resources.ts';
 
+// What the interface's parts share: the game, the selection, the chosen building, the stock.
+//
 // What the interface's parts share: the game, the islander selected, the building chosen in the
 // build bar, the lists in use and the island's stock by resource. GameUi owns it and refreshes the
 // stock once a frame; the parts read it and change the selection through it.

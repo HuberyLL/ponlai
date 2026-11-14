@@ -1,7 +1,7 @@
 /*!
  * Portions adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater).
- * Copyright (c) 2026 DRG Software Solutions LLC
- * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
@@ -22,6 +22,8 @@ import { waveMapsPass } from '../ocean/WaveMaps.ts';
 import { localLightsPass } from '../lighting/LocalLights.ts';
 import type { PassBuilder, Pipeline } from './Pipeline.ts';
 
+// The frame's passes on the frame graph, declared in order.
+//
 // The frame's passes on the frame graph, in order (`declarePasses`): the order and the rules are
 // Pipeline.ts's header (Frame graph). With them the temporal modes' scene half
 // (`declareTemporalScene`) and what the water refracts (`declareRefraction`). The pipeline's

@@ -2,11 +2,13 @@ import type { RecordSave } from './Chronicle.ts';
 import { SAVE_VERSION, type SimState } from './sim/types.ts';
 import type { SettingsQuery } from '../render/setup.ts';
 
+// The game's save: one slot in localStorage holding the simulation's state and the record.
+//
 // The game's save: one slot in this browser's storage (localStorage) holding the game as JSON with
 // a version number: the simulation's state (sim/Sim.ts, where every change of the world is kept)
 // and the record (沧海录, Chronicle.ts: its entries, each at its tick, and the skies of each day). Kept apart from Game.ts so the page's entry (WorldBoot.ts) can read the
 // saved piece count as the page loads, before the world is asked for, without the game's code; and
-// plain TypeScript, so node's checks read saves (tools/verify-game.mjs).
+// plain TypeScript, so node's checks read saves (tools/game/verify-game.mjs).
 //
 // What is not saved: what the page holds rather than the game (the weather, the camera, which page
 // of the record is open), a brain's thought in flight (the islander is asked again once it has

@@ -1,8 +1,8 @@
 /*!
  * Adapted from the AMD FidelityFX SDK 2.3.0, FSR 3 upscaler 3.1.5 (upscalers/fsr3/include/gpu/
  * fsr3upscaler/ffx_fsr3upscaler_shading_change_pyramid.h).
- * Copyright (C) 2026 Advanced Micro Devices, Inc.
- * Licensed under the MIT License; see ./FidelityFX.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc.
+ * SPDX-License-Identifier: MIT
  */
 
 import { Fn, If, float, int, uint, vec2, vec4, ivec2, abs, min, max, floor, sign, pow, select, bool, workgroupArray } from './Tsl.ts';
@@ -15,6 +15,8 @@ import { SpdDownsample, SpdDownsampleTail, type SpdCallbacks } from './Spd.ts';
 import { s_MipLevelsToUse } from './ShadingChange.ts';
 import type { Fsr3Bindings } from './Bindings.ts';
 
+// FSR 3's shading-change pyramid: the luma's signed change since last frame, reduced by SPD.
+//
 // The shading-change pyramid: for each render pixel, the smallest signed relative difference
 // between this frame's luma and last frame's around the reprojected position (five-tap crosses,
 // sorted, walked together), then SPD over ( difference, its sign, 1 ) into SPD_MIPS levels 0..5,

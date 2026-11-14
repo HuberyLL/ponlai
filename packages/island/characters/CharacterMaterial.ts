@@ -11,12 +11,14 @@ type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 type Reflected = { directDiffuse: V3; directSpecular: V3; indirectDiffuse: V3; indirectSpecular: V3 };
 
+// The characters' cel material: stepped sunlight, the island's ambient fill and a thin rim.
+//
 // Characters are drawn rather than rendered: sunlight steps from light to shade over a narrow
 // band, the shade is filled by the same sky and sunlit ground that light the island, and a
 // thin rim catches the sun along the silhouette. The light's colour, the sky's irradiance and
 // the shadow maps are the scene's own, so a figure sits in the island's light while its forms
 // stay simple and graphic. Flat colours and simple faces in the island's palette, soft cel steps,
-// no outlines; plants keep their realistic shading (docs/explanation/art-direction.md). The cel light, its
+// no outlines; plants keep their realistic shading (docs/design/life-and-islanders.md, The islanders). The cel light, its
 // highlight included, takes the key's shading direction (lighting/KeyLift.ts: lifted under a low
 // key, the moon's fixed direction by night), as the island's materials and the shadow maps do.
 //

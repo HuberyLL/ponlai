@@ -2,10 +2,12 @@
  * Adapted from the AMD FidelityFX SDK 2.3.0, FSR 3 upscaler 3.1.5 (upscalers/fsr3/include/gpu/
  * fsr3upscaler/ffx_fsr3upscaler_resources.h, internal/ffx_fsr3upscaler.cpp's
  * getInternalResourceDescriptions and getSharedResourceDescriptions).
- * Copyright (C) 2026 Advanced Micro Devices, Inc.
- * Licensed under the MIT License; see ./FidelityFX.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc.
+ * SPDX-License-Identifier: MIT
  */
 
+// FSR 3's resource identifiers and the description of every internal resource.
+//
 // The upscaler's resource identifiers (upstream's numbers, so a binding table maps one to one) and
 // the description of every internal resource: its size class, upstream's format, the WebGPU format
 // the port uses, its mips, its ping-pong partner, and the aliasing and clear rules. The kernels

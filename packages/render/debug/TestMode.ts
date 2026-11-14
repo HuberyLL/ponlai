@@ -1,4 +1,6 @@
-// The test mode's one switch (docs/reference/tools.md, Test mode), read once at load: on with `paused` in the
+// The test mode's one switch, read once at load, which history-dependent effects obey.
+//
+// The test mode's one switch (docs/reference/test-mode.md), read once at load: on with `paused` in the
 // query, which every capture, parity and verify tool loads its pages with, unless `testMode=0`
 // leaves it out (the clips do: they step the clock and show what moves). Every history-dependent
 // rendering effect that does not settle on its own on a still scene reads it, and is frozen or off

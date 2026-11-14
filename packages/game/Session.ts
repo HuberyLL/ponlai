@@ -11,12 +11,14 @@ import { checkArgs } from './sim/schema.ts';
 import { StandInBrain } from './sim/standin.ts';
 import type { EntityId, IslandInput } from './sim/types.ts';
 
+// The game around its simulation, without the page: the record, brain, commands and save.
+//
 // The game around its simulation, without the page: the simulation installed (sim/Sim.ts) and its
 // record (Chronicle.ts), the brain in the islanders' slot, the stream of what happened handed to
 // its listeners, the player's commands checked at the entrance, the leader's words as each
 // listener hears them, the island's growth asked of a host, and the save of the simulation with its
 // record (save.ts). The page's game (Game.ts) hosts it beside the view, the
-// interface, the scene events and the autosave; tools/play-game.mjs hosts it headless, so a run in
+// interface, the scene events and the autosave; tools/game/play-game.mjs hosts it headless, so a run in
 // node plays the game the page plays, with nothing copied. No three.js or DOM: node runs it by
 // stripping types, as it runs sim/.
 //
@@ -51,7 +53,7 @@ import type { EntityId, IslandInput } from './sim/types.ts';
 // (Brain.hears) each listener keeps them until a thought takes them (`takeHeard`, `hasHeard`), and
 // is asked for one at once (Sim.think: not while one is in flight; the words then wait for the next).
 //
-// The island grows with the population (docs/explanation/game-design.md, "How the island grows"; Sim.ts): once
+// The island grows with the population (docs/design/game-design.md, "How the island grows"; Sim.ts): once
 // a step is due and none is under way, `advance` asks the host's `grow`, before the frame's ticks,
 // so on the state the last frame showed. The host hands the piece back through `setIsland`, which
 // is the simulation's `addPiece` (the piece is counted there, whoever asked for it): at once

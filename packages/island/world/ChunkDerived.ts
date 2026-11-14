@@ -1,3 +1,5 @@
+// What the page derives from a chunk's meshes, made in the chunk's job off the main thread.
+//
 // What the page derives from a chunk's meshes, made in the chunk's job (Chunks.ts `buildChunk`) so
 // the main thread never walks their vertices: the sun's caster
 // columns (SunShadow.ts), the triangles the refracted sun's map draws (RefractedSun.ts) and the
@@ -19,7 +21,7 @@
 //   chunk does not know: a chunk keeps its raw columns (the lowest and highest point in each cell,
 //   unpadded) on a finer fixed lattice, and SunShadow folds each into every one of its cells the
 //   column's cell meets. That holds everything its own walk would bin, and a point at most one
-//   COLUMN_CELL past a cell's edge more: within one of its cells (tools/verify-chunk-derived.mjs).
+//   COLUMN_CELL past a cell's edge more: within one of its cells (tools/island/verify-chunk-derived.mjs).
 // - The refracted map's subsets are cut at SEA_LEVEL, the only level the sea takes today; at another
 //   level RefractedSun cuts its own, as it does for meshes without them.
 // - The caster columns' and the subsets' format is the renderer's (lighting/CasterFormat.ts).

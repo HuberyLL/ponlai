@@ -1,7 +1,7 @@
 /*!
  * Portions adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater).
- * Copyright (c) 2026 DRG Software Solutions LLC
- * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
@@ -16,6 +16,8 @@ import { shared } from '../shared.ts';
 import { compileInto } from '../post/graph/Compile.ts';
 import type { FrameGraph } from '../post/graph/FrameGraph.ts';
 
+// What the light under the water needs from the sea's surface: the wave maps and the caustics.
+//
 // What the light under the water needs from the sea's surface, baked once a frame into one array
 // target, on the frame graph ahead of the scene passes (`waveMapsPass`), after the sea's cascades
 // (computed in the tick): the wave maps and the caustics.

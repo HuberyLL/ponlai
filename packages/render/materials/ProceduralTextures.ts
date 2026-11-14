@@ -1,7 +1,7 @@
 /*!
  * hash22 is "Hash without Sine" by David Hoskins (https://www.shadertoy.com/view/4djSRW).
- * Copyright (c) 2014 David Hoskins
- * Licensed under the MIT License; see ./hoskins-hash.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2014 David Hoskins
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
@@ -11,6 +11,8 @@ import {
 } from 'three/tsl';
 import { fetchAsset } from '../FetchAsset.ts';
 
+// Tileable detail textures baked on the GPU once at startup: rock, moss, sand and gravel.
+//
 // Tileable detail textures baked on the GPU once at startup (no image files):
 //   heights   R rock (beds, fractures)   G moss cushions   B sand ripples   A lichen spots
 //   normalsA  RG rock normal             BA moss normal

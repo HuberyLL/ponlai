@@ -1,8 +1,10 @@
 import { REVISION } from 'three/webgpu';
 
+// The checks of what the page reaches in three beyond its public interface.
+//
 // What the page reaches in three beyond its public interface is listed in `three-internals.json`
 // (an entry per member, method or mirrored code: where it lives in three, how it is used, which of
-// our functions needs it), and `tools/verify-three-internals.mjs` checks the list against the three
+// our functions needs it), and `tools/repo/verify-three-internals.mjs` checks the list against the three
 // installed. A dependency that no longer holds is an error naming its entry, never a fallback to
 // another path: `missing` makes that error, and `checkRenderer` checks the members of the
 // renderer's instance that the functions of this directory use once the renderer is initialised

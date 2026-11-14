@@ -1,6 +1,8 @@
 import { fbm2, noise3, smoothstep, smax } from '../../render/data.ts';
 import { LAND_REACH, type Footprint, type HeightFn } from './WorldShapes.ts';
 
+// The sea floor: a shelf round the island that gives way to the open sea along an irregular edge.
+//
 // The sea floor: a shelf round the island that follows the land's distance (clamped to LAND_REACH,
 // WorldShapes.ts) and world-space noise, and gives way to the open sea along an irregular edge.
 // Everything here is a function of world position and the land within LAND_REACH of it, so a

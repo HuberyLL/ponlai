@@ -18,17 +18,19 @@ import { UiShared } from './Shared.ts';
 import { SpeakBar } from './SpeakBar.ts';
 import { TopRow } from './TopRow.ts';
 
-// 蜃光, the player's interface in ?game (docs/explanation/ui.md, the spec it follows; the design canvas's boards
-// predate the decisions it marks as changed). The interface is a mirage over the sea: no frames, a
-// mist shadow under white brush line art, in one language: Chinese, the language the game is written
-// in, or another by `?lang=` (i18n/i18n.ts: every word is a catalogue's). Its parts:
+// 蜃光, the player's interface in ?game: a mirage over the sea, assembled from its parts.
+//
+// 蜃光, the player's interface in ?game (docs/design/ui.md, the spec it follows). The interface
+// is a mirage over the sea: no frames, a mist shadow under white brush line art, in one language:
+// Chinese, the language the game is written in, or another by `?lang=` (i18n/i18n.ts: every word is
+// a catalogue's). Its parts:
 //   TopRow.ts      the day and time, pause and play, the weather and its forecast (Forecast.ts), the
 //                  island's resources (ResourceRow.ts) and the record's scroll
 //   People.ts      the islanders' marks: the selected one's ring and tag, alerts, thinking, speech
 //   SpeakBar.ts    talking to the islanders, and the words flying to them
 // What the player reads stays on the screen; what belongs to the islanders' world (the ring, the
 // words over a head, the words in flight) stands in it, laid into the scene through the camera
-// (Space.ts; docs/explanation/ui.md, Screen and world).
+// (Space.ts; docs/design/ui.md, Screen and world).
 //   BuildBar.ts    the build bar, which hands a building the simulation knows to the placement in
 //                  the scene (../Placement.ts)
 //   Record.ts      沧海录, the record, over the dimmed and stopped world
@@ -39,9 +41,9 @@ import { TopRow } from './TopRow.ts';
 //
 // Type: Ma Shan Zheng (马善政) for calligraphy, LXGW WenKai GB (霞鹜文楷 GB, sliced by unicode-range,
 // so a page loads only the slices its characters need) for running text, and our own brush fonts
-// (public/fonts/) first in every stack for numerals and Latin (ui.css). The layout is the design's
-// 1600 x 900 board scaled to the window (`--k`: the smaller of its width over 1600 and height over
-// 900), each part anchored to the edge it is drawn against.
+// (public/fonts/) first in every stack for numerals and Latin (ui.css). The parts are laid out on a
+// 1600 x 900 frame scaled to the window (`--k`: the smaller of its width over 1600 and its height
+// over 900; 1.2 at 1920 x 1080 CSS pixels), each part anchored to the edge it is drawn against.
 //
 // Keys: one listener ahead of the page's (capture, on the window) routes them, the record first
 // (it takes every key while open: the world behind it is still), then the build bar's (1-9, the
@@ -63,7 +65,7 @@ export interface UiContext {
 	sceneEvent( reason: 'game input' ): void;
 }
 
-// the design's board, which the window scales
+// the frame the parts are laid out on, which the window scales
 const BOARD_W = 1600, BOARD_H = 900;
 // what the fonts must have before the interface shows (the loading screen waits: Game.ready): the
 // slices of the words the interface opens with (the first ten days' names and the titles)

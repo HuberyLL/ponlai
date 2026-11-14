@@ -1,10 +1,12 @@
+// The meadow's planting anchors: one jittered sample per cell of a world-anchored grid.
+//
 // The meadow's planting anchors: one jittered sample per cell of a world-anchored grid, marched
 // down to the island's top. Every choice belongs to the anchor's cell ( i, j ): its jitter is a
 // hash of the cell, and the plants grown on it draw from a random stream seeded by the cell
 // (`anchorStream`), so what grows at an anchor never depends on which other anchors were built
 // before it, or in which box. A box keeps the anchors whose jittered point lies in it, so boxes
 // that tile the plane build every anchor once, and a box plants exactly what the whole island
-// plants there (tools/verify-world-chunks.mjs, S5).
+// plants there (tools/island/verify-world-chunks.mjs, S5).
 import { hash3i, mulberry32, type Rng, type Bounds } from '../../render/data.ts';
 import { VEGETATION_SPACING as CELL } from './types.ts';
 import type { SDF } from './types.ts';

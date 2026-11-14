@@ -3,6 +3,8 @@ import { animate, FIGURE_HEIGHT, type Villager as Figure, TRAMPLE, type TrampleW
 import type { Sex } from '../../island/land.ts';
 import type { EntityId, GridApi, Villager } from '../sim/types.ts';
 
+// One islander on screen: the sim's body drawn by a loaded figure or a stand-in.
+//
 // One islander on screen: the sim's body drawn by a loaded figure (or a plain stand-in when the
 // figure cannot load). Position interpolates between the last two ticks, the heading turns
 // smoothly toward the sim's facing, and the body's motion picks the idle or walk clip with a

@@ -4,12 +4,12 @@
  * src/world/weather/createCollisionRain.js): drops in a camera-centred toroidal volume, a
  * compute pass that tests them against a top-down height map, and instanced billboards for
  * the streaks and their splashes.
- * Copyright (c) 2026 Anderson Mancini and Sunag
- * Licensed under the MIT License; see ./threejs-conference.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 Anderson Mancini and Sunag
+ * SPDX-License-Identifier: MIT
  *
  * The same pattern is in the three.js example webgpu_compute_particles_rain.html.
- * Copyright (c) 2010-2026 three.js authors
- * Licensed under the MIT License (the three package's licence, shipped with the build).
+ * SPDX-FileCopyrightText: Copyright (c) 2010-2026 three.js authors
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
@@ -27,6 +27,8 @@ type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
+
+// The rain's GPU drops: streaks and splashes in camera volumes, collided against a height map.
 
 // Under taa and taau (post/Antialiasing.ts AFTER_RESOLVE) the streaks, splashes and rings draw after
 // the temporal resolve, at the canvas's resolution and unjittered (`afterGroup`,

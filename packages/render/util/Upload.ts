@@ -2,6 +2,8 @@ import * as THREE from 'three/webgpu';
 import { AttributeType, attributeUploaded, releaseAttribute, uploadAttribute } from '../three/Attributes.ts';
 import { gpuBuffer, gpuDevice, gpuTexture, setGpuBuffer, wrapAttributeWrites } from '../three/Backend.ts';
 
+// Uploads in steps: a buffer's or a data texture's GPU data written a slice at a time.
+//
 // Uploads in steps, for the growth's idle-time preparation (Growth.ts): a buffer attribute's GPU
 // buffer, or a data texture's texels, written a slice at a time through a buffer mapped at
 // creation, then unmapped (and for a texture copied on the GPU). The data the GPU ends up with is

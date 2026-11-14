@@ -1,5 +1,7 @@
 import * as THREE from 'three/webgpu';
 
+// A tile of blue noise for the output's dither, made at load by void-and-cluster.
+//
 // A tile of blue noise for the output's dither (PipelineDisplay.ts `finish`): BLUE_NOISE x
 // BLUE_NOISE thresholds n in [ 0, 1 ), each a pixel's rank among the tile's, made at load by
 // Ulichney's void-and-cluster ("The void-and-cluster method for dither array generation", SPIE

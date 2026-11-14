@@ -2,11 +2,13 @@ import * as THREE from 'three/webgpu';
 import { storage } from 'three/tsl';
 import { fetchAsset } from '../FetchAsset.ts';
 
+// The real night sky's data: the star catalogue and the Milky Way map, loaded once.
+//
 // The real night sky's data, loaded once before the first sky bake:
 //   stars.bin     the Yale Bright Star Catalogue (9096 stars to about magnitude 6.5), packed by
-//                 tools/build-star-catalog.mjs
+//                 tools/island/build-star-catalog.mjs
 //   milkyway.png  the Milky Way's broad light and dust from NASA SVS's Deep Star Maps 2020
-//                 (Gaia DR2), reduced by tools/build-milky-way.py
+//                 (Gaia DR2), reduced by tools/island/build-milky-way.py
 // Both are in the equatorial frame of DayCycle's starFrame: x toward right ascension 0h, y toward
 // 6h, z toward the north celestial pole.
 

@@ -5,10 +5,13 @@ import { attr, el, flag, text } from './dom.ts';
 import { t } from './i18n/i18n.ts';
 import type { UiShared } from './Shared.ts';
 
-// The island's resources at the top right (docs/explanation/ui.md, Resources): always in view, one icon and one
+// The island's resources at the top right: an icon and a count per kind, in groups.
+//
+// The island's resources at the top right (docs/design/ui.md, Resources): always in view, one icon and one
 // tabular number per kind, in groups (materials, food, water) with space between them. They count
 // what the stores hold (UiShared.stock). While the build bar shows a building, each count its cost
-// lacks turns 朱, here as in the bar. With more than ROW_MAX kinds a group keeps its common kinds
+// lacks turns 朱, here as in the bar; what it lacks is the simulation's shortfall (UiShared.short,
+// sim/stock.ts), never the row's own sum. With more than ROW_MAX kinds a group keeps its common kinds
 // and merges the rest into one 苍 mark (+ how many), which opens the group on hover or focus; the
 // mark turns 朱 when a kind it holds is short.
 //

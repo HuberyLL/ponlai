@@ -1,3 +1,5 @@
+// The page: the one place that assembles it, stage by stage, from three sets of parts.
+//
 // The page: the one place that assembles it. It creates the three objects the page is built on
 // (the renderer's parts, the island's, the page's own) and calls the stages that fill them in order:
 // the renderer's (RenderStages.ts), the island's (IslandStages.ts) and the page's (app/: the camera
@@ -44,7 +46,7 @@ const page = {} as PageParts;
 const ground = { soil: params.get( 'soil' ) !== '0' };
 page.ground = ground;
 setSoilStrength( ground.soil );
-// GPU time per pass, tick time and startup marks for tools/profile-frame.mjs (?profile, or
+// GPU time per pass, tick time and startup marks for tools/render/profile-frame.mjs (?profile, or
 // ?profile=frames without the GPU timestamps). The profiler loads only then; without it the
 // renderer, its pipelines and the image are unchanged.
 const profiler = params.has( 'profile' ) ? ( await import( '../packages/render/debug/FrameProfiler.ts' ) ).createFrameProfiler( THREE.InspectorBase, { timestamps: params.get( 'profile' ) !== 'frames' } ) : null;

@@ -1,3 +1,5 @@
+// Naive surface nets: a mesh from an SDF, with SDF normals, baked occlusion and curvature.
+//
 // Naive surface nets: one vertex per sign-changing voxel (mean of its edge crossings), one quad
 // per sign-changing grid edge. Normals come from the SDF gradient (not the faceted mesh), a cheap
 // SDF ambient occlusion is baked per vertex, plus an optional per-vertex value from `sdf.tint`,
@@ -39,7 +41,7 @@
 // column for which it returns [ lo, hi ] samples the field only on the lattice points from just
 // below lo to just above hi and fills the rest with a constant of the right sign: inside below,
 // outside above. The caller promises that the field has no sign change outside that range, in this
-// column or within a voxel of it, so the mesh is the same (tools/verify-world-chunks.mjs compares
+// column or within a voxel of it, so the mesh is the same (tools/island/verify-world-chunks.mjs compares
 // every chunk with and without). It saves about a tenth of an inland chunk's time, not the nine
 // tenths the design estimated: far from the coast the wall's SDF already costs little per sample
 // (CliffWall's column cache), and the vertices' normals and AO dominate.

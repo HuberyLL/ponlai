@@ -1,3 +1,5 @@
+// Game time: ticks of one game second, and the day and time of day derived from a tick.
+//
 // Game time: one tick is one game second, counted from the hour the game began at. The day and the
 // minute of the day are counted in whole seconds (the start hour to the second), never from the
 // hour's fraction: ( 8 + 60 / 3600 ) * 60 is 480.99999999999994, so a third of the minutes' first

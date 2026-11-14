@@ -1,8 +1,8 @@
 /*!
  * Adapted from the AMD FidelityFX SDK 2.3.0, FSR 3 upscaler 3.1.5 (upscalers/fsr3/internal/shaders/
  * ffx_fsr3upscaler_autogen_reactive_pass.hlsl).
- * Copyright (C) 2026 Advanced Micro Devices, Inc.
- * Licensed under the MIT License; see ./FidelityFX.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc.
+ * SPDX-License-Identifier: MIT
  */
 
 import { float, uint, vec3, abs, max, length, select } from './Tsl.ts';
@@ -14,6 +14,8 @@ import {
 } from './Resources.ts';
 import type { Fsr3Bindings } from './Bindings.ts';
 
+// FSR 3's reactive-mask generator: how much transparent content changed each pixel.
+//
 // The reactive-mask generator (ffxFsr3UpscalerContextGenerateReactiveMask): the reactive value of a
 // pixel is how much the transparent and composited content changed it, the difference between
 // the colour before (opaque only) and after, optionally tonemapped, scaled and thresholded.

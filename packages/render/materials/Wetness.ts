@@ -2,13 +2,13 @@
  * The rain runnels on steep rock are adapted from tidewater by Daniel Greenheck
  * (https://github.com/dgreenheck/tidewater): the rain-streak stains of `terrainRockSurface` in
  * `src/world/terrain/TerrainShading.js`, ported from WGSL to TSL.
- * Copyright (c) 2026 DRG Software Solutions LLC
- * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-License-Identifier: MIT
  *
  * The falling flow inside those runnels is adapted from Godot_rain_shader by Lexpartizan
  * (https://github.com/Lexpartizan/Godot_rain_shader): the scrolling streak gradient of `rain.shader`.
- * Copyright (c) 2020 Lexpartizan
- * Licensed under the MIT License; see ./godot-rain-shader.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2020 Lexpartizan
+ * SPDX-License-Identifier: MIT
  */
 
 import type * as THREE from 'three/webgpu';
@@ -18,6 +18,8 @@ type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
+// Wet materials: pores darken, a water film glosses, standing water fills the hollows.
+//
 // Wet materials after Sébastien Lagarde, "Water drop 3a / 3b - Physically based wet surfaces"
 // (2013): water first fills the pores of a rough, porous surface (it darkens and loses a little
 // roughness), then a film of water covers it (water's own smooth specular and a flatter normal),

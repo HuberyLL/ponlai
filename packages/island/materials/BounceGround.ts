@@ -6,6 +6,8 @@ import { FLOOR_ALBEDO } from '../world/SeabedTile.ts';
 import { LAWN_COLOUR, groundGains } from './Meadow.ts';
 import { soilGroveSwell } from './Soil.ts';
 
+// The island's ground as the ground bounce's bake reads it: turf, stone, sand, seagrass, rubble.
+//
 // The island's ground as the ground bounce's bake reads it (lighting/GroundBounce.ts
 // `BounceGround`): the plateau's turf, stone over the rim's last metre and a half; under the sea
 // the floor's sand, seagrass over its beds and the cliff foot's rubble, at the gain the floor is

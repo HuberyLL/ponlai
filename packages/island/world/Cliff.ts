@@ -1,3 +1,5 @@
+// The island's sea cliff, derived from the footprint alone as a face shed scar by scar.
+//
 // The island's sea cliff, derived from the footprint alone, so the land gets the same kind of coast
 // whatever shape it grows to, with no hand-placed features.
 //
@@ -40,7 +42,7 @@
 // to the bit, when the land grows elsewhere, and a part of the coast can be built from its own
 // surroundings alone.
 //
-// Rules (the look is in docs/explanation/art-direction.md):
+// Rules (the look is in docs/design/island.md, The cliffs):
 // - Every property of a scar (rockfall scars, joint faces, pockets, steps in the lip, gullies, the
 //   notch) comes from its own position hash, never from a running count.
 // - Every choice reads only seeds near it (a gully at the seed that ranks first within 3.7 m, a
@@ -49,7 +51,7 @@
 //   frame where it would reach further; the scars are cut in order of level and seed key. So the
 //   wall at a point depends only on the land's distance field within 25 m of it, bit for bit
 //   (`CliffWall`'s `area` is the box it is evaluated in, grown by 25 m), which the chunk checks
-//   rely on (tools/verify-world-chunks.mjs: S2's block, D1, D4); tools/verify-world-stats.mjs
+//   rely on (tools/island/verify-world-chunks.mjs: S2's block, D1, D4); tools/island/verify-world-stats.mjs
 //   checks that the reach clamp trims nothing and what the octagon breaks off.
 // - Natural rock, never masonry: the two joint sets run oblique to the world's axes, no level
 //   courses or evenly spaced joints. Scar floors and roofs lie on a parting only some of the time;

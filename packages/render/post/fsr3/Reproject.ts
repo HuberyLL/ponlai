@@ -1,8 +1,8 @@
 /*!
  * Adapted from the AMD FidelityFX SDK 2.3.0, FSR 3 upscaler 3.1.5 (upscalers/fsr3/include/gpu/
  * fsr3upscaler/ffx_fsr3upscaler_reproject.h).
- * Copyright (C) 2026 Advanced Micro Devices, Inc.
- * Licensed under the MIT License; see ./FidelityFX.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc.
+ * SPDX-License-Identifier: MIT
  */
 
 import { vec2, ivec2 } from './Tsl.ts';
@@ -12,6 +12,8 @@ import { CustomTextureSample, FetchBicubicSamples, getLanczosSampler1D } from '.
 import type { Fsr3Bindings } from './Bindings.ts';
 import type { Fsr3ShaderOptions } from './Host.ts';
 
+// FSR 3's history reprojection: last frame's colour and lock, sampled with Lanczos.
+//
 // The history's reprojection: the previous frame's upscaled colour and lock, sampled with Lanczos
 // at the reprojected position, and the motion vector the accumulation uses.
 //

@@ -5,6 +5,8 @@ import { meterOutput } from '../post/Motion.ts';
 type V3 = THREE.Node<'vec3'>;
 type F = THREE.Node<'float'>;
 
+// The metering illuminance a lit material writes, the exposure's input.
+//
 // The metering illuminance a lit material writes (post/Motion.ts `meterLight`, the exposure's
 // input): M = lum( E ) / pi, the luminance a white Lambertian surface would show under the light
 // falling on the point, E the RGB irradiance the lighting model shades with. It is gathered beside

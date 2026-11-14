@@ -2,6 +2,8 @@ import { itemKind } from './registry.ts';
 import type { Sim } from './Sim.ts';
 import type { EntityId, Items, Villager } from './types.ts';
 
+// The items system: what holds items (bags, stores) and every change to what they hold.
+//
 // The items system: what holds items (an islander's bag, a building's store) and every change to
 // what they hold. The kinds of item and their uses are content (registry.ts ItemDef; today's in
 // content/), which `use( item )` (actions.ts) runs, so a new item is a definition, never a new

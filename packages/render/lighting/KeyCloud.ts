@@ -4,6 +4,8 @@ import { float, mix, uniform } from 'three/tsl';
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 
+// The key's visibility under cloud, for the lit code that has no sky of its own to ask.
+//
 // The key's visibility under cloud, for the lit code that has no sky of its own to ask. The sky
 // (Sky.ts) hands over the clouds' transmittance along the key at a world position (Clouds.ts
 // `shadow`, V) and the land's floor under cloud (Sky.ts `keyCloudFloor`: a share of what the cloud

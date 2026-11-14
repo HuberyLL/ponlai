@@ -1,11 +1,13 @@
+// The renderer's exit for the page: the only names other packages take from the renderer.
+//
 // The renderer's exit for the page: the names the island, the game and the page take from the
 // renderer, and no others. Another package imports the renderer through this file (or through
 // render/data.ts, for its plain code, or render/setup.ts, for what the page installs before the
 // renderer loads), never one of its modules by its path
-// (tools/verify-layers.mjs). It holds re-exports only, so loading it loads the whole renderer, whose
+// (tools/repo/verify-layers.mjs). It holds re-exports only, so loading it loads the whole renderer, whose
 // modules declare and register as they load and do nothing else: no top-level await and no page
-// global read at load (tools/verify-exits.mjs). The debug modules the page loads on demand are not
-// here: they are lazy exits (tools/layers.json), imported dynamically or for their types only.
+// global read at load (tools/repo/verify-exits.mjs). The debug modules the page loads on demand are not
+// here: they are lazy exits (tools/repo/layers.json), imported dynamically or for their types only.
 export { awaitWarmUp, bakeWithHaze, checkMotion, createAmbient, createBounceAndShore, createEnvironment, createFrameStages, createKey, createLight, createRenderer, createScenes, createSeaAndPipeline, createSky, createWater, placeVegetation, vegetationCasters, bakeRainCollision, primeSharedBuilds, publishSkyLight, registerLightHistories, registerSceneHistories, sceneOptions, setUpRenderer, startWaveMaps } from './RenderStages.ts';
 export type { FrameStages, RenderParts, SceneOptions } from './RenderStages.ts';
 export { OPEN_SEA_SHORE, neutralBounceGround, neutralFields, neutralLattice, neutralSeaLattice } from './NeutralInputs.ts';

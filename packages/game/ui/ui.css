@@ -1,6 +1,8 @@
 /*
- * 蜃光, the game's interface (docs/explanation/ui.md). Everything sits over the scene's canvas and never in
- * it. The layout is in the design canvas's units: a 1600 x 900 board, scaled to the window by
+ * 蜃光's styles: the interface laid over the canvas in its frame's scaled units.
+ *
+ * 蜃光, the game's interface (docs/design/ui.md). Everything sits over the scene's canvas and never in
+ * it. The layout is in the units of a 1600 x 900 frame, scaled to the window by
  * `--k` (GameUi.ts), anchored to the edges it is drawn against. Colours are the palette's variables
  * (Palette.ts sets them on the root). No frames: a mist shadow holds text and icons off the scene.
  */

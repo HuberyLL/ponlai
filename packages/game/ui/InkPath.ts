@@ -2,11 +2,17 @@ import type { Stroke } from './Brush.ts';
 import { inkShares } from './Ink.ts';
 import { svgEl } from './dom.ts';
 
+// A long brush stroke drawn with its ink: a canvas inside the SVG in place of a filled path.
+//
 // A long brush stroke of the interface drawn with its ink (Ink.ts): in place of a filled SVG path,
 // a canvas inside the same SVG (a foreignObject over the stroke's bounds), so the stroke keeps its
 // place, its SVG's filter (the mist shadow) and any stretch or mirror of that SVG. The outline is
 // filled as the path would be (its colour, opacity or gradient of opacities along x, fill rule),
-// then each pixel keeps the share of its ink the ink leaves (Ink.ts `inkShares`).
+// then each pixel keeps the share of its ink the ink leaves (Ink.ts `inkShares`). The strokes drawn
+// so: the record's river, rule, day line and list wash (Record.ts), the build bar's two strokes
+// (BuildBar.ts), the speak bar's (SpeakBar.ts), the need bars, the ring at the feet, its 金 stroke
+// and the leader (People.ts), the forecast's stroke (Forecast.ts) and the top row's dividers
+// (TopRow.ts).
 //
 // Rules: it draws only when its stroke, its paint or the interface's scale changed; a stroke that
 // only moves (given in its own coordinates and placed `at` a point: the leader to the tag, the ring

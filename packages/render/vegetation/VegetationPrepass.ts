@@ -35,7 +35,7 @@ import { settings } from '../Settings.ts';
 // and leaves before they are shaded (an alpha-tested one cannot: its discard is decided by the
 // shader). Without multisampling and outside the temporal modes (aa=off) nothing changes.
 //
-// debugFlags (A/B in one page with tools/profile-frame.mjs --toggle):
+// debugFlags (A/B in one page with tools/render/profile-frame.mjs --toggle):
 // - vegPrepass = false: the old single coverage pass.
 // - vegPrepassOpaque = false: the shaded draw keeps its coverage and alpha test after the
 //   prepass (under the temporal modes its alpha test alone). The image is then the old one, but

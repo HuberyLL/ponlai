@@ -1,3 +1,5 @@
+// A look's values through the day: keys by the sun's elevation, blended by cloud and night.
+//
 // A look's values through the day: a few keys by the sun's elevation (degrees), each key's values
 // reached at its elevation and blended between neighbouring keys by a smoothstep (so a value rests
 // at each key and moves between them), held beyond the first and the last; a clouded day's values,

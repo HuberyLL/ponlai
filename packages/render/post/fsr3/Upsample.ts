@@ -1,8 +1,8 @@
 /*!
  * Adapted from the AMD FidelityFX SDK 2.3.0, FSR 3 upscaler 3.1.5 (upscalers/fsr3/include/gpu/
  * fsr3upscaler/ffx_fsr3upscaler_upsample.h).
- * Copyright (C) 2026 Advanced Micro Devices, Inc.
- * Licensed under the MIT License; see ./FidelityFX.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc.
+ * SPDX-License-Identifier: MIT
  */
 
 import { If, float, int, vec2, vec3, ivec2, min, max, clamp, floor, dot, length, exp, select } from './Tsl.ts';
@@ -16,6 +16,8 @@ import { Lanczos2, Lanczos2_UseLUT, Lanczos2ApproxSq } from './Sample.ts';
 import type { Fsr3Bindings } from './Bindings.ts';
 import type { Fsr3ShaderOptions } from './Host.ts';
 
+// FSR 3's upsampling: this frame's Lanczos contribution and the history's rectification box.
+//
 // The current frame's contribution: a sliced 2-lobe Lanczos over the 3 x 3 render texels nearest
 // the output pixel (the other slices accumulate over the jitter sequence), weighted by how much
 // the history is trusted, and the rectification box (the samples' weighted mean and deviation in

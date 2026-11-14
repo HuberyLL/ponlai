@@ -4,6 +4,8 @@ import { S } from '../world/Chunks.ts';
 import type { WorldData } from '../world/types.ts';
 import type { ShoreField } from '../../render/data.ts';
 
+// A debug view of the world's chunks: each chunk's square drawn on the ground, posts at corners.
+//
 // A debug view of the world's chunks (packages/island/world/Chunks.ts): every chunk's square drawn on the ground
 // (the meadow's top, and the sea floor seen through the water) with a post at each corner, so a
 // seam in the image can be told from a chunk border (GUI Ground folder, `chunkBorders` URL option).

@@ -1,6 +1,8 @@
 import { tune } from '../debug/Tune.ts';
 import { SUN_DISPLAY_RADIUS, SUN_DISPLAY_SOLID_ANGLE, SUN_GLINT_RADIUS, projectedSolidAngle } from './Radiometry.ts';
 
+// The sun's disk as the page draws it, the sky's disk and the glints' disk sized together.
+//
 // The sun's disk as the page draws it, sized by one tunable (debug/Tune.ts
 // `lighting.sun.discScale`, read as the page loads): the sky's disk (Radiometry.ts
 // SUN_DISPLAY_RADIUS, sky/Sky.ts, post/LightShafts.ts) and the disk the glints take their

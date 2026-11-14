@@ -2,16 +2,16 @@
  * Adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater): its
  * volumetric clouds (`Clouds.js`, the view reconstruction) and its port of the Three.js Sky Pro
  * clouds (`SkyProClouds.js`, the density, lighting and march).
- * Copyright (c) 2026 DRG Software Solutions LLC
- * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-License-Identifier: MIT
  *
  * The in-cloud lightning term (flashLight), the rain curtains and the rainbow drawn in them are
  * adapted from VolumetricCloudsCS1 by Anthony Ibrahim
  * (https://github.com/anthonytoumaibrahim/VolumetricCloudsCS1): `CloudRaymarch.shader`
  * (the point lights, MarchRain, BowColour) and `CloudMedia.cginc` / `CloudCommon.cginc`
  * (RainSigma, SampleRain).
- * Copyright (c) 2026 Anthony Ibrahim
- * Licensed under the MIT License; see ./VolumetricCloudsCS1.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 Anthony Ibrahim
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
@@ -26,6 +26,8 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
+// The clouds' model: the shell's, density's, light's and march's constants and shared helpers.
+//
 // The clouds' model (Clouds.ts, whose header says what it is and why): the constants of the shell, the
 // density, the light and the march, the dome's and the shadow map's layouts, and the helpers every
 // kernel shares (the density's weather noise, the phase, the dome's mapping, the deck's forward

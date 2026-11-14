@@ -5,6 +5,8 @@ import { leafAlphaTexture, leafTexture } from './LeafTexture.ts';
 import type { PlantSite } from './Registry.ts';
 import type { Shared } from '../shared.ts';
 
+// The default plant: two crossed leaf cards for a plant kind without art of its own.
+//
 // The default plant: what a plant kind without art of its own is drawn with (Registry.ts), so a
 // new kind can be placed, lit, shadowed and measured on the day it is registered. One mesh for
 // all its sites: at each site two upright cards crossed at a right angle, SIZE wide and tall,

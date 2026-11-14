@@ -1,6 +1,8 @@
 import type { DayKey } from '../../render/index.ts';
 import type { IslandSkyRow, Rgb, SkyLook } from '../../render/setup.ts';
 
+// The island's sky look: its numbers for the sky's tables.
+//
 // The island's sky look (packages/island/look/: the island's numbers for the renderer's look tables,
 // look/Look.ts; look/SkyLook.ts makes the sky's tables from these, and its header says what each
 // table is). Upper-case names are this file's; a name in backticks with no file is sky/Sky.ts's or
@@ -103,7 +105,7 @@ const ISLAND_SKY_RISING: readonly IslandSkyRow[] = [
 	ISLAND_SKY[ ISLAND_SKY.length - 1 ],
 ];
 
-// Off by default (docs/explanation/art-direction.md, The look: the light keeps the sun's and the sky's own
+// Off by default (docs/design/art-direction.md, The light: the light keeps the sun's and the sky's own
 // balance): with the meadow's own soft light the lifted shade left a shaded clump within a
 // quarter of a lit one and the meadow showed no side the light came from. `flags=clearShade:<k>`
 // (or `true`) brings it back for A/Bs. What it was: the shade clear, never black. Shade is lit by

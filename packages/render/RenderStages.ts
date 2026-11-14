@@ -1,3 +1,5 @@
+// The renderer's stages: the page's renderer built a stage at a time, in the entry's order.
+//
 // The renderer's stages: the page's renderer built a stage at a time, in the order the entry
 // (main.ts) calls them. Each stage is a plain function that puts what it builds on the one
 // RenderParts object, which the later stages, the island's stages (IslandStages.ts) and the page

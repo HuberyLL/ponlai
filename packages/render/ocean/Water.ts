@@ -1,11 +1,11 @@
 /*!
  * Portions adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater).
- * Copyright (c) 2026 DRG Software Solutions LLC
- * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-License-Identifier: MIT
  *
  * hash22 is "Hash without Sine" by David Hoskins (https://www.shadertoy.com/view/4djSRW).
- * Copyright (c) 2014 David Hoskins
- * Licensed under the MIT License; see ../materials/hoskins-hash.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2014 David Hoskins
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
@@ -38,10 +38,10 @@ import { sceneUnits } from '../post/PreExposure.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 import { settings } from '../Settings.ts';
 
-// The sea surface: an FFT-displaced grid whose shading takes tidewater's WaterMaterial (4811ba4, its
-// above-water branch: the normal, the Fresnel and the sky's reflection, its gate, the refracted ray to
-// the floor, the foam) with the water body and the sun's glint our own (below; the camera never goes
-// under the sea):
+// The sea surface: an FFT-displaced grid with its normal, reflection, refraction and foam.
+// Its shading takes tidewater's WaterMaterial (4811ba4, its above-water branch: the normal, the
+// Fresnel and the sky's reflection, its gate, the refracted ray to the floor, the foam) with the
+// water body and the sun's glint our own (below; the camera never goes under the sea):
 //   - the normal from the cascades' slopes over their horizontal stretch (WaterSurface), with
 //     near-field capillary ripples (in the reflection and the glint, not the refraction), the rocky
 //     shore's reflected wave and the rain's rings

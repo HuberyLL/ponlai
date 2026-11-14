@@ -1,5 +1,7 @@
 import type { SDF } from './types.ts';
 
+// Local sky and contact visibility of generated solids, traced through their distance fields.
+
 export interface SolidBounds {
 	field: SDF;
 	min: readonly number[];

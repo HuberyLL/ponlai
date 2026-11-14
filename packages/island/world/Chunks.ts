@@ -1,3 +1,5 @@
+// The world generated one chunk at a time, as pure functions of the land.
+//
 // The world generated one chunk at a time: pure functions of the
 // land, callable from a worker or from plain node (no `self`, no three, no DOM).
 //
@@ -34,7 +36,7 @@
 //   value by up to 4.6 m, so a value reads the land within min( |d|, LAND_REACH ) + 4.6 m (and the
 //   0.35 m lattice): more than those 2 m, covered by R's slack, since the kinds the chunks share
 //   read their window no farther than about 31 m from the chunk. Every other chunk keeps its data,
-//   bit for bit (tools/verify-world-chunks.mjs, D4 and D5): the content a chunk keeps reads the
+//   bit for bit (tools/island/verify-world-chunks.mjs, D4 and D5): the content a chunk keeps reads the
 //   land within its window, and its distances there change only where land near them changed.
 //   The test is the changed cells, not the cells whose clamped distance differs: that would stack
 //   LAND_REACH on the window.
@@ -55,9 +57,9 @@
 //   and ground grid on world lattices (a cell on a border is filled by both chunks, merged by min
 //   and max), taken from the island's mesh before it is simplified, and the refracted map's
 //   triangle subsets of the drawn island, the stones and the floor tile (owned with their
-//   triangles). tools/verify-chunk-derived.mjs checks that they merge to
+//   triangles). tools/island/verify-chunk-derived.mjs checks that they merge to
 //   what SunShadow, RefractedSun and IslandGround build from the merged meshes.
-// - For the checks (tools/verify-world-chunks.mjs): `chunkIsland` and `chunkBlock` make a block of
+// - For the checks (tools/island/verify-world-chunks.mjs): `chunkIsland` and `chunkBlock` make a block of
 //   chunks in one pass from the block's own window, with the same stage functions as `buildChunk`,
 //   and share it out by chunk (S2, S5); `contactStones` gives the stones a chunk places round itself
 //   for the contact shade (S6). A new kind of content gets its stage function, used by both.

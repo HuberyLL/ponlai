@@ -1,3 +1,5 @@
+// The page's camera views: the island view, the review views, the free flight and the orbit.
+//
 // The page's camera views: the island view the land is framed in (placed from the query's dist /
 // polar / az, or the land's own framing), the review views (horizon, sky), the free flight, the
 // widening of the field of view near the ground and the orbit's limits. The island's stages call

@@ -9,13 +9,15 @@ import type { PlacementHandle } from './ui/BuildBar.ts';
 import type { UiContext } from './ui/GameUi.ts';
 import { PlacementPreview } from './view/PlacementPreview.ts';
 
+// Placing a building in the scene: arming, the preview ring, the hint and the click.
+//
 // Placing a building in the scene: the build bar arms it with a kind the simulation knows (its
 // roster row's `kind`: the chest) and disarms it when the choice is cleared or the bar closes.
 // While armed, a ring on the turf under the pointer shows where it would stand (PlacementPreview:
 // green where it can go, red where the simulation would refuse it), the bar says how or why not
 // (`hint`), and a click on the island places it through Game.placeBlueprint. A refused click leaves
 // it armed; a placed building disarms it and tells the bar (`onPlaced`). The placement of every
-// other building, and the scene's own look of it, wait (docs/explanation/ui.md, Scope now).
+// other building, and the scene's own look of it, wait (docs/design/ui.md, Scope now).
 //
 // Rules: a press that moves CLICK_SLOP or more is the camera's drag, not a click, as for the debug
 // panel's send-to-click; the preview reads the same refusal the simulation applies

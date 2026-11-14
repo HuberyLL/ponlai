@@ -2,16 +2,16 @@
  * Adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater): its
  * volumetric clouds (`Clouds.js`, the view reconstruction) and its port of the Three.js Sky Pro
  * clouds (`SkyProClouds.js`, the density, lighting and march).
- * Copyright (c) 2026 DRG Software Solutions LLC
- * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-License-Identifier: MIT
  *
  * The in-cloud lightning term (flashLight), the rain curtains and the rainbow drawn in them are
  * adapted from VolumetricCloudsCS1 by Anthony Ibrahim
  * (https://github.com/anthonytoumaibrahim/VolumetricCloudsCS1): `CloudRaymarch.shader`
  * (the point lights, MarchRain, BowColour) and `CloudMedia.cginc` / `CloudCommon.cginc`
  * (RainSigma, SampleRain).
- * Copyright (c) 2026 Anthony Ibrahim
- * Licensed under the MIT License; see ./VolumetricCloudsCS1.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 Anthony Ibrahim
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
@@ -55,6 +55,8 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
+// Volumetric clouds, one model for every sky, its parameters set by the weather.
+//
 // Volumetric clouds, one model for every sky. A kind of sky is a row of the model's parameters
 // (look/SkyLook.ts `cloudSkies`: the shell, the cloud type and its spread, the far fade; Weather.ts
 // WEATHER_PRESETS: the coverage and the density), and a change of weather moves every parameter

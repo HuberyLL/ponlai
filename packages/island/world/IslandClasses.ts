@@ -1,5 +1,7 @@
 import { classifyBy, type ClassRule } from '../../render/index.ts';
 
+// The island's kinds for the kinds' view: which meshes and materials are ground, rock and so on.
+//
 // The island's kinds for the kinds' view (debug/Classes.ts, `flags=classes`): which of the scene's
 // meshes and materials are ground, rock, grass, leaves, wood and figure, told by the names and
 // userData they are given where they are made. The terrain's material (`userData.topY` or

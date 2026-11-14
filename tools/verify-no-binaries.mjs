@@ -1,18 +1,34 @@
-// Checks that git holds no game asset and no binary file. Assets (textures, models, fonts, audio,
-// baked data) live in the git-ignored public/ and ship as GitHub releases (tools/assets.mjs): a
-// repository that kept every version of every binary would only grow, and cutting it back means
-// rewriting its history. .gitignore already refuses the asset types to `git add`; this check also
-// catches a forced add, a type the list lacks and a large file of any kind.
+// Checks that git holds no asset and no binary file.
+//
+// Assets (textures, models, fonts, audio, baked data) live in the git-ignored public/ and ship as
+// GitHub releases (tools/repo/assets.mjs): a repository that kept every version of every binary
+// would only grow, and cutting it back means rewriting its history. .gitignore already refuses the
+// asset types to `git add`; this check also catches a forced add, a type the list lacks and a large
+// file of any kind. It is part of `npm run check` (every file in the index), and the pre-commit
+// hook runs it with `--staged`.
+//
+// Usage:
+//   node tools/verify-no-binaries.mjs [--staged | --history]
+//
+// Options:
+//   (none)      every file in the index
+//   --staged    the files a commit would add or change
+//   --history   every path in every commit of every ref, by its extension and git's binary flag,
+//               and every blob over MAX_BYTES (to check a rewritten history)
 //
 // A file fails when its extension is an asset type (ASSET, the same list as .gitignore's), when git
-// reads it as binary (a NUL byte in its first 8000 bytes), or when it is larger than MAX_BYTES.
-//   node tools/verify-no-binaries.mjs            every file in the index
-//   node tools/verify-no-binaries.mjs --staged   the files a commit would add or change (the
-//                                                pre-commit hook runs this)
-//   node tools/verify-no-binaries.mjs --history  every path in every commit of every ref, by its
-//                                                extension and git's binary flag, and every blob
-//                                                over MAX_BYTES (to check a rewritten history)
-// Exit 0 when nothing fails, 1 with the list. Pure git, no GPU.
+// reads it as binary (a NUL byte in its first 8000 bytes), or when it is larger than MAX_BYTES
+// (1 MiB). A submodule is not a file and is skipped.
+//
+// Output: on success one line on stdout with the count of files (or, with --history, objects)
+// checked; on failure the list on stderr, each path with why it fails.
+//
+// GPU lock and browser: neither; it runs git only.
+//
+// Cost: under a second for the index; --history reads every object and takes longer.
+//
+// Exit codes: 0 nothing fails; 1 a file fails (listed) or a bad argument.
+import './kit/help.mjs';
 import { execFileSync } from 'node:child_process';
 
 const ASSET = /\.(png|jpe?g|webp|avif|gif|ktx2|basis|dds|exr|hdr|tga|psd|kra|gltf|glb|fbx|obj|blend1?|bin|woff2?|ttf|otf|mp3|ogg|wav|flac|m4a|mp4|webm|zip|gz|7z)$/i;
@@ -21,6 +37,8 @@ const MAX_BYTES = 1 << 20;
 
 const git = ( args, input ) => execFileSync( 'git', args, { encoding: 'utf8', maxBuffer: 1 << 30, input } );
 const lines = ( text ) => text.split( '\n' ).filter( Boolean );
+// how many files (index entries, or paths over history) were looked at, for the summary
+let checked = 0;
 
 /** Index entries (all, or only `paths`): why each one fails, if it does. */
 function checkIndex( paths ) {
@@ -34,6 +52,7 @@ function checkIndex( paths ) {
 
 	}
 
+	checked = entries.size;
 	if ( entries.size === 0 ) return [];
 	const list = [ ...entries.keys() ];
 	for ( const record of git( [ 'ls-files', '--eol', '-z', '--', ...list ] ).split( '\0' ).filter( Boolean ) ) {
@@ -73,6 +92,7 @@ function checkHistory() {
 	}
 
 	const objects = lines( git( [ 'rev-list', '--objects', '--all' ] ) ).join( '\n' ) + '\n';
+	checked = objects.split( '\n' ).length - 1;
 	for ( const line of lines( git( [ 'cat-file', '--batch-check=%(objecttype) %(objectsize) %(rest)' ], objects ) ) ) {
 
 		const [ type, size, ...rest ] = line.split( ' ' );
@@ -104,10 +124,10 @@ else if ( mode === '--staged' ) {
 
 if ( failed.length > 0 ) {
 
-	console.error( `${ mode === '--history' ? 'history holds' : 'git holds' } ${ failed.length } asset or binary file(s); assets go in public/ and ship as a release (docs/reference/tools.md, Assets):` );
+	console.error( `${ mode === '--history' ? 'history holds' : 'git holds' } ${ failed.length } asset or binary file(s); assets go in public/ and ship as a release (tools/repo/assets.mjs, its header):` );
 	for ( const line of failed ) console.error( `  ${ line }` );
 	process.exit( 1 );
 
 }
 
-console.log( mode === '--history' ? 'history holds no asset or binary file' : 'no asset or binary file in git' );
+console.log( `${ mode === '--history' ? 'history holds no asset or binary file' : 'no asset or binary file in git' } (${ checked } ${ mode === '--history' ? 'objects' : 'files' } checked)` );

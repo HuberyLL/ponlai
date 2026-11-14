@@ -1,5 +1,7 @@
+// The island's growth: the land on a bit lattice, grown a piece at a time from the centre out.
+//
 // The island's growth: the land on a bit lattice, grown one piece at a time from the world's
-// centre outward (docs/explanation/game-design.md, "How the island grows"). Worker-safe (no three).
+// centre outward (docs/design/game-design.md, "How the island grows"). Worker-safe (no three).
 //
 // The land follows a fixed hidden relief, a warped fractal sum (coastlines as the level sets of a
 // fractal surface after Mandelbrot, *The Fractal Geometry of Nature*, 1982; islands shaped from

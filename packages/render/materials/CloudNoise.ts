@@ -1,12 +1,12 @@
 /*!
  * hash33 is "Hash without Sine" by David Hoskins (https://www.shadertoy.com/view/4djSRW).
- * Copyright (c) 2014 David Hoskins
- * Licensed under the MIT License; see ./hoskins-hash.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2014 David Hoskins
+ * SPDX-License-Identifier: MIT
  *
  * The synoptic field and the shape noise loader are adapted from tidewater by Daniel Greenheck
  * (https://github.com/dgreenheck/tidewater).
- * Copyright (c) 2026 DRG Software Solutions LLC
- * Licensed under the MIT License; see ../sky/tidewater.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
@@ -21,6 +21,8 @@ type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
+// Tileable noise fields for the clouds: the shape noise and the thin layer's patches.
+//
 // Tileable fields for the clouds:
 //   shape    64^3 RGB  Perlin-Worley shape noise at three frequencies, with its mip chain
 //            (`public/clouds/baseShape64.bin`, from tidewater's Sky Pro clouds)

@@ -2,6 +2,8 @@ import { buildFootprint, islandSurfaceHeight, GROWTH, type LandLattice } from '.
 import { planar } from './maths.ts';
 import type { Cell, GridApi, IslandInput, Vec2 } from './types.ts';
 
+// The ground grid: 0.5 m world-anchored cells over the land, walkable on the island top.
+//
 // The ground grid: 0.5 m cells over the land lattice's whole extent, anchored to the world, so a
 // grown island only opens cells and every index stays valid. A cell is walkable on the island top,
 // clear of the cliff rim. Everything here is derived: the island from the world's own functions on

@@ -1,7 +1,7 @@
 /*!
  * Portions adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater).
- * Copyright (c) 2026 DRG Software Solutions LLC
- * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
@@ -13,6 +13,8 @@ import { mulberry32 } from '../util/noise.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { COX_MUNK, seaState, slopeVariance, waveSystemTerms, type SwellParams, type WaveSpectrumSettings } from './OceanSpectrum.ts';
 
+// The multi-cascade FFT ocean on WebGPU compute: four cascades of a local sea and a swell.
+//
 // Multi-cascade FFT ocean (Tessendorf) on WebGPU compute, after tidewater's OceanFFT (4811ba4): four
 // cascades of non-integer size ratios, so the sum never shows a repeat, each holding the waves of
 // its own band of wavenumbers (from 6 fundamentals of the next larger tile to 6 of its own next). Two

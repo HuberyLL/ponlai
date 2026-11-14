@@ -2,6 +2,8 @@ import type { Grid } from './grid.ts';
 import { planar } from './maths.ts';
 import type { Vec2 } from './types.ts';
 
+// What the game reads off the island's ground: distance to the edge, the shore band, clearance.
+//
 // What the game reads off the island's ground for its places (places.ts): how far each cell lies
 // inside the island top's edge, the shore band along that edge, and whether a patch of ground is
 // clear for something to stand on it. Everything derives from the grid (the world's own island and

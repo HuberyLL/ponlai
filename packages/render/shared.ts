@@ -5,11 +5,13 @@ import { displacementUniforms } from './vegetation/Displacement.ts';
 import { ABSORPTION, BACKSCATTER, FORWARD_ANGLE, FORWARD_SCATTER, SCATTER } from './ocean/SeaOptics.ts';
 import type { Look } from './look/Look.ts';
 
+// Uniforms shared by the water, the terrain and the vegetation, created and installed once.
+//
 // Uniforms shared by the water, the terrain and the vegetation (one node each, read by every
 // material that uses it).
 // - The page's entry creates the object (`createShared`) and installs it (`installShared`) before
 //   it builds anything: no module makes the uniforms as it loads, and a tool that builds materials
-//   under node installs its own (tools/wgsl-build.mjs). The modules that take it as a parameter
+//   under node installs its own (tools/render/wgsl-build.mjs). The modules that take it as a parameter
 //   are handed the same object; `shared` below is the installed one, for those that read it as
 //   they build or run. Nothing reads it as a module loads.
 // - It is installed once, as the settings are (Settings.ts): a second install throws. A read before
@@ -19,7 +21,7 @@ import type { Look } from './look/Look.ts';
 //   (look/Look.ts; the entry hands over the set it installs): the ambient occlusion's floor, the
 //   meadow canopy's media and the wind's look, which the wind's states carry (weather/Wind.ts
 //   `windResponse`). So two objects made from two sets hold their own
-//   (tools/verify-look-params.mjs).
+//   (tools/render/verify-look-params.mjs).
 export const createShared = ( look: SharedTables ) => ( {
 	time: uniform( 0 ),
 	wind: createWindUniforms( windResponse( look.wind ) ),

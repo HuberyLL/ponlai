@@ -1,5 +1,7 @@
 import * as THREE from 'three/webgpu';
 
+// The folded leaf: a colour map and an alpha map drawn from one silhouette.
+//
 // The folded leaf every leafy plant shares: a colour map and an alpha map drawn from one silhouette, the alpha map's
 // mips built on the CPU to keep the leaf's coverage at the cutoff (`LEAF_ALPHA_TEST`). Shadow passes
 // keep `alphaTest` and `alphaMap` but not `map`, so alpha-tested foliage sets both: the leaf `map` is
@@ -13,7 +15,7 @@ import * as THREE from 'three/webgpu';
 // trees' leaf sprays take them (vegetation/TreeSurfaces.ts LeafPainter).
 
 /** A square canvas of `size` texels to draw a texture on: the vegetation's one use of the
- * page's document (tools/verify-layers.mjs, the page check), which every texture drawn on a canvas
+ * page's document (tools/repo/verify-layers.mjs, the page check), which every texture drawn on a canvas
  * takes from here. */
 export function textureCanvas( size: number ): HTMLCanvasElement {
 

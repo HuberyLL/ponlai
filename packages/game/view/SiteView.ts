@@ -6,6 +6,8 @@ import type { BuildingState } from '../sim/types.ts';
 import { BOX, LOG, PropBuilder, at, buildingMaterial, hashAt } from './Props.ts';
 import type { RGB } from './Props.ts';
 
+// A building's construction site, drawn in the same stages for every kind until it is built.
+//
 // A building's construction site (sim/buildings.ts) until it is built, as a real site rather than a
 // ghost of the finished building: the same stages for every kind, shaped by its footprint radius
 // alone, so a new kind needs no art of its own to be built; its site, finished, stands for its

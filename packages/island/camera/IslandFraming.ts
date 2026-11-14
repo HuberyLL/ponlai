@@ -4,6 +4,8 @@ import { GROWTH, type LandLattice } from '../world/IslandGrowth.ts';
 import { ISLAND_TOP } from '../world/WorldShapes.ts';
 import { SHELF_REACH } from '../world/Bathymetry.ts';
 
+// The island view's framing: the camera pose that holds the whole island and its shallows.
+//
 // The island view's framing: the camera pose that just holds the whole island and the ring of
 // shallows round it, centred in the frame, at the view's heading and tilt, whatever size the land
 // has grown to. It is the island camera's pose when the hand does not move it (app/CameraViews.ts

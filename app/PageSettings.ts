@@ -1,3 +1,5 @@
+// The page's settings at its entry: the address parsed, the tier chosen and the look picked.
+//
 // The page's settings at its entry: the entry (Boot.ts) loads this module before the page (main.ts),
 // so it runs before any module that reads a setting as it loads. It parses the address once,
 // reports in one form each option nobody declared and each value outside its declared range (a

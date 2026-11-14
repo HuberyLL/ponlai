@@ -1,8 +1,8 @@
 /*!
  * Adapted from the AMD FidelityFX SDK 2.3.0, FSR 3 upscaler 3.1.5 (upscalers/fsr3/include/gpu/
  * fsr3upscaler/ffx_fsr3upscaler_luma_pyramid.h).
- * Copyright (C) 2026 Advanced Micro Devices, Inc.
- * Licensed under the MIT License; see ./FidelityFX.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc.
+ * SPDX-License-Identifier: MIT
  */
 
 import { Fn, If, float, uint, vec4, ivec2, max, exp, log, workgroupArray } from './Tsl.ts';
@@ -14,6 +14,8 @@ import {
 import { SpdDownsample, SpdDownsampleTail, type SpdCallbacks } from './Spd.ts';
 import type { Fsr3Bindings } from './Bindings.ts';
 
+// FSR 3's luminance pyramid: SPD over the luma and farthest depth, with the auto exposure.
+//
 // The luminance pyramid: SPD over the current luma, its log and the farthest depth, which stores
 // the farthest depth's mip 1 (SPD's mip 0, half the render size), mip 5 of (log luma, luma) for its
 // tail, and at the last mip (1 x 1) the frame info: the log luma averaged over time (the auto

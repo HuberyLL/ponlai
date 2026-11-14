@@ -5,6 +5,8 @@ import type { PlaceKindDef } from './registry.ts';
 import type { Sim } from './Sim.ts';
 import type { ActionResult, Vec2, Villager } from './types.ts';
 
+// The places an islander can go to and act at: buildings, people and registered kinds.
+//
 // The places an islander can go to and act at, of a few kinds: the buildings (buildings.ts, each a
 // place by its id: chest1), the people (people.ts: every living islander, a place that moves, by
 // its id: v2), then the kinds content registers (registry.ts PlaceKindDef: the shore, content/).

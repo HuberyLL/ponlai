@@ -1,8 +1,8 @@
 /*!
  * Adapted from the AMD FidelityFX SDK 2.3.0, FSR 3 upscaler 3.1.5 (upscalers/fsr3/include/gpu/
  * fsr3upscaler/ffx_fsr3upscaler_debug_view.h).
- * Copyright (C) 2026 Advanced Micro Devices, Inc.
- * Licensed under the MIT License; see ./FidelityFX.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc.
+ * SPDX-License-Identifier: MIT
  */
 
 import { If, float, int, vec2, vec3, vec4, ivec2 } from './Tsl.ts';
@@ -10,6 +10,8 @@ import { ffxSaturate, component, type N } from './Core.ts';
 import { ClampUv, GetViewSpaceDepthInMeters, fLockThreshold, DISOCCLUSION, REACTIVE, SHADING_CHANGE } from './Common.ts';
 import type { Fsr3Bindings } from './Bindings.ts';
 
+// FSR 3's debug view: a 3 x 3 grid of the upscaler's inputs and masks over the output.
+//
 // The debug view: a 3 x 3 grid over the output, its top row the dilated motion vectors, the
 // protected (locked) areas and the dilated depth in metres, its bottom row the disocclusion, the
 // shading change ("reactiveness") and the detail-protection takedown (the reactive mask).

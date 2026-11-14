@@ -3,6 +3,8 @@ import { bagOf, count, itemCount, room, total, transfer } from '../items.ts';
 import { register } from '../registry.ts';
 import type { BuildingState } from '../types.ts';
 
+// The chest: a wooden chest the player places, which stores items once built.
+//
 // The chest: a wooden chest the player places, that holds CHEST_CAPACITY items once built. `put`
 // and `take` ( { item, count } ) are instant; what is inside shows only to someone standing at it
 // (buildings.ts, a store's look).

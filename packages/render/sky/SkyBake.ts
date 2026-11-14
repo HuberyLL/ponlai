@@ -1,7 +1,7 @@
 /*!
  * Portions adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater).
- * Copyright (c) 2026 DRG Software Solutions LLC
- * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
@@ -13,6 +13,8 @@ import { environmentSteps } from '../three/Environment.ts';
 import { luma } from '../look/SkyLook.ts';
 import type { Sky, SkyEndpoint } from './Sky.ts';
 
+// The sky's bakes: reflection panorama, environment and irradiance, spread over frames.
+//
 // The sky's bakes (Sky.ts, whose header says what they hold), each a function of the sky; a name in
 // backticks with no file is this file's or Sky.ts's.
 //

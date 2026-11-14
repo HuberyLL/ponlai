@@ -1,13 +1,16 @@
 /*!
  * Adapted from tidewater's TemporalUpscale.js (https://github.com/dgreenheck/tidewater, commit 4811ba4),
  * itself the accumulation of AMD FidelityFX Super Resolution 2 2.2 (ffx_fsr2_accumulate.h).
- * Copyright (c) 2026 DRG Software Solutions LLC; Copyright (c) 2022-2023 Advanced Micro Devices, Inc.
- * Licensed under the MIT License; see ./tidewater-fsr2.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2023 Advanced Micro Devices, Inc.
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
 import { float, max, min, mix, abs, select, saturate } from 'three/tsl';
 
+// FSR 2's accumulation measures for moving pixels, as the running resolve uses them.
+//
 // FSR 2's accumulation measures for moving pixels, as TemporalAA.ts's running resolve uses them
 // (TemporalAA.ts's header: "Movers"). Ours keeps its history's weight in frames' worth of a frame's
 // weight (FSR 2: in Lanczos sample weights), so FSR 2's `upsampledWeight` is one frame here and its

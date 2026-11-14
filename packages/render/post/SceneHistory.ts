@@ -1,6 +1,8 @@
 import { TEMPORAL } from './Antialiasing.ts';
 import { onTaaCut } from './Motion.ts';
 
+// The scene's histories as one table: whatever keeps state registers how to clear it.
+//
 // The scene's histories, as one table of the renderer's: whatever keeps state from the frames or
 // the scenes before registers how to clear it, and the two events that clear walk the table
 // instead of naming each owner. A new effect with a history joins by one registration beside its
@@ -49,7 +51,7 @@ export class SceneHistory {
 
 	}
 
-	/** The entries' names, in order (debug, and tools/verify-extensions.mjs). */
+	/** The entries' names, in order (debug, and tools/render/verify-extensions.mjs). */
 	names(): { cut: string[]; jump: string[]; afterBake: string[] } {
 
 		const of = ( list: Entry[] ) => list.map( ( entry ) => entry.name );

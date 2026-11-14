@@ -8,6 +8,8 @@ import { jitter } from './Jitter.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { preExposedRGBA, preExposedScalar } from './PreExposure.ts';
 
+// Motion vectors for the temporal modes, written with the scene's colour through an MRT.
+//
 // Motion vectors for the temporal modes (Antialiasing.ts: aa=taa|taau): where each surface point
 // drawn this frame was in the previous rendered frame, as NDC of the unjittered views. They are
 // written with the scene's colour into the frame graph's `sceneColor` and `velocity` (Pipeline.ts)
@@ -26,7 +28,7 @@ import { preExposedRGBA, preExposedScalar } from './PreExposure.ts';
 // storm's spray, which taa and taau draw after the resolve: AfterResolve.ts), blends
 // the colour as the material says and keeps the velocity's rgb (Zero / One), while its alpha, the
 // reactive weight, takes the larger of the two (One / One, Max): a streak keeps the motion of the
-// surface behind it. tools/verify-frame-graph-gpu.mjs checks both blends on the GPU.
+// surface behind it. tools/render/verify-frame-graph-gpu.mjs checks both blends on the GPU.
 //
 // Each vertex is moved back to where it was a rendered frame ago and projected there (one varying
 // per material); the current NDC needs no varying: under one sample a fragment is shaded at its

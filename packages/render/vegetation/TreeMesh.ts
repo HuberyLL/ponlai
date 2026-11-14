@@ -2,6 +2,8 @@ import * as THREE from 'three/webgpu';
 import { hash3i, mulberry32, type Rng } from '../util/noise.ts';
 import { Growing, boundsSteps, float32Steps, runSteps } from '../util/Steps.ts';
 
+// What every tree's mesh is built from: tubes for the wood and clumps of leaf cards.
+//
 // What every tree's mesh is built from (Bamboo.ts; the tubes and clumps for the trees to come): a
 // mesh builder with named attributes, tubes for the wood and clumps of leaf cards for the crown.
 //

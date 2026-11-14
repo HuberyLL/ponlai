@@ -1,3 +1,5 @@
+// The vegetation's shapes under load: a thin elastic strand bent by its own weight.
+//
 // The vegetation's shapes under load: a blade or a stem is a thin elastic strand clamped at its
 // root, bent by its own weight (and, to come, by the wind's pressure) against its stiffness, and
 // held off whatever it lies on. A kind that takes a physical shape would read its numbers and

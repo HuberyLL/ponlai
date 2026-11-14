@@ -1,14 +1,16 @@
 /*!
  * Adapted from the AMD FidelityFX SDK 2.3.0, FSR 3 upscaler 3.1.5 (api/internal/gpu/ffx_core_hlsl.h,
  * ffx_core_gpu_common.h, ffx_core_cpu.h).
- * Copyright (C) 2026 Advanced Micro Devices, Inc.
- * Licensed under the MIT License; see ./FidelityFX.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc.
+ * SPDX-License-Identifier: MIT
  */
 
 import {
 	Fn, float, uint, min, max, mix, floor, pow, saturate, select, floatBitsToUint, uintBitsToFloat, uvec2,
 } from './Tsl.ts';
 
+// The ffx_core helpers the FSR 3 upscaler calls, in upstream's names and maths.
+//
 // The ffx_core helpers the FSR 3 upscaler's files call, in upstream's names, in the order the
 // upscaler's headers first need them. Only what the port calls is here (ffx_core holds several
 // hundred helpers); each keeps upstream's maths, and the approximations by bitcast are bit-exact

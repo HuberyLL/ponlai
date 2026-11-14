@@ -1,10 +1,12 @@
 import type { ActionCall, ActionResult, EntityId, Items, Outcome } from './types.ts';
 
+// What happened: the simulation's events, each emitted once at its tick and handed to listeners.
+//
 // What happened, said once: the rule that makes a change others show or keep emits it as an event,
 // at the tick it happened (Sim.emit), and nothing else writes it down. The session takes the events
 // in the order they came (Sim.take) and hands each to its listeners (../Session.ts `listen`): the
 // record (../Chronicle.ts), the interface's speech (../ui/People.ts) and the play tool
-// (tools/play-game.mjs) read this one stream, never the state, for what happened (they may still
+// (tools/game/play-game.mjs) read this one stream, never the state, for what happened (they may still
 // sample the state for what is, as the needs' bars do). So a second line said within a frame is a
 // second event, and every event carries its own tick, not the time someone looked. The
 // simulation's own systems take what concerns them as it is emitted: the people system keeps what

@@ -1,7 +1,7 @@
 /*!
  * Adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater).
- * Copyright (c) 2026 DRG Software Solutions LLC
- * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
@@ -12,6 +12,8 @@ import type { Bounds } from '../RenderTypes.ts';
 import type { Shared } from '../shared.ts';
 import type { SeaLook } from '../look/Look.ts';
 
+// Large-scale variation of the sea surface in world space: gusts and slicks.
+//
 // Large-scale variation of the sea surface in world space, which never repeats with the FFT's tiles
 // (tidewater's SeaDetail, 4811ba4):
 //  - gusts ("cat's paws"): patches of rougher water drifting downwind. Rough water reflects less of

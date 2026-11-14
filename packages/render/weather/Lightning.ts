@@ -2,8 +2,8 @@
  * The strikes' flicker, return strokes, placement and in-cloud sources are adapted from
  * VolumetricCloudsCS1 by Anthony Ibrahim (https://github.com/anthonytoumaibrahim/VolumetricCloudsCS1:
  * VolumetricClouds/Sky/LightningFlicker.cs and CloudLightning.cs).
- * Copyright (c) 2026 Anthony Ibrahim
- * Licensed under the MIT License; see ../sky/VolumetricCloudsCS1.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 Anthony Ibrahim
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
@@ -16,6 +16,8 @@ import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 import type { SceneLatents } from '../post/ExtraPass.ts';
 import { reactiveUniforms, velocityOutput } from '../post/Motion.ts';
 
+// Thunderstorm lightning over the sea: each strike's profile, light and flash.
+//
 // Thunderstorm lightning, kilometres out over the sea. Most strikes stay inside the cloud and
 // light it from within (sheet lightning); the rest come down to the sea as a branching channel
 // (LightningStrike.ts). Following VolumetricCloudsCS1, every strike has its own profile: how

@@ -6,6 +6,8 @@ import { markSkyRetune } from './SkyRetune.ts';
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 
+// The band-to-display matrix that turns per-band transmittances into display colours.
+//
 // The band-to-display matrix for transmittances computed at run time (the haze's, the sun disc's
 // analytic one). Our transmittances are computed per band, one wavelength each for red, green and
 // blue, and a band transmittance taken straight as a display colour reads too grey: a real

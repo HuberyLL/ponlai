@@ -4,6 +4,8 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import type { FrameGraph, ResourceHandle } from '../post/graph/FrameGraph.ts';
 
+// The displacement field: how far the things that part the meadow push its grass over.
+//
 // The displacement field: a two-channel map of how far the things that part the meadow push it
 // over, on the ground over the whole island, cleared every frame and drawn again from the sprites
 // the frame holds: after the 2D displacement buffer about the camera, written
@@ -414,7 +416,9 @@ export let displacementField: DisplacementField | null = null;
 
 /** Makes the page's one field over `coverage` m of ground on a side (centred on the world's origin),
  * before anything reads it (`displacementAt`) or declares it on the frame graph; null with
- * `debugFlags.trample = false` at load. */
+ * `debugFlags.trample = false` at load. The frame's passes declare it only if it exists when they
+ * are built (PipelinePasses.ts), so made after them the frame silently has no displacement pass:
+ * the island's trail stage makes it before the renderer's `createSeaAndPipeline`. */
 export function createDisplacementField( coverage: number ): DisplacementField | null {
 
 	if ( displacementField ) throw new Error( 'Displacement: the field is made once' );

@@ -3,6 +3,8 @@ import { ISLAND_TOP, islandSurfaceHeight, solidSide, type Footprint } from './Wo
 import { type Bounds, type ShoreField, noise3, smoothstep } from '../../render/data.ts';
 import type { RimGroundField, RimLipData, SDF } from './types.ts';
 
+// The rim ground: the coast's lip, the turf's retreat and the root depth, on a world lattice.
+
 export const RIM_FRINGE_FADE = 0.12;
 export const RIM_INNER_LIMIT = 0.70;
 export const RIM_MAX_DROP = 0.30;
@@ -11,9 +13,9 @@ export interface RimGroundSample { distance: number; roofY: number; retreat: num
 
 // The rim field: the actual upper coast, the turf's retreat and the exposed root depth. By that
 // depth the lip alternates between overgrown stretches (turf down over the shoulder) and cut-open
-// root soil (TerrainMaterial), and the meadow's tufts grow taller and lean out over the lip toward
-// the coast instead of thinning (Grass.ts). It is built per box of a world grid (RIM_BOX) and is
-// the same, bit for bit, whichever box computed it (tools/verify-world-chunks.mjs, S4 and S5).
+// root soil (TerrainMaterial); the meadow's blades shorten and thin toward the land's edge (Grass.ts,
+// the grass-height map's `edge`). It is built per box of a world grid (RIM_BOX) and is
+// the same, bit for bit, whichever box computed it (tools/island/verify-world-chunks.mjs, S4 and S5).
 
 // The rim ground lies on a world lattice: texel ( i, j ) is centred on ( ( i + 0.5 ) * RIM_CELL,
 // ( j + 0.5 ) * RIM_CELL ) whatever box it is computed for, so every box evaluates the same points.
@@ -62,8 +64,7 @@ function texelRange( a: number, b: number ): [ number, number ] {
 
 /** The top coast differs from the land's footprint: the island's actual solid just below the
  * roof, on the rim ground's lattice over the texels whose centres lie in `box`. Grass thinning,
- * exposed root soil, stone shoulders and the meadow's drape over the edge all
- * share this one boundary. */
+ * exposed root soil and stone shoulders all share this one boundary. */
 export class RimLattice {
 
 	readonly i0: number;
@@ -455,8 +456,8 @@ function resamplePiece( piece: ChainPiece, step: number ): ChainPoint[] {
 // (retreat pockets, where the turf already gives way to soil and stone, hold none). Most of the
 // coast is covered; the rest is thinner in stretches of one to a few metres, and a finer field
 // breaks the longest runs. Nothing is placed by hand, so it follows any coast the island takes.
-// Each lip sample carries it; the page reads none of it today (the meadow's edge drape takes only
-// the coast, its direction and the wall).
+// Each lip sample carries it; the page reads none of the lip today (it was built for blades draped
+// over the edge, which the meadow no longer has).
 export function rimLipPresence( x: number, z: number, retreat: number ): number {
 
 	const broad = noise3( x * 0.41 + 1.3, 6.1, z * 0.41 - 4.4 ) * 0.5 + 0.5;
@@ -489,8 +490,8 @@ const LIP_SPAN = [ - 0.16, - 0.02 ];
 // Per lip sample: its place on the coast ( x, z ), the outward direction ( x, z ), presence, the
 // roof's height and the wall below it: at each of LIP_WALL's depths under the roof (every 10 cm
 // down to the longest hanging blade's reach), the outward offset from the coast (m) where the
-// stone is LIP_CLEAR away, which the blades draped over the edge (Grass.ts `holdOff`) lie on, so
-// they drape over a battered wall instead of passing into it.
+// stone is LIP_CLEAR away, for blades draped over the edge to lie on, so that they drape over a
+// battered wall instead of passing into it (no blade drapes over the edge today).
 export const LIP_WALL = Array.from( { length: 15 }, ( _, k ) => Math.round( ( k + 1 ) * 10 ) / 100 );
 export const LIP_INFO = 6 + LIP_WALL.length;
 const LIP_CLEAR = 0.03;

@@ -7,6 +7,8 @@ import type { Sim } from './Sim.ts';
 import { planar } from './maths.ts';
 import type { BuildingState, SimState, Vec2 } from './types.ts';
 
+// The buildings system: placing, building and storing for every registered kind of building.
+//
 // The buildings system: what the player places, of the kinds registered (registry.ts BuildingDef:
 // a footprint, the work it takes, the room of its store; today's in content/). This module names
 // no kind. Placing is generic (`placeBuilding`, refused by `blueprintRefusal`): a building needs
@@ -16,7 +18,7 @@ import type { BuildingState, SimState, Vec2 } from './types.ts';
 // never reused, so it stays the same across saves and the brain names the place by it (`go`,
 // `do`).
 //
-// The player plans, the islanders build (docs/explanation/game-design.md, "Building"). A placed building is a
+// The player plans, the islanders build (docs/design/game-design.md, "Building"). A placed building is a
 // blueprint: a construction site, the place with its id, which blocks its footprint from the
 // moment it is placed (the islander works beside it, within REACH). Every building, at every
 // stage, offers the options registered at `building` (the work on it: content/build.ts); once

@@ -6,6 +6,8 @@ import { cloudBase, type SkyTables } from '../look/SkyLook.ts';
 import { FOG_NOISE } from './FogNoise.ts';
 import { blankKey, type FullKey, type HazeKey, type HazeKeyRows, type HazeTables } from '../look/HazeLook.ts';
 
+// The haze's key at an hour and a weather, eased by the sun's elevation and blended by weather.
+
 export type { HazeKey };
 
 // The haze's key at an hour and a weather: the look's keys (look/HazeLook.ts `createHazeTables`,

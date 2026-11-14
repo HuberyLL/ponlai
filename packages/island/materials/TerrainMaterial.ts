@@ -15,6 +15,8 @@ import { CROWN_SCALE, swardField } from '../world/SwardField.ts';
 import { seabedAlbedo } from './SeabedLook.ts';
 import { FLOOR_ALBEDO } from '../world/SeabedTile.ts';
 
+// The rock and sea floor's PBR materials, built procedurally and lit through the water.
+
 // The meadow's ground shaded by its crowns toward the light (`meadowGroundLight`); off with
 // `flags=groundCast:false` at load (the canopy's mean depth instead).
 const GROUND_CAST = debugFlags.groundCast !== false;
@@ -52,9 +54,9 @@ const GROUND_SHADE = MEADOW_SHADE && debugFlags.groundShade !== false;
 // the rim as inland, though the blades shorten there (Grass.ts `meadowGroundRuns`). How deep the
 // sward over a point is, and whether any grows there, comes from its tussocks (the sward's fields,
 // SwardField.ts): the roots' light follows it, deep under the tall sward and opening under the
-// short turf and in the gaps, where one shade everywhere drew the low flowers' patches as dark
-// holes. The island top is one sward to the edge on every coast: the ground takes no zones of the
-// soil (Meadow.ts).
+// short turf and in the gaps, where one shade everywhere drew the short patches as dark holes. The
+// island top is one sward to the edge on every coast: the ground takes no zones of the soil
+// (Meadow.ts).
 // `?terrainHex=0` builds the plain triplanar variant; `userData.terrainVariant` swaps them.
 // Under fsr3 the triplanar sampling gradients are scaled by FSR's mip bias (post/fsr3/MipBias.ts),
 // built into the shader under that mode only.
@@ -487,7 +489,8 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 			// Under an overhang the stone stays dry: no runoff reaches it and it keeps a paler,
 			// dusty skin.
 			rock.assign( mix( rock, rock.mul( vec3( 1.07, 1.05, 1.0 ) ), shelter.mul( vert ) ) );
-			// Runoff stains (the dark "ink stripes" of rock-dwelling cyanobacteria): water from the
+			// Runoff stains (the dark "ink stripes" of rock-dwelling cyanobacteria such as Gloeocapsa
+			// magma, https://en.wikipedia.org/wiki/Gloeocapsa_magma): water from the
 			// soil runs down from the lip and spills from each ledge, in streaks that are darkest
 			// at their head and wander down the face, gathered into the re-entrant corners. None
 			// form under an overhang or on a recent scar. The stains lie under the moss and turf and
@@ -512,7 +515,9 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 		if ( vegetation ) {
 
 			// Orange and yellow lichens of the upper shore (Xanthoria, Caloplaca) in small patches
-			// on the faces that look up, toward the lip, above the black zone the spray keeps wet.
+			// on the faces that look up, toward the lip, above the black zone the spray keeps wet
+			// (MarLIN, "Yellow and grey lichens on supralittoral rock",
+			// https://www.marlin.ac.uk/habitats/detail/96/yellow_and_grey_lichens_on_supralittoral_rock).
 			const orange = hb( smoothstep( 0.55, 0.8, H.g.mul( 0.55 ).add( big2.mul( 0.45 ) ) ).mul( smoothstep( 0.15, 0.6, n0.y ) )
 				.mul( float( 1 ).sub( smoothstep( 0.3, 1.6, lipDepth ) ) ).mul( smoothstep( 1.4, 2.2, p.y ) ).mul( float( 1 ).sub( fresh ) ), float( 1 ).sub( hRock ), 0.25 );
 			rock.assign( mix( rock, vec3( 0.42, 0.24, 0.06 ), orange.mul( 0.55 ) ) );
@@ -897,9 +902,11 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 		if ( ! vegetation ) albedo.mulAssign( mix( vec3( 0.8, 0.83, 0.86 ), vec3( 1.18, 1.12, 1.0 ), vTint ) );
 		if ( vegetation ) {
 
-			// Above the damp band, the black zone of spray-fed lichen (Verrucaria) reaches 0.4 -
-			// 1.4 m up the walls, higher where the coast meets the swell; its upper edge is jagged
-			// from facet to facet and frayed, with the grey stone showing through in places.
+			// Above the damp band, the black zone of spray-fed lichen (Hydropunctaria maura, formerly
+			// Verrucaria maura) reaches 0.4 - 1.4 m up the walls, higher where the coast meets the
+			// swell; its upper edge is jagged from facet to facet and frayed, with the grey stone
+			// showing through in places. The zonation is MarLIN's page on supralittoral lichens,
+			// above; the heights are ours, as the page gives none.
 			const reach = float( 0.4 ).add( detail2.y.mul( 0.7 ) ).add( fract( detail.x.mul( 3.7 ) ).mul( 0.3 ) ).add( H.r.sub( 0.5 ).mul( 0.3 ) );
 			const spray = hb( float( 1 ).sub( smoothstep( reach.sub( 0.16 ), reach.add( 0.05 ), p.y.sub( wl ) ) ), hRock, 0.25 );
 			const crust = mix( float( 0.55 ), float( 1 ), smoothstep( 0.35, 0.75, H.g.mul( 0.6 ).add( big.mul( 0.4 ) ) ) );

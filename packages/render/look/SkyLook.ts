@@ -6,6 +6,8 @@ import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from '../sky/SkyRetune.ts';
 import type { IslandSkyRow, Rgb, SkyLook, Span, StreakKeys } from './Look.ts';
 
+// The sky's tables built from a look's table, with the CPU code that reads only them.
+//
 // The sky's tables built from a look's table (look/Look.ts `SkyLook`), with the CPU code that reads
 // only them (`createSkyTables`): the light the sky lends the island after sunset and under cloud
 // (`islandSky`, `cloudLightTint`), the sky's gains on the sun's light (`skyLight`, `clearSky`), the
@@ -15,7 +17,7 @@ import type { IslandSkyRow, Rgb, SkyLook, Span, StreakKeys } from './Look.ts';
 // `moonHue`) and the key under cloud (`keyThroughCloud`). Like the exposure (look/ExposureLook.ts),
 // they are taken as an argument where the renderer's sky stage creates them (RenderStages.ts
 // `createSky`, which hands them to the sky: sky/Sky.ts `look`), not as a module loads, so two made
-// from two tables hold their own numbers (tools/verify-look-params.mjs) and this module holds none
+// from two tables hold their own numbers (tools/render/verify-look-params.mjs) and this module holds none
 // at module level: only the functions that read no look (`luma`, `luminance709`, `byElevation`).
 // sky/SkyTrack.ts reads them each frame, sky/SkyBake.ts the sea's knee at each bake and
 // weather/HazeKeys.ts the clouds' base each frame; every function here that reads them takes them as

@@ -1,8 +1,8 @@
 /*!
  * Adapted from the AMD FidelityFX SDK 2.3.0, FSR 3 upscaler 3.1.5 (upscalers/fsr3/include/gpu/
  * fsr3upscaler/ffx_fsr3upscaler_callbacks_hlsl.h).
- * Copyright (C) 2026 Advanced Micro Devices, Inc.
- * Licensed under the MIT License; see ./FidelityFX.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc.
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
@@ -17,6 +17,8 @@ import {
 } from './Host.ts';
 import * as R from './Resources.ts';
 
+// FSR 3's bindings: the constant buffers and resource callbacks by their upstream names.
+//
 // ffx_fsr3upscaler_callbacks_hlsl.h as one object: the three constant buffers (cbFSR3Upscaler,
 // cbSPD, cbRCAS, and cbGenerateReactive) as uniforms with upstream's getters, and every resource
 // callback (`Load*`, `Store*`, `Sample*`, `Get*ResourceDimensions`) by its upstream name. The

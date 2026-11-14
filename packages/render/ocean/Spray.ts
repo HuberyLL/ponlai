@@ -1,7 +1,7 @@
 /*!
  * Adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater), src/fx/Spray.js.
- * Copyright (c) 2026 DRG Software Solutions LLC
- * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
@@ -20,6 +20,8 @@ type U = THREE.Node<'uint'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
+// GPU spray torn off breaking storm crests: drops, ligaments, dense spray and mist.
+//
 // GPU spray torn off breaking storm crests: drops, ligaments, dense spray and mist, after
 // tidewater's Spray (its boat, terrain and surf-foam couplings are left out).
 //
