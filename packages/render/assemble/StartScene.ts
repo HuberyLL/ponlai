@@ -25,7 +25,7 @@
 import * as THREE from 'three/webgpu';
 import { awaitWarmUp, bakeWithHaze, checkMotion, createAmbient, createBounceAndShore, createEnvironment, createKey, createLight, createRenderer, createScenes, createSeaAndPipeline, createSky, createWater, primeSharedBuilds, publishSkyLight, sceneOptions, setUpRenderer, startWaveMaps, type RenderParts, type SceneDefaults, type SceneOptions } from '../RenderStages.ts';
 import { settings as params, type SettingsQuery } from '../Settings.ts';
-import { qualityProfile, type QualityTier } from '../Quality.ts';
+import { loadTier, qualityProfile } from '../Quality.ts';
 import type { Look } from '../look/Look.ts';
 import { createShared, installShared, type Shared } from '../shared.ts';
 import { releaseScene, startingScene } from '../SceneDispose.ts';
@@ -168,8 +168,9 @@ export async function startScene( host: SceneHost, options: StartOptions, conten
 	const DEBUG = !! import.meta.env?.DEV || params.has( 'debug' ) || profiler !== null;
 	// The quality tier (Quality.ts): its load knobs are read as the parts they shape are built, its
 	// runtime ones applied by applySkyQuality. The page chose it with the settings, since the
-	// anti-aliasing mode and other load knobs are read as the modules load.
-	const qualityTier = params.tier as QualityTier;
+	// anti-aliasing mode and other load knobs are read as the modules load; a page that installed
+	// none builds the `quality` option's, else high (`loadTier`, as those modules read it).
+	const qualityTier = loadTier();
 	const quality = qualityProfile( qualityTier );
 	await createRenderer( render, { profiler, mark: ( name ) => profiler?.mark( name ), DEBUG, qualityTier, quality, setStatus: ( s ) => host.status( s ) } );
 	setUpRenderer( render );
