@@ -70,7 +70,7 @@
 // `grassShadow = false` (at load) turns off the shade of the meadow's layer on its blades and the
 // ground under and beside it (world/Grass.ts GRASS_SHADOW); `grassSunMap = false` (at load) keeps
 // the sun's shadow map off the blades, their own shades kept (world/Grass.ts);
-// `grassLod = false` (at load) turns off the meadow's LOD, on unless false: from 20 m along the
+// `grassLod = true` (at load) turns on the meadow's LOD, off unless true: from 20 m along the
 // ground, the blades thinned a quarter kept per doubling and the kept ones widened (world/Grass.ts
 // LOD);
 // `grassDensity` and `grassWidth` (at load, 1 unless set) scale the blades per m^2 and their width;

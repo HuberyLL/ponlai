@@ -47,7 +47,7 @@ Contents:
   pivot `target`) for the tools to frame by, which follows the island as it grows.
 - `bamboo=cover,height` loads another look of the bamboo (packages/island/world/BambooGroves.ts):
   the share of the land its groves hold (0 to 1) and a grown culm's height (m); either left out
-  keeps the default. A load-time option, for comparing looks: the culms, their young shoots and the
+  keeps the default. A load-time option, for comparing looks: the culms and the
   meadow's thinning under the groves follow it, the canopy's shade baked into the world's chunks
   (their sky visibility) and the ambient light's probes (packages/island/world/AmbientProbes.ts)
   keep the default groves.
@@ -426,10 +426,10 @@ the renderer's options of this page (the sky and weather, `paused`, `t`, `qualit
   `shadowWind:false` (the plants cast their rest pose and the sun's map goes back to its stepped
   redraws; live, so `--toggle "s.flags.shadowWind = on"` times the swayed shadows); the meadow's
   make at load: `grassDensity:<k>` (blades per m^2 over the meadow's 125), `grassWidth:<k>`,
-  `grassLod:false`, and `grassMask:true`, which paints the blades flat red for `img.py stats
-  --cover` (`packages/island/world/Grass.ts`), or `grassMask:exact`, which draws them unlit in a red
-  far above any radiance, so each pixel's cover is exact in the opaque colour, or
-  `grassMask:albedo`, unlit in their own diffuse colour (both for `tools/island/meadow-light.mjs`);
+  `grassLod:true` (the LOD, off by default), and `grassMask:true`, which paints the blades flat
+  red for `img.py stats --cover` (`packages/island/world/Grass.ts`), or `grassMask:exact`, which
+  draws them unlit in a red far above any radiance, so each pixel's cover is exact in the opaque
+  colour, or `grassMask:albedo`, unlit in their own diffuse colour (both for `tools/island/meadow-light.mjs`);
   the look taken off comes back by `clearShade:true`, `lowSun:true`, `tone:0.5`, `filmNight:true`;
   `localTone:false` builds the display chain without its local tone mapping; `streaks:<n>` scales
   the thin cloud layer's amount (0 turns it off) and `streakMask:true` paints its pixels for `img.py

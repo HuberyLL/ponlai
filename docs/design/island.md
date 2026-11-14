@@ -139,15 +139,11 @@ Contents:
 
 ### The ground
 
-- The ground between the blades is a grass-coloured ground, near and far alike: about the blades'
-  own mean albedo, a little warmer, in the lawn's tone, softly mottled over 1 to 3 m and grained by
-  a scanned ground's value, without the scan's colour. The readings:
+- The island's ground is one soil, under the meadow and under the bamboo alike: a brown earth that
+  shows through the gaps between the blades near and far, grained
+  by a scanned ground. The meadow's colour is its blades' over that earth. The readings:
   [Look values](../reference/look-values.md#albedo).
-- The blades thin with distance. A ground of their own colour lets them thin with no ring of another
-  colour sliding with the camera, and with no flat green either.
-- Brown earth shows only where the sward truly parts, a near detail on a few edges.
-- The same grass ground runs on under the bamboo's culms; the groves' own floor is their litter
-  ([The bamboo](#the-bamboo)).
+- The groves' floor is the same soil and the same grass, sparser ([The bamboo](#the-bamboo)).
 
 ### The short turf
 
@@ -194,7 +190,7 @@ returns:
 - A herb of the sunken mountain Yuanjiao grows in the meadow: the yunpeng (芸蓬, Shiyi ji: "white as
   snow, a stem two zhang long, at night it gives a white light").
 - Single clumps of straight white stalks stand far apart (at least about 13 m) on the open meadow,
-  out of the bamboo's groves and their litter and in from the cliff's edge: about ten on a grown
+  out of the bamboo's groves and their inner floor and in from the cliff's edge: about ten on a grown
   island, and maybe none on the starting island, whose meadow is small.
 - It is an accent, never a stand: tall and glowing, a drift of such clumps would hide the islanders
   by night.
@@ -214,7 +210,7 @@ returns:
   lightness, so the purple of the old text shows up close and the grove still reads as one green,
   by its light and shade.
 - Its leaves are nearly as matte as the meadow's blades: no pale sheen over a crown, whose lit
-  leaves stay a plain green and whose depth stays dark. The inner leaves of a shoot and the shoots
+  leaves stay a plain green and whose depth stays dark. The inner leaves of a crown and the crowns
   deep in a grove are darker.
 - Under a sun more than a few degrees up, a crown's shaded leaves still take a share of the sun
   through the leaves above, so its dark side reads green rather than as dark and as blue as the
@@ -228,15 +224,9 @@ returns:
   still deeper in. Its culms in shade stand a little darker than the crowns over them, dark green
   stems against the light between, and the faces toward the grove's open sides read lighter than
   those toward its inside.
-- Its floor is the meadow's grass up to a couple of metres inside the culm line, then clearings of
-  fallen leaves: about half of the floor where a grove is deep, with ragged edges about a metre
-  across, a few stray tufts of grass left in them, and small bare discs under its clusters of
-  young shoots.
-- The litter is paler than the grass ground and nearly neutral, a brownish grey with the grain of
-  leaves and twigs, never a dark brown. Patches of a low blue-green groundcover, a metre to a few
-  across, lie on about a seventh of it. The readings:
-  [Look values](../reference/look-values.md#albedo).
-- The grass does not shorten toward a clearing: it stops at the litter's edge at its full height.
+- Its floor is the meadow's ground and grass, the grass thinning over a few metres about the culm
+  line to about a third of the meadow's under the culms, at its full height, along a ragged edge.
+  Nothing else grows under the groves; from the island's camera it would not be seen.
 
 ## What grows and what does not
 

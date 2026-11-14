@@ -46,7 +46,7 @@ export default async function ( { renderer } ) {
 	const tex = {
 		soil: array( 'soil', 2 ),
 		heights: texture( detail ).depth( 0 ), normalsA: texture( detail ).depth( 1 ), normalsB: texture( detail ).depth( 2 ), gravel: texture( detail ).depth( 3 ),
-		scanAlbedo: array( 'scanAlbedo', 3, THREE.SRGBColorSpace ), scanDetail: array( 'scanDetail', 3 ),
+		scanAlbedo: array( 'scanAlbedo', 2, THREE.SRGBColorSpace ), scanDetail: array( 'scanDetail', 2 ),
 	};
 	const waveMaps = new WaveMaps( renderer, { cascades: 3, sizes: [ 250, 50, 10 ], derivatives: array( 'derivatives', 3 ) } );
 	const field = ( name ) => {

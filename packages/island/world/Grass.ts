@@ -64,13 +64,12 @@ import { canopySteps, crownSteps, setCanopyTop, setSwardField, swardSteps } from
 //   the direction the sun's map is cast along). The finer shade of blade on blade is the
 //   screen-space shade (post/MeadowShade.ts, `sunShade`), held above the shade's floor by translucency
 //   (`meadowShadeFloor`); the floor does not raise the layer's.
-// - The ground under the blades (TerrainMaterial.ts, `GRASS_ROOTS`): a grass-coloured ground at
-//   every distance, about their mean colour (`meadowMean`), the soil showing only where the sward
-//   parts; darker on screen by the shade alone.
+// - The ground under the blades (TerrainMaterial.ts, `GRASS_ROOTS`): brown soil at every distance,
+//   seen through the gaps between the blades; darker on screen by the shade alone.
 //
 // The ground map (`bakeGround`): over the meadow's square (MEADOW_EXTENT, MEADOW_SIZE texels), the
 // turf anchors splatted bilinearly: the share of the anchors that hold turf (`supportsMeadow`, and
-// off the bamboo groves' litter: BambooGroves.ts `grassOnLitter`), their mean height and mean sky
+// thinning into the bamboo groves: BambooGroves.ts `grassOnLitter`), their mean height and mean sky
 // visibility, and the grass-height map (HEIGHT_MAP), which shortens toward the land's edge only:
 // the grass round a clearing in the litter keeps its height up to it. Its A holds that height map
 // free of the land's edge as well as what the edge takes off it (GROUND_A): the blades read the
@@ -294,8 +293,9 @@ const NEAR = { reach: 1, push: 0.6 };
  * their width over it; each level's blades are jittered over `jitter` of its spacing (`cell`). At
  * 20 m a centimetre blade is about a render pixel wide at the baseline's 1440p in the island
  * camera's view, where the LOD used to start by the blades' size on screen; now fixed, so the
- * blades a view shows do not depend on its resolution. Off with `flags=grassLod:false` (at load). */
-const LOD = { near: 40, levels: 5, jitter: 1, on: debugFlags.grassLod !== false };
+ * blades a view shows do not depend on its resolution. Off by default: thinned blades left the
+ * island view's meadow sparse over its ground. On with `flags=grassLod:true` (at load). */
+const LOD = { near: 40, levels: 5, jitter: 1, on: debugFlags.grassLod === true };
 /** Seen side on, a blade's edges are pushed apart across the view (along view x tangent) by
  * Delta = ( w / 2 ) e ( 1 + ramp( d ) ), e = 1 - | n . v | (1 edge on, 0 face on), ramp rising
  * from 0 at its start to 1 `far` - `near` m beyond it, d the distance from the eye; the start is
@@ -355,7 +355,7 @@ export function* grassSteps( veg: Float32Array ): Generator<void, GrassPlan> {
 
 		const k = a * STRIDE;
 		const x = veg[ k ], y = veg[ k + 1 ], z = veg[ k + 2 ];
-		// the land holds turf, and grass grows there unless the groves' litter covers it
+		// the land holds turf, and grass grows there, thinner under the groves
 		const onLand = supportsMeadow( x, y, z, veg[ k + 4 ] );
 		const holds = onLand && grassOnLitter( x, z );
 		const fx = ( x / MEADOW_EXTENT + 0.5 ) * size - 0.5, fz = ( z / MEADOW_EXTENT + 0.5 ) * size - 0.5;
@@ -1215,22 +1215,10 @@ const COLUMN_B = { red: 1.06, blue: 0.9 };
 const warmer = ( c: number[] ) => [ c[ 0 ] * COLUMN_B.red, c[ 1 ], c[ 2 ] * COLUMN_B.blue ];
 const PARTS = [ 'root', 'middle', 'tip' ] as const;
 const BLADE_COLOUR = { a: COLUMN_A, b: { root: warmer( COLUMN_A.root ), middle: warmer( COLUMN_A.middle ), tip: warmer( COLUMN_A.tip ) } };
-/** The blades' mean albedo seen from afar (their far colour, `grassMaterial`'s `mean`, over the
- * clumps, CLUMP.column of them in column `b`) at LAWN_GAIN: value about 0.08, red about 0.7 of
- * green, blue an eighth. The ground under the meadow is set against it (TerrainMaterial.ts
- * GRASS_GROUND), through the uniform `meadowMean`. */
-const meadowMeanOf = () => [ 0, 1, 2 ].map( ( k ) => {
-
-	const share = CLUMP.on ? CLUMP.column : 0;
-	const mean = ( c: typeof COLUMN_A ) => 0.3 * c.root[ k ] + 0.4 * c.middle[ k ] + 0.3 * c.tip[ k ];
-	return ( 1 - share ) * mean( BLADE_COLOUR.a ) + share * mean( BLADE_COLOUR.b );
-
-} );
 // Column b's red and blue factors are tunable (`grass.columnB.red`, `.blue`): the blades read
-// column b's colours, the ground the mean, from uniforms worked out here, the numbers they read as
-// constants at the defaults.
+// column b's colours from uniforms worked out here, the numbers they read as constants at the
+// defaults.
 const columnBColour = Object.fromEntries( PARTS.map( ( part ) => [ part, uniform( new THREE.Vector3() ) ] ) ) as Record<typeof PARTS[ number ], THREE.UniformNode<'vec3', THREE.Vector3>>;
-export const meadowMean = /*@__PURE__*/ uniform( new THREE.Vector3() );
 const recolourColumnB = () => {
 
 	for ( const part of PARTS ) {
@@ -1239,7 +1227,6 @@ const recolourColumnB = () => {
 		columnBColour[ part ].value.fromArray( BLADE_COLOUR.b[ part ] );
 
 	}
-	meadowMean.value.fromArray( meadowMeanOf() );
 
 };
 tuneApply( 'grass.columnB.red', COLUMN_B.red, { min: 0.9, max: 1.2 }, ( r ) => { COLUMN_B.red = r; recolourColumnB(); } );

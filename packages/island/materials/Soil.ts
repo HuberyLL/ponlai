@@ -4,7 +4,7 @@ import { sampleMeadow } from './Meadow.ts';
 import { ISLAND_TOP, SWELL, islandSurfaceHeight, islandSwell } from '../world/WorldShapes.ts';
 import { GROWTH } from '../world/IslandGrowth.ts';
 import { noise3, smoothstep } from '../../render/data.ts';
-import { GROVES, groveAt, litterAt, litterGateDensity, shootClusters } from '../world/BambooGroves.ts';
+import { groveAt } from '../world/BambooGroves.ts';
 
 // The root bed cut open at the meadow's shoulder (TerrainMaterial's root-soil cut).
 // The narrow height encoding (the fine noise over the plateau's swells) retains millimetre precision
@@ -12,8 +12,7 @@ import { GROVES, groveAt, litterAt, litterGateDensity, shootClusters } from '../
 // Thickness and exposed patches vary independently, so the root bed never becomes a belt.
 // The map covers the land lattice's whole extent, wherever the island grows, at 0.25 m.
 // Its second layer holds the bamboo groves' density there (R: BambooGroves.ts `groveAt`, drawn at
-// GROVE_CELL and filled in between) and their bare floor of fallen leaves (A: `litterAt`, the same
-// way) for the meadow ground's floor, and the plateau's swell
+// GROVE_CELL and filled in between), and the plateau's swell
 // (WorldShapes.ts `islandSwell`, over +-SWELL_RANGE, in 16 bits: G the high byte, B the low, which
 // linear filtering recombines) for the meadow's top (both TerrainMaterial.ts): functions of the
 // world alone, never of the land, so a grown island keeps them. One array of the two keeps
@@ -26,12 +25,12 @@ const SOIL_SIZE = SOIL_EXTENT * 4;
 const GROVE_CELL = 0.5;
 export const SWELL_RANGE = SWELL.height + 0.1;
 
-/** The map's second layer at world `xz` (a node): the bamboo groves' density, their litter and the
- * plateau's swell (m about ISLAND_TOP). */
-export function soilGroveSwell( map: THREE.Texture, xz: THREE.Node<'vec2'> ): { grove: THREE.Node<'float'>; litter: THREE.Node<'float'>; swell: THREE.Node<'float'> } {
+/** The map's second layer at world `xz` (a node): the bamboo groves' density and the plateau's
+ * swell (m about ISLAND_TOP). */
+export function soilGroveSwell( map: THREE.Texture, xz: THREE.Node<'vec2'> ): { grove: THREE.Node<'float'>; swell: THREE.Node<'float'> } {
 
 	const s = texture( map, xz.div( SOIL_EXTENT ).add( 0.5 ) ).depth( float( 1 ) ).level( float( 0 ) ).toVar();
-	return { grove: s.r, litter: s.a, swell: s.g.mul( 65280 / 65535 ).add( s.b.mul( 255 / 65535 ) ).mul( 2 ).sub( 1 ).mul( SWELL_RANGE ) };
+	return { grove: s.r, swell: s.g.mul( 65280 / 65535 ).add( s.b.mul( 255 / 65535 ) ).mul( 2 ).sub( 1 ).mul( SWELL_RANGE ) };
 
 }
 
@@ -126,32 +125,10 @@ export function createSoilTexture(): THREE.DataArrayTexture {
 
 	}
 
-	// the groves and their litter at GROVE_CELL, read bilinearly at the soil's texels; the litter
-	// only within two cells of a grove (it is 0 a metre outside the groves' least density), and there
-	// only where `litterAt` can be other than 0: where the groves' density reaches the litter gate's
-	// (its clearings: below it the gate is shut) or inside a cluster's bare disc (a point no disc
-	// covers has 0 from them), so the map is the same as evaluating it at every such point
-	const n = Math.round( SOIL_EXTENT / GROVE_CELL ) + 1, grove = new Float32Array( n * n ), litter = new Float32Array( n * n );
+	// the groves at GROVE_CELL, read bilinearly at the soil's texels
+	const n = Math.round( SOIL_EXTENT / GROVE_CELL ) + 1, grove = new Float32Array( n * n );
 	const at = ( i: number ) => i * GROVE_CELL - SOIL_EXTENT / 2;
 	for ( let j = 0; j < n; j ++ ) for ( let i = 0; i < n; i ++ ) grove[ j * n + i ] = groveAt( at( i ), at( j ) );
-	// (the density as the Float32Array holds it: rounding keeps the order)
-	const gateDensity = Math.fround( litterGateDensity() ), inDisc = new Uint8Array( n * n );
-	const reach = GROVES.clusters.cell, cell = ( v: number ) => ( v + SOIL_EXTENT / 2 ) / GROVE_CELL;
-	for ( const c of shootClusters( at( 0 ) - reach, at( 0 ) - reach, at( n - 1 ) + reach, at( n - 1 ) + reach ) ) {
-
-		const i0 = Math.max( 0, Math.floor( cell( c.x - c.disc ) ) ), i1 = Math.min( n - 1, Math.ceil( cell( c.x + c.disc ) ) );
-		const j0 = Math.max( 0, Math.floor( cell( c.z - c.disc ) ) ), j1 = Math.min( n - 1, Math.ceil( cell( c.z + c.disc ) ) );
-		for ( let j = j0; j <= j1; j ++ ) for ( let i = i0; i <= i1; i ++ ) if ( Math.hypot( at( i ) - c.x, at( j ) - c.z ) < c.disc ) inDisc[ j * n + i ] = 1;
-
-	}
-	for ( let j = 0; j < n; j ++ ) for ( let i = 0; i < n; i ++ ) {
-
-		if ( grove[ j * n + i ] < gateDensity && inDisc[ j * n + i ] === 0 ) continue;
-		let near = 0;
-		for ( let b = Math.max( 0, j - 2 ); b <= Math.min( n - 1, j + 2 ); b ++ ) for ( let a = Math.max( 0, i - 2 ); a <= Math.min( n - 1, i + 2 ); a ++ ) near = Math.max( near, grove[ b * n + a ] );
-		if ( near > 0 ) litter[ j * n + i ] = litterAt( at( i ), at( j ) );
-
-	}
 
 	const layer = SOIL_SIZE * SOIL_SIZE * 4;
 	for ( let row = 0; row < SOIL_SIZE; row ++ ) for ( let column = 0; column < SOIL_SIZE; column ++ ) {
@@ -161,7 +138,6 @@ export function createSoilTexture(): THREE.DataArrayTexture {
 		const lerp = ( f: Float32Array ) => ( f[ j * n + i ] * ( 1 - fu ) + f[ j * n + i + 1 ] * fu ) * ( 1 - fv ) + ( f[ ( j + 1 ) * n + i ] * ( 1 - fu ) + f[ ( j + 1 ) * n + i + 1 ] * fu ) * fv;
 		const k = layer + ( row * SOIL_SIZE + column ) * 4;
 		data[ k ] = pack( lerp( grove ) );
-		data[ k + 3 ] = pack( lerp( litter ) );
 
 	}
 
