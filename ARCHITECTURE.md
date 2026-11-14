@@ -181,8 +181,9 @@ to 22 are not in use.
 - **13. Only the page touches the browser's page:** the renderer, the island and the game's rules
   are given what they need of the browser and never reach for its globals; a running scene is given
   a host, which the page takes from the renderer's browser exit.
-- **14. Outside settings are checked once, at one entrance:** every URL option is declared in one
-  schema, and the settings are installed once, before any module reads them.
+- **14. Outside settings are checked once, at one entrance:** every URL option is declared in the
+  table of the lowest layer that reads it, and the page installs the merged tables' settings once,
+  before any module reads them.
 - **15. A change of the scene is announced once, and whoever keeps something of it follows:** a cut,
   a jump or a growth reaches its followers through a table or interface walked in order.
 - **16. A material gives a surface's properties; the light is computed in one place; the look is
