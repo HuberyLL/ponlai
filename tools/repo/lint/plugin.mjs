@@ -24,7 +24,7 @@
 //   packages/render/three/.
 // - `ponlai/scene-clock`: the wall clock: `performance.now()`, `Date.now()`, `new Date()`, `Date()`.
 //   All code but the debug folders (packages/render/debug/, packages/island/debug/),
-//   app/Diagnostics.ts, packages/game/GameDebug.ts and app/QualityDetect.ts.
+//   packages/game/GameDebug.ts and app/QualityDetect.ts.
 // - `ponlai/vegetation-tag`: reading `alphaToCoverage` (setting it is fine). All code.
 //
 // An exception is a comment on the line above the one it excepts, naming the rule and a reason a

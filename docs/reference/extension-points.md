@@ -140,8 +140,9 @@ The renderer's table of how each history is cleared is `render.history`
 - `onJump( name, clear )` clears it on a scene jump; `'after bake'` marks an entry that needs the
   light the jump's sky bake publishes.
 - The island's jump entries are registered in `registerIslandHistories`
-  (`packages/island/IslandStages.ts`), which the page calls in order with the renderer's
-  (`app/Scene.ts`). Each list runs in the order registered.
+  (`packages/island/IslandStages.ts`), which the scene jump calls in order with the renderer's
+  (`packages/render/assemble/SceneJump.ts`, through the page's `app/Scene.ts`). Each list runs in
+  the order registered.
 - `node tools/island/verify-scene-jump.mjs` checks that a jumped page draws what a fresh load draws
   (its header).
 

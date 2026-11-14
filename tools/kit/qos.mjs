@@ -37,8 +37,8 @@
 // back, so the page's own work is unaffected; the node side of a capture (decode, compare, PNG
 // writes, while it holds a GPU slot) and every CPU tool are.
 //
-// PONLAI_QOS holds the pid of the process that runs with the policy, so a process knows it already
-// does and its children (another pid) still raise themselves. PONLAI_QOS=off keeps the policy a
+// <prefix>QOS (`<prefix>` is the configuration's `machine.envPrefix`) holds the pid of the process that runs with the policy, so a process knows it already
+// does and its children (another pid) still raise themselves. <prefix>QOS=off keeps the policy a
 // process was given (for an A/B of this module).
 //
 // Output: the command's own; nothing of its own.
@@ -48,17 +48,19 @@
 // Exit codes: the command's (the process becomes it); 2 no command given.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import PROJECT from '../project.mjs';
 
+const QOS = `${ PROJECT.machine.envPrefix }QOS`;
 const TASKPOLICY = '/usr/sbin/taskpolicy';
-const enabled = process.platform === 'darwin' && process.env.PONLAI_QOS !== 'off';
+const enabled = process.platform === 'darwin' && process.env[ QOS ] !== 'off';
 
 /** The command line that starts `cmd args` with the application policy: [ cmd, args ] unchanged
- * elsewhere. The child is told through PONLAI_QOS (its own pid, set by the shell that becomes it)
+ * elsewhere. The child is told through <prefix>QOS (its own pid, set by the shell that becomes it)
  * that it already runs so. */
 export function appPolicy( cmd, args = [] ) {
 
 	if ( ! enabled ) return [ cmd, args ];
-	return [ TASKPOLICY, [ '-a', '/bin/sh', '-c', 'PONLAI_QOS=$$ exec "$@"', 'sh', cmd, ...args ] ];
+	return [ TASKPOLICY, [ '-a', '/bin/sh', '-c', `${ QOS }=$$ exec "$@"`, 'sh', cmd, ...args ] ];
 
 }
 
@@ -80,10 +82,10 @@ if ( cli ) {
 	if ( file === TASKPOLICY ) process.execve( file, [ file, ...argv ] );
 	else process.execve( '/bin/sh', [ 'sh', '-c', 'exec "$@"', 'sh', cmd, ...args ] );
 
-} else if ( enabled && process.env.PONLAI_QOS !== String( process.pid ) && ! process.channel ) {
+} else if ( enabled && process.env[ QOS ] !== String( process.pid ) && ! process.channel ) {
 
 	// (a child with an IPC channel was started raised by its parent, through appPolicy)
 	process.execve( TASKPOLICY, [ TASKPOLICY, '-a', process.execPath, ...process.execArgv, ...process.argv.slice( 1 ) ],
-		{ ...process.env, PONLAI_QOS: String( process.pid ) } );
+		{ ...process.env, [ QOS ]: String( process.pid ) } );
 
 }

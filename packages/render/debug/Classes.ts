@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { min, normalWorldGeometry, select, vec3 } from 'three/tsl';
 import { debugFlags } from './DebugFlags.ts';
+import { onSceneDispose } from '../SceneDispose.ts';
 import { STORE_CEILING, preExposure, sceneUnits } from '../post/PreExposure.ts';
 
 // The kinds' view: every lit surface drawn unlit in a flat colour that names its kind.
@@ -49,7 +50,7 @@ export type FitClass = typeof FIT_CLASSES[ number ];
 /** Whether the page draws the kinds' view. */
 export const CLASSES = debugFlags.classes === true || debugFlags.classes === 1;
 
-// the 40 degrees from up that split the island's ground from its cliff
+// the 40 degrees from up that split a 'slope' surface's ground from its rock
 const GROUND_COS = Math.cos( 40 * Math.PI / 180 );
 
 const code = ( kind: FitClass ) => {
@@ -66,6 +67,8 @@ type Reflected = { directDiffuse: THREE.Node<'vec3'>; directSpecular: THREE.Node
 export type ClassRule = ( object: THREE.Object3D | null, material: THREE.Material | null ) => FitClass | 'slope' | null;
 
 const rules: ClassRule[] = [];
+// a page registers its rules as its scene builds (island/world/IslandClasses.ts)
+onSceneDispose( 'classes', () => { rules.length = 0; } );
 
 /** Registers a rule that names builds' kinds; rules are asked in the order registered. */
 export function classifyBy( rule: ClassRule ): void {

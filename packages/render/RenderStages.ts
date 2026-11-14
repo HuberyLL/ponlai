@@ -14,8 +14,7 @@
 //   a stage holds no await of its own, so the frames and microtasks between two stages stay the
 //   entry's to order.
 // - What the island gives a stage comes as an argument typed by the renderer's own types: this
-//   file names none of the island's things (one argument keeps the island in its name only:
-//   `createWater`'s `islandSea`, the open sea's range and the reflector's top).
+//   file names none of the island's things.
 // - The registered plant kinds are placed by a stage too (`placeVegetation`: the scene, the
 //   wind's motion flag, the two depth prepasses), which closes their registry; the sun's caster box
 //   and the rain's collision bake read the same registry (`vegetationCasters`,
@@ -23,9 +22,9 @@
 // The frame's stages (`createFrameStages`) are the renderer's work in a frame, cut where the
 // scene's own work goes between: whether the frame is held, the scene clock, the day and the
 // weather, the sky and its light, the local lights, the weather's effects with the sky's bake, the
-// sun's maps and the sea, the relight, the draw and the submit. A page's tick calls them in that
-// order, once each (app/Frame.ts), with the island's between them (IslandStages.ts
-// `createIslandFrame`).
+// sun's maps and the sea, the relight, the draw and the submit. The frame's tick calls them in that
+// order, once each (assemble/SceneFrame.ts), with a page's content between them (the island's:
+// IslandStages.ts `createIslandFrame`).
 // - The order of the statements inside a frame stage, and of the stages, is part of the image and
 //   of what a stepped clip repeats: a statement reads what the ones before it wrote in the same
 //   frame (the sky's state, the wind, the scene clock). New per-frame work goes into the stage
@@ -766,7 +765,7 @@ export function publishSkyLight( render: RenderParts ) {
 	// (the sky's light on what it lights takes a low sun's lift, shared.ts `skyLift`; the sky drawn and
 	// its meter never do)
 	shared.skyIrradianceSource = sky.irradianceNode.mul( shared.skyFill ).mul( shared.skyLift );
-	shared.islandIrradianceSource = sky.islandIrradianceNode.mul( shared.skyFill );
+	shared.skyFillIrradiance = sky.landIrradianceNode.mul( shared.skyFill );
 	shared.skyMeterLog2 = sky.meterLog2Node;
 
 }
@@ -981,7 +980,7 @@ export function bakeRainCollision<L>( render: RenderParts, vegetation: Vegetatio
 }
 
 /** The water's surface, over the land's box and what the game holds above it. */
-export function createWater( render: RenderParts, { fields, landBox, islandSea, heldOpaque }: { fields: SceneFields; landBox: Bounds; islandSea: { readonly openSea: { readonly from: number; readonly to: number }; readonly reflectorTop: number }; heldOpaque: THREE.Box3[] } ) {
+export function createWater( render: RenderParts, { fields, landBox, seaShape, heldOpaque }: { fields: SceneFields; landBox: Bounds; seaShape: { readonly openSea: { readonly from: number; readonly to: number }; readonly reflectorTop: number }; heldOpaque: THREE.Box3[] } ) {
 
 	const { quality, renderer, waterScene, rainScene, afterScene, sky, sunShadow, applySkyFill, fft, waveMaps, seaDetail, pipeline, shoreWaves } = render;
 
@@ -995,7 +994,7 @@ export function createWater( render: RenderParts, { fields, landBox, islandSea, 
 	render.stormSea = stormSea;
 	render.water = new Water( {
 		fft, sky, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves,
-		land: landBox, ...islandSea, sunShadow, storm: stormSea, detail: seaDetail,
+		land: landBox, ...seaShape, sunShadow, storm: stormSea, detail: seaDetail,
 		sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, underwater: pipeline.textures.underwater, quality: quality.water,
 		refraction: { color: pipeline.textures.refraction, depth: pipeline.textures.refractionDepth },
 	} );

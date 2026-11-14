@@ -3,6 +3,7 @@ import { Fn, abs, atan, attribute, cos, exp, float, floor, length, max, min, mix
 import { TEMPORAL } from '../post/Antialiasing.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import type { FrameGraph, ResourceHandle } from '../post/graph/FrameGraph.ts';
+import { onSceneDispose } from '../SceneDispose.ts';
 
 // The displacement field: how far the things that part the meadow push its grass over.
 //
@@ -426,3 +427,4 @@ export function createDisplacementField( coverage: number ): DisplacementField |
 	return displacementField;
 
 }
+onSceneDispose( 'displacement', () => { displacementField = null; } );

@@ -83,13 +83,15 @@ import json  # noqa: E402
 import os  # noqa: E402
 import sys  # noqa: E402
 from concurrent.futures import ThreadPoolExecutor  # noqa: E402
+from project import project  # noqa: E402
 
 # The application scheduling policy on macOS (tools/kit/qos.mjs says why): this process re-executes
 # itself in place under taskpolicy -a, and its pool threads ask for the user-initiated QoS, which
 # such a process is granted (threads do not inherit the main thread's).
-QOS = sys.platform == "darwin" and os.environ.get("PONLAI_QOS") != "off"
-if QOS and os.environ.get("PONLAI_QOS") != str(os.getpid()):
-    os.environ["PONLAI_QOS"] = str(os.getpid())
+QOS_ENV = project()["machine"]["envPrefix"] + "QOS"
+QOS = sys.platform == "darwin" and os.environ.get(QOS_ENV) != "off"
+if QOS and os.environ.get(QOS_ENV) != str(os.getpid()):
+    os.environ[QOS_ENV] = str(os.getpid())
     os.execv("/usr/sbin/taskpolicy", ["/usr/sbin/taskpolicy", "-a", sys.executable, *sys.orig_argv[1:]])
 
 

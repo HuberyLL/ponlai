@@ -56,7 +56,7 @@ export const NEUTRAL_LOOK: Look = {
 		handoffTop: - 1,
 		moonKeyTop: - 3,
 		duskWindows: {
-			display: WINDOW, exposure: WINDOW, stars: WINDOW, sky: WINDOW, ambient: WINDOW, yunpeng: WINDOW, cloudMoon: WINDOW,
+			display: WINDOW, exposure: WINDOW, stars: WINDOW, sky: WINDOW, ambient: WINDOW, nightGlow: WINDOW, cloudMoon: WINDOW,
 		},
 		// the clouded sky's night over the whole of the daylight's fall
 		cloudedDaylight: [ 0, 1 ],
@@ -152,7 +152,7 @@ export const NEUTRAL_LOOK: Look = {
 
 	sky: {
 		cloudLightTint: [ 1, 1, 1, 0 ],
-		islandSky: { setting: [ { at: 0 } ], clouded: [ { at: 0 } ], rising: [ { at: 0 } ] },
+		landSky: { setting: [ { at: 0 } ], clouded: [ { at: 0 } ], rising: [ { at: 0 } ] },
 		clearShade: [ { at: 0, share: 0 } ],
 		clearShadeTint: [ 1, 1, 1, 0 ],
 		// (the elevations only have to differ: the amount is 0)

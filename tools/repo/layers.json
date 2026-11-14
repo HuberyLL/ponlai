@@ -1,6 +1,6 @@
 {
 	"exits": {
-		"render": { "page": "packages/render/index.ts", "headless": "packages/render/data.ts", "setup": "packages/render/setup.ts" },
+		"render": { "page": "packages/render/index.ts", "headless": "packages/render/data.ts", "setup": "packages/render/setup.ts", "browser": "packages/render/browser.ts" },
 		"island": { "page": "packages/island/index.ts", "headless": "packages/island/land.ts" },
 		"game": { "page": "packages/game/index.ts", "headless": "packages/game/sim/index.ts" }
 	},

@@ -31,7 +31,7 @@
 //   shadows, the sky's occlusion and the ground's bounce): the key's luminance at the lifted cosine
 //   level ground takes (lighting/KeyLift.ts `liftedKeyHeight`; the sun's at dusk, the moon's at
 //   night, under the weather's dimming but not the shadow of the cloud cover) plus the sky's
-//   irradiance lent to the island (Sky.ts `islandIrradianceNode`) at its fill. Each pixel still
+//   irradiance lent to the land (Sky.ts `landIrradianceNode`) at its fill. Each pixel still
 //   turns as blue as its own light is dark against that card. Under a cloud cover the card stays
 //   brighter than the ground, so a cloudy or an overcast night turns bluer than a clear one at the
 //   same strength, as a darker night should; on a clear night the open meadow's blue is about the

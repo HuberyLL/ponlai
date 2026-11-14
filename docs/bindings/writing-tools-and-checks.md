@@ -100,10 +100,10 @@ Readiness comes from the page:
 
 The page's agreements, the only ways a tool meets it:
 
-- The URL options, declared in `packages/render/Settings.ts` and listed in
-  `docs/reference/url-options.md`. A tool sets the page's state through them (`--q`); a node tool
-  that loads the modules installs them as the page does
-  (`installSettings( parseSettings( query ) )`, `tools/render/wgsl-build.mjs` `--q`).
+- The URL options, declared in each layer's settings table (`packages/render/Settings.ts`'s header)
+  and listed in `docs/reference/url-options.md`. A tool sets the page's state through them (`--q`);
+  a node tool that loads the modules installs them as the page does (`installSettings(
+  parseSettings( query ) )`, `tools/render/wgsl-build.mjs` `--q`).
 - The handles the page mounts on `window` on debug pages: `__PONLAI__` (the page's parts and its
   controls), `__PONLAI_WORLD__` (`ready` and `ms`, set as the world starts: `app/WorldBoot.ts`) and,
   with `?profile`, `__PONLAI_PROFILE__` (the frame profiler's readings). The scene page mounts the
@@ -114,8 +114,11 @@ The page's agreements, the only ways a tool meets it:
 A tool that needs more of the page adds it to one of the three, never a global of its own.
 
 The one configuration: `tools/project.mjs`. A kit tool (`tools/kit/`) takes the globals' names from
-it (`page`) and never writes them in its code, and imports nothing outside `tools/kit/` but it
-(`tools/repo/verify-kit.mjs`). The members a kit tool uses are names in its code, which the page
+it (`page`), and its output folders (`output`), the names it shares on the machine (`machine`: the
+GPU lock, the jobs' registry, the temp folders' prefix) and the project's `name` too, and never
+writes them in its code; it imports nothing outside `tools/kit/` but it, and a kit Python tool reads
+it through `tools/kit/project.py` (`tools/repo/verify-kit.mjs`). Environment variables keep their
+`PONLAI_` names. The members a kit tool uses are names in its code, which the page
 implements: on the handle `renderer.info.frame`, `renderer.info.memory`, `renderer.domElement`,
 `loop.start()`, `loop.stop()`, `loop.running`, `loop.step( ... )`, `establishScene( query )`,
 `sceneJump`, `camera`, `clockTime()`, `pipeline.width`, `pipeline.height`,

@@ -4,8 +4,9 @@ import { createWindUniforms, windResponse } from './weather/Wind.ts';
 import { displacementUniforms } from './vegetation/Displacement.ts';
 import { ABSORPTION, BACKSCATTER, FORWARD_ANGLE, FORWARD_SCATTER, SCATTER } from './ocean/SeaOptics.ts';
 import type { Look } from './look/Look.ts';
+import { onSceneDispose } from './SceneDispose.ts';
 
-// Uniforms shared by the water, the terrain and the vegetation, created and installed once.
+// Uniforms shared by the water, the terrain and the vegetation, installed by one scene at a time.
 //
 // Uniforms shared by the water, the terrain and the vegetation (one node each, read by every
 // material that uses it).
@@ -14,9 +15,11 @@ import type { Look } from './look/Look.ts';
 //   under node installs its own (tools/render/wgsl-build.mjs). The modules that take it as a parameter
 //   are handed the same object; `shared` below is the installed one, for those that read it as
 //   they build or run. Nothing reads it as a module loads.
-// - It is installed once, as the settings are (Settings.ts): a second install throws. A read before
-//   the install throws too, at the read, naming the field (its stack names the reader): unlike the
-//   settings and the look, the uniforms have no defaults a reader could take instead.
+// - One scene holds it at a time: a second install throws until the scene that installed it is
+//   disposed (SceneDispose.ts), and a scene built after it then installs its own. A read before
+//   the install throws too, at the read, naming the field
+//   (its stack names the reader): unlike the settings and the look, the uniforms have no defaults
+//   a reader could take instead.
 // - The look's numbers every material's shader reads take their tables here, as an argument
 //   (look/Look.ts; the entry hands over the set it installs): the ambient occlusion's floor, the
 //   meadow canopy's media and the wind's look, which the wind's states carry (weather/Wind.ts
@@ -85,11 +88,11 @@ export const createShared = ( look: SharedTables ) => ( {
 	// pixels (post/Metering.ts)
 	seenNight: uniform( 1 ),
 	skyIrradianceSource: vec3( 0 ) as THREE.Node<'vec3'>,
-	// The same as lent to the island after sunset (Sky.islandIrradianceNode): the islanders' fill
+	// The same as lent to the land after sunset (Sky.landIrradianceNode): the figures' fill
 	// under `flags=ambientVolume:0` only (the ambient volume lights them otherwise). It is the probe's
 	// panorama, which takes the fog layer's haze as the dome does, not the land's source, which
 	// leaves the fog layer out (Sky.ts `fogEnvironment`).
-	islandIrradianceSource: vec3( 0 ) as THREE.Node<'vec3'>,
+	skyFillIrradiance: vec3( 0 ) as THREE.Node<'vec3'>,
 	// log2 of the sky's geometric-mean luminance (Sky.meterLog2Node, scene units): the exposure's
 	// sky term, the dome's metering illuminance being this luminance's
 	skyMeterLog2: float( 0 ) as THREE.Node<'float'>,
@@ -117,10 +120,11 @@ const NOT_INSTALLED = new Proxy( {} as Shared, {
 /** The installed uniforms (a read of any field throws until the entry installs them). */
 export let shared: Shared = NOT_INSTALLED;
 
-/** Installs the scene's uniforms, once, before anything is built: a second install throws. */
+/** Installs the scene's uniforms before anything is built: an install while a scene holds them throws. */
 export function installShared( created: Shared ): void {
 
-	if ( shared !== NOT_INSTALLED ) throw new Error( 'installShared: the scene\'s uniforms are installed once, before anything builds' );
+	if ( shared !== NOT_INSTALLED ) throw new Error( 'installShared: a scene holds the uniforms: dispose it before another scene installs its own' );
 	shared = created;
 
 }
+onSceneDispose( 'shared', () => { shared = NOT_INSTALLED; } );

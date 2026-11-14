@@ -1,5 +1,6 @@
 import type * as THREE from 'three/webgpu';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { onSceneDispose } from '../SceneDispose.ts';
 
 // The wind's motion in the vegetation's velocity under the temporal modes, and its switch.
 //
@@ -12,6 +13,7 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 
 // the materials that follow `debugFlags.mv.wind`
 const followers = new Set<THREE.Material>();
+onSceneDispose( 'wind motion', () => followers.clear() );
 
 function setWindMotion( m: THREE.Material, windStill: boolean ): void {
 

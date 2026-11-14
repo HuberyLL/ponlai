@@ -8,7 +8,8 @@
 //
 // Usage:
 //   node tools/kit/gpu-lock-impl.mjs <command> ...     (the same commands as tools/kit/gpu-lock.mjs, this copy only)
-//   PONLAI_GPU_LOCK_IMPL=local node tools/kit/gpu-lock.mjs <command> ...   (the entry, forced to this worktree's copy)
+//   <prefix>GPU_LOCK_IMPL=local node tools/kit/gpu-lock.mjs <command> ...   (the entry, forced to this worktree's copy)
+//   (`<prefix>`: the configuration's `machine.envPrefix`, which names every variable below)
 //
 // Options: those of tools/kit/gpu-lock.mjs.
 //
@@ -34,6 +35,7 @@ import { execFile, execFileSync, spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import PROJECT from '../project.mjs';
 
 // The lock's design.
 //
@@ -43,7 +45,7 @@ import { fileURLToPath } from 'node:url';
 // Pixels are not: a paused capture or a probe renders the same image however busy the GPU is.
 // So the lock has two modes:
 //   - exclusive (the default, every timing run): one holder, nothing else rendering;
-//   - shared (deterministic captures and probes): up to PONLAI_GPU_SLOTS holders together (default
+//   - shared (deterministic captures and probes): up to <prefix>GPU_SLOTS holders together (default
 //     2), none while an exclusive holder runs. Captures are GPU-bound: two pages at once give about
 //     1.75 times one page's throughput, a third about 2 times with the slowest views taking twice
 //     as long as at two, a fourth hardly more (measured on 21 paused views, the frames identical
@@ -71,7 +73,7 @@ import { fileURLToPath } from 'node:url';
 // A request's level is, first match wins: a bump on its ticket or its shared hold (`prio bump`, by
 // pid or `#ticket`; the process keeps it for its later requests: a lease's next one; an exclusive
 // hold is not bumped, its owner.json goes without the mutex); the scheduling table;
-// PONLAI_GPU_PRIORITY; the default of its mode, normal for shared requests and low for exclusive
+// <prefix>GPU_PRIORITY; the default of its mode, normal for shared requests and low for exclusive
 // ones. So by default timing runs get no special treatment and simply rank below captures and
 // probes. One exception bounds that wait: an exclusive request at its default level ranks normal
 // (source `aged`) once AGE_AFTER_MS (30 min) has passed since its run's first request, keeping its
@@ -84,7 +86,7 @@ import { fileURLToPath } from 'node:url';
 // not per piece. Only the default ages: a request at an explicit level (the table, an env level, a
 // bump) keeps it, so a session set to low stays low, and high and urgent still rank above an aged
 // request; shared requests never age. The level is decided at every look from the clock (levelOf),
-// and waiters re-rank on every poll, so a promotion needs no event. PONLAI_GPU_LOCK_AGE_S
+// and waiters re-rank on every poll, so a promotion needs no event. <prefix>GPU_LOCK_AGE_S
 // shortens the threshold for the lock's own tests only; sessions leave it unset. The scheduling table
 // (`ponlai-gpu.lock.priorities.json` beside the lock) ranks sessions, never set by a run for itself:
 // entries { match, level, until?, note? }, `match` a substring of one of a request's
@@ -95,7 +97,7 @@ import { fileURLToPath } from 'node:url';
 // tool started by its absolute path from another directory is still found by its worktree's name,
 // and the main checkout's name matches only requests from the main checkout (a substring of the
 // whole path would match every worktree below it). A level set for a session applies to all its
-// requests, shared and exclusive alike. Sessions leave PONLAI_GPU_PRIORITY unset (inherited by
+// requests, shared and exclusive alike. Sessions leave <prefix>GPU_PRIORITY unset (inherited by
 // every child, it would raise or lower everything below the command it is set on). Tickets, holders
 // and the owner record the inputs (`session`, `env`, `bump`), never the level: every requester
 // computes the effective level when it ranks, from those inputs and the table file read then, so a
@@ -122,7 +124,7 @@ import { fileURLToPath } from 'node:url';
 // Older copies of this file run on the same lock (worktrees branched before the entry below), and
 // levels hold only among copies that know them. The rules between copies, by kind of older copy:
 // - Every older copy with tickets ranks them by class (`priority`): normal ones first in, first out,
-//   then low ones until their `promoteAt` (PONLAI_GPU_PRIORITY=low there). Main's copy before the
+//   then low ones until their `promoteAt` (<prefix>GPU_PRIORITY=low there). Main's copy before the
 //   levels (shared first) also lets a shared ticket (`sharedFirst`) pass an exclusive one until that
 //   one's cap (`capAt`, 30 min) and holds shared tickets back behind a capped one; a copy from
 //   before shared first lets nothing pass an exclusive ticket ranked before it.
@@ -143,7 +145,7 @@ import { fileURLToPath } from 'node:url';
 //   waits while this copy's shared requests keep arriving, as this copy's own default exclusive
 //   requests do (and the older copy's shared requests queued behind it wait with it), while this
 //   copy's low requests and that exclusive request race for the lock.
-// - One stall remains: an older copy's shared request at class low (PONLAI_GPU_PRIORITY=low) ranks
+// - One stall remains: an older copy's shared request at class low (<prefix>GPU_PRIORITY=low) ranks
 //   normal here but after this copy's normal shared ones there, so with one slot free each may wait
 //   for the other until another slot frees or its promoteAt (10 min) passes. Sessions leave the
 //   variable unset, so it ends with those copies.
@@ -206,7 +208,7 @@ import { fileURLToPath } from 'node:url';
 //
 // `log` summarises the window: waits (grants that queued, not take-overs) and holds per class or
 // label, median, p95 and total, and the longest waits with who held the GPU meanwhile.
-// A command started through `run` inherits the lock (PONLAI_GPU_LOCK_HELD, PONLAI_GPU_LOCK_MODE), and
+// A command started through `run` inherits the lock (<prefix>GPU_LOCK_HELD, <prefix>GPU_LOCK_MODE), and
 // so does any process below a holder in the process tree, through any wrappers, so a wrapped tool
 // that takes the lock itself does not wait for its own ancestor (a timing tool under a shared parent
 // says so: its numbers may share the GPU). Below an exclusive holder everything is re-entrant. Below
@@ -217,7 +219,7 @@ import { fileURLToPath } from 'node:url';
 // otherwise hold both while their captures wait), and an exclusive waiter gets in between the
 // captures of a set rather than after the whole set. A descendant about to wait for something else
 // (yieldAncestorSlot: a reference another process is capturing) frees that slot the same way.
-// PONLAI_GPU_LOCK_DIR moves the lock.
+// <prefix>GPU_LOCK_DIR moves the lock.
 //
 // Importing this module raises the process to the application scheduling policy on macOS
 // (tools/kit/qos.mjs: agent-started processes otherwise starve on a busy machine), so every tool that
@@ -244,7 +246,11 @@ function tempRoot() {
 /** This implementation's version: the entry (gpu-lock.mjs) loads the highest on the machine. */
 export const LOCK_VERSION = 5;
 
-export const LOCK_DIR = path.join( process.env.PONLAI_GPU_LOCK_DIR || tempRoot(), 'ponlai-gpu.lock' );
+// the environment variables' prefix (`machine.envPrefix`), as every copy of the project names them
+const ENV = PROJECT.machine.envPrefix;
+
+// the lock's name is the configuration's (`machine.gpuLock`), the same in every copy of the project
+export const LOCK_DIR = path.join( process.env[ `${ ENV }GPU_LOCK_DIR` ] || tempRoot(), PROJECT.machine.gpuLock );
 const OWNER = path.join( LOCK_DIR, 'owner.json' );
 const MEMBERS = path.join( LOCK_DIR, 'shared' );
 const WAITING = `${ LOCK_DIR }.waiting`;
@@ -258,7 +264,7 @@ export const TABLE = `${ LOCK_DIR }.priorities.json`;
 const LOG_CAP = 4 << 20; // ~20k events, days of busy use
 const POLL_MS = 500;
 /** How many shared holders may render at once (each requester reads its own environment). */
-export const SLOTS = Math.max( 1, Math.floor( Number( process.env.PONLAI_GPU_SLOTS ) ) || 2 );
+export const SLOTS = Math.max( 1, Math.floor( Number( process.env[ `${ ENV }GPU_SLOTS` ] ) ) || 2 );
 /** The levels, highest first (see the design comment above); 0-3 name them too. */
 export const LEVELS = [ 'urgent', 'high', 'normal', 'low' ];
 /** A level from its name or number, or null. */
@@ -269,16 +275,16 @@ export function parseLevel( value ) {
 	return LEVELS.includes( text ) ? text : null;
 
 }
-// PONLAI_GPU_PRIORITY's level (null when unset or not a level); children inherit it. Sessions leave
+// <prefix>GPU_PRIORITY's level (null when unset or not a level); children inherit it. Sessions leave
 // it unset: the scheduling table is how levels are set (see the design comment above).
-const ENV_LEVEL = parseLevel( process.env.PONLAI_GPU_PRIORITY );
+const ENV_LEVEL = parseLevel( process.env[ `${ ENV }GPU_PRIORITY` ] );
 /** The level a request has unless a bump, the table or its environment says otherwise: shared
  * requests normal, exclusive ones low (see the design comment above). */
 export const defaultLevel = ( t ) => t.mode === 'exclusive' ? 'low' : 'normal';
 // How long an exclusive request at its default level waits, from its run's first request, before it
-// ranks normal (see the design comment above). PONLAI_GPU_LOCK_AGE_S overrides it for the lock's own tests only.
+// ranks normal (see the design comment above). <prefix>GPU_LOCK_AGE_S overrides it for the lock's own tests only.
 const AGE_AFTER_MS = 30 * 60e3;
-export const AGE_MS = Number( process.env.PONLAI_GPU_LOCK_AGE_S ) > 0 ? Number( process.env.PONLAI_GPU_LOCK_AGE_S ) * 1000 : AGE_AFTER_MS;
+export const AGE_MS = Number( process.env[ `${ ENV }GPU_LOCK_AGE_S` ] ) > 0 ? Number( process.env[ `${ ENV }GPU_LOCK_AGE_S` ] ) * 1000 : AGE_AFTER_MS;
 /** When a request would age (ms since the epoch), or Infinity: an exclusive ticket or holder of a copy
  * that records its run's first request (`placeStart`), AGE_MS after it. Whether it does depends on its
  * level's source: only one at its default level ages (levelOf). */
@@ -666,7 +672,7 @@ function holdingAncestor() {
 	if ( ! owner ) return null;
 	const mode = owner.mode === 'shared' ? 'shared' : 'exclusive';
 	const holders = new Set( mode === 'shared' ? owner.members.map( ( m ) => m.pid ) : [ owner.pid ] );
-	const held = Number( process.env.PONLAI_GPU_LOCK_HELD );
+	const held = Number( process.env[ `${ ENV }GPU_LOCK_HELD` ] );
 	if ( held > 0 && holders.has( held ) && alive( held ) ) return { pid: held, mode };
 	// A holder further up the process tree. The environment names only the nearest `run`, and a
 	// wrapper in between need not be a member: a tool that runs each shot through its own `run`
@@ -1956,7 +1962,7 @@ export async function main( argv, { impl = `${ fileURLToPath( import.meta.url ) 
 		const shared = ( split >= 0 ? rest.slice( 0, split ) : rest ).includes( '--shared' );
 		const waited = await acquireGpuLock( label, { timeout: Number( opt( 'timeout', 0 ) ), shared } );
 		if ( waited > 1000 ) console.error( `[gpu-lock ${ clock() }] acquired${ shared ? ' (shared)' : '' } after ${ ( waited / 1000 ).toFixed( 1 ) } s` );
-		const child = spawn( ...appPolicy( cmd[ 0 ], cmd.slice( 1 ) ), { stdio: 'inherit', env: { ...process.env, PONLAI_GPU_LOCK_HELD: String( process.pid ), PONLAI_GPU_LOCK_MODE: shared ? 'shared' : 'exclusive' } } );
+		const child = spawn( ...appPolicy( cmd[ 0 ], cmd.slice( 1 ) ), { stdio: 'inherit', env: { ...process.env, [ `${ ENV }GPU_LOCK_HELD` ]: String( process.pid ), [ `${ ENV }GPU_LOCK_MODE` ]: shared ? 'shared' : 'exclusive' } } );
 		for ( const signal of [ 'SIGINT', 'SIGTERM', 'SIGHUP' ] ) {
 
 			process.removeAllListeners( signal );

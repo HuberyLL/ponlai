@@ -44,6 +44,7 @@ import { availableParallelism } from 'node:os';
 import path from 'node:path';
 import { headerOf, sectionOf } from '../kit/help.mjs';
 import { ROOT } from '../kit/root.mjs';
+import PROJECT from '../project.mjs';
 
 const MAX_LINES = 120;
 const TIMEOUT = 20000;
@@ -136,7 +137,7 @@ function run( { file, python }, args ) {
 	const [ cmd, argv ] = python ? [ 'python3', [ '-I', '-S', '-c', PY_TRAP, file, ...args ] ] : [ process.execPath, [ '--import', TRAP, file, ...args ] ];
 	return new Promise( ( resolve ) => {
 
-		const child = spawn( cmd, argv, { cwd: ROOT, env: { ...process.env, PONLAI_QOS: 'off' }, stdio: [ 'ignore', 'pipe', 'pipe' ] } );
+		const child = spawn( cmd, argv, { cwd: ROOT, env: { ...process.env, [ `${ PROJECT.machine.envPrefix }QOS` ]: 'off' }, stdio: [ 'ignore', 'pipe', 'pipe' ] } );
 		let out = '', err = '';
 		// an answer is a file read: a run still going after TIMEOUT has gone on into the tool
 		const timer = setTimeout( () => {

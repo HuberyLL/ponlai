@@ -22,10 +22,10 @@ import * as THREE from 'three/webgpu';
 import { loadWorld, type LoadedWorld } from './WorldChunks.ts';
 import { GROWTH, type LandLattice } from './IslandGrowth.ts';
 import { landArea, landCentroid } from './WorldShapes.ts';
-import { settings, type SettingName } from '../../render/setup.ts';
+import { settings, type IslandSettingName } from '../IslandSettings.ts';
 
 const params = settings;
-const intParam = ( name: SettingName, fallback: number ) => {
+const intParam = ( name: IslandSettingName, fallback: number ) => {
 
 	const value = Math.trunc( Number( params.get( name ) ?? fallback ) );
 	return Number.isFinite( value ) ? value : fallback;

@@ -39,7 +39,7 @@ All of these act on every surface lit by the shared lighting model at once.
 | Low key lift | `ambient.keyLift` (`lighting/KeyLift.ts`) | Under a low sun, the elevation the key shades with: a lifted direction for the shading (`lighting/KeyLift.ts`). |
 | Sky light against the sun (`sky.light.<r\|g\|b>@<key>`) | `sky.skyLight` (`look/SkyLook.ts`) | A gain per channel on the sky's in-scattered light, everywhere the sky is read: the seen sky, the environment that lights the land, the sea's reflection, the haze's sky light. The sky that is seen stays the sky that lights. |
 | Clear sky gain (`sky.clear.gain@<key>`) | `sky.clearSky` | The clear and fair day's sky against the key, on the same paths. |
-| Island sky | `sky.islandSky`, `sky.cloudLightTint` | The light the sky lends the land after sunset and under cloud: its tint, how far, its gain. |
+| Land sky | `sky.landSky`, `sky.cloudLightTint` | The light the sky lends the land after sunset and under cloud: its tint, how far, its gain. |
 | Low sun key | `sky.lowKey` | A gain on the sunlight by elevation near the horizon; the shade, lit by the sky, does not move. |
 | Key hue (`sky.key.hueDepth`, `dawnHueDepth`, `reddens`, `yellows`) | `sky.keyHue` | How warm the sunlight turns as the sun lowers, and its white while the sun is high. |
 | Key through cloud (`lighting.keyThroughCloud`) | `sky.keyThroughCloud` | How much of a cloud layer's light the land keeps as a light along the key. |

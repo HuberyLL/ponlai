@@ -33,8 +33,8 @@
 //   log --top n         the longest waits listed (default 5)
 //   --json              prints JSON only (eta, prio, log)
 //
-// Commands. `run` waits for the lock, then runs the command with PONLAI_GPU_LOCK_HELD and
-// PONLAI_GPU_LOCK_MODE set, so the command and anything below it inherit the hold, and with the
+// Commands. `run` waits for the lock, then runs the command with <prefix>GPU_LOCK_HELD and
+// <prefix>GPU_LOCK_MODE set (`<prefix>` is the configuration's `machine.envPrefix`, here and below), so the command and anything below it inherit the hold, and with the
 // application policy (tools/kit/qos.mjs); it forwards SIGINT, SIGTERM and SIGHUP to the command.
 // `status` names the holders (shared: their slots, each with its level and source), the queue in
 // turn (each with its estimated start) and the exclusive requests in turn (`waiting`). `eta`
@@ -64,10 +64,11 @@
 // and `queue, in turn:`. `gpu` prints `{ utilisation, clients }`. `log` prints per group the
 // requests, waits and holds (median, p95, total; lease uses and yields, take-overs, timeouts,
 // abandoned and stale holds apart) and the longest waits with the holds that overlapped them. The
-// log itself, `ponlai-gpu.lock.log.jsonl` beside the lock (rotated to `.log.1.jsonl` past 4 MB),
-// holds a JSON line per request, grant, release, timeout and abandoned request: time, pid, label,
-// mode, `class` (the level), `source`, ticket, `ppid` and `cwd`, the wait or hold in ms, and why a
-// hold ended when its holder did not end it (`handed`, `yielded`, `stale`, `lease`).
+// log itself, `ponlai-gpu.lock.log.jsonl` beside the lock (the lock's name is the configuration's
+// `machine.gpuLock`; rotated to `.log.1.jsonl` past 4 MB), holds a JSON line per request, grant,
+// release, timeout and abandoned request: time, pid, label, mode, `class` (the level), `source`,
+// ticket, `ppid` and `cwd`, the wait or hold in ms, and why a hold ended when its holder did not
+// end it (`handed`, `yielded`, `stale`, `lease`).
 //
 // GPU lock and browser: `run` takes the lock (alone, or a slot with --shared) for its command's
 // whole run; the other commands take nothing and open no browser. Cost: under a second, except the
@@ -89,8 +90,8 @@
 //   main checkout after then, tools/gpu-lock-impl.mjs is a stand-in that re-exports the kit's.
 // - If the main checkout's implementation does not load (a conflict mid-merge, a syntax error, no
 //   readable version), this worktree's runs instead, said once on stderr.
-// - PONLAI_GPU_LOCK_IMPL=local forces this worktree's copy (to test a change to the lock);
-//   PONLAI_GPU_LOCK_MAIN=<dir> stands in for the main checkout's root (for the entry's own tests).
+// - <prefix>GPU_LOCK_IMPL=local forces this worktree's copy (to test a change to the lock);
+//   <prefix>GPU_LOCK_MAIN=<dir> stands in for the main checkout's root (for the entry's own tests).
 // A change to the lock goes in gpu-lock-impl.mjs, bumps LOCK_VERSION there and in the stand-in, and
 // keeps the exports and the CLI additive: whatever this entry loads provides every name it
 // re-exports.
@@ -100,8 +101,10 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import PROJECT from '../project.mjs';
 
 const NAME = 'gpu-lock-impl.mjs';
+const MAIN_ENV = `${ PROJECT.machine.envPrefix }GPU_LOCK_MAIN`, IMPL_ENV = `${ PROJECT.machine.envPrefix }GPU_LOCK_IMPL`;
 const here = path.dirname( fileURLToPath( import.meta.url ) );
 const local = path.join( here, NAME );
 // where a main checkout keeps the implementation: in the kit, or at the top of tools/ before the
@@ -111,7 +114,7 @@ const MAIN_PLACES = [ [ 'tools', 'kit', NAME ], [ 'tools', NAME ] ];
 // the main checkout's root: the directory holding the repository's common .git
 function mainRoot() {
 
-	if ( process.env.PONLAI_GPU_LOCK_MAIN ) return path.resolve( process.env.PONLAI_GPU_LOCK_MAIN );
+	if ( process.env[ MAIN_ENV ] ) return path.resolve( process.env[ MAIN_ENV ] );
 	try {
 
 		const common = execFileSync( 'git', [ 'rev-parse', '--path-format=absolute', '--git-common-dir' ], { cwd: here, encoding: 'utf8', stdio: [ 'ignore', 'pipe', 'ignore' ], timeout: 5000 } ).trim();
@@ -160,9 +163,9 @@ const same = ( a, b ) => {
 
 const localVersion = versionOf( local );
 let file = local, why;
-const root = process.env.PONLAI_GPU_LOCK_IMPL === 'local' ? null : mainRoot();
+const root = process.env[ IMPL_ENV ] === 'local' ? null : mainRoot();
 const remote = root && ( MAIN_PLACES.map( ( p ) => path.join( root, ...p ) ).find( ( f ) => existsSync( f ) ) ?? path.join( root, ...MAIN_PLACES[ 0 ] ) );
-if ( process.env.PONLAI_GPU_LOCK_IMPL === 'local' ) why = 'PONLAI_GPU_LOCK_IMPL=local';
+if ( process.env[ IMPL_ENV ] === 'local' ) why = `${ IMPL_ENV }=local`;
 else if ( ! remote ) why = 'no main checkout found';
 else if ( same( remote, local ) ) why = 'this is the main checkout';
 else {

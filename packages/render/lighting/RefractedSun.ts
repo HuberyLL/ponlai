@@ -458,7 +458,7 @@ export class RefractedSun {
 
 	}
 
-	/** The map as constructed, redrawn at the next update (a scene jump, app/Scene.ts `establishScene`,
+	/** The map as constructed, redrawn at the next update (a scene jump, assemble/SceneJump.ts `establishScene`,
 	 * which calls `update` right after, as `prepare` draws a new page's map before its first frame):
 	 * a map grown to 2048 for one light keeps that size, so a light that a new page fits at the
 	 * constructed size would be drawn at another resolution. */

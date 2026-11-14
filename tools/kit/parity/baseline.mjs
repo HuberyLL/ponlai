@@ -14,7 +14,7 @@
 // Options:
 //   --url <url>              the preview captured from (optional with --metrics-only, --capture-only)
 //   --sha <sha>              the commit whose store the run uses (a short sha is resolved)
-//   --root <dir>             the store's root; default artifacts/parity
+//   --root <dir>             the store's root; default artifacts/parity (`output.parity`)
 //   --label <name>           the side under test; default baseline (MSAA)
 //   --aa <mode>              the label's mode; default msaa, the only mode of the label baseline
 //   --tiers <a,b>            default high
@@ -102,7 +102,7 @@ import { viewTable, clipTable } from './tables.mjs';
 import { sampleGpuUtilisation } from '../gpu-lock.mjs';
 import { ensureReference, clipKey, anchorsHash, checkServed } from '../reference.mjs';
 import { planCarry } from './carry.mjs';
-import { ROOT } from '../root.mjs';
+import { ROOT, outputDir } from '../root.mjs';
 
 const HERE = path.dirname( fileURLToPath( import.meta.url ) );
 const TOOLS = path.join( ROOT, 'tools' );
@@ -522,7 +522,7 @@ async function main() {
 	else if ( o.gt === undefined ) o.gt = o.label === 'baseline' || !! o[ 'ref-url' ];
 	// the full sha, so every task meets in one directory whichever form it was given
 	try { o.sha = execFileSync( 'git', [ 'rev-parse', '--verify', '--quiet', `${ o.sha }^{commit}` ], { cwd: TOOLS, encoding: 'utf8' } ).trim() || o.sha; } catch { /* not a commit here: kept as given */ }
-	const root = path.resolve( o.root ?? path.join( ROOT, 'artifacts', 'parity' ), o.sha );
+	const root = path.resolve( o.root ?? outputDir( ROOT, 'parity' ), o.sha );
 	const list = entries( o );
 	if ( ! list.length ) throw new Error( 'nothing to do: no entry matches --tiers, --views, --clips and --only' );
 	for ( const e of list ) if ( ! VIEWS[ e.view ] ) throw new Error( `unknown view ${ e.view }` );

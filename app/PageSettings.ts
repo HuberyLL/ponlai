@@ -11,12 +11,13 @@
 // The rest of the page's own state outside the scene lives here too: the reload with changed
 // options (a load setting's new value) and the browser's storage for what a page remembers between
 // visits (the dynamic resolution's scale).
-import { installSettings, parseSettings, settingProblems, type SettingName, NEUTRAL_LOOK, type Look } from '../packages/render/setup.ts';
+import { installSettings, parseSettings, settingProblems, NEUTRAL_LOOK, type Look } from '../packages/render/setup.ts';
+import { PAGE_SETTINGS, type PageSettingName } from './AppSettings.ts';
 import { chooseQuality, type QualityChoice } from './QualityDetect.ts';
 import { ISLAND_LOOK } from '../packages/island/land.ts';
 
 const query = parseSettings( location.search );
-for ( const problem of settingProblems( query ) ) console.warn( `[settings] ${ problem }` );
+for ( const problem of settingProblems( query, PAGE_SETTINGS ) ) console.warn( `[settings] ${ problem }` );
 /** The tier this load builds and how it was chosen (QualityDetect.ts). */
 export const QUALITY_CHOICE: QualityChoice = chooseQuality( query );
 installSettings( query, QUALITY_CHOICE.tier );
@@ -25,7 +26,7 @@ const debugPage = import.meta.env.DEV || query.has( 'debug' ) || query.has( 'pro
 export const PAGE_LOOK: Look = debugPage && query.get( 'renderLook' ) === 'neutral' ? NEUTRAL_LOOK : ISLAND_LOOK;
 
 /** Reloads the page with options set (a string; '' names one bare) or removed (null), in order. */
-export function reloadWith( changes: Partial<Record<SettingName, string | null>> ): void {
+export function reloadWith( changes: Partial<Record<PageSettingName, string | null>> ): void {
 
 	const url = new URL( location.href );
 	for ( const [ name, value ] of Object.entries( changes ) ) {

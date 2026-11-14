@@ -1,6 +1,6 @@
 // Checks the exact scene jump: a view reached by a jump within one page must be the frame a fresh load of it draws.
 //
-// It answers "does `__PONLAI__.establishScene( query )` (app/Scene.ts, where its contract is
+// It answers "does `__PONLAI__.establishScene( query )` (packages/render/assemble/SceneJump.ts, where its contract is
 // written) leave nothing behind": after the jump, one rendered frame at the jump's camera and the
 // view's eval, the paused frame must be the one a fresh load of the view's query draws, byte for byte
 // wherever the fresh load repeats. It is the regression probe for anything that adds state a jump
@@ -348,7 +348,7 @@ try {
 
 				}, { q: s.q, legacy: options.legacy === true } );
 				// a frame at the jump's camera before the eval moves it, as a fresh load renders its
-				// first frames before a capture's eval runs (app/Scene.ts `establishScene`)
+				// first frames before a capture's eval runs (packages/render/assemble/SceneJump.ts `establishScene`)
 				await page.waitForFunction( ( f ) => window.__PONLAI__.renderer.info.frame > f, jumped, { timeout, polling: 'raf' } );
 
 			}

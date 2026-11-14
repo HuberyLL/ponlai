@@ -37,10 +37,13 @@ answer_help(__file__)
 
 import os  # noqa: E402
 
+from project import project  # noqa: E402
+
 # The application scheduling policy on macOS (tools/kit/qos.mjs says why), as in img.py: the process
 # re-executes itself in place under taskpolicy -a.
-if sys.platform == "darwin" and os.environ.get("PONLAI_QOS") != "off" and os.environ.get("PONLAI_QOS") != str(os.getpid()):
-    os.environ["PONLAI_QOS"] = str(os.getpid())
+QOS_ENV = project()["machine"]["envPrefix"] + "QOS"
+if sys.platform == "darwin" and os.environ.get(QOS_ENV) != "off" and os.environ.get(QOS_ENV) != str(os.getpid()):
+    os.environ[QOS_ENV] = str(os.getpid())
     os.execv("/usr/sbin/taskpolicy", ["/usr/sbin/taskpolicy", "-a", sys.executable, *sys.orig_argv[1:]])
 
 import json  # noqa: E402

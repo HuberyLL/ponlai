@@ -44,7 +44,20 @@ import { pathToFileURL } from 'node:url';
 import PROJECT from '../../project.mjs';
 import { ROOT } from '../root.mjs';
 
-const load = ( file ) => import( pathToFileURL( path.join( ROOT, file ) ).href );
+// a table the configuration names, or, for a project without it, a stand-in whose every read fails
+// with that message (so a tool that needs only the other table still runs)
+const load = async ( kind ) => {
 
-export const viewTable = await load( PROJECT.tables.views );
-export const clipTable = await load( PROJECT.tables.clips );
+	const file = PROJECT.tables?.[ kind ];
+	if ( file ) return import( pathToFileURL( path.join( ROOT, file ) ).href );
+	return new Proxy( {}, { get: ( _, key ) => {
+
+		if ( key === 'then' ) return undefined; // not a thenable
+		throw new Error( `this project has no ${ kind } table (tools/project.mjs: tables.${ kind } is null)` );
+
+	} } );
+
+};
+
+export const viewTable = await load( 'views' );
+export const clipTable = await load( 'clips' );

@@ -19,7 +19,7 @@
 //   eval <clip>    the page js that installs window.__PONLAI_CLIP__
 //
 // capture-clip.mjs loads the view as capture-set.mjs does (paused at t=12), runs the view's eval,
-// then steps the clip's frames with `__PONLAI__.loop.step` (app/Frame.ts: a fixed dt, no wall clock,
+// then steps the clip's frames with `__PONLAI__.loop.step` (packages/render/assemble/SceneFrame.ts: a fixed dt, no wall clock,
 // the frame pacer and the dynamic scale bypassed) and captures crops and full frames as it goes.
 // Paused clips isolate the camera's motion over a frozen scene; running ones (the clock steps by dt
 // from t=12) add the scene's own motion: wind, sea, rain, the islander, lightning, the sun.

@@ -49,7 +49,9 @@ function licences(): Plugin {
 
 }
 
-export default defineConfig( {
+// `vite build` ships the island's page alone; `--mode scenes` (the tools' previews, through
+// tools/project.mjs `serve.build`) adds the renderer's test scenes, which are ours to look at.
+export default defineConfig( ( { mode } ) => ( {
 	base: './',
 	// assets(): fills the git-ignored public/ from the assets release (tools/repo/vite-assets.mjs);
 	// the world generator's source hash, for the world cache (packages/island/world/WorldCache.ts)
@@ -66,8 +68,8 @@ export default defineConfig( {
 		chunkSizeWarningLimit: 1500,
 		// keep third-party licence notices ( /*! ... */ ) in the bundle
 		rolldownOptions: {
-			// the island's page and the test scenes' (app/scenes/)
-			input: [ 'index.html', 'scenes.html' ],
+			// the island's page, and with `--mode scenes` the test scenes' (app/scenes/)
+			input: mode === 'scenes' ? [ 'index.html', 'scenes.html' ] : [ 'index.html' ],
 			output: {
 				comments: { legal: true },
 				// A chunk that is no entry of its own holds the code the page and its lazy parts
@@ -80,4 +82,4 @@ export default defineConfig( {
 		license: { fileName: 'licenses/dependencies.md' },
 	},
 	worker: { format: 'es' },
-} );
+} ) );

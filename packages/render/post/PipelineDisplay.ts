@@ -220,9 +220,9 @@ export function buildDisplay( p: Pipeline, c: DisplayBuild ): void {
 	constantsMat.name = 'Post.Constants';
 	const discCloud = textureLoad( texture( g.texture( p.skyConstants.output ) ), ivec2( 0 ) ) as unknown as THREE.Node<'vec4'>;
 	// (r: the rods' colour's retinal scale, from the light that falls on open level ground: the
-	// key's share at its lifted cosine and the sky's irradiance lent to the island, at its fill;
+	// key's share at its lifted cosine and the sky's irradiance lent to the land, at its fill;
 	// Purkinje.ts `purkinjeScale`)
-	const openLight = u.purkinjeKey.add( luminance( sky.islandIrradianceNode ).mul( shared.skyFill ) );
+	const openLight = u.purkinjeKey.add( luminance( sky.landIrradianceNode ).mul( shared.skyFill ) );
 	constantsMat.fragmentNode = vec4( purkinjeScale( look.purkinje.retina, openLight ), 0, 0, p.shafts.occlusion( tSurfaceDepth, g.extent( { of: 'render' } ), discCloud.r, discCloud.g ) );
 	p.constants.quad = new THREE.QuadMesh( constantsMat );
 	p.constants.quad.name = 'Post.Constants';

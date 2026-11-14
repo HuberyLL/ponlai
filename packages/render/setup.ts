@@ -7,10 +7,10 @@
 // (PageSettings.ts) installs the settings through it. Every file it loads imports relative paths
 // only, and it loads in plain node, where the headless game reads the settings through it
 // (tools/repo/verify-exits.mjs). A name is in one exit only: these are not in render/index.ts.
-export { ACTIVE_QUALITY, DEFAULT_QUALITY, QUALITY, QUALITY_TIERS, isQualityTier, qualityProfile } from './Quality.ts';
-export type { QualityProfile, QualityTier } from './Quality.ts';
-export { installSettings, numberSetting, parseSettings, settingProblems, settings } from './Settings.ts';
-export type { SettingName, SettingsQuery } from './Settings.ts';
-export type { AmbientLook, AmbientRowLook, BloomKey, DayLook, DesaturationKey, DisplayLook, ExposureKey, ExposureLook, FullKey, HazeLook, IslandSkyRow, LocalLightsLook, Look, MeadowCanopyLook, OcclusionLook, Rgb, SeaLook, SharingKey, SkyLook, WindLook } from './look/Look.ts';
+export { ACTIVE_QUALITY, DEFAULT_QUALITY, QUALITY, QUALITY_TIERS, isQualityTier } from './Quality.ts';
+export type { QualityTier } from './Quality.ts';
+export { installSettings, mergeSettings, numberSetting, parseSettings, RENDER_SETTINGS, settingProblems, settingsFor } from './Settings.ts';
+export type { SettingName, SettingsQuery, SettingsTable } from './Settings.ts';
+export type { AmbientLook, AmbientRowLook, BloomKey, DayLook, DesaturationKey, DisplayLook, ExposureKey, ExposureLook, FullKey, HazeLook, LandSkyRow, LocalLightsLook, Look, MeadowCanopyLook, OcclusionLook, Rgb, SeaLook, SharingKey, SkyLook, WindLook } from './look/Look.ts';
 export { NEUTRAL_LOOK } from './look/NeutralLook.ts';
-export { dynamicRange, outputPixelRatio, renderPixelRatio } from './post/RenderScale.ts';
+export { renderPixelRatio } from './post/RenderScale.ts';

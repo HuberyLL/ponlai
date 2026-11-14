@@ -52,7 +52,7 @@
 //
 // Profiles. Each group runs in a browser profile root of its own
 // (`artifacts/.capture-profiles/growth/<side>-s<seed>-g<grow>` of the main checkout, under
-// `PONLAI_CAPTURE_PROFILES` when it is set), so a repeat run finds every group's world in its world
+// the capture profiles' variable (`PONLAI_CAPTURE_PROFILES` here) when it is set), so a repeat run finds every group's world in its world
 // cache. The first run in a new root also compiles the shaders cold.
 //
 // References. `--base-ref <sha>` keeps the base side's shots as references of that commit, one entry
@@ -99,6 +99,9 @@ import path from 'node:path';
 import { compareFrames, decodePng } from '../kit/capture-browser.mjs';
 import { browserBuild, checkServed, ensureReference, stable } from '../kit/reference.mjs';
 import { ROOT } from '../kit/root.mjs';
+import PROJECT from '../project.mjs';
+
+const PROFILES_ENV = `${ PROJECT.machine.envPrefix }CAPTURE_PROFILES`;
 
 const args = process.argv.slice( 2 );
 const opt = ( k, d ) => { const i = args.indexOf( '--' + k ); return i >= 0 ? args[ i + 1 ] : d; };
@@ -151,7 +154,7 @@ const MAIN = ( () => {
 	return ROOT;
 
 } )();
-const PROFILES = path.join( process.env.PONLAI_CAPTURE_PROFILES ? path.resolve( process.env.PONLAI_CAPTURE_PROFILES ) : path.join( MAIN, 'artifacts/.capture-profiles' ), 'growth' );
+const PROFILES = path.join( process.env[ PROFILES_ENV ] ? path.resolve( process.env[ PROFILES_ENV ] ) : path.join( MAIN, 'artifacts/.capture-profiles' ), 'growth' );
 const REFS = path.join( MAIN, 'artifacts/captures/growth-ref' );
 const hash = ( text, n = 12 ) => createHash( 'sha256' ).update( text ).digest( 'hex' ).slice( 0, n );
 
@@ -313,7 +316,7 @@ function runPage( queue ) {
 
 		const child = spawn( process.execPath, [ 'tools/kit/capture.mjs', '--worker', '--url', page, '--w', String( W ), '--h', String( H ),
 			'--timeout', String( timeout ), ...( pagePerView ? [ '--page-per-view' ] : [] ) ],
-		{ cwd: ROOT, stdio: [ 'ignore', 'pipe', 'pipe', 'ipc' ], env: { ...process.env, PONLAI_CAPTURE_PROFILES: path.join( PROFILES, world ) } } );
+		{ cwd: ROOT, stdio: [ 'ignore', 'pipe', 'pipe', 'ipc' ], env: { ...process.env, [ PROFILES_ENV ]: path.join( PROFILES, world ) } } );
 		let output = [], current = null, served = 0, timer = null, killer = null, writing = Promise.resolve();
 		child.stdout.on( 'data', ( d ) => output.push( d ) );
 		child.stderr.on( 'data', ( d ) => output.push( d ) );

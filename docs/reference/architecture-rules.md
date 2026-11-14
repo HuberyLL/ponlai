@@ -75,13 +75,13 @@ count that was not a number fell back to 1, and a key named `__proto__` broke a 
 
 ## Rule 4: Determinism and path independence
 
-The simulation, the world and its growth, the weather, the wind and every state integrated over
-time (the wind's travel, the fog's time) are functions of the land, the seeds, the scene clock, the
-weather and the calls made. They never depend on the path taken, the thread count or the frame
-rate. A grown page holds the world a fresh load of its land holds. A scene jump (`establishScene`
-in [app/Scene.ts](../../app/Scene.ts)) holds the scene a fresh load of the same query holds. The
-world's chunks and the growth's swap keep the rule for generation: see the headers of
-[Chunks.ts](../../packages/island/world/Chunks.ts) and
+The simulation, the world and its growth, the weather, the wind and every state integrated over time
+(the wind's travel, the fog's time) are functions of the land, the seeds, the scene clock, the
+weather and the calls made. They never depend on the path taken, the thread count or the frame rate.
+A grown page holds the world a fresh load of its land holds. A scene jump (`establishScene` in
+[SceneJump.ts](../../packages/render/assemble/SceneJump.ts)) holds the scene a fresh load of the
+same query holds. The world's chunks and the growth's swap keep the rule for generation: see the
+headers of [Chunks.ts](../../packages/island/world/Chunks.ts) and
 [Growth.ts](../../packages/island/world/Growth.ts).
 
 Rendering may keep a history-dependent effect (a temporal resolve, exposure adaptation, lighting or
@@ -236,14 +236,13 @@ by a name. A key a layer names in an object's `userData` is one the renderer dec
 headless code load is free of three.js, whichever layer it is in. The tools and the checks are
 white-box: they may import any layer.
 
-The renderer still carries this island's words as names: in the look's types (the yunpeng's dusk
-window and night share, the island's sky rows), in the shared uniforms (the sward's tint, the
-island's irradiance source, the leaves' gain), as the name of its own techniques, passes and look
-table (`meadow`), in the debug flags, in the closed list of the debug view's kinds (rule 18), in the
-meadow's `userData` marks and in the walk's distance in the growth's input. It tells the island's
-things apart by these names in two places only: the lighting model multiplies the blade family's
-ambient light by the sward's tint, and the profiler's labels take the page's parts by name and wrap
-the islanders' update.
+The renderer's names hold no proper name of this island: what it shares with a scene is named for
+what it is (the dusk window of what glows by night, the sky light lent to the land, the distance to
+the scene's path in the growth's input). Ordinary words for an open-air scene stay its own: the
+meadow's shade, canopy and depth pass, the blade family's ambient tint (`swardTint`), the debug
+view's kinds and the grade's bands. The sea's inputs from the land's shape are named `seaShape`. The
+debug flags are one open object for every layer, and the renderer's header lists the island's flags
+with its own.
 
 **Why:** the renderer is to be usable without this island, and a test scene builds it alone. A
 renderer that imports the island cannot be built, read or checked without it, and every change to
@@ -278,8 +277,11 @@ game itself) are lazy exits, imported dynamically, so they stay in chunks of the
 An exit loads its whole package, so a module does nothing as it loads but declare and register: no
 `await` and no read of the page. A module may still hold state at module level (uniforms, buffers,
 tables) and compute constants from the settings as it loads, so that state is one per process: a
-page holds one renderer, and the parts that would clash say so (a second light table and a second
-install of the shared uniforms throw).
+page holds one renderer at a time, and the parts that would clash say so (a second light table and
+a second install of the shared uniforms throw while a scene holds them). A module that holds a
+scene's state registers, as it loads, the release that puts it back as the page loaded it
+([SceneDispose.ts](../../packages/render/SceneDispose.ts)); a running scene's `dispose()` runs them,
+so a scene started after it on the same page draws as a fresh load does.
 
 **Why:** what a package offers is a list that can be read and reviewed, and a change inside a
 package cannot break another.
@@ -287,7 +289,8 @@ package cannot break another.
 **Enforced by:** [verify-layers.mjs](../../tools/repo/verify-layers.mjs) for the imports and the
 lazy exits ([tools/repo/layers.json](../../tools/repo/layers.json));
 [verify-exits.mjs](../../tools/repo/verify-exits.mjs) for what a module does as it loads, and it
-loads the headless and setup exits in node.
+loads the headless and setup exits in node; [scenes.mjs](../../tools/render/scenes.mjs) `--rebuild`
+for a scene started after another's dispose.
 
 **Came from:** a module that worked as it loaded made the order of the imports part of the
 program.
@@ -299,8 +302,11 @@ Only the page builds across packages: [app/main.ts](../../app/main.ts) for the i
 stages, functions that take its layer's object and what they need as arguments and put what they
 build on that object ([RenderStages.ts](../../packages/render/RenderStages.ts),
 [IslandStages.ts](../../packages/island/IslandStages.ts): their headers give the stages and their
-order). The page calls the stages in one fixed order, which is part of the image (rule 4), because
-the order materials first build in changes their code. A part reaches another through what it was
+order). Both pages build through the renderer's assembly (`startScene`,
+[StartScene.ts](../../packages/render/assemble/StartScene.ts)), which calls the renderer's stages in
+one fixed order and the page's content in named slots between them; the island's page calls the
+island's stages from those slots. The order is part of the image (rule 4), because the order
+materials first build in changes their code. A part reaches another through what it was
 given or through a registry the other owns (rule 18). A state that changes has one owner, the only
 one that writes it; the others read it or call the owner's operation (rule 8, on the rendering
 side).
@@ -338,6 +344,10 @@ focus and visibility (the frame-rate readout, the island camera's two controls a
 
 A few needs have one module each, and no other file may use them:
 
+- a running scene's host in a browser page: the window's size and events, the document's
+  visibility, the storage, the loading screen and the globals the tools read
+  ([BrowserHost.ts](../../packages/render/assemble/BrowserHost.ts)), behind the renderer's browser
+  exit (`render/browser.ts`), which only the page imports;
 - the frame's pacing ([FramePacer.ts](../../packages/render/post/FramePacer.ts));
 - the asset fetches ([FetchAsset.ts](../../packages/render/FetchAsset.ts));
 - the world's cache in IndexedDB ([WorldCache.ts](../../packages/island/world/WorldCache.ts));
@@ -374,21 +384,22 @@ while it is there.
 
 ## Rule 14: Outside settings are checked once, at one entrance
 
-This is rule 3 on the rendering side. The address's options are declared once, in one schema
-([Settings.ts](../../packages/render/Settings.ts)): a name, a type, a range, a default and the layer
-that owns it. That schema is a renderer file and declares the island's, the game's and the page's
-options too, so an upper layer's new option is an edit to the renderer. The entry parses the address
-through that schema and installs the settings before any module that reads them loads; no other
-module parses an option. The installed settings never change on a page. How they are read, where
-nothing installed them and what may change on a running page:
-[Settings.ts](../../packages/render/Settings.ts), its header.
+This is rule 3 on the rendering side. Each option of the address is declared once, with a name, a
+type, a range and a default, in the table of the lowest layer that reads it: the renderer's in
+[Settings.ts](../../packages/render/Settings.ts), the island's, the game's and the page's beside
+their code, so an upper layer's new option leaves the renderer as it is. The entry merges the tables
+(a name two layers declare throws), parses the address against them and installs the settings before
+any module that reads them loads; no other module parses an option. A layer reads by its own names
+and those below it, so a lower layer cannot read an upper layer's option. The installed settings
+never change on a page. How they are read, where nothing installed them and what may change on a
+running page: [Settings.ts](../../packages/render/Settings.ts), its header.
 
 **Why:** one entrance reports a mistyped option, and the docs' list of the options is written from
-the schema rather than kept by hand.
+the tables rather than kept by hand.
 
 **Enforced by:** [verify-layers.mjs](../../tools/repo/verify-layers.mjs) fails on an address read
 outside the entrance. [verify-settings.mjs](../../tools/repo/verify-settings.mjs) fails when
-[url-options.md](url-options.md) and the schema differ, and when an option's layer is above a
+[url-options.md](url-options.md) and the tables differ, and when an option's layer is above a
 layer that reads it. It sees an option read by its name through the settings' entrance, not one
 read through a helper that takes the name as an argument.
 
@@ -405,8 +416,9 @@ weather, a new scene, the page shown again), and the land grows.
   scene registers how it is cleared in the table of histories
   ([SceneHistory.ts](../../packages/render/post/SceneHistory.ts)), which a cut and a jump walk in
   the order registered and which names none of them. A jump clears the renderer's entries, then the
-  island's, then the renderer's light, because the page calls the three registration functions in
-  that order ([app/Scene.ts](../../app/Scene.ts)).
+  island's, then the renderer's light, because the jump calls the three registration functions in
+  that order ([SceneJump.ts](../../packages/render/assemble/SceneJump.ts)), the island's through the
+  page's jump content ([app/Scene.ts](../../app/Scene.ts)).
 - The land's growth has no such table yet. The growth
   ([Growth.ts](../../packages/island/world/Growth.ts)) takes its followers as the named fields of one
   interface (`GrowthPage`), and only the plant kinds follow it through a registry (rule 18). A new
@@ -479,8 +491,9 @@ and its [binding](../bindings/building-cinematic-stylised-realism.md#materials).
 - Time is the scene clock's, in seconds. The hour of the day is derived from it by one function, and
   a per-frame update reads the clock's step, never the wall clock. Three cadences are the exception:
   the sky's cross-fade between two bakes, the interval between periodic sky bakes and the interval
-  between redraws of the refracted sun's map follow the wall clock's step, which the page hands the
-  renderer's frame stages as well (`environmentDt`, [app/Frame.ts](../../app/Frame.ts)). They decide
+  between redraws of the refracted sun's map follow the wall clock's step, which the frame hands the
+  renderer's frame stages as well (`environmentDt`,
+  [SceneFrame.ts](../../packages/render/assemble/SceneFrame.ts)). They decide
   when a bake or a redraw lands, not what it draws: on a paused page a sky bake is due only when the
   clock, the weather or the hour changed, the refracted sun's map is drawn exactly once the light
   rests, and the settled signal waits until the cross-fade has ended and nothing is due. A stepped

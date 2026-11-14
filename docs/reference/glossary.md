@@ -64,8 +64,9 @@ Pre-exposure
   scene-unit reader divides out (`packages/render/post/PreExposure.ts`).
 
 Scene jump
-: `establishScene` in `app/Scene.ts`: it moves a page to another scene, which then holds what a
-  fresh load of the same query holds, and clears all state the scene leaves behind.
+: `establishScene` in `packages/render/assemble/SceneJump.ts`: it moves a page to another scene,
+  which then holds what a fresh load of the same query holds, and clears all state the scene leaves
+  behind.
 
 Settled
 : The page's signal that a paused frame is final (`packages/render/post/Settled.ts`); captures are

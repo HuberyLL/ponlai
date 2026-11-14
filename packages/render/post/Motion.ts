@@ -4,6 +4,7 @@ import {
 	select, uniform, vec2, vec4,
 } from 'three/tsl';
 import { TEMPORAL } from './Antialiasing.ts';
+import { onSceneDispose } from '../SceneDispose.ts';
 import { jitter } from './Jitter.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { preExposedRGBA, preExposedScalar } from './PreExposure.ts';
@@ -109,6 +110,15 @@ export const motionState = { frame: 0, historyResets: 0, lastCut: null as string
 let cutPending: string | null = 'start';
 const cutListeners: ( ( reason: string ) => void )[] = [];
 const camera = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), fov: 0, valid: false };
+// a disposed scene's frames, cuts and listeners go with it: the next one starts with a cut, as a load does
+onSceneDispose( 'motion', () => {
+
+	Object.assign( motionState, { frame: 0, historyResets: 0, lastCut: null, cut: false } );
+	cutPending = 'start';
+	cutListeners.length = 0;
+	camera.valid = false;
+
+} );
 const _position = new THREE.Vector3(), _quaternion = new THREE.Quaternion(), _scale = new THREE.Vector3(), _viewProjection = new THREE.Matrix4();
 
 /** Asks for a cut: the next frame rendered has no motion from the one before (the camera's, the

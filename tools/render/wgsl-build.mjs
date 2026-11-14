@@ -20,7 +20,7 @@
 //                takes every feature its adapter has, and three's WGSL depends on some of them:
 //                `float32-filterable` (whether a 32-bit float texture gets a sampler),
 //                `texture-formats-tier1` (narrow storage formats, FSR 3's resources), `subgroups`
-//   --q          the page's query (its options, packages/render/Settings.ts, which load knobs read as their
+//   --q          the page's query (its options, docs/reference/url-options.md, which load knobs read as their
 //                modules load: `aa=`, `quality=`, debug flags); default none
 //
 // Entries in tools/render/wgsl-build/ (each file's header says what it stands in):

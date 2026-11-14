@@ -117,7 +117,7 @@ frame) keeps the test mode's byte comparisons valid this way:
 
 1. Register how to clear its history with `packages/render/post/SceneHistory.ts` (`onJump` for a
    scene jump, `onCut` for a cut of the temporal modes' history), beside its creation;
-   `establishScene` (`app/Scene.ts`) walks the table, and `tools/island/verify-scene-jump.mjs`
+   `establishScene` (`packages/render/assemble/SceneJump.ts`) walks the table, and `tools/island/verify-scene-jump.mjs`
    checks it.
 2. Report it to `settled` until it has converged on a still scene (`packages/render/RenderStages.ts`
    `settleFrame`'s `pending`, the page's own through `FrameHost.pending`, or the rest's signature),

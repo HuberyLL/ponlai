@@ -6,6 +6,7 @@ import {
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tune } from '../debug/Tune.ts';
 import { IRRADIANCE_SLABS, type AmbientVolume } from './AmbientVolume.ts';
+import { onSceneDispose } from '../SceneDispose.ts';
 
 // How the island's lit materials read the ambient volume for their ambient diffuse light.
 //
@@ -197,6 +198,7 @@ export function installEnvironmentHarmonics( source: { environmentSlabs(): V4[] 
 	environment = source;
 
 }
+onSceneDispose( 'ambient volume', () => { installed = null; environment = null; } );
 
 /** Whether materials built now read the volume. */
 export function ambientVolumeOn( kind?: string ): boolean {

@@ -1,4 +1,5 @@
-import { QUALITY, QUALITY_TIERS, DEFAULT_QUALITY, isQualityTier, type QualityTier, renderPixelRatio, type SettingsQuery } from '../packages/render/setup.ts';
+import { QUALITY, QUALITY_TIERS, DEFAULT_QUALITY, isQualityTier, type QualityTier, renderPixelRatio } from '../packages/render/setup.ts';
+import type { PageSettingsQuery } from './AppSettings.ts';
 
 // The quality tier chosen at startup, parked while high is the only active tier.
 //
@@ -127,7 +128,7 @@ export function forgetQuality(): void {
 
 /** The tier this load builds: `?quality` (any tier, parked ones included), else high. The GPU is
  * not measured while the lower tiers are parked (`source` is never 'detect'). */
-export function chooseQuality( params: SettingsQuery ): QualityChoice {
+export function chooseQuality( params: PageSettingsQuery ): QualityChoice {
 
 	const slow = Math.max( Number( params.get( 'autoQualitySlow' ) ?? 1 ) || 1, 0.01 );
 	const base = { record: null, adapter: '', slow };

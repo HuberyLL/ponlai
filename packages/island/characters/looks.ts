@@ -1,4 +1,5 @@
 import { KIND } from './CharacterMaterial.ts';
+import { assetUrl } from '../../render/index.ts';
 import type { ProportionName } from './Proportions.ts';
 import type { PartSpec } from './Villagers.ts';
 
@@ -8,7 +9,7 @@ import type { PartSpec } from './Villagers.ts';
 // in the island's palette (sRGB, as they should read in sunlight). The models are assets in public/
 // (tools/repo/assets.mjs).
 
-export const umc = ( name: string ) => `${ import.meta.env.BASE_URL }characters/quaternius/ultimate-modular-characters/${ name }.gltf`;
+export const umc = ( name: string ) => assetUrl( `characters/quaternius/ultimate-modular-characters/${ name }.gltf` );
 
 /** A look's colours: its parts are painted in them, and a stand-in figure wears them when the parts are missing. */
 export interface LookColours { skin: string; hair: string; brows: string; shirt: string; trousers: string; shoes: string; soles: string }
@@ -61,7 +62,7 @@ export const ISLANDER_LOOKS: readonly Look[] = [
 // trunk her top covers (where the body, skinned unlike the top, would show through it as the old
 // stoop) and a man draws the chest and belly his open top shows. Children and the old wear their
 // sex's dress, the hat made smaller for a child (FigureAge.ts).
-export const hanming = ( name: string ) => `${ import.meta.env.BASE_URL }characters/hanming/${ name }.gltf`;
+export const hanming = ( name: string ) => assetUrl( `characters/hanming/${ name }.gltf` );
 
 /** `shirt` and `trousers` are the feathers' white and `hair` the hat's straw (for stand-ins),
  * `shoes` the sandals. */

@@ -470,7 +470,7 @@ export class Pipeline {
 	exposureReset = true;
 	private exposureTime: number | null = null;
 	/** Debug builds: the exposure has not yet reached its target (more than 0.01 stop off, as last
-	 * read back), which keeps the page's settled signal false (app/Frame.ts `pending`). */
+	 * read back), which keeps the page's settled signal false (assemble/SceneFrame.ts `pending`). */
 	exposurePending = false;
 	// a readback of the exposure state is in flight (one at a time)
 	private exposureReading = false;
@@ -976,6 +976,10 @@ export class Pipeline {
 	// the displacement field as its pass leaves it, and the frame before's (null without one)
 	displacement: { field: ResourceHandle; previous: ResourceHandle | null } | null = null;
 
+	/** Whether the clip tools step a clip (their global is set: assemble/StartScene.ts): the
+	 * exposure then snaps every frame. */
+	clipping: () => boolean = () => false;
+
 	/** The scene's render size, and the canvas's when it is larger (the frame is then upscaled). */
 	setSize( w: number, h: number, outputWidth = w, outputHeight = h ): void {
 
@@ -1210,7 +1214,7 @@ export class Pipeline {
 		const dt = this.exposureTime === null ? 0 : time - this.exposureTime;
 		this.exposureTime = time;
 		// (a stepped clip snaps every frame: Exposure.ts, capture-clip.mjs)
-		const clip = ( globalThis as { __PONLAI_CLIP__?: unknown } ).__PONLAI_CLIP__ != null;
+		const clip = this.clipping();
 		const reset = this.exposureReset || clip || dt <= 0 || ! this.graph.historyValid( this.resources.exposureStatePrev );
 		this.exposureReset = false;
 		mu.snap.value = reset ? 1 : 0;

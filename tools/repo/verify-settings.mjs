@@ -1,9 +1,11 @@
 // Checks the page's settings against their docs, the entry that installs them and the tools' addresses.
 //
 // The settings (packages/render/Settings.ts) are the one entrance every URL option is read
-// through; docs/reference/url-options.md documents them. Run it after adding or changing an
-// option; it is part of `npm run check`. A usage a tool needs is declared in
-// packages/render/Settings.ts, not changed in the tool.
+// through; each layer declares its own options in a table (the renderer's RENDER_SETTINGS there,
+// packages/island/IslandSettings.ts, packages/game/GameSettings.ts, app/AppSettings.ts), which the
+// page merges (app/AppSettings.ts PAGE_SETTINGS); docs/reference/url-options.md documents them.
+// Run it after adding or changing an option; it is part of `npm run check`. A usage a tool needs
+// is declared in the table of the layer that reads it, not changed in the tool.
 //
 // Usage:
 //   node tools/repo/verify-settings.mjs [--write]
@@ -13,9 +15,11 @@
 //
 // Guarantees, each a failure (exit 1) when broken:
 // - docs/reference/url-options.md ends with a table of every declared option and prefix (between
-//   the markers TABLE_START and TABLE_END), and the table is the one this tool writes from
-//   SETTINGS and SETTING_PREFIXES: a new or changed option rewrites it (`--write`), so the table
-//   never drifts from the code.
+//   the markers TABLE_START and TABLE_END), and the table is the one this tool writes from the
+//   four layers' tables, in the layers' order, and SETTING_PREFIXES, its Owner column the layer of
+//   each option's table: a new or changed option rewrites it (`--write`), so the table never drifts
+//   from the code.
+// - No option is declared by two layers (mergeSettings throws as the page merges them).
 // - Every declared option and prefix is also named in the page's prose (a backticked `name`,
 //   `name=...` or `?name...` outside the table and the code blocks), anywhere in it: the table
 //   lists, the prose explains. Which of the prose's groups names an option is not checked.
@@ -36,7 +40,8 @@
 //   Queries assembled from separate pieces (profile-frame.mjs's list) are outside this scan.
 // - No option is declared in a layer above the lowest layer whose code reads it (the layers of
 //   code's folders, render lowest, then island, game, app): the owner the table prints is a
-//   layer that reads it. A read is a call `<any>.get( 'name' )`, `.has`, `.getAll` or `.prefixed`
+//   layer that reads it. (A layer's reader takes only its own names and those below it, so a read
+//   above the declaring layer cannot type-check: this check sees the other way round.) A read is a call `<any>.get( 'name' )`, `.has`, `.getAll` or `.prefixed`
 //   (a prefix), or `numberSetting( 'name', ... )`, in a file under `packages/` or `app/`, comments left out; a
 //   read through a helper of its own (WorldStart.ts `intParam`) is not seen.
 //
@@ -70,7 +75,22 @@ for ( const a of process.argv.slice( 2 ) ) {
 
 }
 
-const { SETTINGS, SETTING_PREFIXES, parseSettings, settingProblems } = await import( path.join( ROOT, 'packages', 'render', 'Settings.ts' ) );
+const { RENDER_SETTINGS, SETTING_PREFIXES, parseSettings, settingProblems } = await import( path.join( ROOT, 'packages', 'render', 'Settings.ts' ) );
+const { ISLAND_SETTINGS } = await import( path.join( ROOT, 'packages', 'island', 'IslandSettings.ts' ) );
+const { GAME_SETTINGS } = await import( path.join( ROOT, 'packages', 'game', 'GameSettings.ts' ) );
+// the page's merge throws as it loads where two layers declare one name
+const { APP_SETTINGS, PAGE_SETTINGS } = await import( path.join( ROOT, 'app', 'AppSettings.ts' ) );
+// each layer's table and where it is declared, render lowest
+const TABLES = [
+	[ 'render', RENDER_SETTINGS, 'packages/render/Settings.ts' ],
+	[ 'island', ISLAND_SETTINGS, 'packages/island/IslandSettings.ts' ],
+	[ 'game', GAME_SETTINGS, 'packages/game/GameSettings.ts' ],
+	[ 'app', APP_SETTINGS, 'app/AppSettings.ts' ],
+];
+// every option with its layer and its table's file, in the layers' order
+const SETTINGS = {};
+for ( const [ layer, options, file ] of TABLES ) for ( const [ name, spec ] of Object.entries( options ) ) SETTINGS[ name ] = { ...spec, layer, file };
+const PREFIX_LAYER = 'render';
 
 const code = ( v ) => `\`${ v }\``;
 const number = ( n ) => n === Infinity ? 'any' : n === - Infinity ? 'any' : String( n );
@@ -105,7 +125,7 @@ function table() {
 	];
 	const row = ( name, spec ) => rows.push( `| ${ code( name ) } | ${ values( spec ) } | ${ spec.default } | ${ spec.layer } | ${ spec.about }${ spec.debug ? ' (debug pages only)' : '' } |` );
 	for ( const [ name, spec ] of Object.entries( SETTINGS ) ) row( name, spec );
-	for ( const [ prefix, spec ] of Object.entries( SETTING_PREFIXES ) ) row( `${ prefix }<knob>`, spec );
+	for ( const [ prefix, spec ] of Object.entries( SETTING_PREFIXES ) ) row( `${ prefix }<knob>`, { ...spec, layer: PREFIX_LAYER } );
 	return rows.join( '\n' );
 
 }
@@ -125,7 +145,7 @@ else {
 			writeFileSync( DOC, doc );
 			console.log( `verify-settings: rewrote the table in ${ path.relative( ROOT, DOC ) }` );
 
-		} else failures.push( `${ path.relative( ROOT, DOC ) }: the table of every option differs from packages/render/Settings.ts: run node tools/repo/verify-settings.mjs --write` );
+		} else failures.push( `${ path.relative( ROOT, DOC ) }: the table of every option differs from the layers' tables: run node tools/repo/verify-settings.mjs --write` );
 
 	}
 
@@ -144,9 +164,9 @@ for ( const [ , token ] of prose.matchAll( /`([^`\n]+)`/g ) ) {
 }
 const prefixes = Object.keys( SETTING_PREFIXES );
 const declared = ( name ) => Object.hasOwn( SETTINGS, name ) || prefixes.some( ( p ) => name.startsWith( p ) );
-for ( const name of Object.keys( SETTINGS ) ) if ( ! named.has( name ) ) failures.push( `option ${ name }: declared in packages/render/Settings.ts, but the prose of url-options.md never names it` );
+for ( const [ name, spec ] of Object.entries( SETTINGS ) ) if ( ! named.has( name ) ) failures.push( `option ${ name }: declared in ${ spec.file }, but the prose of url-options.md never names it` );
 for ( const prefix of prefixes ) if ( ! [ ...named ].some( ( n ) => n.startsWith( prefix ) ) ) failures.push( `prefix ${ prefix }: declared in packages/render/Settings.ts, but the prose of url-options.md never uses it` );
-for ( const [ name, token ] of valued ) if ( ! declared( name ) ) failures.push( `url-options.md writes \`${ token }\`, but no option ${ name } is declared in packages/render/Settings.ts` );
+for ( const [ name, token ] of valued ) if ( ! declared( name ) ) failures.push( `url-options.md writes \`${ token }\`, but no layer's table declares an option ${ name }` );
 
 // each option's layer against its readers'
 const RANK = { render: 0, island: 1, game: 2, app: 3 };
@@ -172,10 +192,10 @@ for ( const [ file, layer ] of Object.entries( LAYERS ) ) {
 	}
 
 }
-for ( const [ name, spec ] of [ ...Object.entries( SETTINGS ), ...Object.entries( SETTING_PREFIXES ) ] ) {
+for ( const [ name, spec ] of [ ...Object.entries( SETTINGS ), ...Object.entries( SETTING_PREFIXES ).map( ( [ p, v ] ) => [ p, { ...v, layer: PREFIX_LAYER, file: 'packages/render/Settings.ts' } ] ) ] ) {
 
 	const low = lowest.get( name );
-	if ( low && RANK[ spec.layer ] > RANK[ low.layer ] ) failures.push( `option ${ name }: declared in the ${ spec.layer } layer, but ${ low.file } in the ${ low.layer } layer reads it` );
+	if ( low && RANK[ spec.layer ] > RANK[ low.layer ] ) failures.push( `option ${ name }: declared in the ${ spec.layer } layer (${ spec.file }), but ${ low.file } in the ${ low.layer } layer reads it` );
 
 }
 
@@ -193,7 +213,7 @@ const { VIEWS } = await import( path.join( ROOT, PROJECT.tables.views ) );
 for ( const [ name, view ] of Object.entries( VIEWS ) ) {
 
 	queries ++;
-	for ( const p of settingProblems( parseSettings( view.q ?? '' ) ) ) failures.push( `${ PROJECT.tables.views } ${ name }: ${ p }` );
+	for ( const p of settingProblems( parseSettings( view.q ?? '' ), PAGE_SETTINGS ) ) failures.push( `${ PROJECT.tables.views } ${ name }: ${ p }` );
 
 }
 const PART = /^([A-Za-z][\w.]*)(?:=([^&\s'"`]*))?$/;
@@ -214,7 +234,7 @@ for ( const file of readdirSync( path.join( ROOT, 'tools' ), { recursive: true }
 		if ( ! fixed.some( ( p ) => declared( PART.exec( p )[ 1 ] ) ) ) continue;
 		queries ++;
 		const shown = literal.replaceAll( BUILT, '${...}' );
-		for ( const p of settingProblems( parseSettings( fixed.join( '&' ) ) ) ) failures.push( `tools/${ file }: '${ shown }' draws the warning ${ p }` );
+		for ( const p of settingProblems( parseSettings( fixed.join( '&' ) ), PAGE_SETTINGS ) ) failures.push( `tools/${ file }: '${ shown }' draws the warning ${ p }` );
 
 	}
 

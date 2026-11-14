@@ -2,10 +2,12 @@
 //
 // The kit's tools import nothing from packages/, app/ or the other groups of tools (render, island,
 // game, repo), only each other and the project's configuration (tools/project.mjs), and no page
-// global is named in their code. The configuration holds what a kit tool needs to know of this
-// project: the page's globals and loading screen, the dev server's address and the default query,
-// what a stored reference depends on, where the views' and clips' tables are, and the module that
-// adds the pipeline tracer to an eval. Run it after changing a kit tool; it is part of
+// global, output folder or name of the project's own is written in their code. The configuration
+// holds what a kit tool needs to know of this project: the page's globals and loading screen, the
+// project's name, the output folders and the names shared on the machine (the GPU lock, the jobs'
+// registry, the temp folders' prefix), the dev server's address and the default query, what a stored
+// reference depends on, where the views' and clips' tables are, and the module that adds the
+// pipeline tracer to an eval. Run it after changing a kit tool; it is part of
 // `npm run check`.
 //
 // Usage:
@@ -22,7 +24,10 @@
 // - Python: an import of a module beside it only (no `sys.path` entry other than its own folder).
 // - Both: no string in the code (comments and docstrings left out) names `packages/`, `app/` or
 //   `tools/<another group>/`, and no name of the form `__NAME__` in capitals (the page's globals
-//   take that form, the configuration's `page` lists them) appears in the code.
+//   take that form, the configuration's `page` lists them) appears in the code; no string names the
+//   output folder (`artifacts/`, or `'artifacts'` alone: the configuration's `output`), and the
+//   project's name (`ponlai`, in any case) appears nowhere in the code, environment variables'
+//   names included (they are built from the configuration's `machine.envPrefix`).
 //
 // Output: a summary on stdout (the files, imports and page globals checked), then PASS or FAIL with
 // the failures.
@@ -42,6 +47,10 @@ const CONFIG = path.join( ROOT, 'tools', 'project.mjs' );
 const GROUPS = [ 'render', 'island', 'game', 'repo' ];
 const PROJECT_PATH = new RegExp( `(?<![\\w./-])(?:packages|app|tools/(?:${ GROUPS.join( '|' ) }))/` );
 const GLOBAL = /\b__[A-Z][A-Z0-9_]*__\b/g;
+// the output folder written as a path, or as a string of its own
+const OUTPUT = /\bartifacts\/|(['"`])artifacts\1/;
+// the project's name
+const NAME = /ponlai/i;
 const PAGE_GLOBALS = Object.values( PROJECT.page ).filter( ( v ) => GLOBAL.test( v ) && ( GLOBAL.lastIndex = 0, true ) );
 
 const files = [];
@@ -84,6 +93,10 @@ function names( file, code ) {
 	for ( const m of new Set( code.match( GLOBAL ) ) ) failures.push( `${ rel( file ) }: names the page global ${ m } (the configuration's page names it)` );
 	const line = code.split( '\n' ).find( ( l ) => PROJECT_PATH.test( l ) );
 	if ( line ) failures.push( `${ rel( file ) }: names a project path in its code: ${ line.trim().slice( 0, 160 ) }` );
+	const output = code.split( '\n' ).find( ( l ) => OUTPUT.test( l ) );
+	if ( output ) failures.push( `${ rel( file ) }: names the output folder in its code (read it from the configuration's output): ${ output.trim().slice( 0, 160 ) }` );
+	const name = code.split( '\n' ).find( ( l ) => NAME.test( l ) );
+	if ( name ) failures.push( `${ rel( file ) }: names the project in its code (read it from the configuration: name, machine, machine.envPrefix): ${ name.trim().slice( 0, 160 ) }` );
 
 }
 

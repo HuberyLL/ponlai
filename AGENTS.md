@@ -15,8 +15,9 @@ sun and the sky give it (deep clear water, chunky stone, a lush meadow that move
 - Each text has one home: decisions in `docs/design/` (art in the page it concerns), facts in
   `docs/reference/` (look values in `look-values.md`, URL options in `url-options.md`) and module
   headers, one task's steps in `docs/how-to/`. `docs/README.md` lists every page. `AGENTS.md`,
-  `ARCHITECTURE.md` and `CREDITS.md` stay at the top. This file changes with a rule every change
-  follows, the reading index or the folders; a layer's `AGENTS.md`, with a rule of that layer alone.
+  `ARCHITECTURE.md`, `CREDITS.md` and `README.md` stay at the top. This file changes with a rule
+  every change follows, the reading index or the folders; a layer's `AGENTS.md`, with a rule of
+  that layer alone.
 - A fact or a rule is written in one place; other pages link to it. Docs state the current state:
   what was tried and dropped goes in the commit message. Prose follows the Google developer
   documentation style guide (<https://developers.google.com/style>).
@@ -87,9 +88,10 @@ writing-tools-and-checks (tools and checks), writing-tsl-and-passes (TSL, passes
   frame at the baseline (`Quality.ts`; `docs/reference/profile-frame.md`). Quality tiers change the
   cost, never the mood (weather, clock, lighting); high is the reference image, the only active tier
   and every module's default; a load knob is read once, so a change of tier reloads.
-- A URL option is declared in `Settings.ts` and read through it only (rule 14; partly:
-  `verify-settings`, `verify-layers`). The renderer, the island and the game's rules never touch the
-  browser's globals; they are given what they need (rule 13).
+- A URL option is declared in the settings table of the lowest layer that reads it and read
+  through `Settings.ts`'s reader only (rule 14; partly: `verify-settings`, `verify-layers`). The
+  renderer, the island and the game's rules never touch the browser's globals; they are given what
+  they need (rule 13).
 - Licences follow REUSE: third-party code opens with a `/*! ... */` notice (source, SPDX copyright
   and licence tags), each licence's text in `LICENSES/`. `CREDITS.md` lists the sources whose licence
   asks for a notice or credit, assets included; a technique, a paper or public-domain code is

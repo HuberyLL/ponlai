@@ -37,9 +37,9 @@ A scene jump keeps that contract. Only the load-time options need a new page (qu
 device pixel ratio, the debug switches); the views' weather, time, moon and camera are runtime
 state, and `__PONLAI__.establishScene( query )` reaches them in place. After the jump and one
 rendered frame, the paused frame is the one a fresh load of the view's query draws, byte for byte
-wherever the fresh load repeats (`app/Scene.ts`; `ARCHITECTURE.md`, rule 4: a scene jump clears
-every rendering history). `verify-scene-jump.mjs` checks it, and is the regression probe for
-anything that adds state a jump must clear.
+wherever the fresh load repeats (`packages/render/assemble/SceneJump.ts`; `ARCHITECTURE.md`, rule 4:
+a scene jump clears every rendering history). `verify-scene-jump.mjs` checks it, and is the
+regression probe for anything that adds state a jump must clear.
 
 Temporal frames (`aa=taa`, `taau`, `fsr3`, `gt`) do not repeat pixel for pixel, and we chose not to
 make them. The GPU ends a render pass on its own (tile overflow, preemption) at points that vary from

@@ -52,7 +52,7 @@ export const DAY: DayLook = {
 		stars: { evening: [ - 11, - 7 ] },
 		sky: { evening: [ - 11, - 7 ], morning: [ - 13, - 3 ], clouded: [ - 6, 2 ] },
 		ambient: { evening: [ - 11, - 7 ], morning: [ - 12, - 7 ], clouded: [ - 5, 1 ] },
-		yunpeng: { evening: [ - 11, - 7 ], morning: [ - 12, - 7 ], clouded: [ - 5, 1 ] },
+		nightGlow: { evening: [ - 11, - 7 ], morning: [ - 12, - 7 ], clouded: [ - 5, 1 ] },
 		cloudMoon: { evening: [ - 11, - 7 ], morning: [ - 7, - 3 ], clouded: [ - 7, - 3 ] },
 	},
 	// the daylight's window in which a clouded sky's display and stars take the night (the
@@ -68,7 +68,7 @@ export const DAY: DayLook = {
 	duskDepth: {
 		// the night key in the sky's light (`skyNight`): 1.35 over the land's
 		sky: 6.25,
-		// the night ambient (`nightAmbientShare`) and the yunpeng's glow and light (`yunpengNightShare`),
+		// the night ambient (`nightAmbientShare`) and the yunpeng's glow and light (`nightGlowShare`),
 		// which share this depth: 3.1 over the land's
 		ambient: 8,
 		// the stars (`starNight`): 2.3 over the sky's

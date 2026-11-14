@@ -25,7 +25,7 @@
 //   --w, --h        the viewport in CSS pixels (1600 by 900); --scale its device pixel ratio (1)
 //   --timeout ms    each wait's limit, the navigation's included (60000)
 //   --exclusive     takes the GPU lock alone instead of a shared slot, for frame times
-//   --fresh         a new empty browser profile, deleted afterwards: a cold load
+//   --fresh         a new empty browser profile in the temp folder, deleted afterwards: a cold load
 //   --load          loads every query in a page of its own instead of jumping to it
 //   --console [p]   records every console line, or those starting with p
 //
@@ -174,8 +174,8 @@ async function jump( page, query ) {
 }
 
 const started = Date.now();
-const fresh = options.fresh ? mkdtempSync( path.join( tmpdir(), 'ponlai-probe-' ) ) : null;
-if ( fresh ) process.env.PONLAI_CAPTURE_PROFILES = fresh;
+const fresh = options.fresh ? mkdtempSync( path.join( tmpdir(), `${ PROJECT.machine.tempPrefix }probe-` ) ) : null;
+if ( fresh ) process.env[ `${ PROJECT.machine.envPrefix }CAPTURE_PROFILES` ] = fresh;
 const label = `probe ${ queries[ 0 ] }`;
 const lockMs = await acquireGpuLock( label, { shared: ! options.exclusive } );
 const capture = await launchCapture( { viewport: { width: Number( options.w ), height: Number( options.h ) }, deviceScaleFactor: Number( options.scale ), url } );

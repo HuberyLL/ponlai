@@ -75,7 +75,7 @@ export interface DayLook {
 		stars: Pick<DuskWindow, 'evening'>;
 		sky: DuskWindow;
 		ambient: DuskWindow;
-		yunpeng: DuskWindow;
+		nightGlow: DuskWindow;
 		cloudMoon: DuskWindow;
 	};
 	/** The daylight's window in which a clouded sky's display and stars take the night. */
@@ -259,18 +259,18 @@ export interface HazeLook {
 
 // ---- the sky (SkyLook.ts)
 
-/** A row of the light the sky lends the island: the colour it is drawn toward (linear, any level:
+/** A row of the light the sky lends the land: the colour it is drawn toward (linear, any level:
  * the reader takes it at unit luminance), how far, and the gain. */
-export interface IslandSkyRow { at: number; tint?: Triple; amount?: number; gain?: number }
+export interface LandSkyRow { at: number; tint?: Triple; amount?: number; gain?: number }
 /** A kind of sky as a row of the clouds' parameters; no `base` or `top`: the cloud model's shell. */
 export type CloudSkyLook = { base?: number; top?: number; type: number; spread: number; farFade: number };
 export type StreakKeys = { afterglow: Rgb; golden: Rgb; low: Rgb; predawn: Rgb; sunrise: Rgb; morning: Rgb; high: Rgb; night: Rgb };
 export interface SkyLook {
-	/** The colour a clouded sky's light to the island is drawn toward under a high sun, and how far. */
+	/** The colour a clouded sky's light to the land is drawn toward under a high sun, and how far. */
 	cloudLightTint: readonly [ number, number, number, number ];
-	/** The light the sky lends the island by the sun's elevation (degrees, descending): the setting
+	/** The light the sky lends the land by the sun's elevation (degrees, descending): the setting
 	 * side, the setting side under cloud and the rising side. */
-	islandSky: { setting: readonly IslandSkyRow[]; clouded: readonly IslandSkyRow[]; rising: readonly IslandSkyRow[] };
+	landSky: { setting: readonly LandSkyRow[]; clouded: readonly LandSkyRow[]; rising: readonly LandSkyRow[] };
 	/** The clear shade (an A/B, off by default): the gain's extra share by elevation, its tint and amount. */
 	clearShade: readonly { at: number; share: number }[];
 	clearShadeTint: readonly [ number, number, number, number ];

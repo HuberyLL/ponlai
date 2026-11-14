@@ -31,6 +31,9 @@ busy the GPU is. So the lock has two modes:
 - Shared: up to `PONLAI_GPU_SLOTS` holders together (default 2), and none while an exclusive holder
   runs. Paused captures, the verify probes and `tools/kit/probe.mjs` take it so.
 
+The lock's environment variables start with the configuration's `machine.envPrefix`
+([tools/project.mjs](../../tools/project.mjs)), `PONLAI_` here.
+
 Captures are GPU-bound. Two pages at once give about 1.75 times one page's throughput, a third about
 2 times (with the slowest views taking twice as long as at two), and a fourth hardly more; the
 frames are identical at every count. Probes that sweep many points gain about 1.35 times at two and
