@@ -80,10 +80,10 @@ given in `public/` (`tools/repo/assets.mjs`). A file made by a tool says how in 
   public domain: `public/characters/hanming/textures/feather-atlas.png`.
 - *Wicker 005*, Lennart Demes, [ambientCG](https://ambientcg.com/view?id=Wicker005), CC0-1.0:
   `public/characters/hanming/textures/wicker-*`.
-- Cloud shape noise, Daniel Greenheck, from the Three.js Sky Pro clouds as bundled with
+- Cloud shape noise, © 2026 DRG Software Solutions LLC, from
   [tidewater](https://github.com/dgreenheck/tidewater) (`public/clouds/baseShape64.bin` at commit
-  `4811ba4`), MIT as tidewater's repository; the `LICENSING.md` beside it suggests the Three.js Sky
-  Pro licence may apply instead. `public/clouds/baseShape64.bin`.
+  `4811ba4`), MIT: tidewater's credits say its cloud noise comes from the same holder's Sky Pro
+  WebGPU and is published there under its MIT licence. `public/clouds/baseShape64.bin`.
 
 ## Fonts
 

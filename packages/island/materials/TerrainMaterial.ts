@@ -902,10 +902,11 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 		if ( ! vegetation ) albedo.mulAssign( mix( vec3( 0.8, 0.83, 0.86 ), vec3( 1.18, 1.12, 1.0 ), vTint ) );
 		if ( vegetation ) {
 
-			// Above the damp band, the black zone of spray-fed lichen (Verrucaria) reaches 0.4 -
-			// 1.4 m up the walls, higher where the coast meets the swell; its upper edge is jagged
-			// from facet to facet and frayed, with the grey stone showing through in places (the
-			// zonation in MarLIN's page on supralittoral lichens, above).
+			// Above the damp band, the black zone of spray-fed lichen (Hydropunctaria maura, formerly
+			// Verrucaria maura) reaches 0.4 - 1.4 m up the walls, higher where the coast meets the
+			// swell; its upper edge is jagged from facet to facet and frayed, with the grey stone
+			// showing through in places. The zonation is MarLIN's page on supralittoral lichens,
+			// above; the heights are ours, as the page gives none.
 			const reach = float( 0.4 ).add( detail2.y.mul( 0.7 ) ).add( fract( detail.x.mul( 3.7 ) ).mul( 0.3 ) ).add( H.r.sub( 0.5 ).mul( 0.3 ) );
 			const spray = hb( float( 1 ).sub( smoothstep( reach.sub( 0.16 ), reach.add( 0.05 ), p.y.sub( wl ) ) ), hRock, 0.25 );
 			const crust = mix( float( 0.55 ), float( 1 ), smoothstep( 0.35, 0.75, H.g.mul( 0.6 ).add( big.mul( 0.4 ) ) ) );
