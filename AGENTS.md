@@ -15,8 +15,9 @@ sun and the sky give it (deep clear water, chunky stone, a lush meadow that move
 - Each text has one home: decisions in `docs/design/` (art in the page it concerns), facts in
   `docs/reference/` (look values in `look-values.md`, URL options in `url-options.md`) and module
   headers, one task's steps in `docs/how-to/`. `docs/README.md` lists every page. `AGENTS.md`,
-  `ARCHITECTURE.md` and `CREDITS.md` stay at the top. This file changes with a rule every change
-  follows, the reading index or the folders; a layer's `AGENTS.md`, with a rule of that layer alone.
+  `ARCHITECTURE.md`, `CREDITS.md` and `README.md` stay at the top. This file changes with a rule
+  every change follows, the reading index or the folders; a layer's `AGENTS.md`, with a rule of
+  that layer alone.
 - A fact or a rule is written in one place; other pages link to it. Docs state the current state:
   what was tried and dropped goes in the commit message. Prose follows the Google developer
   documentation style guide (<https://developers.google.com/style>).
