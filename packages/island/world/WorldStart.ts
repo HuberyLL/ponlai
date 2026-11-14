@@ -2,12 +2,12 @@
 //
 // The world's generation needs nothing from the page, so its workers start as the page's modules
 // load: the page's entry calls `startWorld` (WorldBoot.ts, which main.ts imports early, after the
-// page's settings), so they run while the adapter, renderer, sky, textures and frame graph
-// are set up; main.ts awaits the result. It
-// comes in chunks (WorldChunks.ts), nearest the camera's pivot first, each from the browser's
-// IndexedDB cache while the generator, its options and the land in the chunk's reach are unchanged
-// (WorldCache.ts); ?worldCache=off generates every chunk regardless, as on a first visit. A
-// browser without WebGPU stops at the renderer, so it starts no workers (its job never settles).
+// page's settings), so they run while the adapter, renderer, sky, textures and frame graph are set
+// up; main.ts awaits the result. It comes in chunks (WorldChunks.ts), nearest the camera's pivot
+// first, each from the browser's IndexedDB cache while the generator, its options and the land in
+// the chunk's reach are unchanged (WorldCache.ts); ?worldCache=off generates every chunk
+// regardless, as on a first visit. A browser without WebGPU stops at the render pipeline, so it
+// starts no workers (its job never settles).
 //
 // The land's options and the framing it sets live here too, since the job asks for the camera's
 // pivot as soon as the land is grown, which may be before main.ts runs. This module knows no save:

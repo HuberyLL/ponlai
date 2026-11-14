@@ -1,9 +1,9 @@
 // What the sun shadow and the refracted sun take from a mesh, as plain data.
 //
-// What the renderer's sun shadow and refracted sun take from a mesh, as data: the caster columns
-// (SunShadow.ts fits its casters' box and grid from them) and the subset of triangles that reach
-// under the water (RefractedSun.ts draws only those). The renderer reads this format; whoever
-// derives it from its meshes writes it (the island's world/ChunkDerived.ts, in the world's
+// What the render pipeline's sun shadow and refracted sun take from a mesh, as data: the caster
+// columns (SunShadow.ts fits its casters' box and grid from them) and the subset of triangles that
+// reach under the water (RefractedSun.ts draws only those). The render pipeline reads this format;
+// whoever derives it from its meshes writes it (the island's world/ChunkDerived.ts, in the world's
 // workers). Plain numbers that import nothing, so the workers and node can run it: a file the chunk
 // worker imports must not reach three.js (tools/repo/verify-layers.mjs).
 

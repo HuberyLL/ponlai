@@ -1,13 +1,13 @@
-// The renderer's neutral inputs: plain worlds for a scene that has no world of its own.
+// The render pipeline's neutral inputs: plain worlds for a scene that has no world of its own.
 //
-// The renderer's neutral inputs: what a scene hands the renderer's stages where it has no world of
-// its own to derive them from, in the formats a world gives them in (the ambient light's probes:
-// lighting/ProbeFormat.ts; the ground the bounce reads: lighting/GroundBounce.ts `BounceGround`;
-// the scene's fields and the shore's field: RenderStages.ts `SceneFields`, RenderTypes.ts
-// `ShoreField`). They describe the plainest worlds there are: level ground of one albedo under an
-// open sky, or the open sea far from any shore over a level floor, and fields that hold one value
-// everywhere. The test scenes are built on them
-// (app/scenes/); a world of its own (the island) gives its own and loads none of this.
+// The render pipeline's neutral inputs: what a scene hands the render pipeline's stages where it
+// has no world of its own to derive them from, in the formats a world gives them in (the ambient
+// light's probes: lighting/ProbeFormat.ts; the ground the bounce reads: lighting/GroundBounce.ts
+// `BounceGround`; the scene's fields and the shore's field: RenderStages.ts `SceneFields`,
+// RenderTypes.ts `ShoreField`). They describe the plainest worlds there are: level ground of one
+// albedo under an open sky, or the open sea far from any shore over a level floor, and fields that
+// hold one value everywhere. The test scenes are built on them (app/scenes/); a world of its own
+// (the island) gives its own and loads none of this.
 //
 // - The probes (`neutralLattice`): every probe sees the whole sky over the horizon and the level
 //   ground under it, which sees the whole sky itself, so under a uniform white sky it bounces its

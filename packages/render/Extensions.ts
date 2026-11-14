@@ -2,15 +2,15 @@ import type { QualityProfile } from './Quality.ts';
 
 // What every registered definition declares: its cost knob, its test-mode stand and its growth.
 //
-// What every registered definition declares. The renderer is extended at named points, each a
-// registry its owner reads in the order registered and never by name: a kind of plant
-// (vegetation/Registry.ts), a kind of local light (lighting/LocalLights.ts), a pass of the
-// frame (post/ExtraPass.ts). A definition at any of them states three things, which a new effect
-// forgot more than once and which showed only later (a capture that did not repeat, a frame time
-// that crept, a grown page that differed from a fresh load): what governs its cost, how it stands
-// in the test mode, and how it follows the land's growth. They are required fields, so leaving one
-// out is a type error, and a registry refuses a definition without them (`checkDeclarations`: a
-// definition from plain JavaScript, or one cast past the types).
+// What every registered definition declares. The render pipeline is extended at named points, each
+// a registry its owner reads in the order registered and never by name: a kind of plant
+// (vegetation/Registry.ts), a kind of local light (lighting/LocalLights.ts), a pass of the frame
+// (post/ExtraPass.ts). A definition at any of them states three things, which a new effect forgot
+// more than once and which showed only later (a capture that did not repeat, a frame time that
+// crept, a grown page that differed from a fresh load): what governs its cost, how it stands in the
+// test mode, and how it follows the land's growth. They are required fields, so leaving one out is
+// a type error, and a registry refuses a definition without them (`checkDeclarations`: a definition
+// from plain JavaScript, or one cast past the types).
 //
 // The declarations are statements, not hooks: the registries do not act on them. They say where
 // to look (the knob to turn in a cost test, the switch the test mode holds the effect by, the

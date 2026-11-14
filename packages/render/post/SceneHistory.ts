@@ -3,10 +3,10 @@ import { onTaaCut } from './Motion.ts';
 
 // The scene's histories as one table: whatever keeps state registers how to clear it.
 //
-// The scene's histories, as one table of the renderer's: whatever keeps state from the frames or
-// the scenes before registers how to clear it, and the two events that clear walk the table
-// instead of naming each owner. A new effect with a history joins by one registration beside its
-// creation; an owner the page does not have is not in the table.
+// The scene's histories, as one table of the render pipeline's: whatever keeps state from the
+// frames or the scenes before registers how to clear it, and the two events that clear walk the
+// table instead of naming each owner. A new effect with a history joins by one registration beside
+// its creation; an owner the page does not have is not in the table.
 // - A cut of the temporal modes' history (Motion.ts `taaCut`: a seek, a jump of the camera, a new
 //   scene): `onCut` entries, whose previous state becomes the current one (the wind's, the
 //   displacement field's). They are registered where their owners are made, since a cut can come

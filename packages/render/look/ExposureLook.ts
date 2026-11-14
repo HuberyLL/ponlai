@@ -7,16 +7,16 @@ import type { DayLook, ExposureKey, ExposureLook, SharingKey } from './Look.ts';
 // The exposure built from a look's tables: its keys by the sun's elevation and the weather.
 //
 // The exposure built from a look's tables (look/Look.ts `ExposureLook`, and the exposure by the
-// sun's elevation in `DayLook`): the exposure takes its tables as an argument where the renderer's
-// sky stage creates it (RenderStages.ts `createSky`), so two exposures made from two tables hold
-// their own numbers (tools/render/verify-look-params.mjs) and this module holds none at module level. What
-// it makes (`Exposure`): the exposure's keys by the sun's elevation, the rising sun, the clouded
-// day and the night, overcast's keys on top of them, and `keysAt`, which reads them for a frame;
-// post/Exposure.ts turns the keys into the target and the adaptation (its header says what each key
-// does), and post/Pipeline.ts `updateDisplay` reads the keys once a frame. Beside them, the
-// base exposure by the sun's elevation (`at`, `day`, `night`) and the night sky's own exposure
-// (`nightSky`, `nightGain`), which sky/DayCycle.ts and sky/SkyTrack.ts read, and the night's
-// metered lift (`nightMeterLift`), which scales the island's lamps. The sky (sky/Sky.ts
+// sun's elevation in `DayLook`): the exposure takes its tables as an argument where the render
+// pipeline's sky stage creates it (RenderStages.ts `createSky`), so two exposures made from two
+// tables hold their own numbers (tools/render/verify-look-params.mjs) and this module holds none at
+// module level. What it makes (`Exposure`): the exposure's keys by the sun's elevation, the rising
+// sun, the clouded day and the night, overcast's keys on top of them, and `keysAt`, which reads
+// them for a frame; post/Exposure.ts turns the keys into the target and the adaptation (its header
+// says what each key does), and post/Pipeline.ts `updateDisplay` reads the keys once a frame.
+// Beside them, the base exposure by the sun's elevation (`at`, `day`, `night`) and the night sky's
+// own exposure (`nightSky`, `nightGain`), which sky/DayCycle.ts and sky/SkyTrack.ts read, and the
+// night's metered lift (`nightMeterLift`), which scales the island's lamps. The sky (sky/Sky.ts
 // `exposure`) carries it to them and to the pipeline.
 // - It registers its tunables (debug/Tune.ts) as it is created, under the names it always had
 //   (`post.exposure.<value>@<key>`, `post.exposure.overcastKey`, `overcastKeyLow`,

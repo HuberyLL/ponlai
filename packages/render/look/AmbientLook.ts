@@ -8,13 +8,13 @@ import type { AmbientColumn, AmbientKnobs, AmbientLook, AmbientRowLook } from '.
 // deck, which lighting/AmbientGrade.ts writes into the lighting models' uniforms once a frame
 // (`createAmbientTables`); and the low key's lift, the shading elevation under a low sun, which
 // lighting/KeyLift.ts turns into the lifted direction (`createKeyLift`). Like the exposure
-// (look/ExposureLook.ts), they are taken as an argument where the renderer's stages create them
-// (RenderStages.ts: the tables in `createLight`, for the grade's controller and the ambient light's
-// relight; the lift in `createSky`, which the sky carries beside the key's direction), so two made
-// from two tables hold their own numbers (tools/render/verify-look-params.mjs) and this module holds none
-// at module level: only the knobs' and the columns' names and the knobs at no grade, which no look
-// changes. The land's floor under cloud is the sky's (look/SkyLook.ts `keyThroughCloud`). Each
-// module's header says what its numbers do on screen.
+// (look/ExposureLook.ts), they are taken as an argument where the render pipeline's stages create
+// them (RenderStages.ts: the tables in `createLight`, for the grade's controller and the ambient
+// light's relight; the lift in `createSky`, which the sky carries beside the key's direction), so
+// two made from two tables hold their own numbers (tools/render/verify-look-params.mjs) and this
+// module holds none at module level: only the knobs' and the columns' names and the knobs at no
+// grade, which no look changes. The land's floor under cloud is the sky's (look/SkyLook.ts
+// `keyThroughCloud`). Each module's header says what its numbers do on screen.
 // - The tables register their tunables (debug/Tune.ts) as they are created, under the names they
 //   always had (`lighting.grade.sunBounce`, `lighting.relight.overcastLand`). The tune table is one
 //   per process: on a debug page a second set made from another table reads the first one's

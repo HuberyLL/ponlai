@@ -64,7 +64,7 @@ type V3 = THREE.Node<'vec3'>;
 // Off with `flags=keyLift:false` (at run time from the next publish of the lighting): the sun's
 // lift only, the moon stays where it stands. Ours.
 // The rows and the shading elevation they give are a look's, made into the lift where the
-// renderer's sky stage creates it (look/AmbientLook.ts `createKeyLift`, RenderStages.ts
+// render pipeline's sky stage creates it (look/AmbientLook.ts `createKeyLift`, RenderStages.ts
 // `createSky`); the sky carries it beside the key's direction (`Sky.keyLift`), and every function
 // here that turns a key into its lifted direction takes it as its first argument. This file keeps
 // the lifted direction and its uniforms, which no look changes.

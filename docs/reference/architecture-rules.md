@@ -222,32 +222,33 @@ every part for every new resource.
 
 ## Rule 10: Four layers, one direction
 
-The code is four layers: the renderer ([packages/render/](../../packages/render/)), the island
-([packages/island/](../../packages/island/)), the game ([packages/game/](../../packages/game/)) and
-the page ([app/](../../app/)). A file's folder is its layer. A layer imports only from its own layer
-and the layers below it. Where a lower layer needs something an upper one has (the ground's albedo
-for the bounced light, the land's extent for the sea, a pass of the island's in the frame), the
-lower layer declares the interface and the upper one fills it when the page is assembled.
+The code is four layers: the render pipeline ([packages/render/](../../packages/render/)), the
+island ([packages/island/](../../packages/island/)), the game
+([packages/game/](../../packages/game/)) and the page ([app/](../../app/)). A file's folder is its
+layer. A layer imports only from its own layer and the layers below it. Where a lower layer needs
+something an upper one has (the ground's albedo for the bounced light, the land's extent for the
+sea, a pass of the island's in the frame), the lower layer declares the interface and the upper one
+fills it when the page is assembled.
 
 The rule holds for what no import shows too. A lower layer never tells an upper layer's things apart
-by a name. A key a layer names in an object's `userData` is one the renderer declares
+by a name. A key a layer names in an object's `userData` is one the render pipeline declares
 ([UserData.ts](../../packages/render/UserData.ts)) or one its own layer declares it keeps to itself
 ([IslandUserData.ts](../../packages/island/world/IslandUserData.ts)). What the chunk worker and the
 headless code load is free of three.js, whichever layer it is in. The tools and the checks are
 white-box: they may import any layer.
 
-The renderer's names hold no proper name of this island: what it shares with a scene is named for
-what it is (the dusk window of what glows by night, the sky light lent to the land, the distance to
-the scene's path in the growth's input). Ordinary words for an open-air scene stay its own: the
+The render pipeline's names hold no proper name of this island: what it shares with a scene is named
+for what it is (the dusk window of what glows by night, the sky light lent to the land, the distance
+to the scene's path in the growth's input). Ordinary words for an open-air scene stay its own: the
 meadow's shade, canopy and depth pass, the blade family's ambient tint (`swardTint`), the debug
 view's kinds and the grade's bands. The sea's inputs from the land's shape are named `seaShape`. The
-debug flags are one open object for every layer, and the renderer's header lists the island's flags
-with its own.
+debug flags are one open object for every layer, and the render pipeline's header lists the island's
+flags with its own.
 
-**Why:** the renderer is to be usable without this island, and a test scene builds it alone. A
-renderer that imports the island cannot be built, read or checked without it, and every change to
-the island then risks the frame. The worker's files are hashed into the world cache's key and run
-in node under the tools, so one import of three.js there fails the build.
+**Why:** the render pipeline is to be usable without this island, and a test scene builds it alone.
+A render pipeline that imports the island cannot be built, read or checked without it, and every
+change to the island then risks the frame. The worker's files are hashed into the world cache's key
+and run in node under the tools, so one import of three.js there fails the build.
 
 **Enforced by:** [verify-layers.mjs](../../tools/repo/verify-layers.mjs). It reads every import
 (static, type-only, re-export, dynamic, a worker's URL), fails on one that points upward, fails on
@@ -258,8 +259,8 @@ list declares. It does not see a key reached through an alias of the bag or by a
 
 ## Rule 11: A package is imported through its exits
 
-The renderer, the island and the game are packages, and each offers two exits, files of re-exports
-only:
+The render pipeline, the island and the game are packages, and each offers two exits, files of
+re-exports only:
 
 - one for the page: [render/index.ts](../../packages/render/index.ts),
   [island/index.ts](../../packages/island/index.ts), [game/index.ts](../../packages/game/index.ts);
@@ -267,19 +268,20 @@ only:
   [render/data.ts](../../packages/render/data.ts), [island/land.ts](../../packages/island/land.ts),
   [game/sim/index.ts](../../packages/game/sim/index.ts).
 
-The renderer has a third, its setup exit ([render/setup.ts](../../packages/render/setup.ts)): the
-settings and the quality tiers, which the page's first module installs before the renderer's other
-modules read them, and the look's types and neutral set, which the page picks from. Each exit
-exports only the names another package takes, each name from one exit. Another package, or the page,
-imports a package only through them. The modules the page loads on demand (the debug probes and the
-game itself) are lazy exits, imported dynamically, so they stay in chunks of their own.
+The render pipeline has a third, its setup exit ([render/setup.ts](../../packages/render/setup.ts)):
+the settings and the quality tiers, which the page's first module installs before the render
+pipeline's other modules read them, and the look's types and neutral set, which the page picks from.
+Each exit exports only the names another package takes, each name from one exit. Another package, or
+the page, imports a package only through them. The modules the page loads on demand (the debug
+probes and the game itself) are lazy exits, imported dynamically, so they stay in chunks of their
+own.
 
 An exit loads its whole package, so a module does nothing as it loads but declare and register: no
 `await` and no read of the page. A module may still hold state at module level (uniforms, buffers,
 tables) and compute constants from the settings as it loads, so that state is one per process: a
-page holds one renderer at a time, and the parts that would clash say so (a second light table and
-a second install of the shared uniforms throw while a scene holds them). A module that holds a
-scene's state registers, as it loads, the release that puts it back as the page loaded it
+page holds one render pipeline at a time, and the parts that would clash say so (a second light
+table and a second install of the shared uniforms throw while a scene holds them). A module that
+holds a scene's state registers, as it loads, the release that puts it back as the page loaded it
 ([SceneDispose.ts](../../packages/render/SceneDispose.ts)); a running scene's `dispose()` runs them,
 so a scene started after it on the same page draws as a fresh load does.
 
@@ -302,11 +304,11 @@ Only the page builds across packages: [app/main.ts](../../app/main.ts) for the i
 stages, functions that take its layer's object and what they need as arguments and put what they
 build on that object ([RenderStages.ts](../../packages/render/RenderStages.ts),
 [IslandStages.ts](../../packages/island/IslandStages.ts): their headers give the stages and their
-order). Both pages build through the renderer's assembly (`startScene`,
-[StartScene.ts](../../packages/render/assemble/StartScene.ts)), which calls the renderer's stages in
-one fixed order and the page's content in named slots between them; the island's page calls the
-island's stages from those slots. The order is part of the image (rule 4), because the order
-materials first build in changes their code. A part reaches another through what it was
+order). Both pages build through the render pipeline's assembly (`startScene`,
+[StartScene.ts](../../packages/render/assemble/StartScene.ts)), which calls the render pipeline's
+stages in one fixed order and the page's content in named slots between them; the island's page
+calls the island's stages from those slots. The order is part of the image (rule 4), because the
+order materials first build in changes their code. A part reaches another through what it was
 given or through a registry the other owns (rule 18). A state that changes has one owner, the only
 one that writes it; the others read it or call the owner's operation (rule 8, on the rendering
 side).
@@ -318,12 +320,13 @@ The rule is not yet whole:
 - So is the trail's displacement field, which the frame's passes find only when the island made it
   first ([Displacement.ts](../../packages/render/vegetation/Displacement.ts)
   `createDisplacementField`).
-- The page and the game still set a few fields of the renderer's and the island's objects directly.
+- The page and the game still set a few fields of the render pipeline's and the island's objects
+  directly.
 - The debug flags take a write from any layer through one setter that takes the flag's name
   (`setDebugFlag`, which the island calls), a write across layers the check does not see.
 
-**Why:** a test scene must be able to build the renderer with nothing of the island's, which it
-cannot while parts find each other through module-level objects; and two writers of one value
+**Why:** a test scene must be able to build the render pipeline with nothing of the island's, which
+it cannot while parts find each other through module-level objects; and two writers of one value
 hide a dependency that breaks under the next change.
 
 **Enforced by:** [verify-layers.mjs](../../tools/repo/verify-layers.mjs) lists the module-level
@@ -332,22 +335,23 @@ only shrink. It sees an assignment rooted at the imported object, not a method t
 GUI bound to a field or a write to a field of a stage's object.
 
 **Came from:** parts that found each other through module-level objects kept a test scene from
-building the renderer alone.
+building the render pipeline alone.
 
 ## Rule 13: Only the page touches the browser's page
 
-The renderer, the island and the game's rules never reach the address, the storage, the document or
-the window through the page's globals. What they need of the browser they are given: the canvas and
-the elements they draw into, the settings (rule 14), the storage's values, the address assets load
-from. A module handed an element reaches that element's document and window through it, for input,
-focus and visibility (the frame-rate readout, the island camera's two controls and its framing).
+The render pipeline, the island and the game's rules never reach the address, the storage, the
+document or the window through the page's globals. What they need of the browser they are given: the
+canvas and the elements they draw into, the settings (rule 14), the storage's values, the address
+assets load from. A module handed an element reaches that element's document and window through it,
+for input, focus and visibility (the frame-rate readout, the island camera's two controls and its
+framing).
 
 A few needs have one module each, and no other file may use them:
 
 - a running scene's host in a browser page: the window's size and events, the document's
   visibility, the storage, the loading screen and the globals the tools read
-  ([BrowserHost.ts](../../packages/render/assemble/BrowserHost.ts)), behind the renderer's browser
-  exit (`render/browser.ts`), which only the page imports;
+  ([BrowserHost.ts](../../packages/render/assemble/BrowserHost.ts)), behind the render pipeline's
+  browser exit (`render/browser.ts`), which only the page imports;
 - the frame's pacing ([FramePacer.ts](../../packages/render/post/FramePacer.ts));
 - the asset fetches ([FetchAsset.ts](../../packages/render/FetchAsset.ts));
 - the world's cache in IndexedDB ([WorldCache.ts](../../packages/island/world/WorldCache.ts));
@@ -371,7 +375,7 @@ it another.
 
 **Enforced by:** [verify-layers.mjs](../../tools/repo/verify-layers.mjs) fails on a page global
 outside the files listed for it (`PAGE_NEEDS`, each with the names it may use). It covers the
-renderer, the island and the game's rules by their folders, so it does not follow the game's
+render pipeline, the island and the game's rules by their folders, so it does not follow the game's
 headless exit into the save. It does not see the page reached through an element's document or
 window, through `globalThis`, or by a name off its list (`PAGE`). These routes are in use: the
 island asks for idle time through `globalThis.requestIdleCallback` (the growth, the islanders'
@@ -385,14 +389,14 @@ while it is there.
 ## Rule 14: Outside settings are checked once, at one entrance
 
 This is rule 3 on the rendering side. Each option of the address is declared once, with a name, a
-type, a range and a default, in the table of the lowest layer that reads it: the renderer's in
-[Settings.ts](../../packages/render/Settings.ts), the island's, the game's and the page's beside
-their code, so an upper layer's new option leaves the renderer as it is. The entry merges the tables
-(a name two layers declare throws), parses the address against them and installs the settings before
-any module that reads them loads; no other module parses an option. A layer reads by its own names
-and those below it, so a lower layer cannot read an upper layer's option. The installed settings
-never change on a page. How they are read, where nothing installed them and what may change on a
-running page: [Settings.ts](../../packages/render/Settings.ts), its header.
+type, a range and a default, in the table of the lowest layer that reads it: the render pipeline's
+in [Settings.ts](../../packages/render/Settings.ts), the island's, the game's and the page's beside
+their code, so an upper layer's new option leaves the render pipeline as it is. The entry merges the
+tables (a name two layers declare throws), parses the address against them and installs the settings
+before any module that reads them loads; no other module parses an option. A layer reads by its own
+names and those below it, so a lower layer cannot read an upper layer's option. The installed
+settings never change on a page. How they are read, where nothing installed them and what may change
+on a running page: [Settings.ts](../../packages/render/Settings.ts), its header.
 
 **Why:** one entrance reports a mistyped option, and the docs' list of the options is written from
 the tables rather than kept by hand.
@@ -415,10 +419,10 @@ weather, a new scene, the page shown again), and the land grows.
   ([SceneEvents.ts](../../packages/render/post/SceneEvents.ts)). Whatever keeps something of the
   scene registers how it is cleared in the table of histories
   ([SceneHistory.ts](../../packages/render/post/SceneHistory.ts)), which a cut and a jump walk in
-  the order registered and which names none of them. A jump clears the renderer's entries, then the
-  island's, then the renderer's light, because the jump calls the three registration functions in
-  that order ([SceneJump.ts](../../packages/render/assemble/SceneJump.ts)), the island's through the
-  page's jump content ([app/Scene.ts](../../app/Scene.ts)).
+  the order registered and which names none of them. A jump clears the render pipeline's entries,
+  then the island's, then the render pipeline's light, because the jump calls the three registration
+  functions in that order ([SceneJump.ts](../../packages/render/assemble/SceneJump.ts)), the
+  island's through the page's jump content ([app/Scene.ts](../../app/Scene.ts)).
 - The land's growth has no such table yet. The growth
   ([Growth.ts](../../packages/island/world/Growth.ts)) takes its followers as the named fields of one
   interface (`GrowthPage`), and only the plant kinds follow it through a registry (rule 18). A new
@@ -440,13 +444,13 @@ grown page draws a fresh load's frame). No check refuses a follower named in the
 
 A material states what the surface is (its albedo, roughness, normal, what light passes through it,
 where it is wet) and names the lighting model that shades it. The model takes the key, the shadows,
-the ambient light, the bounce, the local lights and the metering from the renderer. No material
-reads the sun, the sky or the exposure, and none is tuned to make up for the light.
+the ambient light, the bounce, the local lights and the metering from the render pipeline. No
+material reads the sun, the sky or the exposure, and none is tuned to make up for the light.
 
 The numbers chosen for the look rather than measured or derived (the ambient balance, the sky's
 gains, the haze's keys, the exposure's keys, the tone curve and the grade, by weather and hour) are
 the look: typed tables, one per system ([packages/render/look/](../../packages/render/look/)), which
-the renderer is given and does not own. The renderer carries a neutral set
+the render pipeline is given and does not own. The render pipeline carries a neutral set
 ([NeutralLook.ts](../../packages/render/look/NeutralLook.ts): every gain one, every offset zero, no
 grade, one exposure key for the whole day), and its own modules hold only physical constants and
 the constants of their methods. The island's numbers are the island's data
@@ -458,7 +462,7 @@ table is created, and the numbers that do not pass through the look yet:
 **Why:** a material tuned to make up for the light breaks when the light changes
 ([art-direction.md](../design/art-direction.md), How the look is made). A look spread over
 the sky, the haze, the exposure and the grade cannot be read, compared or replaced as one thing,
-and a second scene needs its own without editing the renderer.
+and a second scene needs its own without editing the render pipeline.
 
 **Enforced by:** [verify-look-params.mjs](../../tools/render/verify-look-params.mjs) checks that
 each system holds its own set's numbers. Whether a number is the look's or physics' is a
@@ -492,13 +496,13 @@ and its [binding](../bindings/building-cinematic-stylised-realism.md#materials).
   a per-frame update reads the clock's step, never the wall clock. Three cadences are the exception:
   the sky's cross-fade between two bakes, the interval between periodic sky bakes and the interval
   between redraws of the refracted sun's map follow the wall clock's step, which the frame hands the
-  renderer's frame stages as well (`environmentDt`,
+  render pipeline's frame stages as well (`environmentDt`,
   [SceneFrame.ts](../../packages/render/assemble/SceneFrame.ts)). They decide
   when a bake or a redraw lands, not what it draws: on a paused page a sky bake is due only when the
   clock, the weather or the hour changed, the refracted sun's map is drawn exactly once the light
   rests, and the settled signal waits until the cross-fade has ended and nothing is due. A stepped
-  clip hands the renderer its fixed step as that delta and restarts the two intervals with each
-  call, so it repeats; on a running page the frame a bake lands in depends on the frame rate.
+  clip hands the render pipeline its fixed step as that delta and restarts the two intervals with
+  each call, so it repeats; on a running page the frame a bake lands in depends on the frame rate.
 
 **Why:** a value's unit is otherwise known only to whoever wrote it.
 
@@ -511,8 +515,9 @@ sky's irradiance read-back waited on a wall-clock gate.
 
 ## Rule 18: One registered definition adds one thing
 
-The renderer is extended at named points, each a registry its owner reads in the order registered
-and never by name (rule 7, on the rendering side). Each owner's header gives its registry's terms:
+The render pipeline is extended at named points, each a registry its owner reads in the order
+registered and never by name (rule 7, on the rendering side). Each owner's header gives its
+registry's terms:
 
 - a plant kind ([vegetation/Registry.ts](../../packages/render/vegetation/Registry.ts));
 - a kind of local light ([LocalLights.ts](../../packages/render/lighting/LocalLights.ts));
@@ -521,7 +526,8 @@ and never by name (rule 7, on the rendering side). Each owner's header gives its
 - what a cut or a scene jump clears ([SceneHistory.ts](../../packages/render/post/SceneHistory.ts),
   rule 15);
 - the kinds of the debug view ([debug/Classes.ts](../../packages/render/debug/Classes.ts)): a
-  closed list of the renderer's, and a scene registers rules that pick one of them, not kinds.
+  closed list of the render pipeline's, and a scene registers rules that pick one of them, not
+  kinds.
 
 A plant kind, a kind of light and an extra pass each state three things, or the registry refuses
 them ([Extensions.ts](../../packages/render/Extensions.ts)): the quality knob that governs their
@@ -535,9 +541,9 @@ declared list, rule 10); a weather (a closed set of names with their presets,
 world is written into the generator and the growth); the quality table
 ([Quality.ts](../../packages/render/Quality.ts), one closed table, where a new knob is a new
 field). Work a scene does every frame is not registered either: its page calls it between the
-renderer's frame stages, where its order belongs.
+render pipeline's frame stages, where its order belongs.
 
-**Why:** a renderer that names the island's plants cannot draw another scene.
+**Why:** a render pipeline that names the island's plants cannot draw another scene.
 
 **Enforced by:** [verify-extensions.mjs](../../tools/render/verify-extensions.mjs) registers
 definitions of its own and searches the registries' owners for the names of the island's. It
@@ -566,9 +572,9 @@ different reasons.
 
 ## Rule 23: three's internals are reached in one place
 
-The renderer depends on parts of three.js that are not its public interface: private members of the
-renderer and of its helpers, the WebGPU backend and its device, methods it replaces or wraps, and
-code of three's it mirrors. Every such reach lives in one folder
+The render pipeline depends on parts of three.js that are not its public interface: private members
+of the renderer and of its helpers, the WebGPU backend and its device, methods it replaces or
+wraps, and code of three's it mirrors. Every such reach lives in one folder
 ([packages/render/three/](../../packages/render/three/)), behind functions named for what they do
 (`gpuDevice`, `releaseAttribute`, `environmentSteps`). The rest of the code calls those and never
 names a private member or the backend. The folder keeps the list of what it depends on

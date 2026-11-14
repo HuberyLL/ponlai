@@ -376,23 +376,23 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   light; the names and what each one forces: `packages/render/sky/DayCycle.ts` DUSK_FORCES, the
   values the code gave them since a script cleared it, on debug pages only: `duskShares`;
   `tools/island/dusk-grid.mjs` sets and reads them).
-- `renderLook=neutral` (debug pages only) loads the renderer with its neutral look in place of the
-  island's (`packages/render/look/NeutralLook.ts`: gains of 1, no grade, no vignette, no bloom,
-  clean air, one exposure key all day, nothing done for the night). The tunables then start from the
-  neutral numbers. It shows what the renderer does without the island's numbers; it is no picture to
-  judge.
+- `renderLook=neutral` (debug pages only) loads the render pipeline with its neutral look in place
+  of the island's (`packages/render/look/NeutralLook.ts`: gains of 1, no grade, no vignette, no
+  bloom, clean air, one exposure key all day, nothing done for the night). The tunables then start
+  from the neutral numbers. It shows what the render pipeline does without the island's numbers; it
+  is no picture to judge.
   Off a debug page the island's look loads whatever the option says. The test scenes' page draws
   with the neutral look by itself, and takes the island's with `renderLook=ponlai` (The test
   scenes).
 
 ## The test scenes
 
-`scenes.html` is a second page: the renderer's small test scenes, built from the renderer alone
-(`app/scenes/`), with no island and no game. The dev server serves it, and so does a preview the
-tools start (`tools/kit/serve.mjs`), whose build adds it (`npm run build -- --mode scenes`);
-`npm run build` alone builds the island's page only, so what ships has no test scenes. It takes
-the renderer's options of this page (the sky and weather, `paused`, `t`, `quality`, `aa`, `flags`,
-`tune.*`, `debug`, `profile`) and none of the island's or the game's.
+`scenes.html` is a second page: the render pipeline's small test scenes, built from the render
+pipeline alone (`app/scenes/`), with no island and no game. The dev server serves it, and so does a
+preview the tools start (`tools/kit/serve.mjs`), whose build adds it (`npm run build -- --mode
+scenes`); `npm run build` alone builds the island's page only, so what ships has no test scenes. It
+takes the render pipeline's options of this page (the sky and weather, `paused`, `t`, `quality`,
+`aa`, `flags`, `tune.*`, `debug`, `profile`) and none of the island's or the game's.
 
 - `scene` names the scene: `ball` (rows of balls by roughness and by albedo, a grey and a white
   card and a post on level grey ground: how a surface takes the key, the sky and the ground's
@@ -403,10 +403,10 @@ the renderer's options of this page (the sky and weather, `paused`, `t`, `qualit
   with the default plant, round a post whose shade falls across it). A page without it, or with a
   name no scene has, shows a message that lists the scenes.
 - `renderLook=ponlai` (debug pages only) loads the scenes with the island's look in place of the
-  renderer's neutral one, for a scene read beside the island's own numbers
+  render pipeline's neutral one, for a scene read beside the island's own numbers
   (`docs/reference/look-values.md`).
 - The page mounts the same handles as the island's, on the same pages: `window.__PONLAI__` (the
-  renderer's parts, `establishScene( query )`, `loop`, `radiance`, `tune`) and
+  render pipeline's parts, `establishScene( query )`, `loop`, `radiance`, `tune`) and
   `window.__THREE_GAME_DIAGNOSTICS__` with its `settled`. `__PONLAI__.scenePage` holds the scene's
   own: its `views`, `times` (each a name and the query that reaches it) and `readings`,
   `setView( name )`, and `read()`, which gives every reading the frame holds (the scene's linear
@@ -608,15 +608,15 @@ the renderer's options of this page (the sky and weather, `paused`, `t`, `qualit
 ## Every option
 
 The page reads its options through one entrance, `packages/render/Settings.ts`. Each layer declares
-its own options there or beside its code, each with what it takes and its default: the renderer in
-`packages/render/Settings.ts`, the island in `packages/island/IslandSettings.ts`, the game in
-`packages/game/GameSettings.ts` and the page in `app/AppSettings.ts`, which merges the four. A
-project that uses the renderer alone reads only the renderer's options. The table's Owner column is
-the layer whose table declares the option. The entry parses the address once and warns in the
-console, as `[settings] ?name=value: why`, about each option nobody declared and each value outside
-what its reader tells apart; the page then goes on as it would without the warning. This table is
-written from the declarations (`node tools/repo/verify-settings.mjs --write`, which `npm run check`
-runs without `--write` to keep the two equal).
+its own options there or beside its code, each with what it takes and its default: the render
+pipeline in `packages/render/Settings.ts`, the island in `packages/island/IslandSettings.ts`, the
+game in `packages/game/GameSettings.ts` and the page in `app/AppSettings.ts`, which merges the four.
+A project that uses the render pipeline alone reads only the render pipeline's options. The table's
+Owner column is the layer whose table declares the option. The entry parses the address once and
+warns in the console, as `[settings] ?name=value: why`, about each option nobody declared and each
+value outside what its reader tells apart; the page then goes on as it would without the warning.
+This table is written from the declarations (`node tools/repo/verify-settings.mjs --write`, which
+`npm run check` runs without `--write` to keep the two equal).
 
 <!-- every-option:start (written by tools/repo/verify-settings.mjs --write) -->
 
@@ -685,7 +685,7 @@ runs without `--write` to keep the two equal).
 | `soil` | `0`, `1` | on | app | `0`: the ground without its soil layer |
 | `autoQuality` | `detect`, `off` | parked | app | the GPU timing that chose the tier (parked: read by the tier's reload only) |
 | `autoQualitySlow` | a number from 0.01 | 1 | app | scales the GPU timing's measured time (parked) |
-| `renderLook` | `neutral`, `ponlai` | the page's own | app | the look the renderer draws with, over the page's own: `neutral` (the renderer's) on the island's page, `ponlai` (the island's) on the test scenes' (debug pages only) |
+| `renderLook` | `neutral`, `ponlai` | the page's own | app | the look the render pipeline draws with, over the page's own: `neutral` (the render pipeline's) on the island's page, `ponlai` (the island's) on the test scenes' (debug pages only) |
 | `scene` | `ball`, `empty`, `sea`, `plants` | none | app | the test scene `scenes.html` shows |
 | `game` | named (its value unread) | off | app | the island as a game |
 | `tier.<knob>` | text | the tier's | render | overrides one knob of the tier (`tier.post.hazeGrid.width=128`) |

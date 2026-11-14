@@ -1,10 +1,10 @@
 // The island page's diagnostics and debug handles for the tools and the console, on debug pages only.
 //
 // The island page's part of the diagnostics and the handles (render/index.ts `startScene`, which
-// publishes the renderer's: packages/render/assemble/SceneHandles.ts): the world's fields in
-// `window.__THREE_GAME_DIAGNOSTICS__` (its triangles, its timings, the world cache, the camera mode),
-// and in `window.__PONLAI__` the island's handles for the capture and profiling tools and the
-// console. Both exist only on the dev server or with `?debug` / `?profile`.
+// publishes the render pipeline's: packages/render/assemble/SceneHandles.ts): the world's fields in
+// `window.__THREE_GAME_DIAGNOSTICS__` (its triangles, its timings, the world cache, the camera
+// mode), and in `window.__PONLAI__` the island's handles for the capture and profiling tools and
+// the console. Both exist only on the dev server or with `?debug` / `?profile`.
 import { renderEvent, type RenderParts, type SceneHandlesContent } from '../packages/render/index.ts';
 import { soilUniforms, setGroundGain, MEADOW_EXTENT, swardField, type IslandParts } from '../packages/island/index.ts';
 import type { PageParts } from './Page.ts';

@@ -23,18 +23,19 @@
 //   A chunk owns the 8 x 8 columns its square holds. Only the chunks with land within PROBE_NEAR of
 //   their square bake theirs (Chunks.ts); everywhere else the probe is the open sea's
 //   (`openSeaProbe`), which depends on the level alone.
-// - A probe's data (PROBE_STRIDE floats, twenty vec4, in the renderer's format:
-//   lighting/ProbeFormat.ts): for each of the nine coefficients i, ( sky
-//   visibility c_i, bounced r c_i, g c_i, b c_i ); then the groves' in-scatter alone, the part of
-//   the bounced light the medium scatters (below), as r c_i, g c_i, b c_i for each i in turn (27
-//   floats and a spare 0 in seven vec4, from SCATTER_VEC4), which the relight's key bounce takes
-//   apart from the solids' (AmbientRelight.ts); then the sea's visibility c_i (nine floats and three
-//   spare 0 in three vec4, from SEA_VEC4); then ( relocation dx, dy, dz, valid ) (META_VEC4).
-//   The coefficients are the functions' projections in three.js's SphericalHarmonics3 basis and
-//   order (y up), not convolved: the relight applies the cosine lobe ( pi, 2 pi / 3, pi / 4 ). A probe
-//   within half a cell of the outside of a solid is moved to the nearest free point (0.25 m steps)
-//   and baked there; one deeper is invalid (all zeros, `valid` 0), and the merge fills it from its
-//   neighbours (`mergeProbes`, FILL_PASSES). A chunk's probes run in rows of its columns ( K, then the level J, then I ).
+// - A probe's data (PROBE_STRIDE floats, twenty vec4, in the render pipeline's format:
+//   lighting/ProbeFormat.ts): for each of the nine coefficients i, ( sky visibility c_i, bounced r
+//   c_i, g c_i, b c_i ); then the groves' in-scatter alone, the part of the bounced light the
+//   medium scatters (below), as r c_i, g c_i, b c_i for each i in turn (27 floats and a spare 0 in
+//   seven vec4, from SCATTER_VEC4), which the relight's key bounce takes apart from the solids'
+//   (AmbientRelight.ts); then the sea's visibility c_i (nine floats and three spare 0 in three
+//   vec4, from SEA_VEC4); then ( relocation dx, dy, dz, valid ) (META_VEC4). The coefficients are
+//   the functions' projections in three.js's SphericalHarmonics3 basis and order (y up), not
+//   convolved: the relight applies the cosine lobe ( pi, 2 pi / 3, pi / 4 ). A probe within half a
+//   cell of the outside of a solid is moved to the nearest free point (0.25 m steps) and baked
+//   there; one deeper is invalid (all zeros, `valid` 0), and the merge fills it from its neighbours
+//   (`mergeProbes`, FILL_PASSES). A chunk's probes run in rows of its columns ( K, then the level
+//   J, then I ).
 // - The rays: RAYS directions of a spherical Fibonacci set, each weighted 4 pi / RAYS, summed in
 //   their fixed order (so a probe's bits never depend on threads or order). A ray ends at a solid,
 //   at the sea's surface (from above it), or at REACH (20 m, 6 m under the water) measured

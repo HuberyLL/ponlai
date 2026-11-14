@@ -112,7 +112,7 @@ import { overcastDeckLight, withMoon } from '../sky/Weather.ts';
 // its sliders for live tuning; debug builds expose the controller as `__PONLAI__.ambient` and its
 // values in the diagnostics.
 // The table, its knobs and its gains under the deck are a look's, made into the grade's tables
-// where the renderer's light stage creates the controller (look/AmbientLook.ts
+// where the render pipeline's light stage creates the controller (look/AmbientLook.ts
 // `createAmbientTables`, RenderStages.ts `createLight`), so the controller reads the tables it was
 // given; this file keeps the uniforms, the controller that writes them and the lighting models' use
 // of them.
@@ -174,7 +174,7 @@ export interface AmbientGrade {
 	update( elevation: number, weights: readonly number[], rising: boolean, moonElevation: number, moonShare: number ): void;
 }
 
-/** The grade's controller on the grade's `tables`, made by the renderer's light stage
+/** The grade's controller on the grade's `tables`, made by the render pipeline's light stage
  * (RenderStages.ts `createLight`): it writes the uniforms above, which every lighting model reads. */
 export function createAmbientGrade( tables: AmbientTables ): AmbientGrade {
 

@@ -1,9 +1,9 @@
 # Upgrade three.js
 
-This guide gives the steps for moving the project to another version of three.js. The renderer
-depends on parts of three that are not its public interface: private members of the renderer and
-its helpers, the WebGPU backend and its device, methods it replaces and code of three's it mirrors.
-Each of these reaches is a function of `packages/render/three/`, and
+This guide gives the steps for moving the project to another version of three.js. The render
+pipeline depends on parts of three that are not its public interface: private members of the
+renderer and its helpers, the WebGPU backend and its device, methods it replaces and code of three's
+it mirrors. Each of these reaches is a function of `packages/render/three/`, and
 `packages/render/three/three-internals.json` lists what they depend on. three and `@types/three` are
 pinned to exact versions, so the list holds until someone changes the pin.
 

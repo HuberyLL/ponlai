@@ -4,9 +4,9 @@
 // where the canvas goes, the window's size and pixel ratio and their changes, whether the page is
 // hidden, the document a timer follows, the storage the dynamic render scale remembers its scales
 // in, whether the browser is automated, the loading screen and the page's globals for the tools.
-// The renderer reads no browser global itself (ARCHITECTURE.md, rule 13): a page in a browser gets
-// this object from `browserHost` (BrowserHost.ts, behind render/browser.ts); a test or another host
-// writes its own.
+// The render pipeline reads no browser global itself (ARCHITECTURE.md, rule 13): a page in a
+// browser gets this object from `browserHost` (BrowserHost.ts, behind render/browser.ts); a test or
+// another host writes its own.
 
 /** The storage the dynamic render scale remembers its scales in (post/DynamicResolution.ts). */
 export interface SceneStore {

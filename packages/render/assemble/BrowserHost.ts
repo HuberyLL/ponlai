@@ -1,12 +1,12 @@
 // A running scene's host in a browser page: the window, the document, the loading screen, the globals.
 //
-// A running scene's host (SceneHost.ts) in a browser page: the canvas in the element the page names,
-// the window's size and pixel ratio and its resize events, the document's visibility, the page's
-// local storage, `navigator.webdriver`, a loading screen element (a `span` in it takes the load's
-// progress; the class `done` lifts it, with a CSS fade the page styles, which has ended once its
-// computed opacity is 0), and the page's globals on `window`. It is the renderer's one module that
-// reads the browser's globals for a scene (tools/repo/verify-layers.mjs, PAGE_NEEDS), behind its
-// own exit (render/browser.ts) that only the page takes.
+// A running scene's host (SceneHost.ts) in a browser page: the canvas in the element the page
+// names, the window's size and pixel ratio and its resize events, the document's visibility, the
+// page's local storage, `navigator.webdriver`, a loading screen element (a `span` in it takes the
+// load's progress; the class `done` lifts it, with a CSS fade the page styles, which has ended once
+// its computed opacity is 0), and the page's globals on `window`. It is the render pipeline's one
+// module that reads the browser's globals for a scene (tools/repo/verify-layers.mjs, PAGE_NEEDS),
+// behind its own exit (render/browser.ts) that only the page takes.
 import type { SceneHost, SceneStore } from './SceneHost.ts';
 
 export interface BrowserHostOptions {

@@ -1,13 +1,14 @@
-// The page: the one place that assembles it, from the renderer's assembly and the island's stages.
+// The page: the one place that assembles it, from the render pipeline's assembly and the island's stages.
 //
-// The page: the one place that assembles it. It hands the renderer's assembly (render/index.ts
-// `startScene`) the island's content: the island's stages (IslandStages.ts) and the page's own parts
-// (app/: the camera views, the GUI, its part of the frame, of the scene jump and of the diagnostics),
-// each in the slot between the renderer's stages where its statements stand. Between them it does only
-// what joins two layers: it hands one layer's parts to another's stage, and it starts the game, whose
-// start takes what it needs from the renderer's and the island's parts.
-// - The slots run in the assembly's order and no other: the renderer's stages and the island's
-//   alternate, and the order materials first build in is part of the image
+// The page: the one place that assembles it. It hands the render pipeline's assembly
+// (render/index.ts `startScene`) the island's content: the island's stages (IslandStages.ts) and
+// the page's own parts (app/: the camera views, the GUI, its part of the frame, of the scene jump
+// and of the diagnostics), each in the slot between the render pipeline's stages where its
+// statements stand. Between them it does only what joins two layers: it hands one layer's parts to
+// another's stage, and it starts the game, whose start takes what it needs from the render
+// pipeline's and the island's parts.
+// - The slots run in the assembly's order and no other: the render pipeline's stages and the
+//   island's alternate, and the order materials first build in is part of the image
 //   (docs/reference/three-behaviour.md, Build order).
 // - Every wait is in a slot: a slot that ends in one returns its promise.
 // - It takes each package through its exits (render/index.ts, render/setup.ts, render/browser.ts,
@@ -36,7 +37,7 @@ import { islandJump } from './Scene.ts';
 
 const island = {} as IslandParts;
 const page = {} as PageParts;
-// (the renderer's parts, as the assembly builds them: every slot below runs once they exist)
+// (the render pipeline's parts, as the assembly builds them: every slot below runs once they exist)
 let render = {} as RenderParts;
 
 const ground = { soil: params.get( 'soil' ) !== '0' };

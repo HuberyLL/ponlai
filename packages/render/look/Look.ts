@@ -3,23 +3,23 @@ import type { GradeChanges } from '../post/GradeLut.ts';
 import type { ToneCurve } from '../post/ToneCurve.ts';
 import type { SwellParams } from '../ocean/OceanSpectrum.ts';
 
-// The look the renderer draws with: the types of the numbers chosen for a picture.
+// The look the render pipeline draws with: the types of the numbers chosen for a picture.
 //
-// The look the renderer draws with: the numbers chosen for a picture, one set per system, handed
-// in by whoever owns the picture. The renderer holds the types (here), the code that reads the
-// numbers and registers their tunables (the modules beside this one: AmbientLook.ts,
-// ExposureLook.ts, DisplayLook.ts, HazeLook.ts, SkyLook.ts) and a neutral set (NeutralLook.ts).
-// The island's numbers are the island's (packages/island/look/). A page picks one set (the
-// island's page in PageSettings.ts, the test scenes' in ScenesBoot.ts) and hands it to the
-// renderer's stages; a tool hands the set it wants to what it creates.
+// The look the render pipeline draws with: the numbers chosen for a picture, one set per system,
+// handed in by whoever owns the picture. The render pipeline holds the types (here), the code that
+// reads the numbers and registers their tunables (the modules beside this one: AmbientLook.ts,
+// ExposureLook.ts, DisplayLook.ts, HazeLook.ts, SkyLook.ts) and a neutral set (NeutralLook.ts). The
+// island's numbers are the island's (packages/island/look/). A page picks one set (the island's
+// page in PageSettings.ts, the test scenes' in ScenesBoot.ts) and hands it to the render pipeline's
+// stages; a tool hands the set it wants to what it creates.
 //
 // No module holds a look: every system takes its tables as an argument where it is created, so two
-// made from two sets in one process hold their own numbers (tools/render/verify-look-params.mjs): the
-// exposure, the day's windows, the low key's lift and the sky's tables, where the renderer's sky
-// stage creates them (ExposureLook.ts `createExposure`, DayLook.ts `createDayWindows`,
-// AmbientLook.ts `createKeyLift`, SkyLook.ts `createSkyTables`, which the sky's state for a frame,
-// its bakes and the haze's key read); the ambient grade's table and its gains under overcast's
-// deck, where the light stage creates the grade's controller (AmbientLook.ts
+// made from two sets in one process hold their own numbers (tools/render/verify-look-params.mjs):
+// the exposure, the day's windows, the low key's lift and the sky's tables, where the render
+// pipeline's sky stage creates them (ExposureLook.ts `createExposure`, DayLook.ts
+// `createDayWindows`, AmbientLook.ts `createKeyLift`, SkyLook.ts `createSkyTables`, which the sky's
+// state for a frame, its bakes and the haze's key read); the ambient grade's table and its gains
+// under overcast's deck, where the light stage creates the grade's controller (AmbientLook.ts
 // `createAmbientTables`, lighting/AmbientGrade.ts `createAmbientGrade`), which the ambient light's
 // relight reads too; the haze's keys, rows and per-sky scales, where the sky stage creates them
 // (HazeLook.ts `createHazeTables`), which weather/HazeKeys.ts `hazeKeyAt` reads by the hour and the
@@ -29,18 +29,18 @@ import type { SwellParams } from '../ocean/OceanSpectrum.ts';
 // distant swell (ocean/SeaDetail.ts, ocean/OceanFFT.ts, from the stage `createSeaAndPipeline`); the
 // display's tables, which the frame's passes read each frame and build the display chain and the
 // bloom from (DisplayLook.ts `createDisplayTables`, from the same stage); and the wind on the
-// plants, in the shared uniforms' wind (weather/Wind.ts `windResponse`, from `createShared`).
-// On a debug page two of a kind still share their tunables by name (debug/Tune.ts), and the
-// shared uniforms, the grade's uniforms and the light table stay one a page.
+// plants, in the shared uniforms' wind (weather/Wind.ts `windResponse`, from `createShared`). On a
+// debug page two of a kind still share their tunables by name (debug/Tune.ts), and the shared
+// uniforms, the grade's uniforms and the light table stay one a page.
 //
 // Not everything chosen rather than measured passes through the look yet. Three sets stay the
-// renderer's: the weathers' presets with the wind's levels (sky/Weather.ts, which the headless
-// game reads too), the sea's chlorophyll (ocean/SeaOptics.ts, which the chunk workers read, so a
-// change to it rebuilds the world's cache) and the quality table (Quality.ts). A few numbers that
-// sit between a method's constants and the look stay in their modules too: the ambient occlusion
-// kernel's reach (post/GTAO.ts), the meadow canopy's depths (lighting/MeadowCanopy.ts), the meadow
-// shade's march (post/MeadowShade.ts), the gust field's scale and evolution (weather/Wind.ts) and
-// each plant part's answer to the wind (vegetation/Deform.ts).
+// render pipeline's: the weathers' presets with the wind's levels (sky/Weather.ts, which the
+// headless game reads too), the sea's chlorophyll (ocean/SeaOptics.ts, which the chunk workers
+// read, so a change to it rebuilds the world's cache) and the quality table (Quality.ts). A few
+// numbers that sit between a method's constants and the look stay in their modules too: the ambient
+// occlusion kernel's reach (post/GTAO.ts), the meadow canopy's depths (lighting/MeadowCanopy.ts),
+// the meadow shade's march (post/MeadowShade.ts), the gust field's scale and evolution
+// (weather/Wind.ts) and each plant part's answer to the wind (vegetation/Deform.ts).
 //
 // Headless: types and one list of names, no three.js and nothing of the page.
 

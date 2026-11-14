@@ -52,7 +52,7 @@ anti-aliasing mode reads `post/Antialiasing.ts`'s exports, never the tier.
   behaviour page marks three's own behaviour at that version **r186**.
 - After an upgrade, follow `docs/how-to/upgrade-three.md`: its step 11 goes through every r186
   entry with its check. `tools/repo/verify-three-internals.mjs` (in `npm run check`) fails on each
-  internal of three the renderer reaches whose code changed.
+  internal of three the render pipeline reaches whose code changed.
 
 ## Write
 
@@ -124,7 +124,7 @@ node tools/render/wgsl-build.mjs <entry> [--out <dir>] [--q "<query>"] [--featur
 - A new behaviour of three or WebGPU: an entry in `docs/reference/three-behaviour.md` (behaviour,
   what the code does, where, its check, **r186** when it is three's own), and a line naming its
   section in `AGENTS.md`, Shaders and GPU work, or in `packages/render/AGENTS.md` when it binds the
-  renderer alone; the mistake it came from goes in the commit message. A finding that adds to an
-  existing entry goes into that entry, under its existing line.
+  render pipeline alone; the mistake it came from goes in the commit message. A finding that adds to
+  an existing entry goes into that entry, under its existing line.
 - A rule that can be checked: a lint rule in `tools/repo/lint/` or a `verify-*` tool, in the same
   change (`AGENTS.md`, Adding a rule).

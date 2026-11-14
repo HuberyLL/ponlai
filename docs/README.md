@@ -9,7 +9,7 @@ in [CREDITS.md](../CREDITS.md).
 The rules an agent or a contributor follows, loaded as the work reaches their folder.
 
 - [AGENTS.md](../AGENTS.md): the index and the rules every change follows.
-- [The renderer's rules](../packages/render/AGENTS.md): the shader and pass rules of
+- [The render pipeline's rules](../packages/render/AGENTS.md): the shader and pass rules of
   `packages/render/` alone, and its checks run by hand.
 - [The island's rules](../packages/island/AGENTS.md): the world in chunks and the growth in place.
 - [The tools' rules](../tools/AGENTS.md): what a new tool in `tools/` does first.

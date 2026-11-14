@@ -64,8 +64,8 @@ node tools/kit/job.mjs start --wait -- \
 ## Image
 
 - The image stays the same: the island's still frames with `tools/kit/parity/capture-set.mjs`
-  (`--check` against the starting commit's references) and, for the renderer's own passes, the test
-  scenes with `tools/render/scenes.mjs --verify --check`
+  (`--check` against the starting commit's references) and, for the render pipeline's own passes,
+  the test scenes with `tools/render/scenes.mjs --verify --check`
   ([verifying-rendering-changes](verifying-rendering-changes.md), Compare).
 - The test scenes are small: the `sea` scene's reflectors stand within a few tens of metres, so a
   change to the water's reflection range shows only in the island's views over the sea

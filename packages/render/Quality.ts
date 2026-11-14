@@ -164,9 +164,9 @@ export interface TemporalSettings {
 	fsr3: { sharpness: number; restSequence: number; autoReactive: boolean };
 }
 
-// Each knob names who reads it. The table is closed: it is the renderer's, a new knob is a new field
-// here, and a registered definition (a plant kind, a light source, a pass of the frame) names the
-// field that governs its cost, or that it has none (Extensions.ts `cost`).
+// Each knob names who reads it. The table is closed: it is the render pipeline's, a new knob is a
+// new field here, and a registered definition (a plant kind, a light source, a pass of the frame)
+// names the field that governs its cost, or that it has none (Extensions.ts `cost`).
 export interface QualityProfile {
 
 	// ---- load

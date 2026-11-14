@@ -13,17 +13,18 @@ import type { LandSkyRow, Rgb, SkyLook, Span, StreakKeys } from './Look.ts';
 // (`landSky`, `cloudLightTint`), the sky's gains on the sun's light (`skyLight`, `clearSky`), the
 // clouds' rows per sky of the blend (`cloudSkies`, `shadowDensity`), the stores' night ranges
 // (`storeNight`), the low key (`lowKey`), the distant sea's knee (`seaKnee`), the key's hue
-// (`keyHue`), the thin layer's colours (`streakDirect`, `streakAmbient`), the moon's key (`moonKey`,
-// `moonHue`) and the key under cloud (`keyThroughCloud`). Like the exposure (look/ExposureLook.ts),
-// they are taken as an argument where the renderer's sky stage creates them (RenderStages.ts
-// `createSky`, which hands them to the sky: sky/Sky.ts `look`), not as a module loads, so two made
-// from two tables hold their own numbers (tools/render/verify-look-params.mjs) and this module holds none
-// at module level: only the functions that read no look (`luma`, `luminance709`, `byElevation`).
-// sky/SkyTrack.ts reads them each frame, sky/SkyBake.ts the sea's knee at each bake and
-// weather/HazeKeys.ts the clouds' base each frame; every function here that reads them takes them as
-// its first argument. A name in backticks with no file is a field of the tables or sky/Sky.ts's. The
-// A/B switches that turn a table off (`flags=clearShade`, `lowSun`, `clearSky`, `skyGain`, `lowKey`)
-// stay with their readers in sky/SkyTrack.ts.
+// (`keyHue`), the thin layer's colours (`streakDirect`, `streakAmbient`), the moon's key
+// (`moonKey`, `moonHue`) and the key under cloud (`keyThroughCloud`). Like the exposure
+// (look/ExposureLook.ts), they are taken as an argument where the render pipeline's sky stage
+// creates them (RenderStages.ts `createSky`, which hands them to the sky: sky/Sky.ts `look`), not
+// as a module loads, so two made from two tables hold their own numbers
+// (tools/render/verify-look-params.mjs) and this module holds none at module level: only the
+// functions that read no look (`luma`, `luminance709`, `byElevation`). sky/SkyTrack.ts reads them
+// each frame, sky/SkyBake.ts the sea's knee at each bake and weather/HazeKeys.ts the clouds' base
+// each frame; every function here that reads them takes them as its first argument. A name in
+// backticks with no file is a field of the tables or sky/Sky.ts's. The A/B switches that turn a
+// table off (`flags=clearShade`, `lowSun`, `clearSky`, `skyGain`, `lowKey`) stay with their readers
+// in sky/SkyTrack.ts.
 // - The tables register their tunables (debug/Tune.ts) as they are created, under the names they
 //   always had (`sky.light.*`, `sky.clear.*`, `sky.weather.shadowDensity@*`, `sky.clouds.*`,
 //   `sky.sea.knee`, `sky.key.*`, `sky.streaks.*`, `lighting.moon.red|blue`,

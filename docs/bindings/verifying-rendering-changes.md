@@ -32,7 +32,7 @@ What to run after which change, beyond the skill's comparison:
 | --- | --- |
 | Every commit | `npm run check`: types, code lint and every check that needs no GPU (the list: `tools/check.mjs`'s header). It renders nothing, so it runs while another session holds the GPU. |
 | Before a merge, or after a change to the world's generator | `npm run check -- --full`: adds the production build, `tools/island/verify-world-chunks.mjs` and `tools/island/verify-chunk-derived.mjs` (minutes). After a generator change, the world checks come before any capture. |
-| The renderer's own code: the light, the sky, the day cycle, the exposure and display chain, the frame's passes, the shadows, the ambient light, the vegetation's registry, material and shadows | The test scenes first (Views), then the island's views. Not for the island's generator, materials or plant kinds, or the game, which the test scenes do not show. |
+| The render pipeline's own code: the light, the sky, the day cycle, the exposure and display chain, the frame's passes, the shadows, the ambient light, the vegetation's registry, material and shadows | The test scenes first (Views), then the island's views. Not for the island's generator, materials or plant kinds, or the game, which the test scenes do not show. |
 | A shader, a pass or a material's node graph | `node tools/render/wgsl-build.mjs <entry> --out <dir>` in each side's checkout and a diff of the two folders: no GPU (its header lists the entries). The writing rules: `writing-tsl-and-passes` and its binding. |
 | Something that depends on the land's shape | `tools/island/verify-growth-swap.mjs` (a grown page against a fresh load of its land); how it joins the growth: `packages/island/world/Growth.ts`'s header. |
 | A new scene state, a scene event, a history | `tools/island/verify-scene-jump.mjs` (History). |
@@ -55,7 +55,7 @@ Split draws) and the order materials first build in (Build order).
   moves.
 - The test scenes (`scenes.html`): `ball` (an 18 % grey card, albedo and roughness rows), `empty`
   (level ground under the sky), `plants` (a patch of the default plant kind), `sea` (two balls in
-  the open sea). They load in seconds and draw with the renderer's neutral look, and show no
+  the open sea). They load in seconds and draw with the render pipeline's neutral look, and show no
   shore, terrain, island plants or game: go on to the island's views whatever they say.
 - The sea scene's reflectors stand within a few tens of metres; a change to the water's reflection
   range shows only in the island's views over the sea.
@@ -90,7 +90,7 @@ Split draws) and the order materials first build in (Build order).
   A/A) and `--temporal` for `taa`, `taau`, `fsr3` and `gt`. Its table, crops and PASS or FAIL land
   in the test folder.
 - The temporal tolerance, its thresholds and its calibration: `tools/kit/tolerance.py`. What
-  repeats and what does not in this renderer: `tools/kit/parity/README.md`.
+  repeats and what does not in this render pipeline: `tools/kit/parity/README.md`.
 - The test scenes: `scenes.mjs <url> <out> --verify --check`. The `sea` scene gives readings, not a
   pixel check: run `--scenes sea` before and after and read the two `readings.tsv` side by side.
 - Stills of one's own: `uv run tools/kit/img.py diff|crop|sheet|stats` (counts over thresholds, a
@@ -132,7 +132,7 @@ frame) keeps the test mode's byte comparisons valid this way:
 6. Compare its frames outside the test mode (live, clips) within the temporal tolerance
    (`tools/kit/tolerance.py`), unless they repeat pixel for pixel.
 
-Its declaration on the renderer's registry (`testMode` in `packages/render/Extensions.ts`) is
+Its declaration on the render pipeline's registry (`testMode` in `packages/render/Extensions.ts`) is
 checked by `tools/render/verify-extensions.mjs`.
 
 ## Checks

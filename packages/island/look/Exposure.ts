@@ -2,8 +2,8 @@ import type { ExposureKey, ExposureLook, SharingKey } from '../../render/setup.t
 
 // The island's exposure look: the exposure's keys by the sun's elevation, cloud and night.
 //
-// The island's exposure look (packages/island/look/: the island's numbers for the renderer's look
-// tables, look/Look.ts; look/ExposureLook.ts reads these): the exposure's keys by the sun's
+// The island's exposure look (packages/island/look/: the island's numbers for the render pipeline's
+// look tables, look/Look.ts; look/ExposureLook.ts reads these): the exposure's keys by the sun's
 // elevation, the rising sun, the clouded day and the night, and overcast's keys on top of them.
 // post/Exposure.ts's header says what each key does.
 

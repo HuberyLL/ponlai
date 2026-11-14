@@ -24,7 +24,8 @@
 //   COLUMN_CELL past a cell's edge more: within one of its cells (tools/island/verify-chunk-derived.mjs).
 // - The refracted map's subsets are cut at SEA_LEVEL, the only level the sea takes today; at another
 //   level RefractedSun cuts its own, as it does for meshes without them.
-// - The caster columns' and the subsets' format is the renderer's (lighting/CasterFormat.ts).
+// - The caster columns' and the subsets' format is the render pipeline's
+//   (lighting/CasterFormat.ts).
 
 import { LEVEL_MARGIN, type CasterColumns } from '../../render/data.ts';
 

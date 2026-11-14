@@ -1,4 +1,4 @@
-// Checks that a definition of one's own registers at each of the renderer's extension points alone.
+// Checks that a definition of one's own registers at each of the render pipeline's extension points alone.
 //
 // It registers a plant kind, a kind of local light, an extra pass, scene events and histories of its
 // own, and fails when one needs a change to another file, when a definition without its three

@@ -3,10 +3,10 @@ import type { LandSkyRow, Rgb, SkyLook } from '../../render/setup.ts';
 
 // The island's sky look: its numbers for the sky's tables.
 //
-// The island's sky look (packages/island/look/: the island's numbers for the renderer's look tables,
-// look/Look.ts; look/SkyLook.ts makes the sky's tables from these, and its header says what each
-// table is). Upper-case names are this file's; a name in backticks with no file is sky/Sky.ts's or
-// a field of the sky's tables (look/SkyLook.ts `SkyTables`).
+// The island's sky look (packages/island/look/: the island's numbers for the render pipeline's look
+// tables, look/Look.ts; look/SkyLook.ts makes the sky's tables from these, and its header says what
+// each table is). Upper-case names are this file's; a name in backticks with no file is
+// sky/Sky.ts's or a field of the sky's tables (look/SkyLook.ts `SkyTables`).
 
 // Art direction: the island stays readable after sunset. Through the minutes after it the sun's
 // skylight has faded while the moon's key and the night ambient are not yet in, which left the

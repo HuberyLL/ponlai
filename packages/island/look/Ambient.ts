@@ -2,12 +2,12 @@ import type { AmbientLook, AmbientRowLook } from '../../render/setup.ts';
 
 // The island's environment-light look: the ambient grade's table and the low key's lift.
 //
-// The island's environment-light look (packages/island/look/: the island's numbers for the renderer's
-// look tables, look/Look.ts; look/AmbientLook.ts makes the grade's tables and the lift from these): the ambient grade's table by the
-// sun's elevation and the weather's skies, with the gains under overcast's deck, and the low key's
-// lift. lighting/AmbientGrade.ts's and lighting/KeyLift.ts's headers say what the numbers do on
-// screen. A row spells only its changes over the knobs at no grade (look/AmbientLook.ts
-// DEFAULT_KNOBS).
+// The island's environment-light look (packages/island/look/: the island's numbers for the render
+// pipeline's look tables, look/Look.ts; look/AmbientLook.ts makes the grade's tables and the lift
+// from these): the ambient grade's table by the sun's elevation and the weather's skies, with the
+// gains under overcast's deck, and the low key's lift. lighting/AmbientGrade.ts's and
+// lighting/KeyLift.ts's headers say what the numbers do on screen. A row spells only its changes
+// over the knobs at no grade (look/AmbientLook.ts DEFAULT_KNOBS).
 
 // The key's bounce by day under the clouded skies, in clear's unit (1): the cloudy sky's about
 // half (8 / 15), overcast's a third (the header). Overcast's keeps 0.33 from 2 degrees down.

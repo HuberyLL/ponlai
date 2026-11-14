@@ -2,10 +2,10 @@ import { settingsFor, type SettingName, type SettingsQuery, type SettingsTable }
 
 // The island's options of the page's address, and the reader the island's modules take them by.
 //
-// The island's own options (the world, its growth, the islanders), declared as the renderer
+// The island's own options (the world, its growth, the islanders), declared as the render pipeline
 // declares its own (render/Settings.ts, which holds the rules of every table): the page merges the
 // layers' tables (app/AppSettings.ts) and installs the address before anything reads it.
-// `settings` here is the page's one installed reader, typed for the renderer's names and the
+// `settings` here is the page's one installed reader, typed for the render pipeline's names and the
 // island's; docs/reference/url-options.md explains each option (tools/repo/verify-settings.mjs).
 
 /** The island's options. */
@@ -28,11 +28,11 @@ export const ISLAND_SETTINGS = {
 	body: { type: 'text', default: 'M30', about: 'the scene\'s walker\'s sex and age' },
 } as const satisfies SettingsTable;
 
-/** The island's option names, beside the renderer's. */
+/** The island's option names, beside the render pipeline's. */
 export type IslandSettingName = keyof typeof ISLAND_SETTINGS;
 
-/** The installed settings, read by the renderer's names and the island's. */
+/** The installed settings, read by the render pipeline's names and the island's. */
 export const settings = settingsFor( ISLAND_SETTINGS );
 
-/** A query read by the renderer's names and the island's. */
+/** A query read by the render pipeline's names and the island's. */
 export type IslandSettingsQuery = SettingsQuery<SettingName | IslandSettingName>;

@@ -11,11 +11,12 @@ import { LOCAL_LIGHTS } from './LocalLights.ts';
 import { MEADOW_CANOPY } from './MeadowCanopy.ts';
 import { WIND } from './Wind.ts';
 
-// The island's look: its numbers for every table of the renderer's look, gathered in one object.
+// The island's look: its numbers for every table of the render pipeline's look, gathered in one object.
 //
-// The island's look: its numbers for every table of the renderer's look (look/Look.ts), one file
-// per system beside this one, each holding numbers and pure functions of numbers and importing
-// only the renderer's types. The page's entry picks it (PageSettings.ts) and the page hands it to
-// the renderer's stages (main.ts); a tool hands it to what it creates. The comments beside the numbers say what each does on screen and how it
-// was set; the reader modules (packages/render/look/) say what each table is.
+// The island's look: its numbers for every table of the render pipeline's look (look/Look.ts), one
+// file per system beside this one, each holding numbers and pure functions of numbers and importing
+// only the render pipeline's types. The page's entry picks it (PageSettings.ts) and the page hands
+// it to the render pipeline's stages (main.ts); a tool hands it to what it creates. The comments
+// beside the numbers say what each does on screen and how it was set; the reader modules
+// (packages/render/look/) say what each table is.
 export const ISLAND_LOOK: Look = { sea: SEA, day: DAY, ambient: AMBIENT, exposure: EXPOSURE, display: DISPLAY, haze: HAZE, sky: SKY, occlusion: OCCLUSION, localLights: LOCAL_LIGHTS, meadowCanopy: MEADOW_CANOPY, wind: WIND };

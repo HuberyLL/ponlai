@@ -1,20 +1,20 @@
-// The `userData` keys the renderer knows: where each sits, who sets it and who reads it.
+// The `userData` keys the render pipeline knows: where each sits, who sets it and who reads it.
 //
-// The `userData` keys the renderer knows. three's `userData` is an open bag on every object,
-// material, geometry and texture; the renderer and what is built on it leave marks there for each
-// other (a material says what it takes part in, a pass finds its copies again). The bag has no
+// The `userData` keys the render pipeline knows. three's `userData` is an open bag on every object,
+// material, geometry and texture; the render pipeline and what is built on it leave marks there for
+// each other (a material says what it takes part in, a pass finds its copies again). The bag has no
 // type, so a mark set under one spelling and read under another fails without a word. This is the
-// list of every key a file of the renderer sets or reads: where the mark sits (`on`), who sets it
-// (`sets`), who reads it (`reads`) and what it means. tools/repo/verify-layers.mjs fails when a file
-// names a key that is not here (or, above the renderer, on its own layer's list), or when the list
-// holds a key no file names; a key reached through an alias of the bag (`const data =
-// material.userData`) is not seen. The renderer's exit offers the names (`UserDataName`) and the
-// shape of an entry (`UserDataKey`) to the layers above.
+// list of every key a file of the render pipeline sets or reads: where the mark sits (`on`), who
+// sets it (`sets`), who reads it (`reads`) and what it means. tools/repo/verify-layers.mjs fails
+// when a file names a key that is not here (or, above the render pipeline, on its own layer's
+// list), or when the list holds a key no file names; a key reached through an alias of the bag
+// (`const data = material.userData`) is not seen. The render pipeline's exit offers the names
+// (`UserDataName`) and the shape of an entry (`UserDataKey`) to the layers above.
 //
-// A mark the island's or the game's code keeps to itself (set and read above the renderer) is not
-// the renderer's: it is listed on that layer's own list (tools/repo/layers.json, `userData`; the
-// island's in world/IslandUserData.ts). A new mark the renderer reads is declared here with the
-// change that adds it.
+// A mark the island's or the game's code keeps to itself (set and read above the render pipeline)
+// is not the render pipeline's: it is listed on that layer's own list (tools/repo/layers.json,
+// `userData`; the island's in world/IslandUserData.ts). A new mark the render pipeline reads is
+// declared here with the change that adds it.
 //
 // This module is data only and imports nothing, so the CPU-only tools load it under plain node.
 

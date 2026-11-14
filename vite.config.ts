@@ -50,7 +50,8 @@ function licences(): Plugin {
 }
 
 // `vite build` ships the island's page alone; `--mode scenes` (the tools' previews, through
-// tools/project.mjs `serve.build`) adds the renderer's test scenes, which are ours to look at.
+// tools/project.mjs `serve.build`) adds the render pipeline's test scenes, which are ours to look
+// at.
 export default defineConfig( ( { mode } ) => ( {
 	base: './',
 	// assets(): fills the git-ignored public/ from the assets release (tools/repo/vite-assets.mjs);

@@ -35,7 +35,8 @@ The npm scripts are in `AGENTS.md`, Stack and commands.
 Contents:
 
 - [Kit: generic tools (`tools/kit/`)](#kit-generic-tools-toolskit)
-- [Render: the renderer's tools (`tools/render/`)](#render-the-renderers-tools-toolsrender)
+- [Render: the render pipeline's tools
+  (`tools/render/`)](#render-the-render-pipelines-tools-toolsrender)
 - [Island: the island's tools (`tools/island/`)](#island-the-islands-tools-toolsisland)
 - [Game: the game's tools (`tools/game/`)](#game-the-games-tools-toolsgame)
 - [Repo: the repository's checks (`tools/repo/`, `tools/`)](#repo-the-repositorys-checks-toolsrepo-tools)
@@ -66,18 +67,18 @@ Contents:
 | Whether a headed browser run may take the screen now | `tools/kit/display-gate.mjs` |
 | What the tools leave on disk, and removing it | `tools/kit/storage.mjs` |
 
-## Render: the renderer's tools (`tools/render/`)
+## Render: the render pipeline's tools (`tools/render/`)
 
 | Question | Tool |
 | --- | --- |
-| Whether a renderer change moved what the small test scenes show (a plain surface, the sky through a day, a plant kind, the open sea), before the island loads | `tools/render/scenes.mjs` |
+| Whether a render pipeline change moved what the small test scenes show (a plain surface, the sky through a day, a plant kind, the open sea), before the island loads | `tools/render/scenes.mjs` |
 | The frame time of named scenes, per pass; A/B comparisons; the 60 fps acceptance | `tools/render/profile-frame.mjs` |
 | Time two builds of a paused page against each other in one browser page | `tools/render/benchmark-lighting.mjs` |
 | What WGSL a TSL kernel, pass or material compiles to, its bindings, and whether it exceeds WebGPU's default limits, without a GPU | `tools/render/wgsl-build.mjs` |
 | Which pipelines a loaded page still creates in each step a player may take | `tools/render/verify-first-use.mjs` |
 | The frame graph's compiler and runtime, on the CPU | `tools/render/verify-framegraph.mjs` |
 | Whether three draws the frame graph's passes into their MRT layouts as the graph expects | `tools/render/verify-frame-graph-gpu.mjs` |
-| Whether a definition of one's own registers at each of the renderer's extension points | `tools/render/verify-extensions.mjs` |
+| Whether a definition of one's own registers at each of the render pipeline's extension points | `tools/render/verify-extensions.mjs` |
 | Whether each system reads its own look tables and moves no other's | `tools/render/verify-look-params.mjs` |
 | The day cycle's clock, sun, moon, stars and exposure, on the CPU | `tools/render/verify-day-cycle.mjs` |
 | The weather's state, transitions, wind and auto chain, on the CPU | `tools/render/verify-weather-state.mjs` |

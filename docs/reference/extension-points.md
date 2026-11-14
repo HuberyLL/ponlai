@@ -1,10 +1,10 @@
 # Extension points
 
-The renderer's extension points: where a plant kind, a kind of local light, an extra pass of the
-frame, a scene event or a history is registered, and what each registration takes. The renderer
-names none of these: each is a definition registered from the layer that owns it (the island, or a
-test scene). Why it works this way: [Rules across the layers](architecture-rules.md), rule 18.
-Before writing a shader or a pass: [three.js and WebGPU behaviour](three-behaviour.md).
+The render pipeline's extension points: where a plant kind, a kind of local light, an extra pass of
+the frame, a scene event or a history is registered, and what each registration takes. The render
+pipeline names none of these: each is a definition registered from the layer that owns it (the
+island, or a test scene). Why it works this way: [Rules across the layers](architecture-rules.md),
+rule 18. Before writing a shader or a pass: [three.js and WebGPU behaviour](three-behaviour.md).
 
 Contents:
 
@@ -16,7 +16,7 @@ Contents:
 - [Histories](#histories)
 - [What checks a registration](#what-checks-a-registration)
 
-A layer above the renderer imports everything below through the renderer's exit,
+A layer above the render pipeline imports everything below through the render pipeline's exit,
 `packages/render/index.ts`. A name it needs that the exit lacks is added to the exit.
 
 ## The three declarations
@@ -89,12 +89,12 @@ render.localLights.add( {
 } );
 ```
 
-- `render.localLights.add` takes a kind at any time after the renderer's `createLight` stage has
-  made the light table. The table reads the kind's sources when it is added.
+- `render.localLights.add` takes a kind at any time after the render pipeline's `createLight` stage
+  has made the light table. The table reads the kind's sources when it is added.
 - `render.localLights.refresh()` reads every kind's sources again, for sources that moved or changed
   (a growth, a test flag).
 - Every kind's light is scaled by the table's one strength, which the page sets each frame through
-  the renderer's frame stages (`lightNight`).
+  the render pipeline's frame stages (`lightNight`).
 
 ## Extra passes
 
@@ -104,7 +104,7 @@ declaring its size class, when it runs and every texture it reads. `declare` run
 built, so it cannot read a frame's data; the pass reads its state when it runs. `leavesPass` in
 `packages/island/world/FallingLeaves.ts` is a compute pass written this way.
 
-- The page hands the renderer its extra passes in a list given to the stage that builds the
+- The page hands the render pipeline its extra passes in a list given to the stage that builds the
   frame's passes. The list is fixed there:
 
   ```ts
@@ -132,7 +132,7 @@ frames do not show.
 
 ## Histories
 
-The renderer's table of how each history is cleared is `render.history`
+The render pipeline's table of how each history is cleared is `render.history`
 (`packages/render/post/SceneHistory.ts`):
 
 - `onCut( name, clear )`, registered where the history's owner is made, clears it on a cut of the
@@ -140,9 +140,9 @@ The renderer's table of how each history is cleared is `render.history`
 - `onJump( name, clear )` clears it on a scene jump; `'after bake'` marks an entry that needs the
   light the jump's sky bake publishes.
 - The island's jump entries are registered in `registerIslandHistories`
-  (`packages/island/IslandStages.ts`), which the scene jump calls in order with the renderer's
-  (`packages/render/assemble/SceneJump.ts`, through the page's `app/Scene.ts`). Each list runs in
-  the order registered.
+  (`packages/island/IslandStages.ts`), which the scene jump calls in order with the render
+  pipeline's (`packages/render/assemble/SceneJump.ts`, through the page's `app/Scene.ts`). Each list
+  runs in the order registered.
 - `node tools/island/verify-scene-jump.mjs` checks that a jumped page draws what a fresh load draws
   (its header).
 

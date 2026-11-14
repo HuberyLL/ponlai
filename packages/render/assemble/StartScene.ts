@@ -1,24 +1,25 @@
-// The renderer's assembly: builds a scene from the renderer's stages and the caller's content, and runs it.
+// The render pipeline's assembly: builds a scene from its stages and the caller's content, and runs it.
 //
-// The renderer's assembly: `startScene( host, options, content )` builds a scene and starts its
-// frame loop. It calls the renderer's stages (RenderStages.ts) in the one order they run in, and the
-// caller's content (`SceneContent`) in the slots between them; it makes the frame (SceneFrame.ts),
-// the scene jump (SceneJump.ts) and, on debug pages, the diagnostics and handles the tools read
-// (SceneHandles.ts). The island's page (app/main.ts) and the renderer's test scenes
-// (app/scenes/ScenePage.ts) are both assembled by it.
+// The render pipeline's assembly: `startScene( host, options, content )` builds a scene and starts
+// its frame loop. It calls the render pipeline's stages (RenderStages.ts) in the one order they run
+// in, and the caller's content (`SceneContent`) in the slots between them; it makes the frame
+// (SceneFrame.ts), the scene jump (SceneJump.ts) and, on debug pages, the diagnostics and handles
+// the tools read (SceneHandles.ts). The island's page (app/main.ts) and the render pipeline's test
+// scenes (app/scenes/ScenePage.ts) are both assembled by it.
 // - The order is part of the image: the frame graph's build order and the order materials first
 //   compile in decide a few bytes of the frame (docs/reference/three-behaviour.md, Build order). The
 //   stages run in this order and no other, and a slot runs where the caller's statements stood
 //   among them; new content goes in the slot its statements belong to.
-// - It reads the installed settings (Settings.ts; the page installs them before the renderer loads)
-//   and their tier, the look the caller picked, and the scene's defaults (the hour and day length
-//   where the address names none).
+// - It reads the installed settings (Settings.ts; the page installs them before the render pipeline
+//   loads) and their tier, the look the caller picked, and the scene's defaults (the hour and day
+//   length where the address names none).
 // - It reads no browser global (ARCHITECTURE.md, rule 13): the window, the loading screen and the
 //   page's globals come through the host (SceneHost.ts; in a browser, render/browser.ts's
 //   `browserHost`).
-// - One page holds one renderer at a time (the modules' state: `shared`, the settings, the local
-//   lights' table): a second `startScene` follows the first's `dispose()`, which puts the modules
-//   back as the page loaded them (SceneDispose.ts), so the second draws as a fresh load does.
+// - One page holds one render pipeline at a time (the modules' state: `shared`, the settings, the
+//   local lights' table): a second `startScene` follows the first's `dispose()`, which puts the
+//   modules back as the page loaded them (SceneDispose.ts), so the second draws as a fresh load
+//   does.
 // - The tools' contract (docs/bindings/writing-tools-and-checks.md, Build) is kept by every page it
 //   assembles: on debug pages the handles and the diagnostics globals with `settled`, the loading
 //   screen lifted once the scene shows, `establishScene` and `loop.step`.
@@ -38,7 +39,7 @@ import { DEFAULT_GLOBALS, createSceneDiagnostics, exposeSceneHandles, type Scene
 import type { SceneHost } from './SceneHost.ts';
 
 export interface StartOptions {
-	/** the look's tables the scene is drawn with (look/Look.ts: the renderer's NEUTRAL_LOOK, or a page's own) */
+	/** the look's tables the scene is drawn with (look/Look.ts: the render pipeline's NEUTRAL_LOOK, or a page's own) */
 	look: Look;
 	/** the scene a query names where it names no hour or day length; `parkedWeather` defaults to the debug page's */
 	defaults: { hour: number; dayLength: number; parkedWeather?: boolean };
@@ -77,7 +78,7 @@ export type SceneWater = Parameters<typeof createWater>[ 1 ];
 
 type Step = Promise<void> | void;
 
-/** The caller's content, by slot; every slot runs once, in this order, between the renderer's stages. */
+/** The caller's content, by slot; every slot runs once, in this order, between the render pipeline's stages. */
 export interface SceneContent {
 	/** after the scenes and the camera exist */
 	afterScenes?( scene: SceneContext ): Step;
@@ -141,7 +142,7 @@ export interface SceneFrameSpec {
 
 export interface RunningScene extends SceneContext {
 	readonly jump: SceneJump;
-	/** stops the loop and the scene's listeners and releases the renderer */
+	/** stops the loop and the scene's listeners and releases the render pipeline */
 	dispose(): Promise<void>;
 }
 
@@ -174,7 +175,8 @@ export async function startScene( host: SceneHost, options: StartOptions, conten
 	const quality = qualityProfile( qualityTier );
 	await createRenderer( render, { profiler, mark: ( name ) => profiler?.mark( name ), DEBUG, qualityTier, quality, setStatus: ( s ) => host.status( s ) } );
 	setUpRenderer( render );
-	// every render and compute pipeline the renderer creates, counted for the diagnostics (debug only)
+	// every render and compute pipeline the render pipeline creates, counted for the diagnostics
+	// (debug only)
 	const pipelineCount = DEBUG ? ( await import( '../debug/PipelineCounter.ts' ) ).installPipelineCounter( render.renderer ) : null;
 
 	let sizing: SceneSizing | null = null;

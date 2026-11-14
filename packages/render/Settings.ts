@@ -3,14 +3,14 @@ import type { QualityTier } from './Quality.ts';
 import type { DayPreset } from './sky/DayCycle.ts';
 import type { WeatherName, WindLevel } from './sky/Weather.ts';
 
-// The page's settings: the renderer's options of its address, and the one reader of every layer's.
+// The page's settings: the render pipeline's options of its address, and the one reader of every layer's.
 //
-// The page's settings: the renderer's own options of the page's address, each declared once here
-// with its type, its range and its default, and the one reader every module takes the page's
-// options from. A layer above the renderer declares its own options in a table of the same shape
-// (`SettingsTable`) beside its code and reads them by `settingsFor( its table )`, the same reader
-// typed for its names and the renderer's; the page merges the layers' tables (`mergeSettings`: a
-// name two layers declare throws) for the reports below.
+// The page's settings: the render pipeline's own options of the page's address, each declared once
+// here with its type, its range and its default, and the one reader every module takes the page's
+// options from. A layer above the render pipeline declares its own options in a table of the same
+// shape (`SettingsTable`) beside its code and reads them by `settingsFor( its table )`, the same
+// reader typed for its names and the render pipeline's; the page merges the layers' tables
+// (`mergeSettings`: a name two layers declare throws) for the reports below.
 //
 //   import { settings } from './Settings.ts';
 //   const option = settings.get( 'windView' );          // the value as written, or null
@@ -33,7 +33,7 @@ import type { WeatherName, WindLevel } from './sky/Weather.ts';
 // - The reader keeps the address's own values (the first of a name for `get`, all for `getAll`):
 //   each module still reads its options as it did, so the values, the defaults the modules apply
 //   and their console warnings are unchanged. `get` takes only a name its reader is typed for, so a
-//   misspelt read, or a renderer's read of a layer's option above it, fails the type check;
+//   misspelt read, or a render pipeline's read of a layer's option above it, fails the type check;
 //   `prefixed` reads the declared prefixes (`tier.<knob>`, Quality.ts).
 // - RENDER_SETTINGS lists the options by the groups of docs/reference/url-options.md, whose table of
 //   every layer's options tools/repo/verify-settings.mjs writes from the tables and checks against
@@ -71,7 +71,7 @@ const PRESETS = [ 'dawn', 'sunrise', 'noon', 'golden-hour', 'sunset', 'dusk', 'm
 const TIERS = [ 'low', 'medium', 'high' ] as const satisfies readonly QualityTier[];
 const AA = [ 'msaa', 'taa', 'taau', 'fsr3', 'off', 'gt' ] as const satisfies readonly AAMode[];
 
-/** The renderer's options. */
+/** The render pipeline's options. */
 export const RENDER_SETTINGS = {
 	// view and capture
 	paused: { type: 'switch', default: 'running', about: 'pauses the scene and both clocks; with it the page is in the test mode' },
@@ -121,13 +121,13 @@ export const SETTING_PREFIXES = {
 	'tier.': { type: 'text', default: 'the tier\'s', about: 'overrides one knob of the tier (`tier.post.hazeGrid.width=128`)' },
 } as const satisfies SettingsTable;
 
-/** The renderer's option names. */
+/** The render pipeline's option names. */
 export type SettingName = keyof typeof RENDER_SETTINGS;
 export type SettingPrefix = keyof typeof SETTING_PREFIXES;
 
 /** What a module reads its options through: the page's installed settings (`settings`, or a
  * layer's `settingsFor` its table), or a query of its own (`parseSettings`, a scene jump's), for
- * the names `N` (the renderer's by default). URLSearchParams has the same shape. */
+ * the names `N` (the render pipeline's by default). URLSearchParams has the same shape. */
 export interface SettingsQuery<N extends string = SettingName> {
 	get( name: N ): string | null;
 	has( name: N ): boolean;
@@ -257,7 +257,7 @@ export function numberSetting<N extends string = SettingName>( name: N, fallback
 /** The installed settings, read by the names `N`. */
 export type InstalledSettings<N extends string = SettingName> = ParsedSettings<N> & { readonly installed: boolean; readonly tier: string | null };
 
-/** The installed settings, read by the renderer's names (every option absent where none are
+/** The installed settings, read by the render pipeline's names (every option absent where none are
  * installed). */
 export const settings: InstalledSettings = Object.freeze( {
 	get entries() { return current( 'entries' ).entries; },
@@ -269,8 +269,8 @@ export const settings: InstalledSettings = Object.freeze( {
 	prefixed: ( prefix: SettingPrefix ) => current( prefix ).prefixed( prefix ),
 } );
 
-/** The installed settings read by a layer above the renderer: the same reader as `settings`, by
- * the renderer's names and those of `table` (the layer's own, or the page's merged ones). */
+/** The installed settings read by a layer above the render pipeline: the same reader as `settings`, by
+ * the render pipeline's names and those of `table` (the layer's own, or the page's merged ones). */
 export function settingsFor<T extends SettingsTable>( _table: T ): InstalledSettings<SettingName | Extract<keyof T, string>> {
 
 	return settings as InstalledSettings<string>;

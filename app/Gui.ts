@@ -2,7 +2,7 @@
 //
 // The page's control panel (lil-gui): the scene's folders (time, weather, wind, camera, ground,
 // islander, quality) and, once the frame's passes and the haze exist, the look's and the haze's.
-// Its handlers call the renderer's and the island's operations; the game adds its own folder
+// Its handlers call the render pipeline's and the island's operations; the game adds its own folder
 // between them (main.ts).
 import { reloadWith } from './PageSettings.ts';
 import { DAY_PRESETS, type DayPreset, WEATHER_PRESETS, isParkedWeather, type WeatherName, WIND_LEVELS, type WindLevel, LOCAL_TONE, FrameStats, shared, AMBIENT_KNOBS, type AmbientView, markSkyRetune, type AAMode, AA_MODE, renderEvent, debugViewChoices, type RenderParts } from '../packages/render/index.ts';
