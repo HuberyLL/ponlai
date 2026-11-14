@@ -20,10 +20,15 @@
 // The query: an ad-hoc view's own options win over the set's (`t=12`, --quality, --aa, --q), so it
 // may set its own time or tier; the page reads the first of a repeated option, so the view's query
 // goes after the set's with the keys it sets taken out. The table's views keep the set's query first,
-// unchanged. Views whose load-time options differ (anything outside the page's scene options, read
-// from the configuration's `sceneOptions`: the tier, aa, debug switches, `game`, `seed` ...) cannot share a
-// page (establishScene refuses them), so capture-set captures them in groups, one group of pages
-// per set of load-time options, in the order the views were given.
+// unchanged. Views whose load-time options differ (anything outside the page's scene options: the
+// tier, aa, debug switches, `game`, `seed` ...) cannot share a page (establishScene refuses them),
+// so capture-set captures them in groups, one group of pages per set of load-time options, in the
+// order the views were given. The groups are made before any page loads, so the scene options are
+// read from the module the configuration's `sceneOptions` names (the list the page hands its
+// assembly, which the page mounts as `sceneOptions` on its handle). A project that names none
+// counts every option as a load-time one: views that differ at all take pages of their own, slower
+// but never refused. A list that names an option the page does not let a jump change still fails
+// at the page, which refuses the jump.
 //
 // An eval of an ad-hoc view's own (`::js`, a views-file `eval`, the js of a `like=` view or of a
 // sweep over one) is not covered by the scene jump, which undoes the scene's options but not GUI
@@ -43,9 +48,9 @@ import { ROOT } from '../root.mjs';
 const { VIEWS, viewNames, expandViews, ANCHOR_NAMES } = viewTable;
 const NAME = /^[A-Za-z0-9_-]+$/;
 
-// the page's scene options: what a scene jump may change (the configuration's `sceneOptions`; a
-// project without them cannot group views by page, and loadSignature says so)
-const SCENE_OPTIONS = PROJECT.sceneOptions && ( () => {
+// the page's scene options: what a scene jump may change (the configuration's `sceneOptions`; none
+// in a project that names no module, so that every option groups views by page)
+const SCENE_OPTIONS = ! PROJECT.sceneOptions ? new Set() : ( () => {
 
 	const m = readFileSync( path.join( ROOT, PROJECT.sceneOptions ), 'utf8' ).match( /const SCENE_OPTIONS = \[([^\]]*)\]/ );
 	if ( ! m ) throw new Error( `adhoc.mjs: SCENE_OPTIONS not found in ${ PROJECT.sceneOptions }` );
@@ -165,7 +170,6 @@ export function viewQuery( name, common ) {
 /** What a page must have been loaded with to reach the query by a scene jump. */
 export function loadSignature( query ) {
 
-	if ( ! SCENE_OPTIONS ) throw new Error( 'adhoc.mjs: this project has no scene options (tools/project.mjs: sceneOptions is null)' );
 	return firstWins( pairs( query ) ).filter( ( [ k ] ) => ! SCENE_OPTIONS.has( k ) ).map( ( [ , p ] ) => p ).sort().join( '&' );
 
 }

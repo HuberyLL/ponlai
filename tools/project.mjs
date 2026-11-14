@@ -8,8 +8,9 @@
 // serve.mjs starts. A kit tool imports this file and nothing else outside tools/kit/; the kit's
 // Python tools read it through tools/kit/project.py (tools/repo/verify-kit.mjs checks that, and that
 // no page global, output folder or the project's name is written in the kit). Paths are written from
-// the repository's root. Another project may set `tables` (or one of its two), `sceneOptions` and
-// `pipelines` to null: a tool that needs one then fails saying the project has none.
+// the repository's root. Another project may set `tables` (or one of its two) and `pipelines` to
+// null: a tool that needs one then fails saying the project has none. `sceneOptions` null makes
+// the captures load a page per distinct query (tools/kit/parity/adhoc.mjs).
 export default Object.freeze( {
 
 	page: Object.freeze( {
@@ -101,7 +102,8 @@ export default Object.freeze( {
 	tables: Object.freeze( { views: 'tools/island/parity/views.mjs', clips: 'tools/island/parity/clips.mjs' } ),
 
 	// the module whose `SCENE_OPTIONS = [ ... ]` lists the query options a scene jump may change, read
-	// as text (tools/kit/parity/adhoc.mjs: views whose other options differ cannot share a page)
+	// as text (tools/kit/parity/adhoc.mjs: views whose other options differ cannot share a page);
+	// null: every option is a load-time one, a page per distinct query
 	sceneOptions: 'app/Scene.ts',
 
 	// the module whose installScript() gives an eval's `pipelines` (tools/kit/page-eval.mjs)
