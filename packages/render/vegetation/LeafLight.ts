@@ -30,10 +30,17 @@ import { keyed, type DayKeys } from '../post/DayKeys.ts';
 // metering illuminance (lighting/MeterLight.ts) leaves it out, so it moves no exposure. The falling
 // leaves (world/FallingLeaves.ts) take it too.
 //
+// `leafWarm`: the colour a translucent leaf's key light takes in the leaf (vegetation/
+// VegetationLighting.ts, on the thin layer's share). What a sunlit leaf sends back has mostly
+// travelled through its tissue, once or more, so it carries the leaf's own colour again: more red
+// and much less blue than its albedo alone gives ((1.25, 1, 0.7) of red, green and blue). Without it a sunlit crown
+// read as cyan as its sky-lit side. It takes the key and the local lights, not the ambient, and the
+// metering leaves it out, so it moves no exposure.
+//
 // Read once a frame into uniforms (main.ts), so it is a function of the clock and the weather alone
 // and a paused frame repeats. Tunable on debug pages (debug/Tune.ts):
 // `lighting.vegetation.leaf.through@golden`, `@low`, `@high`, `@cloudy`, `@night`, and `back` alike;
-// `lighting.vegetation.leaf.tint.r`, `g`, `b`.
+// `lighting.vegetation.leaf.tint.r`, `g`, `b`; `lighting.vegetation.leaf.warm.r`, `g`, `b`.
 const LEAF_LIGHT: DayKeys<{ through: number; back: number }> = tuneKeys( 'lighting.vegetation.leaf', {
 	day: [
 		{ at: 3, name: 'golden', values: { through: 0, back: 0.8 } },
@@ -47,6 +54,13 @@ const LEAF_LIGHT: DayKeys<{ through: number; back: number }> = tuneKeys( 'lighti
 const TINT = tuneObject( { r: 0.5, g: 1.12, b: 0.2 }, { r: 'lighting.vegetation.leaf.tint.r', g: 'lighting.vegetation.leaf.tint.g', b: 'lighting.vegetation.leaf.tint.b' }, {
 	r: { min: 0.2, max: 1.2 }, g: { min: 0.8, max: 1.4 }, b: { min: 0.1, max: 1.4 },
 } );
+
+const WARM = tuneObject( { r: 1.25, g: 1, b: 0.7 }, { r: 'lighting.vegetation.leaf.warm.r', g: 'lighting.vegetation.leaf.warm.g', b: 'lighting.vegetation.leaf.warm.b' }, {
+	r: { min: 0.5, max: 1.5 }, g: { min: 0.5, max: 1.5 }, b: { min: 0.2, max: 1.5 },
+} );
+
+/** What a translucent leaf's key light is multiplied by (`WARM`). */
+export const leafWarm = uniform( new THREE.Vector3( 1, 1, 1 ) );
 
 /** The share of the key a shaded leaf takes through the leaves over it (`LEAF_LIGHT`). */
 export const leafThrough = uniform( 0 );
@@ -67,5 +81,6 @@ export function updateLeafLight( elevation: number, night: number, clouded: numb
 	leafBack.value = keys.back;
 	const weight = clouded * THREE.MathUtils.smoothstep( elevation, 3, 12 );
 	leafTint.value.set( 1 + ( TINT.r - 1 ) * weight, 1 + ( TINT.g - 1 ) * weight, 1 + ( TINT.b - 1 ) * weight );
+	leafWarm.value.set( WARM.r, WARM.g, WARM.b );
 
 }

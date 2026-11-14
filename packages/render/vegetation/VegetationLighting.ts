@@ -5,7 +5,7 @@ import { translucentWrap, type AmbientReceiver } from '../lighting/AmbientSample
 import { meterAmbient } from '../lighting/MeterLight.ts';
 import { tuneApply } from '../debug/Tune.ts';
 import { OPAQUE_VEGETATION } from '../debug/LightLayer.ts';
-import { leafBack, leafTint } from './LeafLight.ts';
+import { leafBack, leafTint, leafWarm } from './LeafLight.ts';
 import { shared } from '../shared.ts';
 
 type V3 = THREE.Node<'vec3'>;
@@ -46,8 +46,8 @@ type F = THREE.Node<'float'>;
 // SIGGRAPH 1993), on the face toward the viewer, by the light's wrapped cosine and the view's
 // against the geometric normal, round the half vector in a lobe (flat by default), times a gain:
 // it takes the Lambert's place by smoothstep( 0, 0.5, t ) (`THIN_SHARE`), not added to it (a leaf
-// of t 0.5, the bamboo's, or more is all layer), so a sunlit leaf sends back what a Lambertian
-// surface of its albedo would, within 8 % up to 65 degrees (`THIN_LAYER`). `extra` is a blade's: a
+// of t 0.5, the bamboo's, or more is all layer), so a sunlit leaf sends back about two thirds of what a
+// Lambertian surface of its albedo would (`THIN_LAYER`, its gain). `extra` is a blade's: a
 // leaf's light through it is one term on the same share, the light on its far face by its cosine
 // times a share keyed by the sun and the weather (vegetation/LeafLight.ts `back`, 0 by night and
 // under a closed sky), so a leaf lit from behind glows on the same albedo and a crown has no black
@@ -119,8 +119,10 @@ const wrappedDiffuseFresnel = /*@__PURE__*/ Fn( ( [ N, V, L, t, f0, f90 ]: [ V3,
  * goes to 0, its bound, at every tau); tau 2.3 is where the layer is thick, its direct light through it exp( -2 tau ) at
  * most 1 % along the shortest path. The fit's rms relative error is 0.23, and a sunlit leaf's
  * directional-hemispherical reflectance is 0.92 to 0.99 of a Lambertian surface's at incidences of
- * 0 to 65 degrees (0.88 at 80). */
-const THIN_LAYER = { tau: 2.3, gain: 1.5, wrap: 0.1, lobe: 0, sky: 1, floor: 0.05 };
+ * 0 to 65 degrees (0.88 at 80). The gain stands at 1, not the fit's 1.5: a sunlit crown at 1.5
+ * stood about a third brighter than the meadow beside it and read white on screen, its leaves in a
+ * dense crown lit on both faces and overlapping, which a single leaf's fit does not see. */
+const THIN_LAYER = { tau: 2.3, gain: 1, wrap: 0.1, lobe: 0, sky: 1, floor: 0.05 };
 
 /** The layer's response under a uniform sky, F( mu_v ), for this tau, lobe and wrap: the direct
  * term's S times the lobe integrated numerically over the sphere of light directions (a 64 x 128
@@ -327,7 +329,8 @@ export class VegetationLighting extends GroundBounceLightingModel {
 	/** One light's diffuse (lighting/GroundBounce.ts): a blade's wrapped Lambert (or an opaque
 	 * leaf's plain one) under the Fresnel weight plus the light through (`extra`), or a translucent
 	 * leaf's plain Lambert blended toward its thin layer by smoothstep( 0, THIN_SHARE, t ), lit on the face toward
-	 * the viewer, plus the light on its far face by `leafBack` on that same share, on the albedo as the Lambert term (1 / pi). The key's `direct` (along the lifted key, lighting/KeyLift.ts) and every
+	 * the viewer, plus the light on its far face by `leafBack` on that same share, on the albedo as the Lambert term (1 / pi),
+	 * coloured on that share by what passing through the leaf adds (vegetation/LeafLight.ts `leafWarm`). The key's `direct` (along the lifted key, lighting/KeyLift.ts) and every
 	 * local light take it. */
 	diffuseResponse( L: V3, light: V3 ): { reflected: V3; meter: V3 } {
 
@@ -345,7 +348,7 @@ export class VegetationLighting extends GroundBounceLightingModel {
 			const s = smoothstep( 0, THIN_SHARE, this.t() ).toVar();
 			const back = clamp( NL.negate(), 0, 1 ).mul( leafBack ).mul( s ).toVar();
 			return {
-				reflected: light.mul( diffuseContribution.mul( mix( r.x.mul( r.y ), hk, s ).add( back ) ) ),
+				reflected: light.mul( diffuseContribution.mul( mix( r.x.mul( r.y ), hk, s ).add( back ) ) ).mul( mix( vec3( 1 ), leafWarm, s ) ),
 				meter: light.mul( mix( r.x, hk, s ).add( back ) ),
 			};
 
