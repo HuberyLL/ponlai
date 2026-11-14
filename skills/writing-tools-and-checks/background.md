@@ -8,13 +8,12 @@ became checks. Cases are cited by commit hash where the commit says it.
 ## Why one tool per question, found before it is written
 
 An agent that does not find a tool writes one, and its script repeats the mistakes the tool had
-already fixed. In the record, agents wrote hundreds of one-off browser scripts to read a value from
-the page, most without the GPU lock and all in a cold browser profile; one probe tool replaced them
-(`a238f4ab`). The rule that a grown page draws what a fresh load of its land draws was checked by
+already fixed. Left alone, agents write hundreds of one-off browser scripts to read a value from
+the page, most without the GPU lock and all in a cold browser profile; one probe tool replaced them.
+The rule that a grown page draws what a fresh load of its land draws was checked by
 five local copies of one script, each holding the lock while pages prepared; one shared check
-replaced them (`65111ca8`). Agents polled long runs with sleep loops of their own, thousands of
-waits, some on a line their log never got; one job runner with a bounded wait replaced them
-(`33975ae0`).
+replaced them. Agents polled long runs with sleep loops of their own, thousands of
+waits, some on a line their log never got; one job runner with a bounded wait replaced them.
 
 Adding an option to a tool that almost fits keeps the fixes in one place. A second tool for the
 same question means the next fix lands in one copy and not the other.
@@ -30,7 +29,7 @@ what to do next.
 
 The GNU coding standards say a program's `--help` prints brief documentation on standard output,
 exits successfully, ignores the other options and does not perform the program's normal function.
-In a renderer's project the last clause matters most: a GPU tool started to see its options queues
+For a renderer the last clause matters most: a GPU tool started to see its options queues
 for the lock and renders. Answering `--help` before any other import runs makes that impossible,
 and a check that runs every tool's `--help` with the lock and the browser made to throw keeps it so.
 
@@ -46,7 +45,7 @@ regression, so it gets a code of its own.
 
 A fixed count of forty ready frames shot a page still settling, made a settled page wait out the
 count, and landed on sparse frame-to-frame noise in about a sixth of loads, so two shots of one
-build differed (`06f099f6`). A sleep or a frame count is a guess about how long the system takes,
+build differed. A sleep or a frame count is a guess about how long the system takes,
 and the guess fails when the machine is busy. Waiting for the system's own signal (the frame is
 final, the state is applied, a frame was rendered after it) answers the question the wait stands
 for.
@@ -60,9 +59,9 @@ renames in one place.
 
 ## Why the architecture first, and text last
 
-A rule written as text is read by the change that remembers it and broken by the next one. In the
-record, nine rules of the rules file were prose only; each became a lint rule, and each lint rule
-was run on the file as it was before a real fix of its error to show it reports it (`65feb203`).
+A rule written as text is read by the change that remembers it and broken by the next one. A rule
+of the rules file that is prose only can become a lint rule, and the lint rule is run on the file
+as it was before a real fix of its error to show it reports it.
 Making the mistake impossible costs nothing per change: an import that cannot resolve needs no
 review. Yaron Minsky's "make illegal states unrepresentable" names the same preference for types:
 a state the types cannot express need not be checked. A lint rule or a check catches what the
@@ -72,10 +71,10 @@ structure allows; text is left for what only judgement can see.
 
 A check that has never failed may test nothing: a selector that matches no code, a comparison of a
 thing with itself, a wait that reads the frame before. Mutation testing measures a test suite the
-same way, by making small changes to the program and counting the tests that notice. In the record,
-the growth check has an option that loads the wrong step only to see it fail (`65111ca8`); the
-game's check fails on the old shore caches it was written for (`c8ea517f`); each lint rule has a
-fixture with the bad lines marked and the good ones beside them.
+same way, by making small changes to the program and counting the tests that notice. A check
+can carry an option that loads the wrong input only to see it fail, a check written for a bug is
+run on the code that had it, and each lint rule has a fixture with the bad lines marked and the
+good ones beside them.
 
 A check made faster can lose its guarantee without failing: a scene-jump check that compares a jump
 with another jump instead of a fresh load passes when both jumps are wrong in the same way.
@@ -98,8 +97,8 @@ author of that change reads.
 
 A threshold chosen to make a failing run pass turns a cause into noise. Engine screenshot tests set
 a per-pixel level and bounds on the share of differing pixels over the frame and over small parts
-of it, and the record calibrated its temporal tolerance from every A/A pair of one build and from
-synthetic regressions that must fail (`4ca6c21e`); the method is in `verifying-rendering-changes`.
+of it, and a temporal tolerance is calibrated from every A/A pair of one build and from
+synthetic regressions that must fail; the method is in `verifying-rendering-changes`.
 
 ## Sources
 

@@ -80,9 +80,10 @@ homes in this repository:
 
 ## Skills
 
-- Files: `skills/<name>/SKILL.md` and `background.md` (the why, the cases by commit hash, the
-  sources, each credited only for what its page states); a reference file only when the body
-  would pass about 200 lines. The existing skills are the model for the layout.
+- Files: `skills/<name>/SKILL.md` and `background.md` (the why, typical cases told in general
+  terms with no commit of this repository, the sources, each credited only for what its page
+  states); a reference file only when the body would pass about 200 lines. The existing skills are
+  the model for the layout.
 - Loading: a tracked link `.claude/skills/<name>` pointing to `../../skills/<name>`, and a line
   `!.claude/skills/<name>` in `.gitignore`; a skill without that line stays private.
   `tools/repo/verify-skill-links.mjs` checks the links. `.claude-plugin/plugin.json` declares the

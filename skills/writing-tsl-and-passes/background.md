@@ -1,7 +1,6 @@
 # Background: why the method works this way
 
-The reasons behind the steps in [SKILL.md](SKILL.md), the cases they come from and the public
-sources. The cases are commits of the renderer's own project, cited by hash.
+The reasons behind the steps in [SKILL.md](SKILL.md), typical cases and the public sources.
 
 ## Why read before writing
 
@@ -11,22 +10,20 @@ by a byte comparison. Reading the entries for what you touch costs minutes; find
 symptom has cost a diagnosis each time:
 
 - A laid-out helper read two uniforms in its body. three emitted it once, with the first build's
-  uniform names, and the rain's materials stopped compiling under one anti-aliasing mode only
-  (`13596359`).
+  uniform names, and the rain's materials stopped compiling under one anti-aliasing mode only.
 - three emits a light's shadow filter inside the branch of its frustum test, and another filter ran
   inside a `select()`. The filter takes derivatives of its coordinate, which are undefined in a
   quad whose lanes take different branches. At the waterline a handful of pixels changed by up to
-  85 levels of 255 between two equivalent builds (`337fe7d2`). A blur's fallback sample sat in a
-  `select()` that three compiles to a per-pixel branch, the same fault (`5d992634`).
+  85 levels of 255 between two equivalent builds. A blur's fallback sample sat in a
+  `select()` that three compiles to a per-pixel branch, the same fault.
 - An inline function whose value reached a varying was set up again in the fragment stage; what it
-  read there became two more varyings, past WebGPU's sixteen under the temporal modes
-  (`0732fb1b`).
+  read there became two more varyings, past WebGPU's sixteen under the temporal modes.
 - A depth prepass and the shaded draw tested depth for equality. three does not emit WGSL's
   `@invariant`, so a few samples failed the test and showed the clear colour until both programs
-  declared the clip position invariant (`654c02c0`).
+  declared the clip position invariant.
 - three cleared a render target's depth before its first render, and a resize disposed the target
   with its record of that render. After every step of the dynamic resolution the vegetation
-  vanished for one frame (`a693f742`).
+  vanished for one frame.
 
 ## Why the version matters
 
@@ -40,10 +37,10 @@ next fault. So each version-bound entry carries its check, and an upgrade runs t
 
 What three generates is the only ground truth for what a node graph became. Reading it shows a
 value declared in one branch, a derivative inside an `if`, the uniform names a helper reads and
-the count of varyings and bindings per stage, all before a page loads. In the renderer's project a
-build of a port's twenty compute kernels in node found three bugs without a GPU: several writes to
+the count of varyings and bindings per stage, all before a page loads. A build of a
+port's twenty compute kernels in node can find bugs without a GPU: several writes to
 storage levels merged into one binding, a storage texture's size query that dropped its level, and
-a uv-matrix uniform per texture read (`15b1a8c0`). The build does not validate the WGSL, so it
+a uv-matrix uniform per texture read. The build does not validate the WGSL, so it
 complements the page, never replaces it.
 
 ## Why the small scenes first
