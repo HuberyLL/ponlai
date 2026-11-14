@@ -277,7 +277,8 @@ Each tool's manual is its header: `node tools/kit/<tool>.mjs --help`. The tools 
 question in [Tools](docs/reference/tools.md). The kit was written on macOS. Elsewhere, the scheduling
 policy (`qos.mjs`) does nothing, the GPU lock does not see other programs' GPU use, and
 `display-gate.mjs` posts no notices. `CHROME_PATH` names another Chromium build to capture with. The
-kit's environment variables keep this project's `PONLAI_` prefix.
+kit's own environment variables start with the configuration's `machine.envPrefix` (`PONLAI_` in
+this repository, as in `PONLAI_GPU_SLOTS`); set a prefix of your own there.
 
 The skills in `skills/` are written for any project: each is a method, and the project's facts are in
 a binding page in `docs/bindings/`. To use one, copy its folder into your agent's skills folder (for

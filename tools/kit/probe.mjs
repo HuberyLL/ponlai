@@ -175,7 +175,7 @@ async function jump( page, query ) {
 
 const started = Date.now();
 const fresh = options.fresh ? mkdtempSync( path.join( tmpdir(), `${ PROJECT.machine.tempPrefix }probe-` ) ) : null;
-if ( fresh ) process.env.PONLAI_CAPTURE_PROFILES = fresh;
+if ( fresh ) process.env[ `${ PROJECT.machine.envPrefix }CAPTURE_PROFILES` ] = fresh;
 const label = `probe ${ queries[ 0 ] }`;
 const lockMs = await acquireGpuLock( label, { shared: ! options.exclusive } );
 const capture = await launchCapture( { viewport: { width: Number( options.w ), height: Number( options.h ) }, deviceScaleFactor: Number( options.scale ), url } );

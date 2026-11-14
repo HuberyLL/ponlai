@@ -69,6 +69,10 @@ export default Object.freeze( {
 		tempPrefix: 'ponlai-',
 		// the per-user folder under the home folder: the display gate's permission
 		home: '.ponlai',
+		// the prefix of the environment variables the tools read and pass to their children (the GPU
+		// lock's hold, mode, slots and priority, the scheduling policy, the capture profiles' folder);
+		// a session's runs and the commands under them read these names, so it is kept like the rest
+		envPrefix: 'PONLAI_',
 	} ),
 
 	// the dev server a page tool opens without a URL, and the query of a capture or probe without one

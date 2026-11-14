@@ -24,7 +24,7 @@
 //   by its `--version` output.
 // - The root is `artifacts/.capture-profiles` of the main checkout (git's common directory; the
 //   configuration's `output.profiles`), so every worktree shares the warm slots;
-//   PONLAI_CAPTURE_PROFILES moves it. Safe to delete.
+//   <prefix>CAPTURE_PROFILES (the configuration's `machine.envPrefix`, then the name) moves it. Safe to delete.
 // - What the profile keeps cannot change a capture: the world cache is keyed on the generator's
 //   sources, options and browser (a hit is byte-identical to a miss), and each preview port is its
 //   own origin with its own entry; the shader cache is keyed on the shader. The HTTP cache
@@ -158,7 +158,8 @@ export const LAUNCH_ARGS = [ '--enable-gpu', '--ignore-gpu-blocklist', '--enable
 
 function profileRoot() {
 
-	if ( process.env.PONLAI_CAPTURE_PROFILES ) return path.resolve( process.env.PONLAI_CAPTURE_PROFILES );
+	const profiles = process.env[ `${ PROJECT.machine.envPrefix }CAPTURE_PROFILES` ];
+	if ( profiles ) return path.resolve( profiles );
 	let main = REPO;
 	try {
 
