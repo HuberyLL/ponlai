@@ -1,8 +1,8 @@
 # Binding: building a stylised-realism picture
 
 This project's facts for the skill
-[`building-aaa-stylised-realism`](../../skills/building-aaa-stylised-realism/SKILL.md). Each
-section is named after the step of the skill that reads it. A project of your own copies the
+[`building-cinematic-stylised-realism`](../../skills/building-cinematic-stylised-realism/SKILL.md).
+Each section is named after the step of the skill that reads it. A project of your own copies the
 section names and fills in its own facts.
 
 Every command that renders in a browser runs under the GPU lock and every wait goes through

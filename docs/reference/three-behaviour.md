@@ -175,7 +175,7 @@ The water's fragment stage already samples 14 of the 16 textures WebGPU guarante
 samples neither the target it draws into nor a history or a reactive input: what the resolve needs
 from it goes out through its velocity. A new mesh under the water, a swimmer, or a tall or offshore
 opaque object tells the water (`ocean/Water.ts`;
-[Materials](../bindings/building-aaa-stylised-realism.md#materials)).
+[Materials](../bindings/building-cinematic-stylised-realism.md#materials)).
 
 Check: none; judgement.
 
@@ -204,7 +204,7 @@ Check: the lint rule `ponlai/history-on-graph`; `tools/render/verify-framegraph.
 Under the temporal modes:
 
 - Every scene material writes the velocity beside the colour (`post/Motion.ts`; how:
-  [Materials](../bindings/building-aaa-stylised-realism.md#materials)).
+  [Materials](../bindings/building-cinematic-stylised-realism.md#materials)).
 - The blend of each attachment comes only from the pass's own MRT (`post/Motion.ts` `sceneMRT`,
   `overlayMRT`), whatever a material's MRT node says.
 - **r186.** A material drawn into two attachment layouts needs a pipeline per layout, which three's

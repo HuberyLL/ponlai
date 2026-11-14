@@ -18,9 +18,9 @@ The rules an agent or a contributor follows, loaded as the work reaches their fo
 
 Methods for one kind of task, each with this project's facts in its binding (`docs/bindings/`).
 
-- [Building a stylised-realism picture](../skills/building-aaa-stylised-realism/SKILL.md)
-  ([binding](bindings/building-aaa-stylised-realism.md)): where a change to the look goes, and a
-  new material.
+- [Building a stylised-realism picture](../skills/building-cinematic-stylised-realism/SKILL.md)
+  ([binding](bindings/building-cinematic-stylised-realism.md)): where a change to the look goes,
+  and a new material.
 - [Diagnosing frames that do not repeat](../skills/diagnosing-nonrepeating-frames/SKILL.md)
   ([binding](bindings/diagnosing-nonrepeating-frames.md)): a frame that differs between runs of the
   same build.

@@ -42,8 +42,8 @@ sections for what the change touches:
 
 For new work: a pass, a plant kind or a kind of local light,
 `docs/reference/extension-points.md` (the three declarations each must make); a material,
-[building-aaa-stylised-realism](building-aaa-stylised-realism.md#materials). Shaders are TSL
-only, never WGSL or GLSL strings (lint rule `ponlai/tsl-only`); code that differs by
+[building-cinematic-stylised-realism](building-cinematic-stylised-realism.md#materials).
+Shaders are TSL only, never WGSL or GLSL strings (lint rule `ponlai/tsl-only`); code that differs by
 anti-aliasing mode reads `post/Antialiasing.ts`'s exports, never the tier.
 
 ## Version

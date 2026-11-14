@@ -463,8 +463,8 @@ and a second scene needs its own without editing the renderer.
 **Enforced by:** [verify-look-params.mjs](../../tools/render/verify-look-params.mjs) checks that
 each system holds its own set's numbers. Whether a number is the look's or physics' is a
 judgement, left to review. A new material follows
-[building-aaa-stylised-realism](../../skills/building-aaa-stylised-realism/SKILL.md) and its
-[binding](../bindings/building-aaa-stylised-realism.md#materials).
+[building-cinematic-stylised-realism](../../skills/building-cinematic-stylised-realism/SKILL.md)
+and its [binding](../bindings/building-cinematic-stylised-realism.md#materials).
 
 **Came from:** none on record.
 

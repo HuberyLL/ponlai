@@ -2,6 +2,17 @@
 
 The reasons behind the rules in [SKILL.md](SKILL.md).
 
+## Reference images shot for the fit
+
+A fit can only be as right as its reference. Compression moves colours in flat areas such as the
+sky and blocks the shade; a resize blends sun and shade at their edge; an HDR frame saved as a
+screenshot is tone-mapped again; a vignette, a filter or depth of field adds a change no light,
+air or image knob of the renderer makes. Each enters the rows as a gap, and the fit then chases
+it. Shooting lossless, unfiltered still frames, and writing the sun and time down at once, keeps
+the gaps to what the look itself differs by. Photographs used as reference are shot the same way:
+raw or lossless, with a known exposure, and a grey or colour chart in frame where one can be
+placed.
+
 ## Diagnose first
 
 A gap between two images has many possible causes, and most knobs move several regions at once.
@@ -21,7 +32,7 @@ the geometry, not the look, and every value fitted to it is wrong in a way no la
 The layers depend on each other in one direction: the exposure scales everything, the light falls
 on every surface, the air covers what lies far. A downstream knob fitted before an upstream one
 absorbs the upstream error and must be fitted again when the upstream one moves. The order is the
-one the skill `building-aaa-stylised-realism` uses for every change to the picture.
+one the skill `building-cinematic-stylised-realism` uses for every change to the picture.
 
 ## Form before parameters
 

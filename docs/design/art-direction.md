@@ -44,14 +44,14 @@ Contents of this page:
 
 The picture is stylised realism: physically based and developed like a photograph, but not aimed
 at photorealism. The method, its order and the reasons are in the skill
-[building-aaa-stylised-realism](../../skills/building-aaa-stylised-realism/SKILL.md), and this
-project's facts for it in its [binding](../bindings/building-aaa-stylised-realism.md). What this
-island decides within it:
+[building-cinematic-stylised-realism](../../skills/building-cinematic-stylised-realism/SKILL.md),
+and this project's facts for it in its
+[binding](../bindings/building-cinematic-stylised-realism.md). What this island decides within it:
 
 - The materials hold physically plausible values, and one physically based light sets the
   relations between them, so grass, stone, bamboo and sand read as one place without being tuned
   against each other. How a material's values are found and checked:
-  the skill [building-aaa-stylised-realism](../../skills/building-aaa-stylised-realism/SKILL.md).
+  the skill [building-cinematic-stylised-realism](../../skills/building-cinematic-stylised-realism/SKILL.md).
 - A material is never tuned to make up for the light. Tuning it so bakes the light's error into
   its albedo, and it breaks again whenever the light changes.
 - The style sits in three places: the content chosen, the light's global departures, and the
