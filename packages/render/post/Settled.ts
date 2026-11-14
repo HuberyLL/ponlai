@@ -1,5 +1,6 @@
 import { PRE_EXPOSURE_PENDING } from './PreExposure.ts';
 import { TemporalRest, restKey } from './TemporalRest.ts';
+import { onSceneDispose } from '../SceneDispose.ts';
 
 // The page's settled signal: true once a paused page will draw the same frame from now on.
 //
@@ -14,7 +15,7 @@ import { TemporalRest, restKey } from './TemporalRest.ts';
 // render's and the output's sizes, the epoch) plus the page's signature, and counts the frames in a
 // row that share it while the page is stable and quiet:
 // - stable: no sky bake in flight, no sky transition running (the temporal rest asks that too, and
-//   that the haze's rest has ended: app/Frame.ts `temporalFrame`);
+//   that the haze's rest has ended: RenderStages.ts `temporalFrame`);
 // - quiet: nothing that will change the frame without changing the key is pending (main.ts names
 //   them in `pending`: a periodic sky bake due, a periodic bake's irradiance still being read back
 //   after it has shown, the refracted sun's map behind its light, a sun shadow redraw queued), and no render or compute pipeline is being compiled asynchronously
@@ -75,6 +76,8 @@ type AsyncCreate = ( ...args: unknown[] ) => Promise<unknown>;
 
 // the device's async pipeline creations in flight (null: not watched)
 let compiling: number | null = null;
+// the next scene's renderer has a device of its own to watch
+onSceneDispose( 'pipelines watched', () => { compiling = null; } );
 
 /** Counts the device's async pipeline creations in flight, from now on (once per page). The two
  * calls are passed through unchanged. */

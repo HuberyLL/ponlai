@@ -9,6 +9,7 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 import { meterKey } from './MeterLight.ts';
 import type { Look } from '../look/Look.ts';
 import { checkDeclarations, type Declarations } from '../Extensions.ts';
+import { onSceneDispose } from '../SceneDispose.ts';
 
 // Local lights: small light sources on the island, every one in view, by clustered shading.
 //
@@ -458,16 +459,35 @@ let installed: LocalLights | null = null;
 /** The look's tables the local lights take (`LocalLights`, `createLocalLights`). */
 export type LocalLightsTables = Pick<Look, 'localLights'>;
 
-/** The renderer's local lights, made once a page from `look`'s tables: the registry of the kinds
+/** The renderer's local lights, made once a scene from `look`'s tables: the registry of the kinds
  * of light, whose table the module's buffers hold and whose pass (`localLightsPass`) the pipeline
  * declares. */
 export function createLocalLights( look: LocalLightsTables ): LocalLights {
 
-	if ( installed ) throw new Error( 'LocalLights: a page has one light table, and it is already made' );
+	if ( installed ) throw new Error( 'LocalLights: a scene has one light table, and it is already made' );
 	installed = new LocalLights( look );
 	return installed;
 
 }
+onSceneDispose( 'local lights', () => {
+
+	// the registry gone, the buffers as the page loaded them: their first size, empty
+	installed = null;
+	if ( capacity !== CAPACITY ) {
+
+		capacity = CAPACITY;
+		table = tableAttribute( capacity );
+		order = orderAttribute( capacity );
+		tableRead.value = table;
+		orderRead.value = order;
+
+	}
+	( table.array as Float32Array ).fill( 0 );
+	( order.array as Uint32Array ).fill( 0 );
+	( clusters.array as Uint32Array ).fill( 0 );
+	written = [ 0 ];
+
+} );
 
 /** `flags=lightTest:N`: N white sources over the meadow for cost tests, at the cells of a 4 m
  * world grid with the lowest hashes among those whose point and its four neighbours 3 m off lie on

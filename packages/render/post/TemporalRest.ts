@@ -17,7 +17,7 @@
 // The rest is the canvas's image: what the page lays over the canvas is not in it. A rest shot while
 // the loading screen still faded out (index.html) carried up to 2 % of that screen's colour over the
 // whole frame and read as a darker rest; a paused page now lifts the loading screen at once
-// (app/Frame.ts `reveal`), and the page's settled signal waits for it in any case (Settled.ts `shown`).
+// (assemble/StartScene.ts `reveal`), and the page's settled signal waits for it in any case (Settled.ts `shown`).
 // The settle frames do cover the scene: rests started one frame after a view's eval and 300 frames
 // later were byte-identical once nothing lay over them (no sun map redraw, bake or pending refresh
 // fell inside either rest).

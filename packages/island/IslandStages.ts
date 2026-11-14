@@ -16,7 +16,8 @@
 //   view's framing (`IslandFraming`), which the land's changes call, and hands it to the stages that
 //   frame the land (`createVegetation`, `createGrowth`).
 import { WIND_VIEW, shared, testSources, debugFlags, TEST_MODE, declareSceneEvents, createDisplacementField, displacementField, Vegetation, defaultPlant, placeVegetation, vegetationCasters, bakeRainCollision, duskForce, nightGlowShare, type RenderParts } from '../render/index.ts';
-import { settings as params, type SettingsQuery } from '../render/setup.ts';
+import type { SettingsQuery } from '../render/setup.ts';
+import { settings as params } from './IslandSettings.ts';
 import * as THREE from 'three/webgpu';
 import { FreeCameraControls } from './camera/FreeCameraControls.ts';
 import { IslandCameraControls } from './camera/IslandCameraControls.ts';
@@ -148,10 +149,10 @@ export interface IslandFraming {
 	/** places the island view on the land as the load places it */
 	frameLand(): void;
 	/** the options (dist / polar / az) the island view was last posed at */
-	readonly viewOptions: SettingsQuery;
+	readonly viewOptions: SettingsQuery<string>;
 	/** poses the island view at `options`, the heading turned by `turn` (rad), at `zoom`, the camera
 	 * left where it is */
-	poseIslandView( options: SettingsQuery, turn?: number, zoom?: number ): void;
+	poseIslandView( options: SettingsQuery<string>, turn?: number, zoom?: number ): void;
 	/** whether the camera holds the island view's pose, or glides toward it */
 	holdsFraming(): boolean;
 	/** takes the camera to the island view's pose: a glide, or at once */

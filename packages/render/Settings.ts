@@ -3,21 +3,25 @@ import type { QualityTier } from './Quality.ts';
 import type { DayPreset } from './sky/DayCycle.ts';
 import type { WeatherName, WindLevel } from './sky/Weather.ts';
 
-// The page's settings: every option of its address declared once, and the one reader of them.
+// The page's settings: the renderer's options of its address, and the one reader of every layer's.
 //
-// The page's settings: every option of its address declared once, here, with its type, its range,
-// its default and the layer that owns it, and the one reader every module takes them from.
+// The page's settings: the renderer's own options of the page's address, each declared once here
+// with its type, its range and its default, and the one reader every module takes the page's
+// options from. A layer above the renderer declares its own options in a table of the same shape
+// (`SettingsTable`) beside its code and reads them by `settingsFor( its table )`, the same reader
+// typed for its names and the renderer's; the page merges the layers' tables (`mergeSettings`: a
+// name two layers declare throws) for the reports below.
 //
 //   import { settings } from './Settings.ts';
 //   const option = settings.get( 'windView' );          // the value as written, or null
 //   if ( settings.has( 'paused' ) ) ...                  // named at all (a bare `?paused` too)
 //
-// - The entry (Boot.ts, through PageSettings.ts, before it loads the page) parses the address once
-//   (`parseSettings`), reports in one form each name nobody declared and each value outside its
-//   range (`settingProblems`: a console warning `?name=value: why`, the option keeping whatever
-//   its reader makes of it), chooses the quality tier and installs both (`installSettings`) before
-//   any other module loads, so a module that reads a setting as it loads takes the value it always
-//   did. No other module parses the address.
+// - The page's entry parses the address once (`parseSettings`), reports in one form each name its
+//   merged table does not declare and each value outside its range (`settingProblems`: a console
+//   warning `?name=value: why`, the option keeping whatever its reader makes of it), chooses the
+//   quality tier and installs both (`installSettings`) before any other module loads, so a module
+//   that reads a setting as it loads takes the value it always did. No other module parses the
+//   address. (This repository's entries: app/PageSettings.ts, app/ScenesBoot.ts.)
 // - Where nobody installed them (node under the tools, Vite's server-side loads, a worker), every
 //   option reads as absent: each reader takes its own default, as on a page without the option, and
 //   nothing throws. A tool that builds what a page with options builds installs them first
@@ -28,28 +32,26 @@ import type { WeatherName, WindLevel } from './sky/Weather.ts';
 //   the same rule.
 // - The reader keeps the address's own values (the first of a name for `get`, all for `getAll`):
 //   each module still reads its options as it did, so the values, the defaults the modules apply
-//   and their console warnings are unchanged. `get` takes only a declared name, so a misspelt read
-//   fails the type check; `prefixed` reads the declared prefixes (`tier.<knob>`, Quality.ts).
-// - SETTINGS lists the options by the groups of docs/reference/url-options.md, whose table of every
-//   option tools/repo/verify-settings.mjs writes from it and checks against it: a new option is declared
-//   here, explained there in its group, and the table rewritten (`node tools/repo/verify-settings.mjs
-//   --write`). `default` is the reader's default as words for that table, never read by the code;
-//   a `choice` lists the values its reader tells apart (others are reported), a `number` its range
-//   and any words it takes besides numbers (`words`). `debug` options are read on debug pages only
-//   (the dev server, `?debug`, `?profile`).
+//   and their console warnings are unchanged. `get` takes only a name its reader is typed for, so a
+//   misspelt read, or a renderer's read of a layer's option above it, fails the type check;
+//   `prefixed` reads the declared prefixes (`tier.<knob>`, Quality.ts).
+// - RENDER_SETTINGS lists the options by the groups of docs/reference/url-options.md, whose table of
+//   every layer's options tools/repo/verify-settings.mjs writes from the tables and checks against
+//   them: a new option is declared in the table of the lowest layer that reads it, explained there
+//   in its group, and the table rewritten (`node tools/repo/verify-settings.mjs --write`).
+//   `default` is the reader's default as words for that table, never read by the code; a `choice`
+//   lists the values its reader tells apart (others are reported), a `number` its range and any
+//   words it takes besides numbers (`words`). `debug` options are read on debug pages only (the dev
+//   server, `?debug`, `?profile`).
 // - The installed settings never change on a page. A setting read when materials and the frame
 //   graph are built is a load setting: a new value reloads the page (PageSettings.ts `reloadWith`).
 //   What may change on a running page is a named number of the tune table (debug/Tune.ts) or a
 //   handle on `window.__PONLAI__`.
 
-/** The layers of the code (its folders: packages/render/, packages/island/, packages/game/, app/), lowest first: which one owns an option. */
-export type SettingLayer = 'render' | 'island' | 'game' | 'app';
-
 export interface SettingSpec {
 	/** `switch`: named or not, its value unread; `choice`: one of `values`; `number`, `integer`: a
 	 * number in `range` (or one of `words`); `list`: a comma list; `text`: any text. */
 	readonly type: 'switch' | 'choice' | 'number' | 'integer' | 'list' | 'text';
-	readonly layer: SettingLayer;
 	/** What the page does without it, as words for the docs' table. */
 	readonly default: string;
 	readonly values?: readonly string[];
@@ -60,112 +62,86 @@ export interface SettingSpec {
 	readonly about: string;
 }
 
+/** A layer's options by name (`RENDER_SETTINGS`; the island's, the game's and the page's own). */
+export type SettingsTable = Readonly<Record<string, SettingSpec>>;
+
 const WEATHERS = [ 'clear', 'fair', 'cloudy', 'overcast', 'rain', 'storm', 'fog' ] as const satisfies readonly WeatherName[];
 const WIND_LEVELS = [ 'light', 'gentle', 'fresh', 'strong' ] as const satisfies readonly WindLevel[];
 const PRESETS = [ 'dawn', 'sunrise', 'noon', 'golden-hour', 'sunset', 'dusk', 'midnight' ] as const satisfies readonly DayPreset[];
 const TIERS = [ 'low', 'medium', 'high' ] as const satisfies readonly QualityTier[];
 const AA = [ 'msaa', 'taa', 'taau', 'fsr3', 'off', 'gt' ] as const satisfies readonly AAMode[];
 
-export const SETTINGS = {
+/** The renderer's options. */
+export const RENDER_SETTINGS = {
 	// view and capture
-	paused: { type: 'switch', layer: 'render', default: 'running', about: 'pauses the scene and both clocks; with it the page is in the test mode' },
-	t: { type: 'number', layer: 'render', default: '0', range: [ 0, Infinity ], about: 'the scene time (s)' },
-	dpr: { type: 'number', layer: 'app', default: 'the display\'s ratio, capped', range: [ 0, Infinity ], about: 'pins the canvas\'s pixel ratio' },
-	polar: { type: 'number', layer: 'app', default: '40', about: 'the island view\'s tilt (degrees)' },
-	az: { type: 'number', layer: 'app', default: '180', about: 'the island view\'s heading (degrees)' },
-	dist: { type: 'number', layer: 'app', default: 'frames the land', range: [ 0, Infinity ], about: 'the island view\'s distance from the default pivot (m)' },
-	cameraInput: { type: 'choice', layer: 'island', default: 'on', values: [ 'on', 'off', '' ], about: '`off`: the hand does not move the island camera; named bare, as `on`' },
-	gui: { type: 'switch', layer: 'app', default: 'hidden', about: 'shows the GUI' },
-	camera: { type: 'choice', layer: 'app', default: 'orbit', values: [ 'orbit', 'free' ], about: 'the island camera or the free flight' },
-	nearFov: { type: 'number', layer: 'app', default: '42', range: [ 1, 179 ], words: [ 'off' ], about: 'the island view\'s fov at its closest zoom (degrees; `off`: 27 at every distance)' },
-	nearFovFrom: { type: 'number', layer: 'app', default: '50', range: [ 0, Infinity ], about: 'the distance the fov widens from (m)' },
-	// the island
-	seed: { type: 'integer', layer: 'island', default: '1', about: 'the world\'s seed' },
-	grow: { type: 'integer', layer: 'island', default: 'the save\'s pieces under `game`, else 0', range: [ 0, Infinity ], about: 'growth steps after the starting island (up to `GROWTH.maxSteps`)' },
-	worldCache: { type: 'choice', layer: 'island', default: 'on', values: [ 'on', 'off', '0', '' ], about: '`off` or `0`: generates every chunk instead of reading the browser\'s cache' },
-	bamboo: { type: 'list', layer: 'island', default: 'the default groves', about: 'another look of the bamboo: `cover,height`' },
-	approach: { type: 'number', layer: 'island', default: '0', range: [ 0, 1 ], about: 'the progress toward the next piece, its shoal put on at once' },
-	soil: { type: 'choice', layer: 'app', default: 'on', values: [ '0', '1' ], about: '`0`: the ground without its soil layer' },
+	paused: { type: 'switch', default: 'running', about: 'pauses the scene and both clocks; with it the page is in the test mode' },
+	t: { type: 'number', default: '0', range: [ 0, Infinity ], about: 'the scene time (s)' },
+	dpr: { type: 'number', default: 'the display\'s ratio, capped', range: [ 0, Infinity ], about: 'pins the canvas\'s pixel ratio' },
 	// sky and weather
-	hour: { type: 'number', layer: 'render', default: 'golden-hour (8 under `game`)', about: 'the hour of the day' },
-	preset: { type: 'choice', layer: 'render', default: 'golden-hour', values: PRESETS, about: 'the hour by its sun' },
-	dayLength: { type: 'number', layer: 'render', default: '2880 (1440 under `game`)', range: [ 30, Infinity ], about: 'seconds per day' },
-	moon: { type: 'number', layer: 'render', default: '0.5', about: 'the moon\'s phase (0.5 full)' },
-	clock: { type: 'choice', layer: 'render', default: 'running', values: [ 'paused' ], about: '`paused`: freezes the day clock only' },
-	weather: { type: 'choice', layer: 'render', default: 'auto, from fair', values: WEATHERS, about: 'holds this weather (the parked ones on debug pages only)' },
-	wind: { type: 'choice', layer: 'render', default: 'the sky\'s', values: WIND_LEVELS, about: 'the wind\'s level; holds the weather' },
-	windDir: { type: 'number', layer: 'render', default: 'the sky\'s (40)', about: 'the wind\'s heading (degrees); holds the weather' },
-	clouds: { type: 'number', layer: 'render', default: 'the weather\'s', range: [ 0, 1 ], about: 'overrides the cloud coverage' },
-	dayFog: { type: 'switch', layer: 'app', default: 'off', about: 'the day\'s fog layer under a clear or fair sky' },
-	seaFog: { type: 'switch', layer: 'app', default: 'off', about: 'the deep sea fog' },
+	hour: { type: 'number', default: 'golden-hour (8 under `game`)', about: 'the hour of the day' },
+	preset: { type: 'choice', default: 'golden-hour', values: PRESETS, about: 'the hour by its sun' },
+	dayLength: { type: 'number', default: '2880 (1440 under `game`)', range: [ 30, Infinity ], about: 'seconds per day' },
+	moon: { type: 'number', default: '0.5', about: 'the moon\'s phase (0.5 full)' },
+	clock: { type: 'choice', default: 'running', values: [ 'paused' ], about: '`paused`: freezes the day clock only' },
+	weather: { type: 'choice', default: 'auto, from fair', values: WEATHERS, about: 'holds this weather (the parked ones on debug pages only)' },
+	wind: { type: 'choice', default: 'the sky\'s', values: WIND_LEVELS, about: 'the wind\'s level; holds the weather' },
+	windDir: { type: 'number', default: 'the sky\'s (40)', about: 'the wind\'s heading (degrees); holds the weather' },
+	clouds: { type: 'number', default: 'the weather\'s', range: [ 0, 1 ], about: 'overrides the cloud coverage' },
+	dayFog: { type: 'switch', default: 'off', about: 'the day\'s fog layer under a clear or fair sky' },
+	seaFog: { type: 'switch', default: 'off', about: 'the deep sea fog' },
 	// quality, anti-aliasing and the frame
-	quality: { type: 'choice', layer: 'render', default: 'high', values: TIERS, about: 'the quality tier (medium and low parked)' },
-	autoQuality: { type: 'choice', layer: 'app', default: 'parked', values: [ 'detect', 'off' ], about: 'the GPU timing that chose the tier (parked: read by the tier\'s reload only)' },
-	autoQualitySlow: { type: 'number', layer: 'app', default: '1', range: [ 0.01, Infinity ], about: 'scales the GPU timing\'s measured time (parked)' },
-	aa: { type: 'choice', layer: 'render', default: 'the tier\'s (high: msaa)', values: AA, about: 'the anti-aliasing mode (`gt` on debug pages only)' },
-	msaa: { type: 'choice', layer: 'render', default: 'none', values: [ '1', '2', '4' ], about: 'the older alias of `aa`: `4` msaa, `1` and `2` off' },
-	fsrDebug: { type: 'switch', layer: 'render', default: 'off', debug: true, about: 'FSR 3\'s debug view over its output, under `aa=fsr3`' },
-	taaResolve: { type: 'choice', layer: 'render', default: 'on', values: [ 'off' ], debug: true, about: '`off`: the temporal modes without their resolve' },
-	terrainHex: { type: 'choice', layer: 'island', default: 'on', values: [ '0' ], about: '`0`: the cliff\'s plain triplanar tiling' },
-	post: { type: 'list', layer: 'render', default: 'none', values: [ 'legacy', 'inline-composite', 'three-fsr', 'store-scene' ], about: 'the frame graph without the first performance round\'s changes' },
-	gpuTimer: { type: 'choice', layer: 'render', default: 'on', values: [ 'off' ], about: '`off`: the dynamic resolution without its timestamp queries' },
-	drsStore: { type: 'choice', layer: 'app', default: 'on, off in an automated browser', values: [ 'on', 'off' ], about: 'whether the dynamic resolution starts from the scale it last held' },
-	frameRate: { type: 'number', layer: 'app', default: 'auto', range: [ 0, Infinity ], words: [ 'auto' ], about: 'the frame rate the loop holds (0: every refresh)' },
-	frameFallback: { type: 'choice', layer: 'app', default: 'on', values: [ '0' ], about: '`0`: `auto` keeps the tier\'s rate' },
-	submits: { type: 'choice', layer: 'render', default: 'batched', values: [ 'each' ], about: '`each`: three\'s own submit per pass' },
-	submitBatch: { type: 'list', layer: 'render', default: 'SubmitBatch.ts\'s', about: 'the submit batching\'s policy: `hold,wait,idle`' },
-	fgOps: { type: 'choice', layer: 'render', default: 'derived', values: [ 'derived', 'legacy', 'store', 'off' ], about: 'the frame graph\'s attachment ops' },
-	fgPrime: { type: 'choice', layer: 'render', default: 'on', values: [ '0' ], about: '`0`: the warm-up renders nothing ahead' },
-	fgview: { type: 'text', layer: 'render', default: 'off', debug: true, about: 'the frame graph\'s debug view of one resource' },
+	quality: { type: 'choice', default: 'high', values: TIERS, about: 'the quality tier (medium and low parked)' },
+	aa: { type: 'choice', default: 'the tier\'s (high: msaa)', values: AA, about: 'the anti-aliasing mode (`gt` on debug pages only)' },
+	msaa: { type: 'choice', default: 'none', values: [ '1', '2', '4' ], about: 'the older alias of `aa`: `4` msaa, `1` and `2` off' },
+	fsrDebug: { type: 'switch', default: 'off', debug: true, about: 'FSR 3\'s debug view over its output, under `aa=fsr3`' },
+	taaResolve: { type: 'choice', default: 'on', values: [ 'off' ], debug: true, about: '`off`: the temporal modes without their resolve' },
+	post: { type: 'list', default: 'none', values: [ 'legacy', 'inline-composite', 'three-fsr', 'store-scene' ], about: 'the frame graph without the first performance round\'s changes' },
+	gpuTimer: { type: 'choice', default: 'on', values: [ 'off' ], about: '`off`: the dynamic resolution without its timestamp queries' },
+	drsStore: { type: 'choice', default: 'on, off in an automated browser', values: [ 'on', 'off' ], about: 'whether the dynamic resolution starts from the scale it last held' },
+	frameRate: { type: 'number', default: 'auto', range: [ 0, Infinity ], words: [ 'auto' ], about: 'the frame rate the loop holds (0: every refresh)' },
+	frameFallback: { type: 'choice', default: 'on', values: [ '0' ], about: '`0`: `auto` keeps the tier\'s rate' },
+	submits: { type: 'choice', default: 'batched', values: [ 'each' ], about: '`each`: three\'s own submit per pass' },
+	submitBatch: { type: 'list', default: 'SubmitBatch.ts\'s', about: 'the submit batching\'s policy: `hold,wait,idle`' },
+	fgOps: { type: 'choice', default: 'derived', values: [ 'derived', 'legacy', 'store', 'off' ], about: 'the frame graph\'s attachment ops' },
+	fgPrime: { type: 'choice', default: 'on', values: [ '0' ], about: '`0`: the warm-up renders nothing ahead' },
+	fgview: { type: 'text', default: 'off', debug: true, about: 'the frame graph\'s debug view of one resource' },
 	// debug
-	debug: { type: 'switch', layer: 'render', default: 'off', about: 'a debug page: the handles on `window`, the debug options' },
-	flags: { type: 'list', layer: 'render', default: 'none', debug: true, about: 'sets debug flags as the page loads (`name:value,...`)' },
-	tune: { type: 'text', layer: 'render', default: 'none', debug: true, about: 'tunable parameters\' values before anything builds (base64 JSON)' },
-	testMode: { type: 'choice', layer: 'render', default: 'on with `paused`', values: [ '0' ], about: '`0`: a paused page outside the test mode' },
-	profile: { type: 'choice', layer: 'render', default: 'off', values: [ '', 'frames' ], about: 'loads the frame profiler (`frames`: without GPU timestamps)' },
-	vegPrepass: { type: 'choice', layer: 'render', default: 'on', values: [ '0', 'coverage' ], about: 'the vegetation\'s depth prepass: off, or with coverage kept' },
-	chunkBorders: { type: 'switch', layer: 'island', default: 'off', about: 'shows the world\'s chunks as lines' },
-	ambientProbes: { type: 'choice', layer: 'render', default: 'off', values: [ 'off', 'sky', 'bounce', 'irradiance' ], debug: true, about: 'shows the ambient light\'s probes' },
-	windView: { type: 'choice', layer: 'render', default: 'off', values: [ '', 'arrows', 'plants' ], debug: true, about: 'makes the vegetation\'s wind visible' },
-	renderLook: { type: 'choice', layer: 'app', default: 'the page\'s own', values: [ 'neutral', 'ponlai' ], debug: true, about: 'the look the renderer draws with, over the page\'s own: `neutral` (the renderer\'s) on the island\'s page, `ponlai` (the island\'s) on the test scenes\'' },
-	scene: { type: 'choice', layer: 'app', default: 'none', values: [ 'ball', 'empty', 'sea', 'plants' ], about: 'the test scene `scenes.html` shows' },
-	// islanders
-	look: { type: 'choice', layer: 'island', default: 'Hanming', values: [ 'kit' ], about: '`kit`: the islanders\' earlier kit look' },
-	islander: { type: 'choice', layer: 'island', default: 'the look\'s own', values: [ 'stock', 'subtle', 'medium', 'strong', 'real' ], about: 'the islanders\' proportions' },
-	body: { type: 'text', layer: 'island', default: 'M30', about: 'the scene\'s walker\'s sex and age' },
-	bodies: { type: 'list', layer: 'game', default: 'the simulation\'s three', about: 'a new game\'s islanders\' sexes and ages' },
-	// game
-	game: { type: 'switch', layer: 'app', default: 'off', about: 'the island as a game' },
-	load: { type: 'switch', layer: 'game', default: 'off', about: 'resumes the saved game' },
-	new: { type: 'switch', layer: 'game', default: 'off', about: 'starts a new game' },
-	autosave: { type: 'choice', layer: 'game', default: 'on, off in an automated browser', values: [ 'on', 'off' ], about: 'whether the page keeps the save itself' },
-	lang: { type: 'text', layer: 'game', default: 'zh-CN', about: 'the interface\'s language (`zh-CN`, `en`)' },
-} as const satisfies Record<string, SettingSpec>;
+	debug: { type: 'switch', default: 'off', about: 'a debug page: the handles on `window`, the debug options' },
+	flags: { type: 'list', default: 'none', debug: true, about: 'sets debug flags as the page loads (`name:value,...`)' },
+	tune: { type: 'text', default: 'none', debug: true, about: 'tunable parameters\' values before anything builds (base64 JSON)' },
+	testMode: { type: 'choice', default: 'on with `paused`', values: [ '0' ], about: '`0`: a paused page outside the test mode' },
+	profile: { type: 'choice', default: 'off', values: [ '', 'frames' ], about: 'loads the frame profiler (`frames`: without GPU timestamps)' },
+	vegPrepass: { type: 'choice', default: 'on', values: [ '0', 'coverage' ], about: 'the vegetation\'s depth prepass: off, or with coverage kept' },
+	ambientProbes: { type: 'choice', default: 'off', values: [ 'off', 'sky', 'bounce', 'irradiance' ], debug: true, about: 'shows the ambient light\'s probes' },
+	windView: { type: 'choice', default: 'off', values: [ '', 'arrows', 'plants' ], debug: true, about: 'makes the vegetation\'s wind visible' },
+} as const satisfies SettingsTable;
 
 /** Options read by a prefix: `tier.<knob path>=<value>` (Quality.ts `qualityProfile`). */
 export const SETTING_PREFIXES = {
-	'tier.': { type: 'text', layer: 'render', default: 'the tier\'s', about: 'overrides one knob of the tier (`tier.post.hazeGrid.width=128`)' },
-} as const satisfies Record<string, SettingSpec>;
+	'tier.': { type: 'text', default: 'the tier\'s', about: 'overrides one knob of the tier (`tier.post.hazeGrid.width=128`)' },
+} as const satisfies SettingsTable;
 
-export type SettingName = keyof typeof SETTINGS;
+/** The renderer's option names. */
+export type SettingName = keyof typeof RENDER_SETTINGS;
 export type SettingPrefix = keyof typeof SETTING_PREFIXES;
 
-/** What a module reads its options through: the page's installed settings (`settings`), or a query
- * of its own (`parseSettings`, a scene jump's). URLSearchParams has the same shape. */
-export interface SettingsQuery {
-	get( name: SettingName ): string | null;
-	has( name: SettingName ): boolean;
-	getAll( name: SettingName ): string[];
+/** What a module reads its options through: the page's installed settings (`settings`, or a
+ * layer's `settingsFor` its table), or a query of its own (`parseSettings`, a scene jump's), for
+ * the names `N` (the renderer's by default). URLSearchParams has the same shape. */
+export interface SettingsQuery<N extends string = SettingName> {
+	get( name: N ): string | null;
+	has( name: N ): boolean;
+	getAll( name: N ): string[];
 }
 
 /** A parsed query: its options as the address gives them, in order. */
-export interface ParsedSettings extends SettingsQuery {
+export interface ParsedSettings<N extends string = SettingName> extends SettingsQuery<N> {
 	readonly entries: ReadonlyArray<readonly [ string, string ]>;
 	prefixed( prefix: SettingPrefix ): Array<[ string, string ]>;
 }
 
 /** Parses a query (`?a=1&b`, the leading `?` optional) as the address's options. */
-export function parseSettings( search: string ): ParsedSettings {
+export function parseSettings( search: string ): ParsedSettings<string> {
 
 	const entries = Object.freeze( [ ...new URLSearchParams( search ) ].map( ( e ) => Object.freeze( e ) ) );
 	const values = new Map<string, string[]>();
@@ -178,30 +154,46 @@ export function parseSettings( search: string ): ParsedSettings {
 	}
 	return Object.freeze( {
 		entries,
-		get: ( name: SettingName ) => values.get( name )?.[ 0 ] ?? null,
-		has: ( name: SettingName ) => values.has( name ),
-		getAll: ( name: SettingName ) => [ ...( values.get( name ) ?? [] ) ],
+		get: ( name: string ) => values.get( name )?.[ 0 ] ?? null,
+		has: ( name: string ) => values.has( name ),
+		getAll: ( name: string ) => [ ...( values.get( name ) ?? [] ) ],
 		prefixed: ( prefix: SettingPrefix ) => entries.filter( ( [ name ] ) => name.startsWith( prefix ) ).map( ( [ name, value ] ): [ string, string ] => [ name, value ] ),
 	} );
 
 }
 
-const isDeclared = ( name: string ): name is SettingName => Object.hasOwn( SETTINGS, name );
+type Merged<T extends readonly SettingsTable[]> = T extends readonly [ infer First, ...infer Rest extends readonly SettingsTable[] ] ? First & Merged<Rest> : unknown;
 
-/** Each name nobody declared and each value outside its declared range, as `?name=value: why`. */
-export function settingProblems( query: ParsedSettings ): string[] {
+/** The page's options: the layers' tables in one (the page's entry merges them; a name declared by
+ * two throws). */
+export function mergeSettings<const T extends readonly SettingsTable[]>( ...tables: T ): Merged<T> {
+
+	const merged: Record<string, SettingSpec> = {};
+	for ( const table of tables ) for ( const [ name, spec ] of Object.entries( table ) ) {
+
+		if ( Object.hasOwn( merged, name ) ) throw new Error( `mergeSettings: the option ${ name } is declared twice` );
+		merged[ name ] = spec;
+
+	}
+	return Object.freeze( merged ) as Merged<T>;
+
+}
+
+/** Each name `table` (the page's merged options) does not declare and each value outside its
+ * declared range, as `?name=value: why`. */
+export function settingProblems( query: ParsedSettings<string>, table: SettingsTable ): string[] {
 
 	const out: string[] = [];
 	for ( const [ name, value ] of query.entries ) {
 
 		const at = `?${ value === '' ? name : `${ name }=${ value }` }`;
-		if ( ! isDeclared( name ) ) {
+		if ( ! Object.hasOwn( table, name ) ) {
 
 			if ( ! Object.keys( SETTING_PREFIXES ).some( ( prefix ) => name.startsWith( prefix ) ) ) out.push( `${ at }: no such option` );
 			continue;
 
 		}
-		const spec: SettingSpec = SETTINGS[ name ];
+		const spec = table[ name ];
 		const values = spec.values ?? [];
 		if ( spec.type === 'choice' && ! values.includes( value ) ) out.push( `${ at }: expected ${ values.map( ( v ) => v === '' ? 'nothing' : v ).join( ', ' ) }` );
 		else if ( spec.type === 'list' && spec.values && value !== '' ) {
@@ -225,7 +217,7 @@ export function settingProblems( query: ParsedSettings ): string[] {
 }
 
 const NONE = parseSettings( '' );
-let installed: { query: ParsedSettings; tier: string | null } | null = null;
+let installed: { query: ParsedSettings<string>; tier: string | null } | null = null;
 // the first option read before the install (a module that loaded before the entry installed them),
 // with the line of the stack that read it where the engine gives one
 let readEarly: string | null = null;
@@ -245,7 +237,7 @@ const current = ( name: string ) => {
  * else the default: Quality.ts `loadTier`), before the modules that read them load. Once only, and
  * before any read: it throws on a second install, and when a module read an option before (it took
  * the default, whatever the address says), naming the first. */
-export function installSettings( query: ParsedSettings, tier: string | null = null ): void {
+export function installSettings( query: ParsedSettings<string>, tier: string | null = null ): void {
 
 	if ( installed ) throw new Error( 'installSettings: the settings are installed once, before the modules that read them' );
 	if ( readEarly !== null ) throw new Error( `installSettings: the settings were read before they were installed, first ${ readEarly }: install them before any module that reads them loads` );
@@ -255,20 +247,32 @@ export function installSettings( query: ParsedSettings, tier: string | null = nu
 
 /** A number option of `query` (the installed settings by default): its value, or `fallback` where
  * it is missing or not a finite number. */
-export function numberSetting( name: SettingName, fallback: number, query: SettingsQuery = settings ): number {
+export function numberSetting<N extends string = SettingName>( name: N, fallback: number, query: SettingsQuery<N> = settings as SettingsQuery<string> ): number {
 
 	const value = Number( query.get( name ) ?? fallback );
 	return Number.isFinite( value ) ? value : fallback;
 
 }
 
-/** The installed settings (every option absent where none are installed). */
-export const settings: ParsedSettings & { readonly installed: boolean; readonly tier: string | null } = Object.freeze( {
+/** The installed settings, read by the names `N`. */
+export type InstalledSettings<N extends string = SettingName> = ParsedSettings<N> & { readonly installed: boolean; readonly tier: string | null };
+
+/** The installed settings, read by the renderer's names (every option absent where none are
+ * installed). */
+export const settings: InstalledSettings = Object.freeze( {
 	get entries() { return current( 'entries' ).entries; },
 	get installed() { return installed !== null; },
 	get tier() { current( 'quality' ); return installed?.tier ?? null; },
-	get: ( name: SettingName ) => current( name ).get( name ),
-	has: ( name: SettingName ) => current( name ).has( name ),
-	getAll: ( name: SettingName ) => current( name ).getAll( name ),
+	get: ( name: string ) => current( name ).get( name ),
+	has: ( name: string ) => current( name ).has( name ),
+	getAll: ( name: string ) => current( name ).getAll( name ),
 	prefixed: ( prefix: SettingPrefix ) => current( prefix ).prefixed( prefix ),
 } );
+
+/** The installed settings read by a layer above the renderer: the same reader as `settings`, by
+ * the renderer's names and those of `table` (the layer's own, or the page's merged ones). */
+export function settingsFor<T extends SettingsTable>( _table: T ): InstalledSettings<SettingName | Extract<keyof T, string>> {
+
+	return settings as InstalledSettings<string>;
+
+}

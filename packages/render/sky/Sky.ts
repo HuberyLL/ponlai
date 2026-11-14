@@ -741,7 +741,7 @@ export class Sky {
 
 	/** Periodic bakes whose irradiance is still being read back: a paused page that starts one draws
 	 * frames while it is in flight, so the settled signal waits for it, and a stepped clip waits until
-	 * none is (app/Frame.ts `settleFrame`, `loop.step`). */
+	 * none is (RenderStages.ts `settleFrame`, assemble/SceneFrame.ts `loop.step`). */
 	get readbacks(): number { return this.irradiancePending; }
 
 	get transitioning(): boolean { return this.transitionDuration > 0 && this.transitionElapsed < this.transitionDuration; }

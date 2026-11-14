@@ -338,11 +338,12 @@ three resolves them into one buffer and drops what it resolves while that buffer
 the owner takes over the pools' `resolveQueriesAsync`, so a second reader takes readings from the
 first.
 
-The owner is chosen once, when the page sets up its frame loop (`app/Frame.ts`). It is the dynamic
-resolution's timer (`GpuFrameTimer` in `post/DynamicResolution.ts`; none under `?gpuTimer=off`).
-Under `?profile` with the GPU timestamps on (not `?profile=frames`) the frame profiler
-(`debug/FrameProfiler.ts`) owns them instead, for the whole load: no `GpuFrameTimer` is made, and
-the profiler hands each frame's GPU time to the dynamic resolution from its own readings. Only these
-two modules and the wrappers in `three/` reach the queries.
+The owner is chosen once, when a running scene sets up its frame
+(`packages/render/assemble/SceneFrame.ts`). It is the dynamic resolution's timer (`GpuFrameTimer` in
+`post/DynamicResolution.ts`; none under `?gpuTimer=off`). Under `?profile` with the GPU timestamps
+on (not `?profile=frames`) the frame profiler (`debug/FrameProfiler.ts`) owns them instead, for the
+whole load: no `GpuFrameTimer` is made, and the profiler hands each frame's GPU time to the dynamic
+resolution from its own readings. Only these two modules and the wrappers in `three/` reach the
+queries.
 
 Check: the lint rule `ponlai/timestamp-owner`.

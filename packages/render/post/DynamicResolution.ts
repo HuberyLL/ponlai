@@ -172,7 +172,7 @@ import { gpuAdapterInfo, gpuDevice, pendingTimestamps, resolveTimestamps, takeTi
 // profiler times passes it feeds this from its own readings.
 // Its holds, bars and windows run on its own `clock`, performance.now's in every page a player
 // sees. The profiler's A/B (profile-frame --compare) stops one page while the other runs its slice;
-// through a debug hook (app/Diagnostics.ts `dynamicClock`) the stopped page's clock stands still meanwhile, so
+// through a debug hook (assemble/SceneHandles.ts `dynamicClock`) the stopped page's clock stands still meanwhile, so
 // a hold or bar does not run out while the page draws nothing and each page's controller sees its
 // slices as one continuous run.
 
@@ -365,7 +365,7 @@ export class DynamicResolution {
 	 * builds). */
 	onWarning: ( ( message: string ) => void ) | null = null;
 	/** Its clock (s), which every hold, bar and window reads: `performance.now`'s. Only the profiler
-	 * replaces it (app/Diagnostics.ts's debug hook `dynamicClock`): a page it keeps stopped during another
+	 * replaces it (assemble/SceneHandles.ts's debug hook `dynamicClock`): a page it keeps stopped during another
 	 * page's slices (profile-frame --compare) holds its clock still, so its timers do not run out
 	 * while it draws nothing. */
 	// eslint-disable-next-line ponlai/scene-clock -- the controller's clock: it steers the render scale by real frame times (see the header)

@@ -19,8 +19,9 @@ loads the frame profiler). A production preview needs `debug` for the tools to r
 - `__PONLAI__.establishScene( query )` jumps to a whole scene in place, as a fresh load of
   `?<query>` would draw it: weather, day clock, moon, scene clock and camera, with the leftovers of
   the scenes before cleared. Load-time options must match the page's. One page can so capture a
-  whole set. The contract is in `app/Scene.ts`, and `tools/island/verify-scene-jump.mjs` checks it.
-  `__PONLAI__.sceneJump` is 1 when the page has the exact jump, which the capture tools use.
+  whole set. The contract is in `packages/render/assemble/SceneJump.ts`, and
+  `tools/island/verify-scene-jump.mjs` checks it. `__PONLAI__.sceneJump` is 1 when the page has the
+  exact jump, which the capture tools use.
 - The diagnostics add the scene's anti-aliasing (`aa`, and `aaSource`: `url` or `tier`, where it
   came from), the pipelines created so far (`pipelines`, counted by
   `packages/render/debug/PipelineCounter.ts`) and `graph`, the frame graph's dev counters (the

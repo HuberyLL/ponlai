@@ -61,7 +61,7 @@ export default [
 	// picks the quality tier
 	{
 		files: CODE,
-		ignores: [ 'packages/render/debug/**', 'packages/island/debug/**', 'app/Diagnostics.ts', 'packages/game/GameDebug.ts', 'app/QualityDetect.ts' ],
+		ignores: [ 'packages/render/debug/**', 'packages/island/debug/**', 'packages/game/GameDebug.ts', 'app/QualityDetect.ts' ],
 		rules: { 'ponlai/scene-clock': 'error' },
 	},
 ];

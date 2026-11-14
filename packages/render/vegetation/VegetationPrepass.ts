@@ -6,6 +6,7 @@ import { VELOCITY_CLEAR, velocityOutput } from '../post/Motion.ts';
 import { MEADOW_SHADE } from '../post/MeadowShade.ts';
 import { followPlantDraw } from './PlantInstances.ts';
 import { settings } from '../Settings.ts';
+import { onSceneDispose } from '../SceneDispose.ts';
 
 // A depth prepass for the alpha-to-coverage vegetation (today the meadow's blades).
 //
@@ -127,6 +128,13 @@ function depthMaterial( source: THREE.MeshStandardNodeMaterial ): THREE.MeshBasi
  * own before the opaque scene, into the same depth (Pipeline.ts). */
 export const prepassScene = new THREE.Scene();
 prepassScene.name = 'vegetation prepass';
+// a disposed scene's copies go with it (its renderer freed what they held)
+onSceneDispose( 'vegetation prepass', () => {
+
+	prepassScene.clear();
+	prepassScene.onBeforeRender = THREE.Object3D.prototype.onBeforeRender;
+
+} );
 
 // the shaded mesh, its material and its depth copy
 type Pair = { mesh: THREE.Mesh; material: THREE.MeshStandardNodeMaterial; depth: THREE.Mesh };

@@ -6,7 +6,7 @@
 // the island view's framing (`IslandFraming`, on the page's parts as `framing`), which the entry
 // hands them, since a land that grows reframes its view.
 import { renderEvent, type RenderParts } from '../packages/render/index.ts';
-import { settings as params, type SettingsQuery } from '../packages/render/setup.ts';
+import { settings as params, type PageSettingsQuery } from './AppSettings.ts';
 import * as THREE from 'three/webgpu';
 import { IslandCameraControls, frameIsland, landFitDistance, type IslandFraming, type IslandParts } from '../packages/island/index.ts';
 import type { PageParts } from './Page.ts';
@@ -14,7 +14,7 @@ import type { PageParts } from './Page.ts';
 export type CameraView = 'island' | 'horizon' | 'sky';
 
 /** The camera mode a query names: `camera=free` flies free, anything else orbits the island. */
-export function cameraMode( options: SettingsQuery ): 'free' | 'orbit' {
+export function cameraMode( options: PageSettingsQuery ): 'free' | 'orbit' {
 
 	return options.get( 'camera' ) === 'free' ? 'free' : 'orbit';
 
@@ -26,7 +26,7 @@ export function createCameraViews( render: RenderParts, island: IslandParts, pag
 	const { renderer, camera, sky } = render;
 	const { target, controls, initialCameraPosition, initialCameraQuaternion, initialCameraTarget, framingGlide, initialCameraFov, orbitMaxPolar, orbitMinDistance, freeControls } = island;
 	// (the options the island view was last posed at: the page's own query at first)
-	let viewOptions: SettingsQuery = params;
+	let viewOptions: PageSettingsQuery = params;
 	const framing: IslandFraming = { frameLand, poseIslandView, holdsFraming, followFraming, get viewOptions() { return viewOptions; } };
 	page.framing = framing;
 	page.applyOrbitLimit = applyOrbitLimit;
@@ -58,7 +58,7 @@ export function createCameraViews( render: RenderParts, island: IslandParts, pag
 	// island flat from behind the camera and the moon path never entered the frame. From 180 the moon's
 	// path is in view all night (the moon is fixed on the meridian: sky/DayCycle.ts MOON), while the sun lights the cliffs from the side in the
 	// morning and the afternoon (a lit and a shaded side) and its glints at noon keep to a corner of the frame.
-	function placeOrbit( on: THREE.PerspectiveCamera, orbit: IslandCameraControls, options: SettingsQuery, turn = 0, zoom = 0 ): void {
+	function placeOrbit( on: THREE.PerspectiveCamera, orbit: IslandCameraControls, options: PageSettingsQuery, turn = 0, zoom = 0 ): void {
 
 		const polar = THREE.MathUtils.degToRad( Number( options.get( 'polar' ) ?? 40 ) ), azimuth = THREE.MathUtils.degToRad( Number( options.get( 'az' ) ?? 180 ) ) + turn;
 		if ( options.has( 'dist' ) ) {
@@ -99,7 +99,7 @@ export function createCameraViews( render: RenderParts, island: IslandParts, pag
 	// controls of its own with the page's limits, the camera left where it is: a scene jump's
 	// (`establishScene`), and again for the same options and turn when the island grows (Growth.ts) or
 	// the window's shape changes, so the view frames the land shown, and at every step of a turn.
-	function poseIslandView( options: SettingsQuery, turn = 0, zoom = 0 ): void {
+	function poseIslandView( options: PageSettingsQuery, turn = 0, zoom = 0 ): void {
 
 		viewOptions = options;
 		island.islandTurned = turn;

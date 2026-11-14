@@ -1,6 +1,7 @@
 import { uniform } from 'three/tsl';
 import { hasKeys, type DayKey, type DayKeys, type KeyValues } from '../post/DayKeys.ts';
 import { settings } from '../Settings.ts';
+import { onSceneDispose, onSceneStart } from '../SceneDispose.ts';
 
 // Tunable parameters: named numbers a script or the console can set on a running debug page.
 //
@@ -40,12 +41,15 @@ import { settings } from '../Settings.ts';
 // - `?tune=<base64 JSON>` ({ name: value }, standard or URL-safe base64) sets values before
 //   anything registers: each applies as its name registers, before the materials build, so
 //   load-time values take effect too.
-// - At run time (app/Diagnostics.ts `__PONLAI__.tune`, `tuneApi`): `set( { name: value } )` (returns the names
+// - At run time (assemble/SceneHandles.ts `__PONLAI__.tune`, `tuneApi`): `set( { name: value } )` (returns the names
 //   applied, those not registered (kept for when they do), the load-time ones that need a reload and
 //   `invalid`, the failing checks over the values now held ({ names, why }); raises the page's
 //   `retune` scene event, so `settled` waits for the new frame), `get( name )`,
 //   `list()` (name, value, default, min, max, scale, load, kind: 'cpu' | 'uniform'), `reset()` (every
 //   value back to its default) and `query( values )` (the `tune=` parameter for those values).
+// - A disposed scene's part goes with it (SceneDispose.ts): the entries, nodes, listeners and
+//   checks it registered, and the values set since it started; what the page registered as it
+//   loaded stays, at the value it started with, and `?tune=` applies again to the next scene.
 
 export interface TuneOptions {
 	min?: number;
@@ -229,6 +233,41 @@ export function tuneObject<T extends object>( target: T, names: { [ K in keyof T
 	return target;
 
 }
+
+// what the page held as the scene started: each entry's value and the lengths of its lists, the
+// checks' count and the values still pending
+let atStart: { entries: Map<string, { value: number; nodes: number; listeners: number }>; checks: number; pending: Map<string, number> } | null = null;
+onSceneStart( 'tune', () => {
+
+	atStart = {
+		entries: new Map( [ ...entries ].map( ( [ name, e ] ) => [ name, { value: e.info.value, nodes: e.nodes.length, listeners: e.listeners.length } ] ) ),
+		checks: checks.length, pending: new Map( pending ),
+	};
+
+} );
+onSceneDispose( 'tune', () => {
+
+	if ( ! atStart ) return;
+	for ( const [ name, entry ] of entries ) {
+
+		const was = atStart.entries.get( name );
+		if ( ! was ) {
+
+			entries.delete( name );
+			continue;
+
+		}
+		entry.nodes.length = was.nodes;
+		entry.listeners.length = was.listeners;
+		if ( entry.info.value !== was.value ) assign( entry, was.value );
+
+	}
+	checks.length = atStart.checks;
+	pending.clear();
+	for ( const [ name, value ] of atStart.pending ) pending.set( name, value );
+	atStart = null;
+
+} );
 
 /** A check over tunables the code can only use in some combinations (see the header): `check`
  * returns why the values now held fail, or null. */

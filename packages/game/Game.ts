@@ -1,7 +1,7 @@
 import type * as THREE from 'three/webgpu';
 import type GUI from 'lil-gui';
 import { type DayCycle, declareSceneEvents, type Weather, type WeatherName } from '../render/index.ts';
-import type { SettingsQuery } from '../render/setup.ts';
+import type { GameSettingsQuery } from './GameSettings.ts';
 import { type CharacterShadow, FIGURE_HEIGHT, type Villager as Figure, type LookColours, type TrampleWalker } from '../island/index.ts';
 import { parseBodies, type Body, type LandLattice } from '../island/land.ts';
 import { GameUi } from './ui/GameUi.ts';
@@ -81,7 +81,7 @@ import type { EntityId, IslandInput, Items } from './sim/types.ts';
 // island shown.
 
 export interface GameContext {
-	params: SettingsQuery;
+	params: GameSettingsQuery;
 	scene: THREE.Scene;
 	camera: THREE.PerspectiveCamera;
 	/** the canvas, for the debug panel's send-to-click */

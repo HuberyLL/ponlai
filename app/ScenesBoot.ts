@@ -12,12 +12,13 @@
 import { installSettings, parseSettings, settingProblems, NEUTRAL_LOOK } from '../packages/render/setup.ts';
 import { chooseQuality } from './QualityDetect.ts';
 import { ISLAND_LOOK } from '../packages/island/land.ts';
+import { PAGE_SETTINGS } from './AppSettings.ts';
 
 const query = parseSettings( location.search );
-for ( const problem of settingProblems( query ) ) console.warn( `[settings] ${ problem }` );
+for ( const problem of settingProblems( query, PAGE_SETTINGS ) ) console.warn( `[settings] ${ problem }` );
 installSettings( query, chooseQuality( query ).tier );
 const debugPage = import.meta.env.DEV || query.has( 'debug' ) || query.has( 'profile' );
 const look = debugPage && query.get( 'renderLook' ) === 'ponlai' ? ISLAND_LOOK : NEUTRAL_LOOK;
 
 const { startScenePage } = await import( './scenes/ScenePage.ts' );
-await startScenePage( look );
+await startScenePage( query.get( 'scene' ) ?? '', look );

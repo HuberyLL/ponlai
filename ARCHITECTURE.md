@@ -37,9 +37,10 @@ and the layers below (rule 10), through each package's exits (rule 11).
   island's. It owns the environment (the sky, the day, the weather and the wind, the sea, the light
   every material shares, the generic materials, what every plant kind shares), the frame (a frame
   graph of passes, from the scene's passes to the display), the look's tables, the settings' schema,
-  the quality tiers and every reach into three.js beyond its public interface. It offers its stages,
-  its registries (rule 18), and the formats of the data a scene fits it with, with neutral data of
-  its own in those formats for a scene that has none.
+  the quality tiers and every reach into three.js beyond its public interface. It offers its
+  assembly (`startScene`: a running scene from its stages and the caller's content, with the frame
+  loop, the scene jump and the tools' handles), its registries (rule 18), and the formats of the data
+  a scene fits it with, with neutral data of its own in those formats for a scene that has none.
 - **The island** (`packages/island/`) is this island, drawn by the renderer. Its world is generated
   from the land in chunks and grows a piece at a time. Beside the world it holds its materials, its
   camera, the islanders, the creatures and its numbers for the look's tables. Its stages fill the
@@ -56,10 +57,11 @@ and the layers below (rule 10), through each package's exits (rule 11).
     player's interface), the play tool that plays the same session headless, and the checks.
 - **The page** (`app/`) is the one place that assembles the renderer, the island and the game
   (rule 12). It holds the address, the reloads and the browser's storage, chooses the quality tier,
-  installs the settings, picks the look and builds the layers a stage at a time. Its own parts are
-  the camera's views, the frame loop, the GUI, the scene jump and the handles the tools drive. A
-  second page (`app/scenes/`, from `scenes.html`) assembles the renderer alone into small test
-  scenes, on the renderer's neutral data and look.
+  installs the settings, picks the look and builds the layers through the renderer's assembly, the
+  island's stages in its slots. Its own parts are the camera's views, the GUI and its part of the
+  frame, the scene jump and the handles the tools drive. A second page (`app/scenes/`, from
+  `scenes.html`) assembles the renderer alone into small test scenes, on the renderer's neutral data
+  and look.
 
 ### Why the layers are cut this way
 
@@ -76,18 +78,18 @@ can be read and reviewed.
 - **A load.** The entry parses the address once, reports what nobody declared, chooses the quality
   tier and installs the settings before any other module loads (rule 14); it also picks the look,
   which the page hands to the stages (rule 16). The world's generation starts at once, on a pool of
-  workers. The page then creates the renderer's parts, the island's and its own, and calls the
-  renderer's stages, the island's and its own in one fixed order, which is part of the image: the
-  order materials first build in decides their shader code. The game starts from what those stages
-  built.
-- **A frame.** The page's tick calls the renderer's frame stages and the island's in a fixed order,
-  and does only its own work between them: the timer, the game's update and draw, the render scale
-  and the pacer. One weather state drives the sky, the one wind every plant and wave reads, the sea
-  state and the haze; the day sets the sun. The frame graph renders the scene's passes, then
-  resolves, upscales and grades the image for the display. In the game, a frame advances the
-  session by the day clock's seconds: the needs fall, the walks and the actions under way go on
-  (rule 1), and what happened is emitted once, as events, which the session hands to the record,
-  the interface and the play tool (rule 2).
+  workers. The page then hands the renderer's assembly its content: the assembly calls the
+  renderer's stages in one fixed order and the island's and the page's in the slots between them, an
+  order which is part of the image: the order materials first build in decides their shader code.
+  The game starts from what those stages built.
+- **A frame.** The assembly's tick calls the renderer's frame stages in a fixed order and the page's
+  content in the slots between them (the island's frame stages, the game's update and draw); its own
+  work is the timer, the render scale and the pacer. One weather state drives the sky, the one wind
+  every plant and wave reads, the sea state and the haze; the day sets the sun. The frame graph
+  renders the scene's passes, then resolves, upscales and grades the image for the display. In the
+  game, a frame advances the session by the day clock's seconds: the needs fall, the walks and the
+  actions under way go on (rule 1), and what happened is emitted once, as events, which the session
+  hands to the record, the interface and the play tool (rule 2).
 - **A growth swap.** Everything placed on the island derives from the land, per world-anchored
   chunk (rule 5), so a new piece rebuilds only the chunks it reaches. The growth prepares the changed
   chunks and every dependent of the land's shape ahead, in idle time, then swaps them in one frame
@@ -105,9 +107,10 @@ The folders, with what each holds. For the files in a folder, run
 
 | Folder | What it holds |
 | --- | --- |
-| `app/` | The page: its entry, assembly, frame loop, GUI, scene jump and diagnostics. |
+| `app/` | The page: its entry, its content for the renderer's assembly (the island's stages, its part of the frame, the scene jump and the handles) and the GUI. |
 | `app/scenes/` | The renderer's test scenes, a second page loaded from `scenes.html`. |
 | `packages/render/` | The renderer's stages, exits, settings, quality tiers, extension declarations and neutral inputs. |
+| `packages/render/assemble/` | The assembly: a running scene from the renderer's stages and the caller's content, its frame loop, scene jump, handles and browser host. |
 | `packages/render/sky/` | The atmosphere, the clouds, the day cycle, the weathers and the night sky. |
 | `packages/render/weather/` | The wind, the haze, the rain, the puddles and the lightning. |
 | `packages/render/ocean/` | The FFT sea, the shore's waves, the water's optics and its refraction. |
@@ -172,10 +175,12 @@ to 22 are not in use.
   lower layer declares the interface an upper one fills.
 - **11. A package is imported through its exits:** another package takes a package's names only from
   its exits, and a module does nothing as it loads but declare and register.
-- **12. One place assembles; each state has one owner:** only the page builds across packages, by
-  stages in one fixed order, and a state that changes has one writer.
+- **12. One place assembles; each state has one owner:** only the page builds across packages,
+  through the renderer's assembly, by stages in one fixed order, and a state that changes has one
+  writer.
 - **13. Only the page touches the browser's page:** the renderer, the island and the game's rules
-  are given what they need of the browser and never reach for its globals.
+  are given what they need of the browser and never reach for its globals; a running scene is given
+  a host, which the page takes from the renderer's browser exit.
 - **14. Outside settings are checked once, at one entrance:** every URL option is declared in one
   schema, and the settings are installed once, before any module reads them.
 - **15. A change of the scene is announced once, and whoever keeps something of it follows:** a cut,
