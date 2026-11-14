@@ -1,12 +1,12 @@
 /*!
  * The lunar disk is adapted from three-geospatial by Shota Matsuda
  * (https://github.com/takram-design-engineering/three-geospatial).
- * Copyright (c) 2024 Shota Matsuda
- * Licensed under the MIT License; see ./three-geospatial.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2024 Shota Matsuda
+ * SPDX-License-Identifier: MIT
  *
  * Earthshine is adapted from a-starry-sky by David Evans (https://github.com/Dante83/a-starry-sky).
- * Copyright (c) 2018-2026 David Evans
- * Licensed under the MIT License; see ./a-starry-sky.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026 David Evans
+ * SPDX-License-Identifier: MIT
  *
  * The moon's colour and heights come from NASA's Scientific Visualization Studio CGI Moon Kit
  * (public domain), processed by tools/island/build-moon-textures.py.

@@ -1,6 +1,7 @@
-/*! meshoptimizer (https://github.com/zeux/meshoptimizer), the simplifier three.js ships as
+/*! REUSE-IgnoreStart: the meshoptimizer code three bundles, not this file.
+ * meshoptimizer (https://github.com/zeux/meshoptimizer), the simplifier three.js ships as
  * examples/jsm/libs/meshopt_simplifier.module.js. Copyright (c) 2016-2026 Arseny Kapoulkine.
- * MIT License: licenses/meshoptimizer.LICENSE.txt */
+ * MIT License: licenses/MIT.txt REUSE-IgnoreEnd */
 
 // The island's chunk mesh simplified in its job (Chunks.ts `buildChunk`), its borders locked.
 //

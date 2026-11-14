@@ -1,8 +1,8 @@
 /*!
  * Adapted from VolumetricCloudsCS1 by Anthony Ibrahim
  * (https://github.com/anthonytoumaibrahim/VolumetricCloudsCS1): VolumetricClouds/Sky/RainbowTable.cs.
- * Copyright (c) 2026 Anthony Ibrahim
- * Licensed under the MIT License; see ../../packages/render/sky/VolumetricCloudsCS1.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 Anthony Ibrahim
+ * SPDX-License-Identifier: MIT
  */
 
 // Bakes the rainbow's colours by angle into packages/render/sky/RainbowTable.data.ts.

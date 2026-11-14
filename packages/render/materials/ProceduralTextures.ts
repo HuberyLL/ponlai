@@ -1,7 +1,7 @@
 /*!
  * hash22 is "Hash without Sine" by David Hoskins (https://www.shadertoy.com/view/4djSRW).
- * Copyright (c) 2014 David Hoskins
- * Licensed under the MIT License; see ./hoskins-hash.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2014 David Hoskins
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';

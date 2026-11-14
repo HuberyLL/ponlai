@@ -1,11 +1,11 @@
 /*!
  * Portions adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater).
- * Copyright (c) 2026 DRG Software Solutions LLC
- * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-License-Identifier: MIT
  *
  * hash22 is "Hash without Sine" by David Hoskins (https://www.shadertoy.com/view/4djSRW).
- * Copyright (c) 2014 David Hoskins
- * Licensed under the MIT License; see ../materials/hoskins-hash.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2014 David Hoskins
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';

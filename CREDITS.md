@@ -1,9 +1,9 @@
 # Credits
 
 Ponlai is released under the MIT License (see `LICENSE`). The third-party code and assets listed
-here keep their own licences. Adapted source files also carry the upstream notice in their header. A
-production build copies this file and the required licence texts, including those of the bundled npm
-packages, into `dist/licenses/`.
+here keep their own licences. Adapted source files carry the upstream notice in their header, with
+SPDX tags (REUSE); `LICENSES/` holds each licence's text. A production build copies this file and
+the licence texts, including those of the bundled npm packages, into `dist/licenses/`.
 
 ## Adapted code
 
@@ -11,15 +11,7 @@ packages, into `dist/licenses/`.
 
 - Upstream: <https://github.com/dgreenheck/tidewater>, by Daniel Greenheck
 - Copyright: (c) 2026 DRG Software Solutions LLC
-- Licence: MIT, see
-  [`packages/render/ocean/tidewater.LICENSE.txt`](packages/render/ocean/tidewater.LICENSE.txt),
-  [`packages/render/sky/tidewater.LICENSE.txt`](packages/render/sky/tidewater.LICENSE.txt),
-  [`packages/render/materials/tidewater.LICENSE.txt`](packages/render/materials/tidewater.LICENSE.txt),
-  [`packages/render/lighting/tidewater.LICENSE.txt`](packages/render/lighting/tidewater.LICENSE.txt),
-  [`packages/render/post/tidewater.LICENSE.txt`](packages/render/post/tidewater.LICENSE.txt),
-  [`packages/render/weather/tidewater.LICENSE.txt`](packages/render/weather/tidewater.LICENSE.txt)
-  and [`packages/island/life/tidewater.LICENSE.txt`](packages/island/life/tidewater.LICENSE.txt)
-  (the same text)
+- Licence: MIT, see [`LICENSES/MIT.txt`](LICENSES/MIT.txt)
 - From the three.js (TSL) edition, commit
   [`fd6cae6`](https://github.com/dgreenheck/tidewater/tree/fd6cae6fa57343d344e5c008e1abda974c824b86):
   - `packages/render/ocean/OceanFFT.ts`: the multi-cascade FFT ocean (its time evolution and inverse
@@ -90,7 +82,7 @@ packages, into `dist/licenses/`.
   - `packages/render/post/TemporalLocks.ts`: the motion cap, the temporal reactive and the
     clamp-drop of `TemporalUpscale.js`'s accumulation, which is AMD's FSR 2 (see "FSR 2" below;
     licence
-    [`packages/render/post/tidewater-fsr2.LICENSE.txt`](packages/render/post/tidewater-fsr2.LICENSE.txt),
+    [`LICENSES/MIT.txt`](LICENSES/MIT.txt),
     both notices).
   - `packages/render/sky/Clouds.ts`, `packages/render/materials/CloudNoise.ts`: the volumetric
     cumulus from `SkyProClouds.js`, tidewater's port of the Three.js Sky Pro clouds ("Partly cloudy"
@@ -146,7 +138,7 @@ packages, into `dist/licenses/`.
   (takram)
 - Copyright: (c) 2024 Shota Matsuda
 - Licence: MIT, see
-  [`packages/render/sky/three-geospatial.LICENSE.txt`](packages/render/sky/three-geospatial.LICENSE.txt)
+  [`LICENSES/MIT.txt`](LICENSES/MIT.txt)
 - From `packages/atmosphere/src/webgpu/MoonNode.ts` at commit
   [`2047b5f`](https://github.com/takram-design-engineering/three-geospatial/blob/2047b5fbb31899bbab541274f6cf78d091872016/packages/atmosphere/src/webgpu/MoonNode.ts):
   the lunar disk in `packages/render/sky/NightSky.ts`: the ray/sphere intersection normal, the
@@ -163,7 +155,7 @@ packages, into `dist/licenses/`.
 - Upstream: <https://github.com/Dante83/a-starry-sky>, by David Evans
 - Copyright: (c) 2018-2026 David Evans
 - Licence: MIT, see
-  [`packages/render/sky/a-starry-sky.LICENSE.txt`](packages/render/sky/a-starry-sky.LICENSE.txt)
+  [`LICENSES/MIT.txt`](LICENSES/MIT.txt)
 - From `src/glsl/moon/base-moon-partial.glsl` and `src/cpp/state-engine/astro_bodies/Moon.cpp` at
   commit
   [`8ef1c8a`](https://github.com/Dante83/a-starry-sky/tree/8ef1c8a35da8d568eb2684a858499934b80188b7):
@@ -178,7 +170,7 @@ packages, into `dist/licenses/`.
   [`0d38727`](https://github.com/Lexpartizan/Godot_rain_shader/tree/0d38727cd29eb1323c4b68fe689413859c525b10)
 - Copyright: (c) 2020 Lexpartizan
 - Licence: MIT, see
-  [`packages/render/materials/godot-rain-shader.LICENSE.txt`](packages/render/materials/godot-rain-shader.LICENSE.txt)
+  [`LICENSES/MIT.txt`](LICENSES/MIT.txt)
 - Files: `runnels` in `packages/render/materials/Wetness.ts`: the falling streak gradient of
   `rain.shader` (the streak pattern sampled again with a scrolling vertical offset and thresholded
   into moving slugs of water), ported from Godot shading language to TSL. No textures from the
@@ -189,7 +181,7 @@ packages, into `dist/licenses/`.
 - Upstream: <https://www.shadertoy.com/view/4djSRW>, by David Hoskins
 - Copyright: (c) 2014 David Hoskins
 - Licence: MIT, see
-  [`packages/render/materials/hoskins-hash.LICENSE.txt`](packages/render/materials/hoskins-hash.LICENSE.txt)
+  [`LICENSES/MIT.txt`](LICENSES/MIT.txt)
 - Files: `hash22` in `packages/render/materials/ProceduralTextures.ts` (also seeding the hex tiles
   of `packages/render/materials/HexTiling.ts`) and `packages/render/ocean/Water.ts`; `hash33` in
   `packages/render/materials/CloudNoise.ts`
@@ -203,7 +195,7 @@ packages, into `dist/licenses/`.
   (Journal of Computer Graphics Techniques 11(3), 2022)
 - Copyright: (c) 2022 mmikk
 - Licence: MIT, see
-  [`packages/render/materials/hextile-demo.LICENSE.txt`](packages/render/materials/hextile-demo.LICENSE.txt)
+  [`LICENSES/MIT.txt`](LICENSES/MIT.txt)
 - Files: `packages/render/materials/HexTiling.ts`: the triangle grid (`TriangleGrid`), the tiles'
   centres (`MakeCenST`), the blend's weights, and the rotated, offset reads with rotated gradients
   and their weighted sum of colour, slope and roughness (`hex2colTex`, `bumphex2derivNMap`, in
@@ -221,7 +213,7 @@ packages, into `dist/licenses/`.
   (`src/geometries/LightningStrike.js`)
 - Copyright: 2010-2023 three.js authors; (c) 2021-2023 Poimandres
 - Licence: MIT, see
-  [`packages/render/weather/LightningStrike.LICENSE.txt`](packages/render/weather/LightningStrike.LICENSE.txt)
+  [`LICENSES/MIT.txt`](LICENSES/MIT.txt)
   (both notices)
 - Files: `packages/render/weather/LightningStrike.ts`: the recursive midpoint-displaced channel, its
   subrays (branches) in a cone around their parent, the triangular prism mesh and the seekable
@@ -239,7 +231,7 @@ packages, into `dist/licenses/`.
   [`83b5e78`](https://github.com/anthonytoumaibrahim/VolumetricCloudsCS1/tree/83b5e7802aa2ce8e72c3f6525cbd9fab3d0bde62)
 - Copyright: (c) 2026 Anthony Ibrahim
 - Licence: MIT, see
-  [`packages/render/sky/VolumetricCloudsCS1.LICENSE.txt`](packages/render/sky/VolumetricCloudsCS1.LICENSE.txt)
+  [`LICENSES/MIT.txt`](LICENSES/MIT.txt)
   (the upstream file; its exception covers light halo shaders that are not used here)
 - Files:
   - `packages/render/weather/Lightning.ts`: each strike's profile (duration, return strokes, flicker
@@ -272,7 +264,7 @@ packages, into `dist/licenses/`.
 - Upstream: <https://github.com/ektogamat/threejs-conference>, by Anderson Mancini and Sunag
 - Copyright: (c) 2026 Anderson Mancini and Sunag
 - Licence: MIT, see
-  [`packages/render/weather/threejs-conference.LICENSE.txt`](packages/render/weather/threejs-conference.LICENSE.txt)
+  [`LICENSES/MIT.txt`](LICENSES/MIT.txt)
 - Files: `packages/render/weather/RainCollision.ts` and `packages/render/weather/RainDrops.ts`,
   after `src/world/weather/createCollisionHeight.js`, `createCollisionRain.js` and
   `docs/techniques/collision-rain.md`: a top-down orthographic pass that draws world height into a
@@ -294,7 +286,7 @@ packages, into `dist/licenses/`.
   Super Resolution 1 ([FidelityFX-FSR](https://github.com/GPUOpen-Effects/FidelityFX-FSR),
   `ffx_fsr1.h`: EASU and RCAS)
 - Copyright: (c) 2021 Advanced Micro Devices, Inc.; 2010-2026 three.js authors
-- Licence: MIT, see [`packages/render/post/fsr.LICENSE.txt`](packages/render/post/fsr.LICENSE.txt)
+- Licence: MIT, see [`LICENSES/MIT.txt`](LICENSES/MIT.txt)
   (both notices)
 - File: `packages/render/post/FSR.ts`: the edge-adaptive upsampling (EASU) and the contrast-adaptive
   sharpening (RCAS).
@@ -311,7 +303,7 @@ packages, into `dist/licenses/`.
   `ffx_fsr2_accumulate.h`)
 - Copyright: (c) 2022-2023 Advanced Micro Devices, Inc.; (c) 2026 DRG Software Solutions LLC
 - Licence: MIT, see
-  [`packages/render/post/tidewater-fsr2.LICENSE.txt`](packages/render/post/tidewater-fsr2.LICENSE.txt)
+  [`LICENSES/MIT.txt`](LICENSES/MIT.txt)
   (both notices)
 - File: `packages/render/post/TemporalLocks.ts`: the accumulation cap of a moving pixel, the
   temporal reactive factor carried to the next frame (its sign: the pixel moved) and the weight a
@@ -329,7 +321,7 @@ packages, into `dist/licenses/`.
   `ffx_fsr3upscaler_reproject.h` (the history sample at the reprojected position)
 - Copyright: (C) 2026 Advanced Micro Devices, Inc.
 - Licence: MIT (the MIT section of the SDK's `docs/license.md`), see
-  [`packages/render/post/fidelityfx-fsr3.LICENSE.txt`](packages/render/post/fidelityfx-fsr3.LICENSE.txt)
+  [`LICENSES/MIT.txt`](LICENSES/MIT.txt)
 - File: `packages/render/post/TemporalHistory.ts`: the running temporal resolve's history fetch
   (taa, taau).
 - Changes: HLSL to TSL; only the history sample; 32-bit only, no LUT; each axis's four weights
@@ -344,7 +336,7 @@ packages, into `dist/licenses/`.
   the host maths of `internal/ffx_fsr3upscaler.cpp` and its headers
 - Copyright: (C) 2026 Advanced Micro Devices, Inc.
 - Licence: MIT (the MIT section of the SDK's `docs/license.md`), see
-  [`packages/render/post/fsr3/FidelityFX.LICENSE.txt`](packages/render/post/fsr3/FidelityFX.LICENSE.txt)
+  [`LICENSES/MIT.txt`](LICENSES/MIT.txt)
 - Files: `packages/render/post/fsr3/*.ts`, one module per upstream file: the upscaler's passes
   (prepare inputs, luminance and shading-change pyramids, shading change, prepare reactivity, luma
   instability, accumulation, RCAS), its debug view, its reactive-mask generator, the single-pass
@@ -361,7 +353,7 @@ packages, into `dist/licenses/`.
   three.js ships its simplifier (`examples/jsm/libs/meshopt_simplifier.module.js`, r186)
 - Copyright: (c) 2016-2026 Arseny Kapoulkine
 - Licence: MIT, see
-  [`packages/island/world/meshoptimizer.LICENSE.txt`](packages/island/world/meshoptimizer.LICENSE.txt)
+  [`LICENSES/MIT.txt`](LICENSES/MIT.txt)
 - File: `packages/island/world/IslandSimplify.ts` runs it unchanged (`simplifyWithAttributes`) on
   the island's chunk meshes. It is bundled from the npm package, but the file's copyright comment
   does not survive the build, so the notice ships separately.
@@ -452,7 +444,7 @@ names, under the paths given here in `public/` (`tools/repo/assets.mjs`).
 - Source: `public/clouds/baseShape64.bin` in [tidewater](https://github.com/dgreenheck/tidewater) at
   commit
   [`4811ba4`](https://github.com/dgreenheck/tidewater/tree/4811ba48d795197de5621985f404e765c0b7c0ef)
-- Licence: tidewater's repository is MIT licensed (see `packages/render/sky/tidewater.LICENSE.txt`).
+- Licence: tidewater's repository is MIT licensed (see [`LICENSES/MIT.txt`](LICENSES/MIT.txt)).
   The `LICENSING.md` beside this file in `public/clouds/` says the textures it lists "are not
   covered by the Three.js Sky Pro license", which suggests the other files there, this one included,
   come under that licence.

@@ -2,8 +2,8 @@
  * Adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater): the cirrus
  * fibres of its `Clouds.js` (sparse seeds drawn out along a meandering flow by line integral
  * convolution, hooked tails downwind of tufts) and their footprint-filtered lookup.
- * Copyright (c) 2026 DRG Software Solutions LLC
- * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';

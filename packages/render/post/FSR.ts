@@ -1,8 +1,9 @@
 /*!
  * Adapted from three.js's FSR1Node (examples/jsm/tsl/display/FSR1Node.js), a port of AMD FidelityFX
  * Super Resolution 1 (ffx_fsr1.h: EASU and RCAS).
- * Copyright (c) 2021 Advanced Micro Devices, Inc.; Copyright © 2010-2026 three.js authors
- * Licensed under the MIT License; see ./fsr.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2021 Advanced Micro Devices, Inc.
+ * SPDX-FileCopyrightText: Copyright © 2010-2026 three.js authors
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';

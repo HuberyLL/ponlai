@@ -64,7 +64,7 @@ anti-aliasing mode reads `post/Antialiasing.ts`'s exports, never the tier.
   `packages/render/post/ExtraPass.ts`); a draw that shows only at times is a latent of its scene
   pass. Lint rules `ponlai/pass-on-graph` and `ponlai/history-on-graph` refuse `rtt()`,
   `convertToTexture()` and a history copied around the graph.
-- Code adapted from another project opens with a `/*! ... */` notice and its licence beside it
+- Code adapted from another project opens with a `/*! ... */` notice carrying its SPDX tags
   (`AGENTS.md`, Rules for every change).
 
 ## WGSL build

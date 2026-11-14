@@ -2,8 +2,8 @@
  * Portions adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater):
  * the haze's deep exponential height layer (its scale height) and its phase function,
  * from `AirHaze.js`.
- * Copyright (c) 2026 DRG Software Solutions LLC
- * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';

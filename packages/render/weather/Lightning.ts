@@ -2,8 +2,8 @@
  * The strikes' flicker, return strokes, placement and in-cloud sources are adapted from
  * VolumetricCloudsCS1 by Anthony Ibrahim (https://github.com/anthonytoumaibrahim/VolumetricCloudsCS1:
  * VolumetricClouds/Sky/LightningFlicker.cs and CloudLightning.cs).
- * Copyright (c) 2026 Anthony Ibrahim
- * Licensed under the MIT License; see ../sky/VolumetricCloudsCS1.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 Anthony Ibrahim
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';

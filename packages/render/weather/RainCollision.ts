@@ -2,12 +2,12 @@
  * The top-down collision height pass follows "collision rain" in threejs-conference by
  * Anderson Mancini and Sunag (https://github.com/ektogamat/threejs-conference,
  * src/world/weather/createCollisionHeight.js).
- * Copyright (c) 2026 Anderson Mancini and Sunag
- * Licensed under the MIT License; see ./threejs-conference.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 Anderson Mancini and Sunag
+ * SPDX-License-Identifier: MIT
  *
  * The same pass is in the three.js example webgpu_compute_particles_rain.html.
- * Copyright (c) 2010-2026 three.js authors
- * Licensed under the MIT License (the three package's licence, shipped with the build).
+ * SPDX-FileCopyrightText: Copyright (c) 2010-2026 three.js authors
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';
