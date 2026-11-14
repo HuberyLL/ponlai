@@ -54,5 +54,6 @@ r186, each with the check that sees it.
     check. Where three no longer behaves as an entry says, remove the code that works around it and
     the entry, and the line of `AGENTS.md` (or `packages/render/AGENTS.md`) or the lint rule that
     states it.
-12. Update the comments that name the old version (search for `r186`, the current revision) and
-    `CREDITS.md` where it names one.
+12. Update the comments that name the old version (search for `r186`, the current revision). If
+    three ships a newer meshoptimizer simplifier, update its notice in
+    `packages/island/world/IslandSimplify.ts` and its line in `CREDITS.md`.

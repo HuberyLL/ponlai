@@ -52,10 +52,10 @@
 //   (a broken one is followed by the next, never replaced). The commit that needs the new files
 //   carries the new assets.lock.json, so every commit still builds with its own assets.
 // - The archive holds the whole set, so one release is one version of the assets.
-// - A release holds only files that may be redistributed: every third-party file is listed in
-//   CREDITS.md (source, author, licence, processing) under its path in public/ before it ships.
+// - A release holds only files that may be redistributed: every third-party source is credited in
+//   CREDITS.md (title, author, source, licence) with its path in public/ before it ships.
 // - A file made by a tool from a source (the moon, the stars, the Milky Way) keeps its tool in
-//   tools/; the release holds the output, and CREDITS.md names the tool and the source.
+//   tools/, whose header says how it is made; the release holds the output.
 // - Masters of our own that the page does not load (Blender files, layered images) go beside the
 //   archive with --attach, on the release whose files they were exported for. Third-party sources
 //   stay with their publisher; CREDITS.md links them.

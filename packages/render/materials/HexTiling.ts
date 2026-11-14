@@ -2,8 +2,8 @@
  * The triangle grid, the hex tiles' centres and the luminance-weighted blend are adapted from
  * hextile-demo by Morten S. Mikkelsen (https://github.com/mmikk/hextile-demo, hextiling.h),
  * the code of "Practical Real-Time Hex-Tiling", JCGT 11(3), 2022.
- * Copyright (c) 2022 mmikk
- * Licensed under the MIT License; see ./hextile-demo.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2022 mmikk
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';

@@ -2,13 +2,13 @@
  * The rain runnels on steep rock are adapted from tidewater by Daniel Greenheck
  * (https://github.com/dgreenheck/tidewater): the rain-streak stains of `terrainRockSurface` in
  * `src/world/terrain/TerrainShading.js`, ported from WGSL to TSL.
- * Copyright (c) 2026 DRG Software Solutions LLC
- * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 DRG Software Solutions LLC
+ * SPDX-License-Identifier: MIT
  *
  * The falling flow inside those runnels is adapted from Godot_rain_shader by Lexpartizan
  * (https://github.com/Lexpartizan/Godot_rain_shader): the scrolling streak gradient of `rain.shader`.
- * Copyright (c) 2020 Lexpartizan
- * Licensed under the MIT License; see ./godot-rain-shader.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2020 Lexpartizan
+ * SPDX-License-Identifier: MIT
  */
 
 import type * as THREE from 'three/webgpu';

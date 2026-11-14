@@ -4,12 +4,12 @@
  * src/world/weather/createCollisionRain.js): drops in a camera-centred toroidal volume, a
  * compute pass that tests them against a top-down height map, and instanced billboards for
  * the streaks and their splashes.
- * Copyright (c) 2026 Anderson Mancini and Sunag
- * Licensed under the MIT License; see ./threejs-conference.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 Anderson Mancini and Sunag
+ * SPDX-License-Identifier: MIT
  *
  * The same pattern is in the three.js example webgpu_compute_particles_rain.html.
- * Copyright (c) 2010-2026 three.js authors
- * Licensed under the MIT License (the three package's licence, shipped with the build).
+ * SPDX-FileCopyrightText: Copyright (c) 2010-2026 three.js authors
+ * SPDX-License-Identifier: MIT
  */
 
 import * as THREE from 'three/webgpu';

@@ -141,6 +141,7 @@ The folders, with what each holds. For the files in a folder, run
 | `docs/` | The documentation by kind ([docs/README.md](docs/README.md)). |
 | `skills/` | Methods as skills, linked from `.claude/skills/`. |
 | `public/` | The assets, git-ignored, filled from the release that `assets.lock.json` pins. |
+| `LICENSES/` | Each licence's text, by SPDX id; `REUSE.toml` licenses the files without tags ([CREDITS.md](CREDITS.md)). |
 
 ## Rules across the layers
 

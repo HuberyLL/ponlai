@@ -489,7 +489,8 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 			// Under an overhang the stone stays dry: no runoff reaches it and it keeps a paler,
 			// dusty skin.
 			rock.assign( mix( rock, rock.mul( vec3( 1.07, 1.05, 1.0 ) ), shelter.mul( vert ) ) );
-			// Runoff stains (the dark "ink stripes" of rock-dwelling cyanobacteria): water from the
+			// Runoff stains (the dark "ink stripes" of rock-dwelling cyanobacteria such as Gloeocapsa
+			// magma, https://en.wikipedia.org/wiki/Gloeocapsa_magma): water from the
 			// soil runs down from the lip and spills from each ledge, in streaks that are darkest
 			// at their head and wander down the face, gathered into the re-entrant corners. None
 			// form under an overhang or on a recent scar. The stains lie under the moss and turf and
@@ -514,7 +515,9 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 		if ( vegetation ) {
 
 			// Orange and yellow lichens of the upper shore (Xanthoria, Caloplaca) in small patches
-			// on the faces that look up, toward the lip, above the black zone the spray keeps wet.
+			// on the faces that look up, toward the lip, above the black zone the spray keeps wet
+			// (MarLIN, "Yellow and grey lichens on supralittoral rock",
+			// https://www.marlin.ac.uk/habitats/detail/96/yellow_and_grey_lichens_on_supralittoral_rock).
 			const orange = hb( smoothstep( 0.55, 0.8, H.g.mul( 0.55 ).add( big2.mul( 0.45 ) ) ).mul( smoothstep( 0.15, 0.6, n0.y ) )
 				.mul( float( 1 ).sub( smoothstep( 0.3, 1.6, lipDepth ) ) ).mul( smoothstep( 1.4, 2.2, p.y ) ).mul( float( 1 ).sub( fresh ) ), float( 1 ).sub( hRock ), 0.25 );
 			rock.assign( mix( rock, vec3( 0.42, 0.24, 0.06 ), orange.mul( 0.55 ) ) );
@@ -901,7 +904,8 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 
 			// Above the damp band, the black zone of spray-fed lichen (Verrucaria) reaches 0.4 -
 			// 1.4 m up the walls, higher where the coast meets the swell; its upper edge is jagged
-			// from facet to facet and frayed, with the grey stone showing through in places.
+			// from facet to facet and frayed, with the grey stone showing through in places (the
+			// zonation in MarLIN's page on supralittoral lichens, above).
 			const reach = float( 0.4 ).add( detail2.y.mul( 0.7 ) ).add( fract( detail.x.mul( 3.7 ) ).mul( 0.3 ) ).add( H.r.sub( 0.5 ).mul( 0.3 ) );
 			const spray = hb( float( 1 ).sub( smoothstep( reach.sub( 0.16 ), reach.add( 0.05 ), p.y.sub( wl ) ) ), hRock, 0.25 );
 			const crust = mix( float( 0.55 ), float( 1 ), smoothstep( 0.35, 0.75, H.g.mul( 0.6 ).add( big.mul( 0.4 ) ) ) );

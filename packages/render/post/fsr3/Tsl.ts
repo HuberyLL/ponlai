@@ -1,7 +1,7 @@
 /*!
  * Part of the port of the AMD FidelityFX SDK 2.3.0's FSR 3 upscaler 3.1.5.
- * Copyright (C) 2026 Advanced Micro Devices, Inc.
- * Licensed under the MIT License; see ./FidelityFX.LICENSE.txt.
+ * SPDX-FileCopyrightText: Copyright (C) 2026 Advanced Micro Devices, Inc.
+ * SPDX-License-Identifier: MIT
  */
 
 import * as tsl from 'three/tsl';

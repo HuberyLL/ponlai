@@ -1,7 +1,8 @@
 # Documentation
 
 Every page of the documentation, the skills and the rules files. The project's structure is in
-[ARCHITECTURE.md](../ARCHITECTURE.md); third-party sources are in [CREDITS.md](../CREDITS.md).
+[ARCHITECTURE.md](../ARCHITECTURE.md); the third-party sources whose licences ask for a credit are
+in [CREDITS.md](../CREDITS.md).
 
 ## Rules files
 

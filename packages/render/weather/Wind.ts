@@ -64,8 +64,10 @@ import type { WindLook } from '../look/Look.ts';
 // fair day, and a stronger wind sends them faster. Much faster and, seen from the island camera's
 // height, the gusts would flicker rather than run. The gust q is the noise mapped to 0..1. The wind's strength on the plants
 // is linear in their speed, w = U_p ( 1 + gustGain q ) (`windStrength`), so a light breeze shows its gusts and a
-// gale does not press everything flat at once. (Gusts as a noise field scrolled with the wind:
-// CREDITS.md.)
+// gale does not press everything flat at once. (Gusts as a noise field scrolled with the wind: Eric
+// Wohllaib, "Procedural Grass in 'Ghost of Tsushima'", GDC 2021, 2D Perlin noise scrolled in the
+// wind's direction; Bill Rockenbeck, "Blowing from the West: Simulating Wind in Ghost of
+// Tsushima", GDC 2021, the wind's strength varied by time-varying Perlin noise.)
 // `windField` gives the gust and the limbs' load from it (`plantLoad`); still air is the rest pose.
 // The meadow's blades read the gust at their root moved by a small offset of their own
 // (`gustJitter`), so a gust's edge frays across neighbouring blades, and take the wind gusted there

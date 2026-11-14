@@ -19,7 +19,10 @@ import { checkDeclarations, type Declarations } from '../Extensions.ts';
 // ranges, one thread per cluster testing spheres against the cluster's box, no atomics; written
 // anew here, none of its code). No light object per source: three would unroll every light into
 // every lit material, multiplying the shaders and their compile time, and a source coming or going
-// would build pipelines. No pipeline depends on the sources, their count or the view.
+// would build pipelines. No pipeline depends on the sources, their count or the view. (The sources
+// as the project's own list, evaluated by every lit material in a loop, inverse-square with the
+// window below and no shadows: the technique of tidewater's `src/materials/LocalLights.js`,
+// https://github.com/dgreenheck/tidewater, used without its code.)
 //
 // The light of one source at a receiving point, d from it, on a surface of normal N:
 //   E = I max( N.L, 0 ) ( 1 - ( d / r )^4 )^2 / ( d^2 + SOFT )

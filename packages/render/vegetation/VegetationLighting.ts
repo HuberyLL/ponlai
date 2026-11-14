@@ -57,7 +57,9 @@ type F = THREE.Node<'float'>;
 // and the linear band at three quarters of the geometric normal; F the layer's response under a
 // uniform sky), so the more a leaf lets through, the less its ambient follows its facing; under
 // the occlusion and `scale` as before. (The half-Lambert's shape: Mitchell, *Shading in Valve's
-// Source Engine*, SIGGRAPH 2006, slide 25.)
+// Source Engine*, SIGGRAPH 2006, slide 25. A translucency kept energy-conserving beside the
+// Lambertian diffuse: Jasmin Patry, *Samurai Shading in Ghost of Tsushima*, SIGGRAPH 2020 Physically
+// Based Shading course, p. 9.)
 // The ground's bounce joins the sky's light, and the lighting layer's debug views apply, as for
 // every model built on GroundBounceLightingModel (lighting/GroundBounce.ts); the ambient diffuse
 // is the ambient volume's, at degree 2 by default (`ambient`, lighting/AmbientSample.ts, as the
