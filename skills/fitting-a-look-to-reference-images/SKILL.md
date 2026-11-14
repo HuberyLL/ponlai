@@ -16,14 +16,13 @@ and image knobs only. Material values and content are decided elsewhere (the ski
   or two) measuring only: where does each gap come from, and which change can move it.
 - Every measured row carries its view geometry: the angle between the view and the sun, the sun's
   elevation, the region class (sunlit ground, shade, sky near the sun, far land, sea). A row
-  compared at the wrong geometry makes every fit built on it wrong. In one recorded round, about
-  six hours went into fitting against rows whose geometry did not match.
+  compared at the wrong geometry makes every fit built on it wrong.
 - Work upstream first: exposure and tone, then sun and sky light, then air and fog, then the large
   surfaces, then the small ones. The main weather (a clear day) before the others.
 - Check the function's form before you fit its parameters. If the reference's curve has another
   shape than the knob can make, no value fits.
-- Run a short trial before a long fit. In one recorded round of 12.5 hours, about 7 were lost to a
-  long run that a short one would have stopped.
+- Run a short trial before a long fit: a long run that starts from a wrong assumption fails only
+  at its end.
 - When a fit will not close, the method is wrong: stop and report the readings. Do not force knobs
   past their sensible range to close it.
 - Never fit a material's values to a reference image. A material fitted to a finished frame takes
