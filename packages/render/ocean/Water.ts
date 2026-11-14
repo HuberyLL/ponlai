@@ -772,7 +772,7 @@ export class Water {
 		}
 		const vLag = varying( xz ), vWeights = varying( weights );
 		// the meadow's gust at the grid point (SeaDetail.ts: its map read here, in the vertex stage)
-		const vIslandGust = varying( detail.islandGust( xz ) );
+		const vLandGust = varying( detail.landGust( xz ) );
 		// the key's soft shadow at the grid point (the constants at SHADOW_SOFT_RADIUS): the map's
 		// coordinate is an affine function of the world, so the disc's radii are its columns
 		const toMap = sunShadow.coordinate;
@@ -970,7 +970,7 @@ export class Water {
 			const ps = texture( storm.pattern, rotate( vLag.mul( SHORE_FOAM_SCALE ), 1.13 ).add( vec2( 0.57, 0.19 ) ) ).toVar();
 			// the sea's large-scale detail: ( rough, gust, slick, streak ); the island's wave shadow
 			// smooths the slopes no pixel resolves as it damps the finest cascade (WaveDamping.ts LEE)
-			const sea = detail.sample( vLag, vIslandGust ).toVar();
+			const sea = detail.sample( vLag, vLandGust ).toVar();
 			const rough = sea.x.mul( vWeights.w );
 
 			// ---- the normal: the cascades' slopes over their horizontal stretch (tidewater's

@@ -84,7 +84,7 @@ Contents:
   rest after a load, so going back to an older step rebuilds the chunks it does not share with them.
 - `terrainHex=0` (the cliff's plain triplanar tiling and smooth layer masks; for an A/B inside one
   page each cliff material swaps to its other variant through `material.userData.terrainVariant`,
-  as `TerrainMaterial.ts` shows: the flag itself is read only when the material is built).
+  as `TerrainMaterial.ts` shows: the option itself is read only when the material is built).
 - `chunkBorders` shows the world's 16 m chunks as lines above the sea and the meadow (also the
   GUI's Ground folder, `chunk borders`), to tell a seam from a chunk border.
 

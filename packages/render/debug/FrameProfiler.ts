@@ -893,8 +893,10 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 
 export type FrameProfiler = ReturnType<typeof createFrameProfiler>;
 
-/** The scene's passes by subsystem. `handles` are the page's parts (app/main.ts). */
-export function labelPonlaiPasses( profiler: FrameProfiler, handles: Record<string, unknown> ): void {
+/** The renderer's passes by subsystem. `handles` are the renderer's parts, named as in
+ * RenderStages.ts `RenderParts`, as the page hands them in (app/main.ts); a page labels its own
+ * parts with `profiler.scope` beside this call. */
+export function labelPasses( profiler: FrameProfiler, handles: Record<string, unknown> ): void {
 
 	const h = handles as Record<string, Record<string, unknown>>;
 	// the frame graph labels its passes itself (`graphPass`), the bloom's levels with them
@@ -922,6 +924,5 @@ export function labelPonlaiPasses( profiler: FrameProfiler, handles: Record<stri
 	profiler.scope( h.stormSea, 'update', 'storm sea' );
 	profiler.scope( h.shoreWaves, 'update', 'shore waves' );
 	profiler.scope( h.groundBounce, 'update', 'ground bounce map' );
-	profiler.scope( h.characters, 'update', 'character shadow' );
 
 }

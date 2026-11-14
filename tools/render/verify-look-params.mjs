@@ -48,7 +48,7 @@
 import '../kit/help.mjs';
 import { assert, assertions } from '../kit/assert-count.mjs';
 import { createExposure } from '../../packages/render/look/ExposureLook.ts';
-import { DayCycle, cloudMoonShare, displayNight, eveningHour, exposureNight, morningHour, moonKeyShare, nightAmbientAt, nightAmbientShare, rampIn, skyNight, starNight, yunpengNightShare } from '../../packages/render/sky/DayCycle.ts';
+import { DayCycle, cloudMoonShare, displayNight, eveningHour, exposureNight, morningHour, moonKeyShare, nightAmbientAt, nightAmbientShare, rampIn, skyNight, starNight, nightGlowShare } from '../../packages/render/sky/DayCycle.ts';
 import { createDayWindows } from '../../packages/render/look/DayLook.ts';
 import { Wind, createWindUniforms, plantSpeedOf, windResponse } from '../../packages/render/weather/Wind.ts';
 import { AMBIENT_COLUMNS, AMBIENT_KNOBS, DEFAULT_KNOBS, createAmbientTables, createKeyLift } from '../../packages/render/look/AmbientLook.ts';
@@ -59,7 +59,7 @@ import { createDisplayTables } from '../../packages/render/look/DisplayLook.ts';
 import { hasKeys, keyed } from '../../packages/render/post/DayKeys.ts';
 import { gradeOf } from '../../packages/render/post/GradeLut.ts';
 import { HAZE_KEY_NAMES } from '../../packages/render/look/Look.ts';
-import { byElevation, cloudBase, createSkyTables, islandSky, keyHue, moonHue, storeNight } from '../../packages/render/look/SkyLook.ts';
+import { byElevation, cloudBase, createSkyTables, landSky, keyHue, moonHue, storeNight } from '../../packages/render/look/SkyLook.ts';
 import { SHELL_BOTTOM, SHELL_THICKNESS } from '../../packages/render/sky/CloudModel.ts';
 import { MIX_SKIES, WEATHER_PRESETS } from '../../packages/render/sky/Weather.ts';
 import { FOG_NOISE } from '../../packages/render/weather/FogNoise.ts';
@@ -276,7 +276,7 @@ const DUSK_ELEVATIONS = [];
 for ( let e = - 16; e <= 4; e += 0.125 ) DUSK_ELEVATIONS.push( e );
 function shareReadings( w ) {
 
-	const out = { display: [], exposure: [], stars: [], sky: [], ambient: [], ambientAt: [], yunpeng: [], cloudMoon: [], moonKey: [] };
+	const out = { display: [], exposure: [], stars: [], sky: [], ambient: [], ambientAt: [], nightGlow: [], cloudMoon: [], moonKey: [] };
 	for ( const e of DUSK_ELEVATIONS ) {
 
 		out.ambientAt.push( nightAmbientAt( w, e ) );
@@ -286,7 +286,7 @@ function shareReadings( w ) {
 			out.exposure.push( exposureNight( w, e, rising, cloud ) );
 			out.sky.push( skyNight( w, e, rising, cloud ) );
 			out.ambient.push( nightAmbientShare( w, e, rising, cloud ) );
-			out.yunpeng.push( yunpengNightShare( w, e, rising, cloud ) );
+			out.nightGlow.push( nightGlowShare( w, e, rising, cloud ) );
 			out.cloudMoon.push( cloudMoonShare( w, e, rising, cloud ) );
 			for ( const daylight of [ 0.1, 0.3, 0.6 ] ) {
 
@@ -883,7 +883,7 @@ console.log( `Display: three sets from three tables, each its own (${ displayRea
 // row stands in the cloud model's own). Guarantees, each a failure:
 // - Each set holds its own table's numbers: every field as the table wrote it (a tint at unit
 //   luminance), and each function that reads them at every row of the table that row's numbers: the
-//   light lent to the island (`islandSky`) at every setting row, every clouded row under a full
+//   light lent to the island (`landSky`) at every setting row, every clouded row under a full
 //   cloud and every rising row, under no cloud and a full one; the clear shade's and the low key's
 //   rows; the sky's light, the clear day's gain and the thin layer's colours (DayKeys.ts `keyed`) at
 //   every key on both sides, under a full cloud at every clouded key and at full night; the clouds'
@@ -945,7 +945,7 @@ const SKY_TRANSMITTANCES = [ [ 0.93, 0.95, 0.97 ], [ 0.7, 0.8, 0.88 ], [ 0.3, 0.
 const SKY_TINTS = [ [ 1, 1, 1 ], [ 1.1, 0.98, 0.9 ] ];
 const SKY_KEYED = [ 'skyLight', 'clearSky', 'streakDirect', 'streakAmbient' ];
 const SKY_PLAIN = [ 'cloudLightTint', 'clearShadeTint', 'lowSun', 'lowSunTint', 'keyDeckWhite', 'moonKey', 'moonKeyLuminance', 'moonSkyHue', 'nightAmbientHue', 'nightAmbientShare' ];
-const SKY_READ = [ 'islandSky', 'clearShade', 'storeRange', 'lowKey', 'cloudSkies', 'shadowDensity', 'seaKnee', 'keyHue', 'moonHue', 'keyThroughCloud' ];
+const SKY_READ = [ 'landSky', 'clearShade', 'storeRange', 'lowKey', 'cloudSkies', 'shadowDensity', 'seaKnee', 'keyHue', 'moonHue', 'keyThroughCloud' ];
 const SKY_FIELDS = [ ...SKY_KEYED, ...SKY_PLAIN, ...SKY_READ ];
 
 // every number a set of tables gives, by field: what its functions read over a grid of elevations,
@@ -956,7 +956,7 @@ function skyReadings( t ) {
 	const tint = new THREE.Vector4(), colour = new THREE.Color();
 	for ( const e of SKY_ELEVATIONS ) for ( const rising of [ false, true ] ) for ( const cloud of SKY_CLOUDS ) {
 
-		out.islandSky.push( islandSky( t, e, rising, tint, cloud ), ...tint.toArray() );
+		out.landSky.push( landSky( t, e, rising, tint, cloud ), ...tint.toArray() );
 		for ( const f of SKY_KEYED ) for ( const night of NIGHTS ) out[ f ].push( ...Object.values( keyed( t[ f ], e, night, {}, cloud, rising ) ) );
 
 	}
@@ -1036,16 +1036,16 @@ function ownSky( t, table, name ) {
 		reads ++;
 
 	}
-	assert.deepEqual( t.islandSky, table.islandSky, `${ name } sky: islandSky` );
+	assert.deepEqual( t.landSky, table.landSky, `${ name } sky: landSky` );
 	// the light lent to the island at each row: the setting rows', the clouded ones' under a full
 	// cloud, the rising ones' (under a full cloud with the clouded setting side's gain)
 	const tint = new THREE.Vector4(), clouded = new THREE.Vector4();
-	for ( const [ side, rising, cloud ] of [ [ 'setting', false, 0 ], [ 'clouded', false, 1 ], [ 'rising', true, 0 ], [ 'rising', true, 1 ] ] ) table.islandSky[ side ].forEach( ( row, i ) => {
+	for ( const [ side, rising, cloud ] of [ [ 'setting', false, 0 ], [ 'clouded', false, 1 ], [ 'rising', true, 0 ], [ 'rising', true, 1 ] ] ) table.landSky[ side ].forEach( ( row, i ) => {
 
-		const what = `islandSky ${ side } row ${ i }${ cloud ? ' under cloud' : '' }`;
-		const gain = islandSky( t, row.at, rising, tint, cloud );
+		const what = `landSky ${ side } row ${ i }${ cloud ? ' under cloud' : '' }`;
+		const gain = landSky( t, row.at, rising, tint, cloud );
 		tinted( tint.toArray(), [ ...( row.tint ?? [ 1, 1, 1 ] ), row.amount ?? 0 ], what );
-		read( gain, rising && cloud ? islandSky( t, row.at, false, clouded, 1 ) : row.gain ?? 1, `${ what }'s gain` );
+		read( gain, rising && cloud ? landSky( t, row.at, false, clouded, 1 ) : row.gain ?? 1, `${ what }'s gain` );
 
 	} );
 	for ( const rows of [ table.clearShade, table.lowKey ] ) for ( const row of rows ) {

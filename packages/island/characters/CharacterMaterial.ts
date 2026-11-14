@@ -148,7 +148,7 @@ class CharacterLighting extends THREE.LightingModel {
 		// island's level sky and the environment's irradiance.
 		const volume = ambientVolumeOn( 'figures' ) ? ambientField( ambientPoint( positionWorld, normalWorld ), 1 ) : null;
 		// E / pi on a level surface, as lent to the island
-		const sky = volume ? volume.at( vec3( 0, 1, 0 ) ).mul( 1 / Math.PI ).toVar() : this.shared.islandIrradianceSource;
+		const sky = volume ? volume.at( vec3( 0, 1, 0 ) ).mul( 1 / Math.PI ).toVar() : this.shared.skyFillIrradiance;
 		const up = normalWorld.y;
 		// The shade side keeps one fill colour (a flattened sky dome), with a little of the
 		// environment's direction for warmth toward the sun and blue away from it.

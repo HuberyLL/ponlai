@@ -39,8 +39,8 @@ export interface DayWindows {
 	 * clouded share (Weather.ts `cloudedShare`). `display` is the display's night (tone, grade,
 	 * bloom), `exposure` the exposure's own night weight, `stars` the drawn stars' clear evening
 	 * (their morning and a clouded sky's are the display's, `starNight`), `sky` the sky's night key,
-	 * `ambient` the night's ambient (and the leaves' night key and the sward's), `yunpeng` the
-	 * yunpeng's glow and the local lights, `cloudMoon` the clouds' own moonlight, `moonKey` the
+	 * `ambient` the night's ambient (and the leaves' night key and the sward's), `nightGlow` the
+	 * night glow (what glows by night) and the local lights, `cloudMoon` the clouds' own moonlight, `moonKey` the
 	 * moon's key and its sky, `handoff` the key's turn from the sun to the moon. A clouded sky's
 	 * display and stars follow the daylight instead (`fromDaylight`); its exposure takes its own
 	 * window by elevation (`exposure.clouded`). */
@@ -51,7 +51,7 @@ export interface DayWindows {
 	/** How deep under all of it (stops) each night layer comes in at the evening's window's day end,
 	 * rising by even stops a degree toward all of it at the window's night end (`duskIn`, which
 	 * eases the last `ease` degrees): the night key in the sky's light (`sky`), the night ambient and
-	 * the yunpeng's glow and light (`ambient`), the stars, the haze's night key and the clouds' own
+	 * the night glow and its light (`ambient`), the stars, the haze's night key and the clouds' own
 	 * moonlight. Tunable on debug pages (debug/Tune.ts): `sky.twilight.depth.<layer>`. */
 	readonly depth: { sky: number; ambient: number; stars: number; haze: number; cloudMoon: number };
 	/** Over how many degrees at the night's end of the evening's window (`dusk`'s evening windows)

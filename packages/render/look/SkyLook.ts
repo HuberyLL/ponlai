@@ -4,13 +4,13 @@ import { MIX_SKIES, WEATHER_PRESETS } from '../sky/Weather.ts';
 import type { DayKey, DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from '../sky/SkyRetune.ts';
-import type { IslandSkyRow, Rgb, SkyLook, Span, StreakKeys } from './Look.ts';
+import type { LandSkyRow, Rgb, SkyLook, Span, StreakKeys } from './Look.ts';
 
 // The sky's tables built from a look's table, with the CPU code that reads only them.
 //
 // The sky's tables built from a look's table (look/Look.ts `SkyLook`), with the CPU code that reads
-// only them (`createSkyTables`): the light the sky lends the island after sunset and under cloud
-// (`islandSky`, `cloudLightTint`), the sky's gains on the sun's light (`skyLight`, `clearSky`), the
+// only them (`createSkyTables`): the light the sky lends the land after sunset and under cloud
+// (`landSky`, `cloudLightTint`), the sky's gains on the sun's light (`skyLight`, `clearSky`), the
 // clouds' rows per sky of the blend (`cloudSkies`, `shadowDensity`), the stores' night ranges
 // (`storeNight`), the low key (`lowKey`), the distant sea's knee (`seaKnee`), the key's hue
 // (`keyHue`), the thin layer's colours (`streakDirect`, `streakAmbient`), the moon's key (`moonKey`,
@@ -48,28 +48,28 @@ export type CloudSky = { base: number; top: number; type: number; spread: number
 
 /** The sky's tables, made from a look's (`createSkyTables`). */
 export interface SkyTables {
-	// By day a clouded sky lends the island its own light: from 12 to 40 degrees, as the sky's high
-	// key climbs, the light lent to the island is drawn toward this tint (unit luminance) by its
+	// By day a clouded sky lends the land its own light: from 12 to 40 degrees, as the sky's high
+	// key climbs, the light lent to the land is drawn toward this tint (unit luminance) by its
 	// amount (Weather.ts `cloudedHighSun`). The meter's level is the same, the tint keeping the
 	// luminance.
 	readonly cloudLightTint: Tint;
-	// The light the sky lends the island takes a gain per sun elevation and a cast: the environment's
+	// The light the sky lends the land takes a gain per sun elevation and a cast: the environment's
 	// source panorama, which lights the terrain and plants, in its bake (its haze without the fog
-	// layer: `fogEnvironment`), and the islanders' sky fill (`islandIrradianceNode`, the irradiance
+	// layer: `fogEnvironment`), and the islanders' sky fill (`landIrradianceNode`, the irradiance
 	// probe graded the same way). The seen sky, the panorama the sea reflects and the irradiance probe
 	// itself, which lights the sea's body, keep the atmosphere's own. Each row is an elevation
 	// (degrees, descending): the colour the light is drawn toward (linear, at the light's own
 	// luminance), how far, and the gain; rows interpolate linearly and the end rows hold beyond them.
-	// The setting sun's rows, the setting sun's under cloud and the rising sun's (`islandSky`).
-	readonly islandSky: SkyLook[ 'islandSky' ];
+	// The setting sun's rows, the setting sun's under cloud and the rising sun's (`landSky`).
+	readonly landSky: SkyLook[ 'landSky' ];
 	// The clear shade, off by default (`flags=clearShade:<k>` or `true` brings it back for A/Bs): the
-	// sky light lent to the island (as `islandSky`'s) takes a gain and a tint. The gain's extra share
+	// sky light lent to the land (as `landSky`'s) takes a gain and a tint. The gain's extra share
 	// per sun elevation (degrees, descending; linear between rows, the end rows held beyond).
 	readonly clearShade: readonly { at: number; share: number }[];
 	// the sky light's tint (unit luminance) and how far it is drawn toward it at a share of 1
 	readonly clearShadeTint: Tint;
 	// The low sun's shade, off by default with the clear shade (`flags=lowSun:<k>` or `true` for
-	// A/Bs): from `full` degrees down to the horizon the sky light lent to the island is drawn toward
+	// A/Bs): from `full` degrees down to the horizon the sky light lent to the land is drawn toward
 	// `lowSunTint` by up to `amount`, fading out above `top`.
 	readonly lowSun: SkyLook[ 'lowSun' ];
 	/** How far a deck draws the key toward white at the same luminance (sky/SkyTrack.ts `trackSky`). */
@@ -218,7 +218,7 @@ export function createSkyTables( look: SkyLook ): SkyTables {
 	const keyThroughCloud = tune( 'lighting.keyThroughCloud', look.keyThroughCloud, { min: 0, max: 4, onChange: markSkyRetune } );
 	return {
 		cloudLightTint: unitTint( look.cloudLightTint ),
-		islandSky: look.islandSky,
+		landSky: look.landSky,
 		clearShade: look.clearShade,
 		clearShadeTint: unitTint( look.clearShadeTint ),
 		lowSun: look.lowSun,
@@ -251,21 +251,21 @@ const streakKeys = ( prefix: string, keys: StreakKeys ): DayKeys<Rgb> => {
 
 };
 
-// The tables' `islandSky` at `elevation`, on the rising or the setting sun's side: the tint
+// The tables' `landSky` at `elevation`, on the rising or the setting sun's side: the tint
 // (normalised to unit luminance) and its amount into `tint`; returns the gain. A clouded share
 // `cloud` (Weather.ts `cloudedShare`) draws the setting rows to the clouded evening's. The rising
 // rows' tints hold under any sky, but their gains were set on a clear morning's exposure
 // (look/ExposureLook.ts, `dawn`), so the clouded share takes the clouded evening's gain back, as
 // the display's night weight does (DayCycle.ts `displayNight`).
-export function islandSky( tables: SkyTables, elevation: number, rising: boolean, tint: THREE.Vector4, cloud: number ): number {
+export function landSky( tables: SkyTables, elevation: number, rising: boolean, tint: THREE.Vector4, cloud: number ): number {
 
-	const at = ( row: IslandSkyRow ) => {
+	const at = ( row: LandSkyRow ) => {
 
 		const [ r, g, b ] = row.tint ?? [ 1, 1, 1 ], l = r * 0.2126 + g * 0.7152 + b * 0.0722;
 		return [ r / l, g / l, b / l, row.amount ?? 0, row.gain ?? 1 ];
 
 	};
-	const along = ( rows: readonly IslandSkyRow[] ) => {
+	const along = ( rows: readonly LandSkyRow[] ) => {
 
 		let v = at( rows[ rows.length - 1 ] );
 		if ( elevation >= rows[ 0 ].at ) v = at( rows[ 0 ] );
@@ -280,16 +280,16 @@ export function islandSky( tables: SkyTables, elevation: number, rising: boolean
 		return v;
 
 	};
-	let v = along( tables.islandSky.setting );
+	let v = along( tables.landSky.setting );
 	if ( cloud > 0 ) {
 
-		const c = along( tables.islandSky.clouded );
+		const c = along( tables.landSky.clouded );
 		v = v.map( ( x, i ) => x + ( c[ i ] - x ) * cloud );
 
 	}
 	if ( rising ) {
 
-		const r = along( tables.islandSky.rising );
+		const r = along( tables.landSky.rising );
 		if ( cloud > 0 ) r[ 4 ] += ( v[ 4 ] - r[ 4 ] ) * cloud;
 		v = r;
 

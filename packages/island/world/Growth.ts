@@ -512,7 +512,7 @@ export class Growth<M = unknown> {
 
 		// the walking loop
 		this.stage = 'walk';
-		const points = walkPoints( data.walk ), walkDistance = walkLoopDistance( points );
+		const points = walkPoints( data.walk ), pathDistance = walkLoopDistance( points );
 		yield;
 		const walk = Villagers.loop( points );
 		yield;
@@ -520,7 +520,7 @@ export class Growth<M = unknown> {
 		// in place at the swap is staged here, so that it is copied on the GPU
 		const staged: ( () => void )[] = [];
 		const input: GrowthInput<WorldData> = {
-			renderer, data, walkDistance,
+			renderer, data, pathDistance,
 			stage: ( free ) => { if ( free ) staged.push( free ); },
 		};
 		const vegetation: Prepared<M>[ 'vegetation' ] = [];

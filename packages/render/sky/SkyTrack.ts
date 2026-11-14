@@ -9,7 +9,7 @@ import { MOON, cloudMoonShare, displayNight, duskForce, exposureNight, nightAmbi
 import { cloudedHighSun, cloudedShare, overcastDeckLight, overcastFloorSun, daySkyAt, type WeatherState } from './Weather.ts';
 import { keyed } from '../post/DayKeys.ts';
 import { tune } from '../debug/Tune.ts';
-import { type CloudSky, type SkyTables, byElevation, islandSky, keyHue, luma, luminance709, moonHue, storeNight } from '../look/SkyLook.ts';
+import { type CloudSky, type SkyTables, byElevation, landSky, keyHue, luma, luminance709, moonHue, storeNight } from '../look/SkyLook.ts';
 import type { Sky } from './Sky.ts';
 import type { DayWindows } from '../look/DayLook.ts';
 
@@ -264,13 +264,13 @@ export function trackSky( sky: Sky, celestial: DayCycleSnapshot | null, weather:
 		sky.displayNightAmbient.value.setRGB( look.nightAmbientHue[ 0 ] * floor, look.nightAmbientHue[ 1 ] * floor, look.nightAmbientHue[ 2 ] * floor );
 		sky.grade.exposure = celestial.exposure;
 		sky.grade.daylight = celestial.daylight;
-		sky.islandGain.value = islandSky( look, celestial.elevation, sky.rising, sky.islandTint.value, cloud );
+		sky.landGain.value = landSky( look, celestial.elevation, sky.rising, sky.landTint.value, cloud );
 		const direct = weather?.directVisibility ?? 1;
 		const shade = clearShade( look, celestial.elevation, direct ), low = lowSun( look, celestial.elevation, direct );
-		const tint = sky.islandTint.value;
+		const tint = sky.landTint.value;
 		if ( shade > 0 ) {
 
-			sky.islandGain.value *= 1 + shade;
+			sky.landGain.value *= 1 + shade;
 			tint.set( look.clearShadeTint[ 0 ], look.clearShadeTint[ 1 ], look.clearShadeTint[ 2 ], look.clearShadeTint[ 3 ] * shade );
 
 		}
@@ -290,8 +290,8 @@ export function trackSky( sky: Sky, celestial: DayCycleSnapshot | null, weather:
 		sky.grade.daylight = 1;
 		sky.grade.night = 0;
 		sky.grade.exposureNight = 0;
-		sky.islandTint.value.set( 1, 1, 1, 0 );
-		sky.islandGain.value = 1;
+		sky.landTint.value.set( 1, 1, 1, 0 );
+		sky.landGain.value = 1;
 
 	}
 	sky.keyColorAboveClouds.copy( sky.keyColor );

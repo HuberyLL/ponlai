@@ -14,7 +14,7 @@ import { overcastDeckLight, withMoon } from '../sky/Weather.ts';
 // knobs, among them the ambient diffuse and specular balance and the sky's brightness, adjusted
 // globally at the granularity of the weather and time-of-day states; "Real-Time Samurai Cinema",
 // SIGGRAPH 2021, p. 10, and "Samurai Shading in Ghost of Tsushima", SIGGRAPH 2020, p. 9). The
-// table multiplies on top of the sky's own grading (RenderStages.ts `skyFill`, look/SkyLook.ts `islandSky`), which
+// table multiplies on top of the sky's own grading (RenderStages.ts `skyFill`, look/SkyLook.ts `landSky`), which
 // it leaves as it is.
 //
 // Every cell starts from the same values (`D`): identity but for the volume's directionality,
@@ -80,7 +80,7 @@ import { overcastDeckLight, withMoon } from '../sky/Weather.ts';
 // grove's shadow; under overcast a grove's floor reads about 0.6 to 0.7 of the open ground.
 //
 // The table: rows by the sun's elevation (degrees, descending), interpolated linearly, the end rows
-// held beyond them (look/SkyLook.ts `islandSky`'s form), from the high sun down to the night; columns the kept
+// held beyond them (look/SkyLook.ts `landSky`'s form), from the high sun down to the night; columns the kept
 // weathers (clear, fair, cloudy, overcast), weighted by the weather's own blend of them
 // (Weather.ts `skyMix`: a front moves the weights as it moves the sky; a parked weather counts as
 // overcast). Evaluated on the CPU once a frame from the scene clock's sun and the weather (`update`)
