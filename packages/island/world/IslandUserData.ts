@@ -1,13 +1,13 @@
 import type { UserDataKey, UserDataName } from '../../render/index.ts';
 
-// The `userData` keys the island keeps to itself, set and read above the renderer.
+// The `userData` keys the island keeps to itself, set and read above the render pipeline.
 //
-// The `userData` keys the island keeps to itself: set and read above the renderer, which never
-// names them. A file of the island names a key of the renderer's list (packages/render/UserData.ts, whose
-// types the renderer's exit offers) or of this one, and nothing else (tools/repo/verify-layers.mjs, its
-// userData check, which also fails on a key here that no file of the island names). A key the
-// renderer reads belongs on its list, not here; one spelt as a key of the renderer's does not
-// compile.
+// The `userData` keys the island keeps to itself: set and read above the render pipeline, which
+// never names them. A file of the island names a key of the render pipeline's list
+// (packages/render/UserData.ts, whose types the render pipeline's exit offers) or of this one, and
+// nothing else (tools/repo/verify-layers.mjs, its userData check, which also fails on a key here
+// that no file of the island names). A key the render pipeline reads belongs on its list, not here;
+// one spelt as a key of the render pipeline's does not compile.
 //
 // This module is data only and imports types alone, so the CPU-only tools load it under plain node.
 

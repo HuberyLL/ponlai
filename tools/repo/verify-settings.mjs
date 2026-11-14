@@ -1,11 +1,11 @@
 // Checks the page's settings against their docs, the entry that installs them and the tools' addresses.
 //
-// The settings (packages/render/Settings.ts) are the one entrance every URL option is read
-// through; each layer declares its own options in a table (the renderer's RENDER_SETTINGS there,
+// The settings (packages/render/Settings.ts) are the one entrance every URL option is read through;
+// each layer declares its own options in a table (the render pipeline's RENDER_SETTINGS there,
 // packages/island/IslandSettings.ts, packages/game/GameSettings.ts, app/AppSettings.ts), which the
-// page merges (app/AppSettings.ts PAGE_SETTINGS); docs/reference/url-options.md documents them.
-// Run it after adding or changing an option; it is part of `npm run check`. A usage a tool needs
-// is declared in the table of the layer that reads it, not changed in the tool.
+// page merges (app/AppSettings.ts PAGE_SETTINGS); docs/reference/url-options.md documents them. Run
+// it after adding or changing an option; it is part of `npm run check`. A usage a tool needs is
+// declared in the table of the layer that reads it, not changed in the tool.
 //
 // Usage:
 //   node tools/repo/verify-settings.mjs [--write]

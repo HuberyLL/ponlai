@@ -2,9 +2,9 @@ import type { MeadowCanopyLook } from '../../render/setup.ts';
 
 // The island's meadow canopy look: its numbers for the meadow canopy's shared uniforms.
 //
-// The island's meadow canopy look (packages/island/look/: the island's numbers for the renderer's look
-// tables, look/Look.ts; the shared uniforms take them where they are made, render/shared.ts
-// `createShared`).
+// The island's meadow canopy look (packages/island/look/: the island's numbers for the render
+// pipeline's look tables, look/Look.ts; the shared uniforms take them where they are made,
+// render/shared.ts `createShared`).
 
 export const MEADOW_CANOPY: MeadowCanopyLook = {
 	canopy: {

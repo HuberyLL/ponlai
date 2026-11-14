@@ -1,10 +1,11 @@
-// Shoots, reads and checks the renderer's test scenes as paused pages in the test mode.
+// Shoots, reads and checks the render pipeline's test scenes as paused pages in the test mode.
 //
 // A test scene (scenes.html, app/scenes/; docs/reference/url-options.md, The test scenes) is a few
-// objects on level ground under the sky or in the open sea, built from the renderer alone, so it
-// loads in a second or two and a whole scene is shot in a minute or two. Run it first after a
-// change to the renderer, before the island is loaded at all: `--check` against the reference
-// answers whether anything moved, and the readings give the scene's radiance, exposure and light.
+// objects on level ground under the sky or in the open sea, built from the render pipeline alone,
+// so it loads in a second or two and a whole scene is shot in a minute or two. Run it first after a
+// change to the render pipeline, before the island is loaded at all: `--check` against the
+// reference answers whether anything moved, and the readings give the scene's radiance, exposure
+// and light.
 //
 // Usage:
 //   node tools/render/scenes.mjs <baseUrl> <outDir> [--scenes ball,sea] [--times a,b] [--views a,b]
@@ -13,14 +14,13 @@
 //   node tools/render/scenes.mjs http://127.0.0.1:5190/ artifacts/scenes/run --check
 //
 // Options:
-//   baseUrl       the server (the dev server or a production preview)
-//   outDir        the output folder; the look's folder is made in it
-//   --scenes a,b  the scenes to shoot (default ball,empty,plants)
-//   --times a,b   only these of each scene's times (default every one)
-//   --views a,b   only these of each scene's views (default every one)
-//   --look l      neutral (the renderer's neutral look, the default) or ponlai (the island's look)
-//   --verify      takes every shot three ways, which must agree to the pixel
-//   --rebuild n   on each scene's page, disposes the scene and starts it again n times, then takes
+//   baseUrl       the server (the dev server or a production preview) outDir        the output
+//   folder; the look's folder is made in it --scenes a,b  the scenes to shoot (default
+//   ball,empty,plants) --times a,b   only these of each scene's times (default every one) --views
+//   a,b   only these of each scene's views (default every one) --look l      neutral (the render
+//   pipeline's neutral look, the default) or ponlai (the island's look) --verify      takes every
+//   shot three ways, which must agree to the pixel --rebuild n   on each scene's page, disposes the
+//   scene and starts it again n times, then takes
 //                 every shot again, which must equal the first to the pixel
 //   --check       compares every shot with the reference image of its name
 //   --write-ref   writes the run's shots as the reference (with --verify, only when it passed)

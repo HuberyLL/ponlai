@@ -1,15 +1,14 @@
 // A running scene's frame: the canvas's size, the render scale, the tick, the loop and its controls.
 //
-// A running scene's frame (StartScene.ts): the canvas's size and the render scale (fixed, dynamic or
-// stepped), the frame pacer, the tick, the loop that paces it, the loading screen's lift, and the
-// controls a tool holds, resumes and steps it by (`loop`, `step`).
-// The tick is the order of a frame. It calls the renderer's frame stages (RenderStages.ts
-// `createFrameStages`) in their order and the caller's content (`SceneFrameContent`) in the slots
-// between them: the timer and the frame's deltas, the dynamic render scale, the pacer's queue and
-// the diagnostics are its own. The order is part of the image: a stage reads what the ones before it
-// wrote in the same frame, so content goes in the slot its statements belong to. The frame writes no
-// uniform and no cadence of the renderer's here; it reads `render.paused` (the scene's pause) and the
-// rest.
+// A running scene's frame (StartScene.ts): the canvas's size and the render scale (fixed, dynamic
+// or stepped), the frame pacer, the tick, the loop that paces it, the loading screen's lift, and
+// the controls a tool holds, resumes and steps it by (`loop`, `step`). The tick is the order of a
+// frame. It calls the render pipeline's frame stages (RenderStages.ts `createFrameStages`) in their
+// order and the caller's content (`SceneFrameContent`) in the slots between them: the timer and the
+// frame's deltas, the dynamic render scale, the pacer's queue and the diagnostics are its own. The
+// order is part of the image: a stage reads what the ones before it wrote in the same frame, so
+// content goes in the slot its statements belong to. The frame writes no uniform and no cadence of
+// the render pipeline's here; it reads `render.paused` (the scene's pause) and the rest.
 // - The render scale: high's is dynamic (post/DynamicResolution.ts) on a page that asks for it
 //   (`dynamicScale`): it starts at its baseline (the nominal: 2K's pixel count, native at 2K output
 //   and 1440p at 4K output), moves between the display's ratio and a floor (about 1080p's pixel
@@ -101,7 +100,7 @@ export interface SceneFrameContent {
 	afterWeather?( dt: number ): void;
 	/** after the relight, before the draw */
 	afterRelight?( dt: number, rawDt: number ): void;
-	/** why the frame is not settled yet, besides the renderer's own reasons */
+	/** why the frame is not settled yet, besides the render pipeline's own reasons */
 	pending?( reasons: string[] ): void;
 }
 

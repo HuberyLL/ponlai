@@ -6,10 +6,11 @@
 // sky over the horizon, the water's own colour seen from above and from low over it, the sun's
 // glitter, and the sea's answer to the four levels of the wind.
 //
-// The layout (m): the sea's mean level at the renderer's sea level, its floor DEPTH under it (deep
-// enough that the floor's light hardly reaches the eye: the water's own colour is what shows); the
-// balls side by side along x at the origin. The glitter view follows the key: it looks toward the
-// sun's reflection, down at the key's elevation (at least a few degrees), its eye at a fixed height.
+// The layout (m): the sea's mean level at the render pipeline's sea level, its floor DEPTH under it
+// (deep enough that the floor's light hardly reaches the eye: the water's own colour is what
+// shows); the balls side by side along x at the origin. The glitter view follows the key: it looks
+// toward the sun's reflection, down at the key's elevation (at least a few degrees), its eye at a
+// fixed height.
 import * as THREE from 'three/webgpu';
 import { refractedGroup, shared, showUnderwater, underwaterLight, UnderwaterLightingModel, writeMeter, type RenderParts } from '../../packages/render/index.ts';
 import type { ReadingContext, SceneReading, TestScene, Triple } from './TestScene.ts';

@@ -3,12 +3,13 @@ import type { BloomKey, DesaturationKey, DisplayLook, Rgb } from '../../render/s
 
 // The island's display look: contrast, grade, bloom, vignette, white balance and tone curve.
 //
-// The island's display look (packages/island/look/: the island's numbers for the renderer's look
-// tables, look/Look.ts; look/DisplayLook.ts makes the display's tables from these): the shade's contrast, the desaturation,
-// overcast's highlights toward grey, the bloom's and the vignette's strengths, the vignette's
-// shape, the white balance, the tone curve's three settings, the base grade, the bloom's keys and
-// the rods' colour at night. The methods that read them are their modules' (post/ToneCurve.ts,
-// post/GradeLut.ts, post/PhysicalBloom.ts, post/Purkinje.ts, post/PipelineDisplay.ts).
+// The island's display look (packages/island/look/: the island's numbers for the render pipeline's
+// look tables, look/Look.ts; look/DisplayLook.ts makes the display's tables from these): the
+// shade's contrast, the desaturation, overcast's highlights toward grey, the bloom's and the
+// vignette's strengths, the vignette's shape, the white balance, the tone curve's three settings,
+// the base grade, the bloom's keys and the rods' colour at night. The methods that read them are
+// their modules' (post/ToneCurve.ts, post/GradeLut.ts, post/PhysicalBloom.ts, post/Purkinje.ts,
+// post/PipelineDisplay.ts).
 
 const DESATURATION_DAY: DayKey<DesaturationKey>[] = [ { at: 4, name: 'golden', values: { amount: - 0.163, cool: 0 } }, { at: 9, name: 'day', values: { amount: 0.0122, cool: 0 } } ];
 const WHITE_FROM_DAY: DayKey<Rgb>[] = [ { at: 9, name: 'day', values: { r: 0.5, g: 1, b: 1.36 } }, { at: 40, name: 'high', values: { r: 0.593, g: 1, b: 1.248 } } ];

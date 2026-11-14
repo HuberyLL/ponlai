@@ -47,8 +47,8 @@ Rules for every change); keep them and the run's notes in the task's artifacts f
   capture's `--eval`); before load `tune=<base64 JSON>`, which `tune.query( values )` writes. A
   load-time tunable needs a reload; `tune.list()` says which. The knob reference above lists the
   names with no page running; the neutral look's keyed knobs have one day key, `@day`, and `@night`.
-- A short run on the renderer alone: the test scenes (`tools/render/scenes.mjs`, `--q` for the
-  tunables, `--look ponlai` for the island's set) load in seconds.
+- A short run on the render pipeline alone: the test scenes (`tools/render/scenes.mjs`, `--q` for
+  the tunables, `--look ponlai` for the island's set) load in seconds.
 
 ## Judge
 

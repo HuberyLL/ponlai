@@ -2,9 +2,9 @@
 //
 // The page's own parts: what the island page's modules (the GUI, the camera views, its part of the
 // frame, of the scene jump and of the diagnostics) build and share, on one object the entry
-// (main.ts) creates beside the renderer's (RenderStages.ts) and the island's (IslandStages.ts). The
-// frame, the scene jump and the handles themselves are the renderer's assembly's
-// (render/index.ts `startScene`).
+// (main.ts) creates beside the render pipeline's (RenderStages.ts) and the island's
+// (IslandStages.ts). The frame, the scene jump and the handles themselves are the render pipeline's
+// assembly's (render/index.ts `startScene`).
 import type GUI from 'lil-gui';
 import type { WeatherName, WindLevel, FrameStats, PipelineSettings, SceneFrame, Shared } from '../packages/render/index.ts';
 import type { QualityTier } from '../packages/render/setup.ts';

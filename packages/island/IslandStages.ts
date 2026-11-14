@@ -1,6 +1,6 @@
-// The island's stages: the island built a stage at a time on the renderer's stages.
+// The island's stages: the island built a stage at a time on the render pipeline's stages.
 //
-// The island's stages: the island built a stage at a time on the renderer's stages
+// The island's stages: the island built a stage at a time on the render pipeline's stages
 // (RenderStages.ts), in the order the entry (main.ts) calls them. Each stage puts what it builds on
 // the one IslandParts object: the island's camera, the islanders' trail and shadow, the ground's
 // scans, the world's data and land, its meshes, its debug views, the vegetation, and the growth in
@@ -8,10 +8,12 @@
 // and a stage that ends in a wait returns its promise to the entry.
 // - The island's part of a frame is a set of stages too (`createIslandFrame`): the growth, the
 //   camera, the night's share of its glow, the sward's tint, its creatures and falling leaves, its
-//   islander and the trail. The page's tick calls each between the renderer's frame stages
-//   (RenderStages.ts `FrameStages`) where the statement stood, and their order is part of the image.
-// - The vegetation's stage registers every plant kind, then hands the registry to the renderer's
-//   `placeVegetation`, which closes it: a kind is registered before that call or not at all.
+//   islander and the trail. The page's tick calls each between the render pipeline's frame stages
+//   (RenderStages.ts `FrameStages`) where the statement stood, and their order is part of the
+//   image.
+// - The vegetation's stage registers every plant kind, then hands the registry to the render
+//   pipeline's `placeVegetation`, which closes it: a kind is registered before that call or not at
+//   all.
 // - The page's camera views (app/CameraViews.ts) need the document, so the page builds the island
 //   view's framing (`IslandFraming`), which the land's changes call, and hands it to the stages that
 //   frame the land (`createVegetation`, `createGrowth`).
@@ -409,8 +411,8 @@ export function createVegetation( render: RenderParts, island: IslandParts, { fr
 	const bamboo = buildBamboo( data, { shared, atlas: bambooAtlas() } );
 	island.bamboo = bamboo;
 	for ( const kind of bambooKinds( bamboo ) ) vegetation.add( kind );
-	// every kind is registered: the renderer places them in the scene and its prepasses, with the
-	// island, its stones and floor as the ground, and the registry takes no more
+	// every kind is registered: the render pipeline places them in the scene and its prepasses,
+	// with the island, its stones and floor as the ground, and the registry takes no more
 	placeVegetation( render, vegetation, { ground: [ world.group ] } );
 	// Everything that casts into the sun's map: the figures cast through their own map, and the sea
 	// floor's stones only into the refracted one. The game's props grow it (`holdOpaque`), and so
@@ -577,9 +579,9 @@ export function createGrowth( render: RenderParts, island: IslandParts, { landOp
 
 /**
  * The island's part of a frame, a stage at a time, in the order a page calls them between the
- * renderer's (RenderStages.ts `FrameStages`): `grow` after the scene clock and before the day's,
- * `moveCamera` after the weather and before the sky, `night` after the sky and before the local
- * lights, `tintSward` after them, `advanceLife` after the sea and before the relight,
+ * render pipeline's (RenderStages.ts `FrameStages`): `grow` after the scene clock and before the
+ * day's, `moveCamera` after the weather and before the sky, `night` after the sky and before the
+ * local lights, `tintSward` after them, `advanceLife` after the sea and before the relight,
  * `advanceIslanders` and `trample` after it and before the draw.
  */
 export interface IslandFrame {
@@ -589,7 +591,7 @@ export interface IslandFrame {
 	 * frame's timestamp (ms), `dt` the scene clock's step (s) before the pause, `rawDt` the wall clock's. */
 	moveCamera( time: number, dt: number, rawDt: number ): void;
 	/** The night's share of the island's own glow, set on what glows; returns the share its lights
-	 * take (the renderer's `lightNight`). */
+	 * take (the render pipeline's `lightNight`). */
 	night(): number;
 	/** What a closed sky's light turns into in the sward (materials/SwardTint.ts). */
 	tintSward( nightAmbient: number ): void;

@@ -1,10 +1,10 @@
-// What a scene leaves in the renderer's modules, released when the scene is disposed.
+// What a scene leaves in the render pipeline's modules, released when the scene is disposed.
 //
-// A few of the renderer's modules hold one scene's state at module level: what the scene installed
-// (the shared uniforms, the local lights' table, the ground bounce, the ambient volume), what it
-// registered (the cut listeners, the materials the wind follows, the tuned values' nodes and
-// listeners) and what its frames counted (the motion's frame, the rest's epoch). Each such module
-// registers, once as it loads, the release that puts it back as the page loaded it
+// A few of the render pipeline's modules hold one scene's state at module level: what the scene
+// installed (the shared uniforms, the local lights' table, the ground bounce, the ambient volume),
+// what it registered (the cut listeners, the materials the wind follows, the tuned values' nodes
+// and listeners) and what its frames counted (the motion's frame, the rest's epoch). Each such
+// module registers, once as it loads, the release that puts it back as the page loaded it
 // (`onSceneDispose`); the running scene's `dispose` (assemble/StartScene.ts) runs them all
 // (`releaseScene`), last registered first, so the next `startScene` on the page builds and draws as
 // a fresh load does (tools/render/scenes.mjs `--rebuild` checks it).

@@ -15,12 +15,12 @@
 //   paused), the scene clock (`t`, `paused`) and the wind integrated to it, the cloud override. The
 //   page's own options then (`jump`: its camera, say).
 // - What the scenes before left behind is cleared, in the order the histories were registered
-//   (post/SceneHistory.ts): the renderer's, the page's own (`histories`), the renderer's light, the
-//   frame pacer's. The sky bakes as the page's first bake (Sky.reset: both endpoints and atlases,
-//   the clouds as before the first frame), the lightning forgets its strikes, the storm sea its foam
-//   window, the refracted sun its map (back to its size and redrawn at once after the bake, as the
-//   load's `prepare` draws it), the fog its bank; the sun's map redraws from scratch and the
-//   temporal modes cut their history ('establish scene').
+//   (post/SceneHistory.ts): the render pipeline's, the page's own (`histories`), the render
+//   pipeline's light, the frame pacer's. The sky bakes as the page's first bake (Sky.reset: both
+//   endpoints and atlases, the clouds as before the first frame), the lightning forgets its
+//   strikes, the storm sea its foam window, the refracted sun its map (back to its size and redrawn
+//   at once after the bake, as the load's `prepare` draws it), the fog its bank; the sun's map
+//   redraws from scratch and the temporal modes cut their history ('establish scene').
 // - Load-time options the query names (quality, aa, dpr, the debug switches: read once when
 //   materials and the frame graph are built) must equal the page's own, or it throws: reload
 //   instead. A page may read one of them otherwise (`pageValue`: the island's `grow`, the land step
@@ -55,7 +55,7 @@ export interface SceneJumpContent {
 	pageValue?( key: string ): string[] | null;
 	/** the page's part of a jump to a query (read by the page's own names), after the scene's options are set: its camera, say */
 	jump?( query: SettingsQuery<string> ): Promise<void> | void;
-	/** registers the page's histories, between the renderer's and its light's */
+	/** registers the page's histories, between the render pipeline's and its light's */
 	histories?(): void;
 }
 
@@ -70,8 +70,9 @@ export function createSceneJump( render: RenderParts, defaults: SceneDefaults, p
 
 	const { dayCycle, weather, wind, bakeExplicitly, refreshEnvironment, history } = render;
 	const options = content.sceneOptions ?? SCENE_OPTIONS;
-	// What a jump clears of the scenes before, registered layer by layer in the order it is
-	// cleared (post/SceneHistory.ts): the renderer's, the page's, the renderer's light, the pacer's.
+	// What a jump clears of the scenes before, registered layer by layer in the order it is cleared
+	// (post/SceneHistory.ts): the render pipeline's, the page's, the render pipeline's light, the
+	// pacer's.
 	registerSceneHistories( render );
 	content.histories?.();
 	registerLightHistories( render );

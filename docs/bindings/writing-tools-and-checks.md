@@ -130,10 +130,11 @@ White-box access: a tool may import any layer's modules and run scripts in the p
 renderer's functions in `packages/render/three/`, and the few tools that still reach in are listed
 in `tools/repo/verify-three-internals.mjs` (`TOOLS_KNOWN`), a list that only shrinks.
 
-A node tool that makes a system of the renderer that takes the look's tables hands it the set it
-wants, as the page's stages do: the island's (`ISLAND_LOOK`, `packages/island/look/IslandLook.ts`)
-for the numbers the island's page draws with, such as `createExposure( ISLAND_LOOK )` or
-`createDayWindows( ISLAND_LOOK.day )` (`tools/render/verify-day-cycle.mjs`).
+A node tool that makes a system of the render pipeline that takes the look's tables hands it the set
+it wants, as the page's stages do: the island's (`ISLAND_LOOK`,
+`packages/island/look/IslandLook.ts`) for the numbers the island's page draws with, such as
+`createExposure( ISLAND_LOOK )` or `createDayWindows( ISLAND_LOOK.day )`
+(`tools/render/verify-day-cycle.mjs`).
 
 Stored results: expensive results that depend only on the commit, the tool and the browser are
 stored and reused through `tools/kit/reference.mjs`; the key records everything that changes them

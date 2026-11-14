@@ -1,6 +1,6 @@
-# The renderer's rules
+# The render pipeline's rules
 
-`packages/render/` is the renderer, built without the island: light, sky, sea, weather, the
+`packages/render/` is the render pipeline, built without the island: light, sky, sea, weather, the
 vegetation's shared parts, the frame's passes and graph, the look's readers, three's internals.
 These rules bind it alone; the root `AGENTS.md` holds the rules every change follows, and its
 Shaders and GPU work the ones the island shares.
@@ -18,5 +18,5 @@ Each rule names its section of `docs/reference/three-behaviour.md`, which holds 
 
 ## Checks run by hand
 
-- After a change to the renderer, run `tools/render/scenes.mjs` first: the renderer's test scenes,
-  checked in seconds.
+- After a change to the render pipeline, run `tools/render/scenes.mjs` first: the render pipeline's
+  test scenes, checked in seconds.

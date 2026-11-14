@@ -90,8 +90,8 @@ writing-tools-and-checks (tools and checks), writing-tsl-and-passes (TSL, passes
   and every module's default; a load knob is read once, so a change of tier reloads.
 - A URL option is declared in the settings table of the lowest layer that reads it and read
   through `Settings.ts`'s reader only (rule 14; partly: `verify-settings`, `verify-layers`). The
-  renderer, the island and the game's rules never touch the browser's globals; they are given what
-  they need (rule 13).
+  render pipeline, the island and the game's rules never touch the browser's globals; they are given
+  what they need (rule 13).
 - Licences follow REUSE: third-party code opens with a `/*! ... */` notice (source, SPDX copyright
   and licence tags), each licence's text in `LICENSES/`. `CREDITS.md` lists the sources whose licence
   asks for a notice or credit, assets included; a technique, a paper or public-domain code is
@@ -121,7 +121,7 @@ writing-tools-and-checks (tools and checks), writing-tsl-and-passes (TSL, passes
 
 Before you write or change TSL, a shader, a compute kernel, a pass of the frame graph, a GPU buffer,
 instancing or raw WebGPU work, read `docs/reference/three-behaviour.md`: most of what it lists fails
-without an error. Its rules for every layer, by section (the renderer's own:
+without an error. Its rules for every layer, by section (the render pipeline's own:
 `packages/render/AGENTS.md`):
 
 - A helper called from several places is `Fn( ... ).setLayout( ... )`; a laid-out helper that reads
@@ -192,7 +192,7 @@ that is broken a second time gets one in the change that meets it.
 
 The folders in full: `ARCHITECTURE.md`, Code map; file by file: `node tools/repo/code-map.mjs`.
 `app/`: the page (entry, assembly, frame loop, GUI, scene jump); `app/scenes/`, `scenes.html`: the
-renderer's test scenes. `packages/render/`: the renderer, built without the island.
+render pipeline's test scenes. `packages/render/`: the render pipeline, built without the island.
 `packages/island/`: the island, its world in chunks, grown in place. `packages/game/`: the game
 behind `?game`, its headless rules in `sim/`. `tools/`: checks, captures, probes, profiling, the GPU
 lock, the code lint. `packages/render/`, `packages/island/` and `tools/` have their own rules in an

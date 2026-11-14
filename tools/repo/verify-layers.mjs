@@ -1,10 +1,10 @@
 // Checks the direction of the imports between the code's layers and the other rules of the layers.
 //
 // It also checks that a package is imported only through its exits, that the world's chunk worker
-// and the headless exits import only plain code, that the renderer and the island keep off the
-// page, which files write another module's state and that each layer names only the userData keys
-// declared for it. Run it after adding a file or an import across folders, or a userData key; it
-// is part of `npm run check`. The exits' own loading is checked by tools/repo/verify-exits.mjs.
+// and the headless exits import only plain code, that the render pipeline and the island keep off
+// the page, which files write another module's state and that each layer names only the userData
+// keys declared for it. Run it after adding a file or an import across folders, or a userData key;
+// it is part of `npm run check`. The exits' own loading is checked by tools/repo/verify-exits.mjs.
 //
 // Usage:
 //   node tools/repo/verify-layers.mjs
@@ -15,17 +15,18 @@
 // materials and vegetation machinery, the quality tiers), island (this island's generation and
 // growth, its materials, plants, camera, characters, creatures), game (everything behind `?game`)
 // and app (the page's entry, which assembles the others). A file may import its own layer and the
-// layers below it, never one above: a lower layer defines an interface and the higher one fills
-// it. A file's folder is its layer: the three lower layers are packages, each a folder of
-// `packages/` (`packages/render/`, `packages/island/`, `packages/game/`), and the app layer is
-// `app/`. Each package offers two exits (`tools/repo/layers.json`, `exits`), files of re-exports only:
-// one for the page (render/index.ts, island/index.ts, game/index.ts) and a headless one for the code that loads without three.js, in the chunk worker and in node (render/data.ts,
-// island/land.ts, game/sim/index.ts). The renderer has a third, its setup exit (render/setup.ts):
-// what the page needs before the renderer's other modules load (the settings, the look, the quality
+// layers below it, never one above: a lower layer defines an interface and the higher one fills it.
+// A file's folder is its layer: the three lower layers are packages, each a folder of `packages/`
+// (`packages/render/`, `packages/island/`, `packages/game/`), and the app layer is `app/`. Each
+// package offers two exits (`tools/repo/layers.json`, `exits`), files of re-exports only: one for
+// the page (render/index.ts, island/index.ts, game/index.ts) and a headless one for the code that
+// loads without three.js, in the chunk worker and in node (render/data.ts, island/land.ts,
+// game/sim/index.ts). The render pipeline has a third, its setup exit (render/setup.ts): what the
+// page needs before the render pipeline's other modules load (the settings, the look, the quality
 // tiers and the render scale they set), which loads in node too, and a fourth, its browser exit
 // (render/browser.ts): the host a running scene takes from a browser page, which only the app layer
-// imports. The modules the page loads on
-// demand are lazy exits (`lazy`): the page exits leave them out, so they keep chunks of their own.
+// imports. The modules the page loads on demand are lazy exits (`lazy`): the page exits leave them
+// out, so they keep chunks of their own.
 //
 // Guarantees, each a failure (exit 1) when broken:
 // - Every code file under `packages/` (.ts, .mts, .js, .mjs) is in the folder of one of the three
@@ -48,9 +49,9 @@
 //   The exits' own tests (the headless and setup ones load in node, the page ones neither await
 //   nor read the page at load) are tools/repo/verify-exits.mjs.
 // - The test scenes: a file under `app/scenes/` (the scene page and the scenes it shows) imports
-//   only the renderer's exits, the renderer's lazy exits and the files beside it, by any kind of
-//   import: a scene is built from the renderer alone, and the island's numbers reach its page only
-//   through the entry (app/ScenesBoot.ts).
+//   only the render pipeline's exits, the render pipeline's lazy exits and the files beside it, by
+//   any kind of import: a scene is built from the render pipeline alone, and the island's numbers
+//   reach its page only through the entry (app/ScenesBoot.ts).
 // - Each headless exit, the setup exit and every file they load (static imports and re-exports,
 //   `import type` left out) import relative paths only: no package, three.js least of all, so node
 //   and a worker load them as they are.
@@ -59,15 +60,16 @@
 //   the same walk and the same exceptions as the build's world generator plugin, run here so the
 //   check fails before a build does. (Its files are hashed into the world's cache key, and a
 //   package such as three.js would not run in the worker's plain code.)
-// - The page check: the render and island layers and the game's headless simulation (packages/game/sim/)
-//   name none of the page's globals in PAGE (the address, the browser's storage, the document,
-//   window, navigator, URLSearchParams, the frame callbacks, workers, IndexedDB, fetch), outside the
-//   files in PAGE_NEEDS, each the one place of a need the renderer has of the browser (the frame
-//   pacing, the workers' start, the world's cache, the assets' fetch, the textures' canvas, the
-//   settings' parser) and allowed only the names it needs. The page (the app layer: the entry, PageSettings.ts, main.ts) owns the rest and
-//   hands the renderer what it needs (the canvas, the settings, the storage). A name counts by
-//   what it resolves to, so a local of the same name passes and `globalThis.x` is not seen; type
-//   positions (`typeof window`) are not code and pass.
+// - The page check: the render and island layers and the game's headless simulation
+//   (packages/game/sim/) name none of the page's globals in PAGE (the address, the browser's
+//   storage, the document, window, navigator, URLSearchParams, the frame callbacks, workers,
+//   IndexedDB, fetch), outside the files in PAGE_NEEDS, each the one place of a need the render
+//   pipeline has of the browser (the frame pacing, the workers' start, the world's cache, the
+//   assets' fetch, the textures' canvas, the settings' parser) and allowed only the names it needs.
+//   The page (the app layer: the entry, PageSettings.ts, main.ts) owns the rest and hands the
+//   render pipeline what it needs (the canvas, the settings, the storage). A name counts by what it
+//   resolves to, so a local of the same name passes and `globalThis.x` is not seen; type positions
+//   (`typeof window`) are not code and pass.
 // - The state check: an exported module-level variable is written only by its own file, outside the
 //   pairs in STATE (the variable, as 'file:name', and the other files that write it). STATE only
 //   shrinks: a pair in it that no longer writes fails, so the entry is removed with the change that
@@ -77,14 +79,15 @@
 //   property chain rooted at the variable (`state.field = x`, `uniforms.gain.value = x`), found
 //   through the import's binding; a method that mutates (`vector.copy( x )`) and a GUI bound to a
 //   field are not seen.
-// - The userData check: a file names only the `userData` keys the renderer declares
-//   (packages/render/UserData.ts: the key, who sets it, who reads it, what it means) and, above the renderer,
-//   those its own layer declares it keeps to itself (`userData` in tools/repo/layers.json: each layer's
-//   file and list, the island's packages/island/world/IslandUserData.ts). Every key on the renderer's list is named
-//   by some file of the code, every key on a layer's list by a file of that layer, and no layer's
-//   list repeats a key of the renderer's. A key counts where it is written after the
-//   bag (`x.userData.key`, `x.userData[ 'key' ]`); one reached through an alias of the bag
-//   (`const data = material.userData`) or a computed name is not seen.
+// - The userData check: a file names only the `userData` keys the render pipeline declares
+//   (packages/render/UserData.ts: the key, who sets it, who reads it, what it means) and, above the
+//   render pipeline, those its own layer declares it keeps to itself (`userData` in
+//   tools/repo/layers.json: each layer's file and list, the island's
+//   packages/island/world/IslandUserData.ts). Every key on the render pipeline's list is named by
+//   some file of the code, every key on a layer's list by a file of that layer, and no layer's list
+//   repeats a key of the render pipeline's. A key counts where it is written after the bag
+//   (`x.userData.key`, `x.userData[ 'key' ]`); one reached through an alias of the bag (`const data
+//   = material.userData`) or a computed name is not seen.
 //
 // Output: a summary on stdout, every upward import found (known or not), then PASS or FAIL with the
 // failures.
@@ -115,9 +118,9 @@ const KNOWN = [];
 
 // The page's globals the lower layers must not name.
 const PAGE = [ 'location', 'localStorage', 'sessionStorage', 'document', 'window', 'navigator', 'URLSearchParams', 'requestAnimationFrame', 'cancelAnimationFrame', 'Worker', 'indexedDB', 'fetch' ];
-// The one file of each need the renderer and the island have of the browser, and the names it may
-// use. Workers start in the module that names their script: the build bundles a worker only from
-// a literal `new Worker( new URL( ... ) )`, so each layer's workers start in their own file.
+// The one file of each need the render pipeline and the island have of the browser, and the names
+// it may use. Workers start in the module that names their script: the build bundles a worker only
+// from a literal `new Worker( new URL( ... ) )`, so each layer's workers start in their own file.
 const PAGE_NEEDS = {
 	'packages/render/post/FramePacer.ts': { need: 'frame pacing', names: [ 'requestAnimationFrame', 'cancelAnimationFrame' ] },
 	'packages/island/world/WorldChunks.ts': { need: 'the world\'s workers', names: [ 'Worker', 'navigator' ] },
@@ -522,7 +525,7 @@ for ( const from of files ) {
 		if ( table[ from ] === table[ to ] || table[ to ] === 'app' ) continue;
 		across ++;
 		const exit = exits.get( to );
-		// the renderer's browser exit (render/browser.ts) is the page's alone
+		// the render pipeline's browser exit (render/browser.ts) is the page's alone
 		if ( exit?.side === 'browser' && table[ from ] !== 'app' ) failures.push( `${ from }: imports ${ to }, the browser's host, which only the page (app/) takes: a package is handed what it needs of the browser` );
 		if ( exit || lazy.has( to ) ) continue;
 		failures.push( `${ from }: imports ${ to } across packages: import it from ${ Object.values( layers.exits[ table[ to ] ] ).join( ' or ' ) }, the ${ table[ to ] } package's exits` );
@@ -531,8 +534,8 @@ for ( const from of files ) {
 
 }
 
-// the test scenes: under app/scenes/ a file imports the renderer's exits, its lazy exits and its
-// neighbours only, whatever the kind of import
+// the test scenes: under app/scenes/ a file imports the render pipeline's exits, its lazy exits and
+// its neighbours only, whatever the kind of import
 const SCENES_DIR = 'app/scenes/';
 const sceneFiles = files.filter( ( f ) => f.startsWith( SCENES_DIR ) );
 if ( sceneFiles.length === 0 ) failures.push( `test scenes: no file under ${ SCENES_DIR }` );
@@ -543,7 +546,7 @@ for ( const from of sceneFiles ) {
 		const to = resolve( from, spec );
 		if ( ! to || ! ( to in table ) || to.startsWith( SCENES_DIR ) ) continue;
 		if ( exits.get( to )?.layer === 'render' || ( lazy.has( to ) && table[ to ] === 'render' ) ) continue;
-		failures.push( `${ from }: imports ${ to }: a test scene imports only the renderer's exits (${ Object.values( layers.exits.render ).join( ', ' ) }), its lazy exits and the files beside it` );
+		failures.push( `${ from }: imports ${ to }: a test scene imports only the render pipeline's exits (${ Object.values( layers.exits.render ).join( ', ' ) }), its lazy exits and the files beside it` );
 
 	}
 
@@ -638,7 +641,7 @@ for ( const file of new Set( [ ...exits.keys(), ...lazy ] ) ) {
 }
 for ( const [ name, from ] of exitNames ) if ( from.length > 1 ) failures.push( `${ name }: exported by ${ from.join( ' and ' ) }: a name leaves its package through one exit` );
 
-// the userData check: the renderer's keys, and each upper layer's own
+// the userData check: the render pipeline's keys, and each upper layer's own
 const userLists = {};
 for ( const [ layer, { file, list } ] of Object.entries( layers.userData ?? {} ) ) {
 
@@ -662,7 +665,7 @@ for ( const [ layer, { file, keys } ] of Object.entries( userLists ) ) {
 
 	for ( const key of Object.keys( keys ) ) {
 
-		if ( layer !== 'render' && key in USER_DATA ) failures.push( `${ file } declares '${ key }', which the renderer's list declares too: remove the entry` );
+		if ( layer !== 'render' && key in USER_DATA ) failures.push( `${ file } declares '${ key }', which the render pipeline's list declares too: remove the entry` );
 		const named = userKeys.some( ( hit ) => hit.key === key && ( layer === 'render' || table[ hit.file ] === layer ) );
 		if ( ! named ) failures.push( `${ file } declares '${ key }', which no file ${ layer === 'render' ? 'of the code' : `of the ${ layer } layer` } names: remove the entry` );
 

@@ -44,13 +44,13 @@ import type { SeaLook } from '../look/Look.ts';
 // the plants' speed), which run across the near water at the meadow's pace.
 //
 // Its inputs are the weather's wind (Wind.ts): the travel direction and the speed, the gust field's
-// travel and time and the integrated displacement, so the pattern is a function of the wind's state and the
-// scene clock and a paused frame repeats. The noise is a tileable smooth fbm in four channels, made
-// once on the CPU with fixed seeds (256 texels, half float, bilinear, repeating; low frequency, so
-// no mipmaps).
-// The gusts', slicks' and windrows' strengths are the look's (look/Look.ts `SeaLook` `detail`):
-// the constructor takes them, as the renderer's stage hands them over (RenderStages.ts
-// `createSeaAndPipeline`), so two made from two tables hold their own and this module holds none.
+// travel and time and the integrated displacement, so the pattern is a function of the wind's state
+// and the scene clock and a paused frame repeats. The noise is a tileable smooth fbm in four
+// channels, made once on the CPU with fixed seeds (256 texels, half float, bilinear, repeating; low
+// frequency, so no mipmaps). The gusts', slicks' and windrows' strengths are the look's
+// (look/Look.ts `SeaLook` `detail`): the constructor takes them, as the render pipeline's stage
+// hands them over (RenderStages.ts `createSeaAndPipeline`), so two made from two tables hold their
+// own and this module holds none.
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;

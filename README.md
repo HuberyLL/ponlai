@@ -8,9 +8,9 @@ that moves in the wind. The look is inspired by the eastern aesthetic of Ghost o
 <!-- SCREENSHOT: replace the next line with the image's GitHub attachment link. -->
 *Screenshot to come.*
 
-The renderer (`packages/render/`) is built without the island, so you can copy it into a project of
-your own, together with the capture and measuring tools (`tools/kit/`) and the agent skills
-(`skills/`).
+The render pipeline (`packages/render/`) is built without the island, so you can copy it into a
+project of your own, together with the capture and measuring tools (`tools/kit/`) and the agent
+skills (`skills/`).
 
 ## Requirements
 
@@ -35,18 +35,18 @@ Some pages to try:
 - <http://127.0.0.1:5190/?weather=fair&preset=sunset>: the island at sunset on a fair day.
 - <http://127.0.0.1:5190/?paused&t=12>: the scene paused at 12 seconds, the way the tools shoot it.
 - <http://127.0.0.1:5190/?game>: the island as a game.
-- <http://127.0.0.1:5190/scenes.html?scene=ball>: one of the renderer's test scenes, without the
-  island (`ball`, `empty`, `sea` or `plants`).
+- <http://127.0.0.1:5190/scenes.html?scene=ball>: one of the render pipeline's test scenes, without
+  the island (`ball`, `empty`, `sea` or `plants`).
 
 Every option of the address is listed in [URL options](docs/reference/url-options.md).
 
-## Use the renderer in your own project
+## Use the render pipeline in your own project
 
-The renderer is TypeScript that a bundler compiles with your code. It needs:
+The render pipeline is TypeScript that a bundler compiles with your code. It needs:
 
-- three.js 0.186.1, at exactly this version: the renderer reaches into three's internals in
+- three.js 0.186.1, at exactly this version: the render pipeline reaches into three's internals in
   `packages/render/three/`.
-- Vite 8. The renderer reads `import.meta.env` and starts workers with
+- Vite 8. The render pipeline reads `import.meta.env` and starts workers with
   `new Worker( new URL( ..., import.meta.url ) )`. Set `worker: { format: 'es' }` in your Vite
   configuration, `vite.config.ts`:
 
@@ -58,8 +58,8 @@ The renderer is TypeScript that a bundler compiles with your code. It needs:
 
 - An ES module project: `"type": "module"` in your `package.json`, as a Vite template sets it.
 - To type-check with TypeScript 5, a `tsconfig.json` with `allowImportingTsExtensions` (the
-  renderer's imports name `.ts` files) and `"types": [ "vite/client" ]`. Use this one, in place of
-  any a template made (a template's stricter options reject the renderer's code):
+  render pipeline's imports name `.ts` files) and `"types": [ "vite/client" ]`. Use this one, in
+  place of any a template made (a template's stricter options reject the render pipeline's code):
 
   ```json
   {
@@ -79,7 +79,7 @@ The renderer is TypeScript that a bundler compiles with your code. It needs:
   }
   ```
 
-### Copy the renderer and its assets
+### Copy the render pipeline and its assets
 
 1. Copy `packages/render/` into your source folder, for example as `src/render/`.
 2. Install the packages:
@@ -89,8 +89,8 @@ The renderer is TypeScript that a bundler compiles with your code. It needs:
    npm install -D vite@^8 typescript@^5.9 @types/three@0.186.0
    ```
 
-3. Copy the renderer's assets into your `public/` folder, at the same paths. After `npm run dev`
-   has run once in this repository, they are in its `public/` folder:
+3. Copy the render pipeline's assets into your `public/` folder, at the same paths. After `npm run
+   dev` has run once in this repository, they are in its `public/` folder:
 
    | File | What it is |
    | --- | --- |
@@ -99,13 +99,14 @@ The renderer is TypeScript that a bundler compiles with your code. It needs:
    | `sky/milkyway.png` | The Milky Way |
    | `sky/moon/moon_color.jpg`, `sky/moon/moon_height.png` | The moon's colour and heights |
 
-   Their sources and licences are in [Credits](CREDITS.md), Assets. The renderer loads them from
-   your site's base address; to load them from elsewhere, pass `assetBase` to `startScene`.
+   Their sources and licences are in [Credits](CREDITS.md), Assets. The render pipeline loads them
+   from your site's base address; to load them from elsewhere, pass `assetBase` to `startScene`.
 
 ### A minimal scene
 
-A page installs its settings before any of the renderer loads, since the renderer's modules read
-them as they load. So the page's entry installs them, then loads the scene with a dynamic import.
+A page installs its settings before any of the render pipeline loads, since the render pipeline's
+modules read them as they load. So the page's entry installs them, then loads the scene with a
+dynamic import.
 
 `index.html`:
 
@@ -204,26 +205,26 @@ export async function startRock() {
 }
 ```
 
-`startScene( host, options, content )` runs the renderer's stages in their fixed order and calls
-your content in the slots between them: `passes`, `ground`, `ambient` and `water` give the stages
-their inputs, and the optional `after...` slots add your objects. The neutral inputs
+`startScene( host, options, content )` runs the render pipeline's stages in their fixed order and
+calls your content in the slots between them: `passes`, `ground`, `ambient` and `water` give the
+stages their inputs, and the optional `after...` slots add your objects. The neutral inputs
 (`neutralFields`, `neutralBounceGround`, `neutralSeaLattice`, `neutralLattice`) describe a level
-floor or level ground for a scene without a world of its own. The renderer's camera
+floor or level ground for a scene without a world of its own. The render pipeline's camera
 (`render.camera`) has a vertical field of view of 27 degrees; place it in `afterSky`. The slots and
 options are documented in `packages/render/assemble/StartScene.ts`. The test scenes in
 `app/scenes/` are fuller examples.
 
-Run `npx vite`, then open the page. The renderer's own URL options work on it, for example
+Run `npx vite`, then open the page. The render pipeline's own URL options work on it, for example
 `?paused&t=12` or `?weather=fair&hour=7`.
 
 ### Known limits
 
-- One page holds one renderer at a time. To show another scene, call `dispose()` on the running
-  scene first; the next `startScene` then draws as a fresh load does.
+- One page holds one render pipeline at a time. To show another scene, call `dispose()` on the
+  running scene first; the next `startScene` then draws as a fresh load does.
 - Only the `high` quality tier and the `clear` and `fair` weathers are kept up to date, judged at 4K
   output (1920x1080 CSS pixels at a device pixel ratio of 2). The other tiers and weathers still
   load by name.
-- The renderer is not an npm package: you copy it and update it by copying again.
+- The render pipeline is not an npm package: you copy it and update it by copying again.
 
 ## Use the tools and skills
 
@@ -287,7 +288,7 @@ this repository's.
 
 ## Structure
 
-The code is in layers, lowest first: the renderer (`packages/render/`), the island
+The code is in layers, lowest first: the render pipeline (`packages/render/`), the island
 (`packages/island/`), the game (`packages/game/`) and the page (`app/`). Each layer imports only from
 the layers below it. [Architecture](ARCHITECTURE.md) describes the layers, the flows and the rules
 across them, and [the docs' index](docs/README.md) lists every page.

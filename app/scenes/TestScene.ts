@@ -1,16 +1,16 @@
 // A test scene's declaration: what it tests, its views, hours, weathers and readings.
 //
-// A test scene's declaration and the parts every scene is built from. A test scene is a small
-// scene of the renderer alone, which the scene page (ScenePage.ts) builds with the renderer's
-// stages on the renderer's neutral inputs (NeutralInputs.ts): level ground of one albedo under an
-// open sky, or the open sea over a level floor, and whatever the scene places there (plant kinds
-// among it, drawn with the registry's default plant). It declares what it tests, its views, the
-// hours and weathers it is shot at and the readings taken of it, so a tool shoots and reads it
-// without knowing the scene (tools/render/scenes.mjs).
+// A test scene's declaration and the parts every scene is built from. A test scene is a small scene
+// of the render pipeline alone, which the scene page (ScenePage.ts) builds with the render
+// pipeline's stages on the render pipeline's neutral inputs (NeutralInputs.ts): level ground of one
+// albedo under an open sky, or the open sea over a level floor, and whatever the scene places there
+// (plant kinds among it, drawn with the registry's default plant). It declares what it tests, its
+// views, the hours and weathers it is shot at and the readings taken of it, so a tool shoots and
+// reads it without knowing the scene (tools/render/scenes.mjs).
 //
 // Rules:
-// - A scene imports the renderer through its exits only (render/index.ts, render/setup.ts, render/data.ts),
-//   never the island or the game, and never another layer's module by its path
+// - A scene imports the render pipeline through its exits only (render/index.ts, render/setup.ts,
+//   render/data.ts), never the island or the game, and never another layer's module by its path
 //   (tools/repo/verify-layers.mjs).
 // - Its surfaces are lit as every other surface is (`surface`: the shared lighting model and the
 //   metering light, docs/bindings/building-cinematic-stylised-realism.md, Materials).
@@ -22,8 +22,8 @@ import { GroundBounceLightingModel, writeMeter, type RenderParts, type Vegetatio
 export type Triple = readonly [ number, number, number ];
 
 /** A view: where the camera stands, what it looks at, and its vertical field of view (degrees;
- * the renderer's 27 without one). A view may follow the key (`eye` and `target` functions of its
- * direction, unit, toward the sun or the moon), posed when it is shown; the first view, which a
+ * the render pipeline's 27 without one). A view may follow the key (`eye` and `target` functions of
+ * its direction, unit, toward the sun or the moon), posed when it is shown; the first view, which a
  * scene jump poses before the key is the new hour's, is fixed. */
 export interface SceneView {
 	name: string;
@@ -78,7 +78,7 @@ export interface TestScene {
 	about: string;
 	/** the level ground, or the open sea */
 	ground: SceneGround;
-	/** Builds the scene's content, once, after the renderer's light exists. */
+	/** Builds the scene's content, once, after the render pipeline's light exists. */
 	build( render: RenderParts ): SceneContent;
 	/** the views, the first the one a load shows */
 	views: SceneView[];

@@ -27,9 +27,9 @@ Check a fingerprint against these first.
   (`docs/reference/test-mode.md`).
 - Serve the checkout with `node tools/kit/serve.mjs dev`; `--sha <rev>` serves another commit for a
   before-and-after.
-- The cheapest reproduction is a test scene of the renderer (`tools/render/scenes.mjs`, its header).
-  Each run loads its pages fresh, so a loop counts k of n. Take the first run as the reference of the
-  others:
+- The cheapest reproduction is a test scene of the render pipeline (`tools/render/scenes.mjs`, its
+  header). Each run loads its pages fresh, so a loop counts k of n. Take the first run as the
+  reference of the others:
 
   ```sh
   node tools/kit/job.mjs start --wait -- node tools/kit/gpu-lock.mjs run --shared -- \
@@ -48,7 +48,7 @@ Check a fingerprint against these first.
 ## Hash
 
 Run the skill's page script through `tools/kit/probe.mjs`, a fresh load per probe. The page's debug
-global (`P` in a probe) reaches the renderer's parts: pass it whole as the root.
+global (`P` in a probe) reaches the render pipeline's parts: pass it whole as the root.
 
 ```sh
 node tools/kit/job.mjs start --wait -- node tools/kit/gpu-lock.mjs run --shared -- \

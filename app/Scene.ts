@@ -1,14 +1,14 @@
 // The island page's part of the scene jump: its scene options, its camera and its histories.
 //
 // The island page's part of the scene jump (render/index.ts `startScene`'s jump, whose contract is
-// in packages/render/assemble/SceneJump.ts): SCENE_OPTIONS names the query options that make a scene
-// on this page, the renderer's and the island's (the tools read the list from this file:
-// tools/kit/parity/adhoc.mjs).
+// in packages/render/assemble/SceneJump.ts): SCENE_OPTIONS names the query options that make a
+// scene on this page, the render pipeline's and the island's (the tools read the list from this
+// file: tools/kit/parity/adhoc.mjs).
 // - The camera: the orbit's island view at the query's dist / polar / az (`placeOrbit`, as the load
 //   places it) and the controls' limits restored, in the query's camera mode.
 // - The shoal at the query's `approach` (0 without one), put on it at once.
 // - What the island's scenes before left behind is cleared (`registerIslandHistories`: the
-//   islander's clips among them), between the renderer's histories and its light's.
+//   islander's clips among them), between the render pipeline's histories and its light's.
 // - `grow` must equal the land step shown (the URL's, or a later one after Grow: a page grown in
 //   place draws what a fresh load of that step draws); the land's `seed`, generated once, must
 //   equal the page's.

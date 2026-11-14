@@ -2,12 +2,12 @@ import type { DayLook } from '../../render/setup.ts';
 
 // The island's day look: the key's turn to the moon, dusk windows, night layers and exposure.
 //
-// The island's day look (packages/island/look/: the island's numbers for the renderer's look tables,
-// look/Look.ts; look/DayLook.ts `createDayWindows` makes the day's windows from these, and its
-// comments say what each table is): where the
-// key turns from the sun to the moon, the dusk's windows, how deep under all of it each night
-// layer comes in and the ease at the window's night end, and the exposure by the sun's elevation
-// with the night sky's own exposure. sky/DayCycle.ts's header says how the day runs.
+// The island's day look (packages/island/look/: the island's numbers for the render pipeline's look
+// tables, look/Look.ts; look/DayLook.ts `createDayWindows` makes the day's windows from these, and
+// its comments say what each table is): where the key turns from the sun to the moon, the dusk's
+// windows, how deep under all of it each night layer comes in and the ease at the window's night
+// end, and the exposure by the sun's elevation with the night sky's own exposure. sky/DayCycle.ts's
+// header says how the day runs.
 
 // The exposure by the sun's elevation (degrees): [ elevation, exposure ], interpolated in log
 // exposure and held beyond the ends. With the sun up, tidewater's auto exposure brings its frames to

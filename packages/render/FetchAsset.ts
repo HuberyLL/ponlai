@@ -1,10 +1,10 @@
-// The renderer's and the island's one fetch of the page's data files, and the address they are under.
+// The render pipeline's and the island's one fetch of the page's data files, and the address they are under.
 //
-// The renderer's and the island's one fetch of the page's assets: the code reads its data files
-// (noise volumes, the star catalogue, scans) through `fetchAsset`, never `fetch` itself, so what the
-// code takes from the network is in one place (tools/repo/verify-layers.mjs, the page check). Textures
-// and models loaded by three's loaders go through their own requests, from the same base address
-// (`assetUrl`).
+// The render pipeline's and the island's one fetch of the page's assets: the code reads its data
+// files (noise volumes, the star catalogue, scans) through `fetchAsset`, never `fetch` itself, so
+// what the code takes from the network is in one place (tools/repo/verify-layers.mjs, the page
+// check). Textures and models loaded by three's loaders go through their own requests, from the
+// same base address (`assetUrl`).
 // - The base address is the build's (`import.meta.env.BASE_URL`: Vite serves `public/` there)
 //   unless the page set another before anything loads (`setAssetBase`; StartScene.ts `assetBase`).
 //   One page holds one renderer, so the base is the module's own.

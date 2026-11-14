@@ -25,23 +25,23 @@ Contents:
 - Kept weathers: clear and fair. The others are parked (`packages/render/sky/Weather.ts`
   `PARKED_WEATHER`) and need no support (`AGENTS.md`, Rules for every change).
 - Main view and condition: the island view on the clear day at noon, at high quality and 4K output.
-  The test scenes (`scenes.html`) draw with the renderer's neutral look instead, which holds no
-  style: every gain 1, every offset 0 (`packages/render/look/NeutralLook.ts`); a value there that
+  The test scenes (`scenes.html`) draw with the render pipeline's neutral look instead, which holds
+  no style: every gain 1, every offset 0 (`packages/render/look/NeutralLook.ts`); a value there that
   breaks that is a fault, not a look.
-- The island's numbers for the look are its own set, `packages/island/look/`; the renderer's tables
-  and their readers are in `packages/render/look/` (the skill's knob reference).
+- The island's numbers for the look are its own set, `packages/island/look/`; the render pipeline's
+  tables and their readers are in `packages/render/look/` (the skill's knob reference).
 
 ## Materials
 
 - Each material's header comment states its values and their source. Before writing its shader,
   read `docs/reference/three-behaviour.md`.
 - Its layer (`ARCHITECTURE.md`, rules 10 and 11). A material any scene could use (a generic
-  ground, the rain's wet film) is the renderer's, in `packages/render/materials/`, and imports the
-  lighting modules directly. A material of this island (its terrain, a plant kind, an islander's
-  fabric) is the island's, in `packages/island/materials/` or beside the kind it draws, and takes
-  the lighting model only through the renderer's exit, `packages/render/index.ts`; a name it needs
-  that the exit lacks is added to the exit. Either way the numbers chosen for the look come from
-  the look's readers (`packages/render/look/`), never written into the material
+  ground, the rain's wet film) is the render pipeline's, in `packages/render/materials/`, and
+  imports the lighting modules directly. A material of this island (its terrain, a plant kind, an
+  islander's fabric) is the island's, in `packages/island/materials/` or beside the kind it draws,
+  and takes the lighting model only through the render pipeline's exit, `packages/render/index.ts`;
+  a name it needs that the exit lacks is added to the exit. Either way the numbers chosen for the
+  look come from the look's readers (`packages/render/look/`), never written into the material
   (`ARCHITECTURE.md`, rule 16).
 - Lit as every other surface. The modules named here are in `packages/render/lighting/`,
   `packages/render/ocean/` and `packages/render/post/`; each header comment says more.
@@ -53,7 +53,8 @@ Contents:
      `groundBounceLight` (`GroundBounce.ts`), never a bounce of its own.
   4. A lit model of its own adds `shadeLocalLights` (`LocalLights.ts`) and takes its key's cosine
      from `GroundBounceLightingModel`'s `shadeDirection` (`KeyLift.ts`). A new light source is a
-     kind of local light registered on the renderer's `localLights` (`add`), never a three light.
+     kind of local light registered on the render pipeline's `localLights` (`add`), never a three
+     light.
   5. Write the metering illuminance beside the colour with `writeMeter` (`MeterLight.ts`), and draw
      only in passes with an MRT.
   6. A material under water lights with `Underwater.ts`, as the terrain does.
@@ -70,7 +71,7 @@ Contents:
   - The water reflects only what lies inside `Water.reflectionBounds`: anything opaque placed off
     the island or above 3 m grows that box through `Water.hold` (the game's props do, through the
     island's `holdOpaque` in `packages/island/IslandStages.ts`).
-- The neutral, known light: the test scenes' page draws with the renderer's neutral look. The
+- The neutral, known light: the test scenes' page draws with the render pipeline's neutral look. The
   scene `ball` holds an 18 % grey card, a white card, a row of albedos from 0.03 to 0.8 and a row
   of roughness; `empty` is level grey ground under the sky (`docs/reference/url-options.md`, The
   test scenes). Shoot and read them with `tools/render/scenes.mjs`; `--look ponlai` loads the
@@ -100,7 +101,7 @@ Contents:
 
 - Steps: the skill `verifying-rendering-changes` and its binding
   ([verifying-rendering-changes](verifying-rendering-changes.md): Kinds for the small scenes after
-  a change to the renderer's light, sky, exposure or display chain).
+  a change to the render pipeline's light, sky, exposure or display chain).
 - One view: `tools/kit/capture.mjs`. Views on one warm page: `tools/kit/parity/capture-set.mjs`.
   Diffs, crops, sheets and region statistics: `uv run tools/kit/img.py`.
 - What colour each kind of surface shows by kind of light, before and after:

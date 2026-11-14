@@ -1,8 +1,8 @@
 // Checks that each system which takes its look tables at creation reads its own and moves no other's.
 //
-// It makes each system from the island's look (packages/island/look/IslandLook.ts), the renderer's
-// neutral look (packages/render/look/NeutralLook.ts) and a changed copy of the island's, in one
-// process, and fails when one does not read its own table, when making one moves another's
+// It makes each system from the island's look (packages/island/look/IslandLook.ts), the render
+// pipeline's neutral look (packages/render/look/NeutralLook.ts) and a changed copy of the island's,
+// in one process, and fails when one does not read its own table, when making one moves another's
 // numbers, or when the changed copy does not differ where its table does. In plain node: the
 // exposure (packages/render/look/ExposureLook.ts `createExposure`, and the day cycle that reads
 // it), the day's windows (packages/render/look/DayLook.ts `createDayWindows`), the wind on the
@@ -17,8 +17,8 @@
 // (packages/render/ocean/SeaDetail.ts), the FFT ocean's distant swell
 // (packages/render/ocean/OceanFFT.ts), the ambient grade's controller
 // (packages/render/lighting/AmbientGrade.ts `createAmbientGrade`) and the bloom
-// (packages/render/post/PhysicalBloom.ts). Each part's guarantees, and what it leaves to a renderer,
-// are written above its code.
+// (packages/render/post/PhysicalBloom.ts). Each part's guarantees, and what it leaves to a
+// renderer, are written above its code.
 //
 // Run it after a change to how one of these systems is created, and extend it when another system
 // takes its look at creation. It is part of `npm run check`.

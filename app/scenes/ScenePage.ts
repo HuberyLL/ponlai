@@ -1,16 +1,17 @@
-// The scene page: one test scene on the renderer alone, assembled as main.ts does the island.
+// The scene page: one test scene on the render pipeline alone, assembled as main.ts does the island.
 //
-// The scene page: one test scene (TestScene.ts) on the renderer alone, which scenes.html loads
-// behind its entry (ScenesBoot.ts). It is to a test scene what main.ts is to the island: the one
-// place that assembles it, through the renderer's assembly (render/index.ts `startScene`), on the
-// renderer's neutral inputs (NeutralInputs.ts) where the island hands its world's, with the look its
-// entry picked (`startScenePage`). It draws no island, no game and no GUI.
+// The scene page: one test scene (TestScene.ts) on the render pipeline alone, which scenes.html
+// loads behind its entry (ScenesBoot.ts). It is to a test scene what main.ts is to the island: the
+// one place that assembles it, through the render pipeline's assembly (render/index.ts
+// `startScene`), on the render pipeline's neutral inputs (NeutralInputs.ts) where the island hands
+// its world's, with the look its entry picked (`startScenePage`). It draws no island, no game and
+// no GUI.
 // - The scene is `scene=<name>`, which the entry reads and hands over (index.ts). The scene's
 //   options (`weather`, `hour`, `preset`, `paused`, ...) are the island page's and read the same
 //   way (render/index.ts `sceneOptions`), with a load at noon where the query names no hour.
-// - The frame is the renderer's frame stages with nothing of a world's between them, at the tier's
-//   nominal render scale (no dynamic scale: the scenes are shot paused). The canvas is sized before
-//   the haze's bake, as it was before the assembly existed.
+// - The frame is the render pipeline's frame stages with nothing of a world's between them, at the
+//   tier's nominal render scale (no dynamic scale: the scenes are shot paused). The canvas is sized
+//   before the haze's bake, as it was before the assembly existed.
 // - It keeps the island page's contract with the tools: the URL options, `window.__PONLAI__` and
 //   `window.__THREE_GAME_DIAGNOSTICS__` with its `settled` signal, on the dev server or with
 //   `?debug` / `?profile`. `__PONLAI__.establishScene( query )` jumps to a scene's hour and weather

@@ -91,14 +91,14 @@ import { onSceneDispose } from '../SceneDispose.ts';
 // last pass that ran).
 //
 // The registry. The sources come from kinds of light (`LocalLightKind`: the yunpeng's clumps, the
-// test sources) registered on the renderer's `LocalLights` (`createLocalLights`, which the
-// renderer's stages call once; `add`), read in the order registered and never by name. A kind gives
-// its sources now (`sources()`), read when it is registered and again at `refresh()`, which
-// whoever moves them calls (the island's growth, after a swap). A kind declares the three things
-// every registered definition does (Extensions.ts), or `add` refuses it. A source without an
+// test sources) registered on the render pipeline's `LocalLights` (`createLocalLights`, which the
+// render pipeline's stages call once; `add`), read in the order registered and never by name. A
+// kind gives its sources now (`sources()`), read when it is registered and again at `refresh()`,
+// which whoever moves them calls (the island's growth, after a swap). A kind declares the three
+// things every registered definition does (Extensions.ts), or `add` refuses it. A source without an
 // intensity or a range of its own is the default, a white point light (DEFAULT_SOURCE). The
-// registry is an object of the renderer's; the buffers, the uniforms and the kernel above stay
-// the module's, since every lit material's shader names them: one light table a page.
+// registry is an object of the render pipeline's; the buffers, the uniforms and the kernel above
+// stay the module's, since every lit material's shader names them: one light table a page.
 
 /** The light table's first capacity; a larger table takes the next power of two, up to 16 bits. */
 const CAPACITY = 1024;
@@ -106,8 +106,8 @@ const MAX_SOURCES = 1 << 16;
 // the near field's softening (m^2): the size of a source
 const SOFT = 1;
 // (The art gain over the sources' own intensity is the look's (look/Look.ts `LocalLightsLook`): the
-// registry takes its table as an argument where the renderer's stage makes it (RenderStages.ts
-// `createLight`), so two registries made from two tables hold their own gain
+// registry takes its table as an argument where the render pipeline's stage makes it
+// (RenderStages.ts `createLight`), so two registries made from two tables hold their own gain
 // (tools/render/verify-look-params.mjs), and this module holds none.)
 
 type V3 = THREE.Node<'vec3'>;
@@ -459,7 +459,7 @@ let installed: LocalLights | null = null;
 /** The look's tables the local lights take (`LocalLights`, `createLocalLights`). */
 export type LocalLightsTables = Pick<Look, 'localLights'>;
 
-/** The renderer's local lights, made once a scene from `look`'s tables: the registry of the kinds
+/** The render pipeline's local lights, made once a scene from `look`'s tables: the registry of the kinds
  * of light, whose table the module's buffers hold and whose pass (`localLightsPass`) the pipeline
  * declares. */
 export function createLocalLights( look: LocalLightsTables ): LocalLights {

@@ -5,8 +5,8 @@ import { GAME_SETTINGS } from '../packages/game/sim/index.ts';
 // The page's own options, the page's options merged from every layer, and the page's reader.
 //
 // The page's own options (the island's view, the GUI, the tier's detection, the test scene, the
-// game switch), declared as the renderer declares its own (render/Settings.ts, which holds the
-// rules of every table). `PAGE_SETTINGS` merges the four layers' tables: the entries (Boot.ts
+// game switch), declared as the render pipeline declares its own (render/Settings.ts, which holds
+// the rules of every table). `PAGE_SETTINGS` merges the four layers' tables: the entries (Boot.ts
 // through PageSettings.ts, ScenesBoot.ts) report the address's problems against it, and `settings`
 // here reads every layer's names. docs/reference/url-options.md explains each option
 // (tools/repo/verify-settings.mjs).
@@ -27,13 +27,13 @@ export const APP_SETTINGS = {
 	autoQuality: { type: 'choice', default: 'parked', values: [ 'detect', 'off' ], about: 'the GPU timing that chose the tier (parked: read by the tier\'s reload only)' },
 	autoQualitySlow: { type: 'number', default: '1', range: [ 0.01, Infinity ], about: 'scales the GPU timing\'s measured time (parked)' },
 	// debug
-	renderLook: { type: 'choice', default: 'the page\'s own', values: [ 'neutral', 'ponlai' ], debug: true, about: 'the look the renderer draws with, over the page\'s own: `neutral` (the renderer\'s) on the island\'s page, `ponlai` (the island\'s) on the test scenes\'' },
+	renderLook: { type: 'choice', default: 'the page\'s own', values: [ 'neutral', 'ponlai' ], debug: true, about: 'the look the render pipeline draws with, over the page\'s own: `neutral` (the render pipeline\'s) on the island\'s page, `ponlai` (the island\'s) on the test scenes\'' },
 	scene: { type: 'choice', default: 'none', values: [ 'ball', 'empty', 'sea', 'plants' ], about: 'the test scene `scenes.html` shows' },
 	// game
 	game: { type: 'switch', default: 'off', about: 'the island as a game' },
 } as const satisfies SettingsTable;
 
-/** Every option of the page's address: the renderer's, the island's, the game's and the page's own. */
+/** Every option of the page's address: the render pipeline's, the island's, the game's and the page's own. */
 export const PAGE_SETTINGS = mergeSettings( RENDER_SETTINGS, ISLAND_SETTINGS, GAME_SETTINGS, APP_SETTINGS );
 
 /** Every option name of the page. */

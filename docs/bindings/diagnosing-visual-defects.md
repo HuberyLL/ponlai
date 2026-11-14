@@ -14,8 +14,8 @@ Every command that renders in a browser runs under the GPU lock and every wait g
   final once `settled` holds (`docs/reference/test-mode.md`).
 - Serve the checkout with `node tools/kit/serve.mjs dev`; `--sha <rev>` serves another commit, for
   a before-and-after or a bisection.
-- The cheapest views are the renderer's test scenes (`scenes.html`: `ball`, `empty`, `plants`,
-  `sea`), shot with `tools/render/scenes.mjs` (its header). The island: one view with
+- The cheapest views are the render pipeline's test scenes (`scenes.html`: `ball`, `empty`,
+  `plants`, `sea`), shot with `tools/render/scenes.mjs` (its header). The island: one view with
   `tools/kit/capture.mjs`, a list of views on one warm page with `tools/kit/parity/capture-set.mjs`.
 
   ```sh

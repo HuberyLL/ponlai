@@ -56,8 +56,8 @@ digit. Two slots take most of the gain with the readings exact.
 - A capture that loads a page takes its slot only once the page has generated its world. Until
   then it holds the page's GPU device back (the page waits in `requestDevice`), so the world's CPU
   work in its workers runs without a slot. The slot covers the GPU set-up, the warm-up and the shot.
-  A page that does not mark its world (`window.__PONLAI_WORLD__`) takes the slot at the renderer's
-  start.
+  A page that does not mark its world (`window.__PONLAI_WORLD__`) takes the slot at the render
+  pipeline's start.
 - A command started by `gpu-lock.mjs run`, and any process below a holder, inherits the hold. Below
   an exclusive holder everything is re-entrant. Below a shared holder, the first descendant that
   asks for a shared slot takes its ancestor's slot over, and the ancestor holds nothing from then

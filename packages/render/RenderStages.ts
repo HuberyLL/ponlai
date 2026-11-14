@@ -1,25 +1,25 @@
-// The renderer's stages: the page's renderer built a stage at a time, in the entry's order.
+// The render pipeline's stages: the pipeline built a stage at a time, in the entry's order.
 //
-// The renderer's stages: the page's renderer built a stage at a time, in the order the entry
-// (main.ts) calls them. Each stage is a plain function that puts what it builds on the one
-// RenderParts object, which the later stages, the island's stages (IslandStages.ts) and the page
-// read. The stages come in three groups: those that need no land (the renderer, the scenes, the
-// sky, the sun's light, the environment, the sea's waves and the frame's passes), those the
-// island's data builds (the ground's bounce and the shore's waves, the ambient light's probes, the
-// water) and those that close the build (the haze's bake, the warm-up, the shared builds).
+// The render pipeline's stages: the page's render pipeline built a stage at a time, in the order
+// the entry (main.ts) calls them. Each stage is a plain function that puts what it builds on the
+// one RenderParts object, which the later stages, the island's stages (IslandStages.ts) and the
+// page read. The stages come in three groups: those that need no land (the render pipeline, the
+// scenes, the sky, the sun's light, the environment, the sea's waves and the frame's passes), those
+// the island's data builds (the ground's bounce and the shore's waves, the ambient light's probes,
+// the water) and those that close the build (the haze's bake, the warm-up, the shared builds).
 // - The order of the statements inside a stage and of the stages is part of the image: the order
 //   materials first build in decides their shader code (docs/reference/three-behaviour.md, Build order). A new
 //   statement goes where its build belongs, never at the end by habit.
 // - A stage that ends in a wait returns its promise, which the entry awaits before the next stage:
 //   a stage holds no await of its own, so the frames and microtasks between two stages stay the
 //   entry's to order.
-// - What the island gives a stage comes as an argument typed by the renderer's own types: this
-//   file names none of the island's things.
+// - What the island gives a stage comes as an argument typed by the render pipeline's own types:
+//   this file names none of the island's things.
 // - The registered plant kinds are placed by a stage too (`placeVegetation`: the scene, the
 //   wind's motion flag, the two depth prepasses), which closes their registry; the sun's caster box
 //   and the rain's collision bake read the same registry (`vegetationCasters`,
 //   `bakeRainCollision`), each called where the scene's order has it.
-// The frame's stages (`createFrameStages`) are the renderer's work in a frame, cut where the
+// The frame's stages (`createFrameStages`) are the render pipeline's work in a frame, cut where the
 // scene's own work goes between: whether the frame is held, the scene clock, the day and the
 // weather, the sky and its light, the local lights, the weather's effects with the sky's bake, the
 // sun's maps and the sea, the relight, the draw and the submit. The frame's tick calls them in that
@@ -168,7 +168,7 @@ export function sceneOptions( options: SettingsQuery, defaults: SceneDefaults ):
 
 }
 
-/** What the page hands the renderer as it creates it (`createRenderer`), which the later stages
+/** What the page hands the render pipeline as it creates it (`createRenderer`), which the later stages
  * and the page read on RenderParts. */
 export interface RenderHost {
 	/** the frame profiler (?profile), loaded only then */
@@ -266,7 +266,7 @@ export interface SceneFields { shore: THREE.TextureNode; floor: THREE.TextureNod
  * mesh that lie under the water (the rest are left out). */
 export interface SubmergedWorld { group: THREE.Group; subsets?: ReadonlyMap<THREE.Object3D, SubmergedSubset> }
 
-/** What the renderer's stages hand one another and nothing else reads: on the same object, off the
+/** What the render pipeline's stages hand one another and nothing else reads: on the same object, off the
  * RenderParts the island and the page see. */
 interface StageParts {
 	/** the scene the page loaded */
@@ -283,14 +283,14 @@ interface StageParts {
 	hazeShadowCompiled: Promise<void>;
 }
 
-/** The renderer's parts as its own stages see them. */
+/** The render pipeline's parts as its own stages see them. */
 function staged( render: RenderParts ): RenderParts & StageParts {
 
 	return render as RenderParts & StageParts;
 
 }
 
-/** The renderer itself, with what the page hands it. Returns its init, which the entry awaits. */
+/** The render pipeline itself, with what the page hands it. Returns its init, which the entry awaits. */
 export function createRenderer( render: RenderParts, host: RenderHost ) {
 
 	const { profiler, mark, DEBUG, qualityTier, quality, setStatus } = host;
@@ -1082,7 +1082,7 @@ export interface FrameHost {
 /**
  * A frame's stages, in the order a page calls them, every frame. The scene's own per-frame work
  * goes between them where its order has it (the island's: IslandStages.ts `createIslandFrame`);
- * the order inside a stage is the renderer's.
+ * the order inside a stage is the render pipeline's.
  */
 export interface FrameStages {
 	/** True while the frame must not be drawn and no clock may move: an explicit bake of the sky is
@@ -1378,7 +1378,7 @@ export function createFrameStages( render: RenderParts, host: FrameHost ): Frame
 
 }
 
-/** Registers what a scene jump clears of the renderer's, ahead of the island's: the wind's
+/** Registers what a scene jump clears of the render pipeline's, ahead of the island's: the wind's
  * integrated state, the storm's strikes and its sea's foam window (post/SceneHistory.ts; the
  * order registered is the order cleared). */
 export function registerSceneHistories( render: RenderParts ) {
@@ -1390,7 +1390,7 @@ export function registerSceneHistories( render: RenderParts ) {
 
 }
 
-/** Registers what a scene jump clears of the renderer's, after the island's: the fog's bank, the
+/** Registers what a scene jump clears of the render pipeline's, after the island's: the fog's bank, the
  * ground's bounce, the underwater map's cadence, and after the jump's bake the underwater map, at its constructed size and
  * drawn at once for the jump's light (published by the bake), as the load's `prepare` draws it
  * before the first frame: left to the loop's cadence (wall time), a capture ready within a few

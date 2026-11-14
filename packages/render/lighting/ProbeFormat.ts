@@ -1,11 +1,12 @@
 // The ambient light's probes as data: a probe's layout, the lattice and the harmonics' basis.
 //
 // The ambient light's probes as data: the layout of a probe in the lattice's buffer, the lattice
-// itself and the harmonics' basis the probes are projected in. The renderer reads this format
-// (AmbientVolume.ts uploads the lattice, AmbientRelight.ts relights it, Harmonics.ts projects onto
-// the same basis); whoever bakes the probes writes it (the island's world/AmbientProbes.ts, in the
-// world's workers). Plain numbers that import nothing, so the workers and node can run it: a file
-// the chunk worker imports must not reach three.js (tools/repo/verify-layers.mjs).
+// itself and the harmonics' basis the probes are projected in. The render pipeline reads this
+// format (AmbientVolume.ts uploads the lattice, AmbientRelight.ts relights it, Harmonics.ts
+// projects onto the same basis); whoever bakes the probes writes it (the island's
+// world/AmbientProbes.ts, in the world's workers). Plain numbers that import nothing, so the
+// workers and node can run it: a file the chunk worker imports must not reach three.js
+// (tools/repo/verify-layers.mjs).
 
 /** Floats per probe: nine vec4 of ( sky, bounced rgb ) coefficients, seven of the groves'
  * in-scatter (rgb per coefficient in turn, then a spare 0), three of the sea's visibility (nine
