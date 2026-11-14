@@ -86,7 +86,7 @@
 // stopped. Every `run` and `start` registers itself in `<tmp>/ponlai-jobs/<runner pid>.json` (the
 // log, the runner's and the command's pids, cwd, command, start time; the folder's name is the
 // configuration's `machine.jobs`); `<tmp>` is the GPU lock's temporary root, so a scratch
-// `PONLAI_GPU_LOCK_DIR` moves the registry with the lock. The runner removes its entry after the end
+// `<prefix>GPU_LOCK_DIR` (`<prefix>`: the configuration's `machine.envPrefix`) moves the registry with the lock. The runner removes its entry after the end
 // line; `list` and `stop` prune entries whose runner is gone.
 //
 // GPU lock and browser: neither; it reads the lock's state to show where a job stands. Cost: under

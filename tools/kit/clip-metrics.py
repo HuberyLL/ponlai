@@ -110,9 +110,10 @@ from project import project  # noqa: E402
 # The application scheduling policy on macOS (tools/kit/qos.mjs says why): the main process
 # re-executes itself in place under taskpolicy -a; the workers are new processes, which do not
 # inherit it, so they start through a shim that does the same (pool_context).
-QOS = sys.platform == 'darwin' and os.environ.get( 'PONLAI_QOS' ) != 'off'
-if QOS and __name__ == '__main__' and os.environ.get( 'PONLAI_QOS' ) != str( os.getpid() ):
-	os.environ[ 'PONLAI_QOS' ] = str( os.getpid() )
+QOS_ENV = project()[ 'machine' ][ 'envPrefix' ] + 'QOS'
+QOS = sys.platform == 'darwin' and os.environ.get( QOS_ENV ) != 'off'
+if QOS and __name__ == '__main__' and os.environ.get( QOS_ENV ) != str( os.getpid() ):
+	os.environ[ QOS_ENV ] = str( os.getpid() )
 	os.execv( '/usr/sbin/taskpolicy', [ '/usr/sbin/taskpolicy', '-a', sys.executable, *sys.orig_argv[ 1: ] ] )
 
 
@@ -128,7 +129,7 @@ def pool_context():
 		atexit.register( shutil.rmtree, folder, True )
 		shim = os.path.join( folder, 'python.sh' )
 		with open( shim, 'w' ) as f:
-			f.write( f'#!/bin/sh\nPONLAI_QOS=$$ exec /usr/sbin/taskpolicy -a { shlex.quote( sys.executable ) } "$@"\n' )
+			f.write( f'#!/bin/sh\n{ QOS_ENV }=$$ exec /usr/sbin/taskpolicy -a { shlex.quote( sys.executable ) } "$@"\n' )
 		os.chmod( shim, 0o700 )
 		ctx.set_executable( shim )
 	return ctx

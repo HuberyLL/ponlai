@@ -26,8 +26,8 @@
 //   `tools/<another group>/`, and no name of the form `__NAME__` in capitals (the page's globals
 //   take that form, the configuration's `page` lists them) appears in the code; no string names the
 //   output folder (`artifacts/`, or `'artifacts'` alone: the configuration's `output`), and the
-//   project's name (`ponlai`, in any case) appears nowhere in the code but in an environment
-//   variable's name (`PONLAI_...`, kept as they are: the GPU lock's sessions read them).
+//   project's name (`ponlai`, in any case) appears nowhere in the code, environment variables'
+//   names included (they are built from the configuration's `machine.envPrefix`).
 //
 // Output: a summary on stdout (the files, imports and page globals checked), then PASS or FAIL with
 // the failures.
@@ -49,8 +49,7 @@ const PROJECT_PATH = new RegExp( `(?<![\\w./-])(?:packages|app|tools/(?:${ GROUP
 const GLOBAL = /\b__[A-Z][A-Z0-9_]*__\b/g;
 // the output folder written as a path, or as a string of its own
 const OUTPUT = /\bartifacts\/|(['"`])artifacts\1/;
-// the project's name, once the environment variables' names are taken out
-const ENV_NAME = /PONLAI_[A-Z0-9_]+\b/g;
+// the project's name
 const NAME = /ponlai/i;
 const PAGE_GLOBALS = Object.values( PROJECT.page ).filter( ( v ) => GLOBAL.test( v ) && ( GLOBAL.lastIndex = 0, true ) );
 
@@ -96,8 +95,8 @@ function names( file, code ) {
 	if ( line ) failures.push( `${ rel( file ) }: names a project path in its code: ${ line.trim().slice( 0, 160 ) }` );
 	const output = code.split( '\n' ).find( ( l ) => OUTPUT.test( l ) );
 	if ( output ) failures.push( `${ rel( file ) }: names the output folder in its code (read it from the configuration's output): ${ output.trim().slice( 0, 160 ) }` );
-	const name = code.split( '\n' ).find( ( l ) => NAME.test( l.replace( ENV_NAME, '' ) ) );
-	if ( name ) failures.push( `${ rel( file ) }: names the project in its code (read it from the configuration: name, machine): ${ name.trim().slice( 0, 160 ) }` );
+	const name = code.split( '\n' ).find( ( l ) => NAME.test( l ) );
+	if ( name ) failures.push( `${ rel( file ) }: names the project in its code (read it from the configuration: name, machine, machine.envPrefix): ${ name.trim().slice( 0, 160 ) }` );
 
 }
 

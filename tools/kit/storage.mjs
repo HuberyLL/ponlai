@@ -344,7 +344,8 @@ function trimItem( slot, now, items, locked ) {
 
 function scanProfiles( main, now, o, items ) {
 
-	const root = process.env.PONLAI_CAPTURE_PROFILES ? path.resolve( process.env.PONLAI_CAPTURE_PROFILES ) : outputDir( main, 'profiles' );
+	const profiles = process.env[ `${ PROJECT.machine.envPrefix }CAPTURE_PROFILES` ];
+	const root = profiles ? path.resolve( profiles ) : outputDir( main, 'profiles' );
 	for ( const e of list( root ) ) if ( e.isDirectory() ) {
 
 		const dir = path.join( root, e.name );
