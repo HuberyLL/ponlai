@@ -388,9 +388,11 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 ## The test scenes
 
 `scenes.html` is a second page: the renderer's small test scenes, built from the renderer alone
-(`app/scenes/`), with no island and no game. It takes the renderer's options of this
-page (the sky and weather, `paused`, `t`, `quality`, `aa`, `flags`, `tune.*`, `debug`, `profile`)
-and none of the island's or the game's.
+(`app/scenes/`), with no island and no game. The dev server serves it, and so does a preview the
+tools start (`tools/kit/serve.mjs`), whose build adds it (`npm run build -- --mode scenes`);
+`npm run build` alone builds the island's page only, so what ships has no test scenes. It takes
+the renderer's options of this page (the sky and weather, `paused`, `t`, `quality`, `aa`, `flags`,
+`tune.*`, `debug`, `profile`) and none of the island's or the game's.
 
 - `scene` names the scene: `ball` (rows of balls by roughness and by albedo, a grey and a white
   card and a post on level grey ground: how a surface takes the key, the sky and the ground's

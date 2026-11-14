@@ -12,7 +12,7 @@
 //
 // Options:
 //   dev          the dev server (vite)
-//   preview      the production build (`npm run build` first, then `vite preview`)
+//   preview      the production build (the configuration's `serve.build` first, then `vite preview`)
 //   --port N     uses port N, or fails naming the process that listens on it (default: the first
 //                free port in the configuration's range, 6400-6499)
 //   --no-build   preview: serves the dist/ there is, without building

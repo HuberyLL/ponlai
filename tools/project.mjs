@@ -125,8 +125,10 @@ export default Object.freeze( {
 
 	// the servers tools/kit/serve.mjs starts
 	serve: Object.freeze( {
-		// the command that builds what a preview serves
-		build: Object.freeze( [ 'npm', 'run', 'build' ] ),
+		// the command that builds what a preview serves: the build with the renderer's test scenes
+		// (vite.config.ts; the arguments reach `vite build`, the build script's last command, and an
+		// older commit's config, which builds them anyway, ignores the mode)
+		build: Object.freeze( [ 'npm', 'run', 'build', '--', '--mode', 'scenes' ] ),
 		// vite's command per mode: serve.mjs adds the host, the port and --strictPort, and waits for
 		// vite's `Local:` line
 		vite: Object.freeze( { dev: 'npx vite', preview: 'npx vite preview' } ),
