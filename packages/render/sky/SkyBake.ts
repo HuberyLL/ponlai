@@ -33,7 +33,7 @@ import type { Sky, SkyEndpoint } from './Sky.ts';
 // which bakes no more, kept them. The spread drives three's `PMREMGenerator` private steps
 // (three/Environment.ts, which throws on a three without them).
 
-// what a panorama that lends the island no light takes for its tint (`bakeIslandTint`)
+// what a panorama that lends the land no light takes for its tint (`bakeLandTint`)
 const NEUTRAL_TINT = new THREE.Vector4( 1, 1, 1, 0 );
 
 // One bake: its endpoint, whether it is explicit (reads its irradiance back and shows at once),
@@ -192,10 +192,10 @@ export function renderPanoramas( sky: Sky, bake: Bake ): void {
 
 			sky.irradiancePass.value = rt === sky.small ? 1 : 0;
 			sky.bakeStore.value = rt === sky.small ? 1 : 2 ** stops * storePress.store.value;
-			// Only the environment's source takes the island's light after sunset (`look.islandSky`).
+			// Only the environment's source takes the island's light after sunset (`look.landSky`).
 			const lends = rt === sky.reflectionSource;
-			sky.bakeIslandTint.value.copy( lends ? sky.islandTint.value : NEUTRAL_TINT );
-			sky.bakeIslandGain.value = lends ? sky.islandGain.value : 1;
+			sky.bakeLandTint.value.copy( lends ? sky.landTint.value : NEUTRAL_TINT );
+			sky.bakeLandGain.value = lends ? sky.landGain.value : 1;
 			sky.bakeHaze.value = lends || rt === sky.small ? 1 : 0;
 			sky.bakeGlow.value = lends || rt === sky.small ? 0 : 1;
 			sky.bakeKeyFloor.value = lends || rt === sky.small ? 0 : 1;

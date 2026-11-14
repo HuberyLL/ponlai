@@ -70,7 +70,7 @@ export { compileLatentInto } from './post/graph/Compile.ts';
 export { debugViewChoices } from './post/graph/DebugView.ts';
 export { createShared, installShared, shared } from './shared.ts';
 export type { Shared } from './shared.ts';
-export { DAY_PRESETS, duskForce, yunpengNightShare } from './sky/DayCycle.ts';
+export { DAY_PRESETS, duskForce, nightGlowShare } from './sky/DayCycle.ts';
 export type { DayCycle, DayPreset } from './sky/DayCycle.ts';
 export { markSkyRetune } from './sky/SkyRetune.ts';
 export { WEATHER_PRESETS, WIND_LEVELS, isParkedWeather } from './sky/Weather.ts';

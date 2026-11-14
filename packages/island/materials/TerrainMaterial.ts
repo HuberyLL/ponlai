@@ -4,7 +4,7 @@ import {
 	cameraPosition, specularColor, specularColorBlended, specularF90,
 	normalize, abs, pow, sqrt, max, min, dot, sign, mix, smoothstep, clamp, fract, floor, sin, cos, exp, log2, select, dFdx, dFdy, length, varying,
 } from 'three/tsl';
-import { type Shared, DETAIL_SIZE, SCAN_TOP_MIP, GTAO, floorOcclusion, receiveScreenAO, screenAOAt, type WaveMaps, underwaterLight, UnderwaterLightingModel, type UnderwaterLight, type UnderwaterModelOptions, TURF_CANOPY_DEPTH, meadowCanopyLight, meadowGroundLight, puddleField, puddleRipples, DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness, hexReadScan, heightBlend, type HexScan, debugFlags, setDebugFlag, FSR3, fsr3MipBiasScale, MEADOW_SHADE, SS_SHADOW, meadowGroundShade, screenShadowAt, writeMeter, liftKeyWorld } from '../../render/index.ts';
+import { type Shared, DETAIL_SIZE, SCAN_TOP_MIP, GTAO, floorOcclusion, receiveScreenAO, screenAOAt, type WaveMaps, underwaterLight, UnderwaterLightingModel, type UnderwaterLight, type UnderwaterModelOptions, TURF_CANOPY_DEPTH, meadowCanopyLight, meadowGroundLight, puddleField, puddleRipples, DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness, hexReadScan, heightBlend, type HexScan, debugFlags, FSR3, fsr3MipBiasScale, MEADOW_SHADE, SS_SHADOW, meadowGroundShade, screenShadowAt, writeMeter, liftKeyWorld } from '../../render/index.ts';
 import { settings } from '../../render/setup.ts';
 import { SCAN_LAYER, type GroundTextures } from './GroundTextures.ts';
 import { LAWN_GAIN, LAWN_TONE, MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_MAX_DROP, groundGains } from './Meadow.ts';
@@ -239,7 +239,7 @@ interface Ctx {
 	 * takes it, y as the turf does (Grass.ts `meadowGroundRuns`). */
 	meadowRun?: THREE.Node<'vec2'> | null;
 }
-// hex: hex-tiled stone and height-blended layers (the default; debugFlags.terrainHex = false
+// hex: hex-tiled stone and height-blended layers (the default; the URL option `terrainHex=0`
 // builds the plain tiling with smooth masks, as before)
 // a world field (WorldFields.ts): its base node, which a swapped field's texture follows
 type FieldTexture = THREE.Texture | THREE.TextureNode;
@@ -1103,9 +1103,8 @@ export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: GroundTextur
 		return mat;
 
 	};
-	// URL option, read at load: terrainHex=0 builds the plain tiling with smooth masks.
-	if ( settings.get( 'terrainHex' ) === '0' ) setDebugFlag( 'terrainHex', false );
-	return variant( hex ?? debugFlags.terrainHex !== false );
+	// the island's own URL option, read here: terrainHex=0 builds the plain tiling with smooth masks
+	return variant( hex ?? settings.get( 'terrainHex' ) !== '0' );
 
 }
 

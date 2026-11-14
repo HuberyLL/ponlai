@@ -23,7 +23,7 @@
 // Exit codes: 0 every check passes; 1 a check failed (the assertion is thrown).
 import '../kit/help.mjs';
 import { assert, assertions } from '../kit/assert-count.mjs';
-import { DayCycle, DAY_PRESETS, NOON_ELEVATION, MOON, cloudMoonShare, displayNight, exposureNight, moonDirection, moonKeyShare, nightAmbientAt, nightAmbientShare, skyNight, starNight, sunElevationAt, morningHour, eveningHour, yunpengNightShare } from '../../packages/render/sky/DayCycle.ts';
+import { DayCycle, DAY_PRESETS, NOON_ELEVATION, MOON, cloudMoonShare, displayNight, exposureNight, moonDirection, moonKeyShare, nightAmbientAt, nightAmbientShare, skyNight, starNight, sunElevationAt, morningHour, eveningHour, nightGlowShare } from '../../packages/render/sky/DayCycle.ts';
 import { createDayWindows } from '../../packages/render/look/DayLook.ts';
 import { createExposure } from '../../packages/render/look/ExposureLook.ts';
 import { ISLAND_LOOK } from '../../packages/island/look/IslandLook.ts';
@@ -153,7 +153,7 @@ for ( let minute = 0; minute <= 1440; minute ++ ) {
 		stars: ( e, rising, cloud ) => starNight( windows, daylightAt( e, rising ), e, rising, cloud ),
 		sky: ( e, rising, cloud ) => skyNight( windows, e, rising, cloud ),
 		ambient: ( e, rising, cloud ) => nightAmbientShare( windows, e, rising, cloud ),
-		yunpeng: ( e, rising, cloud ) => yunpengNightShare( windows, e, rising, cloud ),
+		nightGlow: ( e, rising, cloud ) => nightGlowShare( windows, e, rising, cloud ),
 		cloudMoon: ( e, rising, cloud ) => cloudMoonShare( windows, e, rising, cloud ),
 		moonKey: ( e ) => moonKeyShare( windows, e ),
 	};

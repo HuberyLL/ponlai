@@ -47,8 +47,8 @@ import type { Exposure } from '../look/ExposureLook.ts';
 // and long before a clear sunrise the air is blue and the sea a clear blue under it, lit by the
 // sun's own light on the high air. So under a clear or fair sky the display's night weight
 // (`displayNight`), the sky's night key (`skyNight`), the night's ambient (`nightAmbientShare`)
-// and the yunpeng's light (`yunpengNightShare`, which would glow at their brightest under a day's
-// exposure) come in only from -7 to -11 degrees after sunset, and the rising sun takes them away
+// and the night glow (`nightGlowShare`: glowing plants and their local lights, which would glow at
+// their brightest under a day's exposure) come in only from -7 to -11 degrees after sunset, and the rising sun takes them away
 // early, from about -12 degrees. The moon's key and its sky take no window: at the moon's
 // magnitude (SkyTrack.ts MOON_OVER_SUN) the key's whole light on the land is 2.9 stops under the
 // twilight's own at -7 degrees after sunset and 2.4 under it before sunrise, and the moonlit
@@ -359,13 +359,13 @@ export function nightAmbientShare( windows: DayWindows, elevation: number, risin
 	return clear + ( nightAmbientAt( windows, elevation ) - clear ) * cloud;
 
 }
-/** The yunpeng's share of the night (their glow and the local lights, set from it by the island), at the sun's
- * `elevation` (degrees), `rising` or setting, under a clouded share `cloud`: the night ambient's
- * own form (`nightAmbientShare`) over windows of its own (`windows.dusk.yunpeng`), so the lamps keep
+/** The night glow's share of the night (what glows by night and its local lights, set from it by
+ * the scene), at the sun's `elevation` (degrees), `rising` or setting, under a clouded share `cloud`: the night ambient's
+ * own form (`nightAmbientShare`) over windows of its own (`windows.dusk.nightGlow`), so the lamps keep
  * their coming in whatever the ambient's windows become. */
-export function yunpengNightShare( windows: DayWindows, elevation: number, rising: boolean, cloud: number ): number {
+export function nightGlowShare( windows: DayWindows, elevation: number, rising: boolean, cloud: number ): number {
 
-	const own = windows.dusk.yunpeng;
+	const own = windows.dusk.nightGlow;
 	const clear = rising ? rampIn( elevation, own.morning ) : duskIn( windows, elevation, own.evening, windows.depth.ambient );
 	return clear + ( rampIn( elevation, own.clouded ) - clear ) * cloud;
 
@@ -393,14 +393,14 @@ export function cloudMoonShare( windows: DayWindows, elevation: number, rising: 
  * weight in the haze's (weather/HazeKeys.ts `keyAlong`); `cloudMoon`, the clouds' moonlight (Sky.ts
  * `moonShare`); `deck`, the deck's light in the haze (HazeKeys.ts `deck`); `exposureNight`, the
  * night weight the exposure's keys take (`exposureNight`), and `displayNight`, the one the tone,
- * the grade and the bloom take (`displayNight`; both read in post/Pipeline.ts `updateDisplay`); `yunpeng`, the yunpeng's glow and its lights'
- * share, and `localLights`, the local lights' strength (RenderStages.ts `lightNight`); `stars`, the stars' share in the
+ * the grade and the bloom take (`displayNight`; both read in post/Pipeline.ts `updateDisplay`); `nightGlow`, the night glow's share
+ * (what glows by night and its lights), and `localLights`, the local lights' strength (RenderStages.ts `lightNight`); `stars`, the stars' share in the
  * drawn sky (SkyTrack.ts `starVisibility`: `nightVisibility` times `starNight`; no bake holds them,
  * so the land takes none of their light). The twilight's, each a weight on
  * the sun's light (1 when not forced): `sun`, the sun's part of the key (Sky.ts `keyColor`);
  * `hazeSun`, the haze's sunlight; `hazeSky`, the haze's skylight from the sun's sky
  * (weather/VolumetricHaze.ts). */
-export const DUSK_FORCES = [ 'moonKey', 'moonSky', 'skyNight', 'nightAmbient', 'landNight', 'hazeNight', 'cloudMoon', 'deck', 'exposureNight', 'displayNight', 'yunpeng', 'localLights', 'stars', 'sun', 'hazeSun', 'hazeSky' ] as const;
+export const DUSK_FORCES = [ 'moonKey', 'moonSky', 'skyNight', 'nightAmbient', 'landNight', 'hazeNight', 'cloudMoon', 'deck', 'exposureNight', 'displayNight', 'nightGlow', 'localLights', 'stars', 'sun', 'hazeSun', 'hazeSky' ] as const;
 export type DuskForce = typeof DUSK_FORCES[ number ];
 // `sky.dusk.force.<name>` (debug/Tune.ts): -1, the default, leaves the share as the code makes it,
 // 0 to 1 forces it to that value; the sky is baked again on a change

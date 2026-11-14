@@ -43,8 +43,8 @@ export interface Exposure {
 	 * frame's exposure (see Sky.track). */
 	readonly nightSky: number;
 	readonly nightGain: number;
-	/** The stops a clear night's metered exposure lies above the twilight's exposure. The yunpeng's
-	 * glow and every local light are scaled by 2 to minus this, so a lamp keeps its display at night
+	/** The stops a clear night's metered exposure lies above the twilight's exposure. The night glow
+	 * (what glows by night) and every local light are scaled by 2 to minus this, so a lamp keeps its display at night
 	 * whatever the hour. */
 	readonly nightMeterLift: number;
 }

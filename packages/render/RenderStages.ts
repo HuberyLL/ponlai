@@ -766,7 +766,7 @@ export function publishSkyLight( render: RenderParts ) {
 	// (the sky's light on what it lights takes a low sun's lift, shared.ts `skyLift`; the sky drawn and
 	// its meter never do)
 	shared.skyIrradianceSource = sky.irradianceNode.mul( shared.skyFill ).mul( shared.skyLift );
-	shared.islandIrradianceSource = sky.islandIrradianceNode.mul( shared.skyFill );
+	shared.skyFillIrradiance = sky.landIrradianceNode.mul( shared.skyFill );
 	shared.skyMeterLog2 = sky.meterLog2Node;
 
 }

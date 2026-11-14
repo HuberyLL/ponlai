@@ -236,7 +236,7 @@ const BOUNCE_GAIN = 9.4;
  * sky takes less of `clearSky`'s gain at 3 degrees (2 against the evening's 2.7: a brighter sky
  * lifts the near sea in a view across the island toward the rising sun), so the land takes the
  * rest here (`dawn`, 1.58); from the sun's rise down (`sunrise`, 0 degrees) it keeps 0.77, the
- * land's level before the sun being look/SkyLook.ts `islandSky.rising`'s. The moon's sky takes its own keys
+ * land's level before the sun being look/SkyLook.ts `landSky.rising`'s. The moon's sky takes its own keys
  * at the moon's height (`probeSkyMoon`: low and high at 0.92, golden and cloudy the day's; 0.92 at
  * its default 20 degrees, with the deck's gains there), mixed in by the moonlit sky's share (Sky.ts
  * `moonSkyShare`, `update`): the moonlit sky lights the land through the same probes as the sun's

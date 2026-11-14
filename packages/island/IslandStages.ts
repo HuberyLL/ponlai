@@ -15,7 +15,7 @@
 // - The page's camera views (app/CameraViews.ts) need the document, so the page builds the island
 //   view's framing (`IslandFraming`), which the land's changes call, and hands it to the stages that
 //   frame the land (`createVegetation`, `createGrowth`).
-import { WIND_VIEW, shared, testSources, debugFlags, TEST_MODE, declareSceneEvents, createDisplacementField, displacementField, Vegetation, defaultPlant, placeVegetation, vegetationCasters, bakeRainCollision, duskForce, yunpengNightShare, type RenderParts } from '../render/index.ts';
+import { WIND_VIEW, shared, testSources, debugFlags, TEST_MODE, declareSceneEvents, createDisplacementField, displacementField, Vegetation, defaultPlant, placeVegetation, vegetationCasters, bakeRainCollision, duskForce, nightGlowShare, type RenderParts } from '../render/index.ts';
 import { settings as params, type SettingsQuery } from '../render/setup.ts';
 import * as THREE from 'three/webgpu';
 import { FreeCameraControls } from './camera/FreeCameraControls.ts';
@@ -639,8 +639,8 @@ export function createIslandFrame( render: RenderParts, island: IslandParts, { f
 		},
 
 		// the yunpeng's glow and its local lights by their own share of the night (sky/DayCycle.ts
-		// `yunpengNightShare`); a debug page may force it (DayCycle.ts `duskForce`)
-		night: () => setYunpengNight( duskForce( 'yunpeng', yunpengNightShare( sky.dayWindows, sky.elevation, sky.rising, shared.clouded.value ) ) ),
+		// `nightGlowShare`); a debug page may force it (DayCycle.ts `duskForce`)
+		night: () => setYunpengNight( duskForce( 'nightGlow', nightGlowShare( sky.dayWindows, sky.elevation, sky.rising, shared.clouded.value ) ) ),
 
 		tintSward( nightAmbient ) {
 

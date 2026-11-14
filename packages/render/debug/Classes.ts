@@ -49,7 +49,7 @@ export type FitClass = typeof FIT_CLASSES[ number ];
 /** Whether the page draws the kinds' view. */
 export const CLASSES = debugFlags.classes === true || debugFlags.classes === 1;
 
-// the 40 degrees from up that split the island's ground from its cliff
+// the 40 degrees from up that split a 'slope' surface's ground from its rock
 const GROUND_COS = Math.cos( 40 * Math.PI / 180 );
 
 const code = ( kind: FitClass ) => {

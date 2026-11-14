@@ -175,7 +175,7 @@ export function deckSkyGap( elevation: number, clouded: number, overcast: number
 /** How far a clouded day's high sun has come in at the sun's `elevation` (degrees) under the
  * weather's blend of the skies (`skyMix`): none under a clear or a fair sky, nor up to `low`
  * degrees, the sky's clouded share from 40 up, where the sky's light (look/SkyLook.ts `skyLight`) has reached
- * its high key. The light lent to the island (look/SkyLook.ts `cloudLightTint`) follows it from 12, with
+ * its high key. The light lent to the land (look/SkyLook.ts `cloudLightTint`) follows it from 12, with
  * the sky's light's own climb, so a clouded noon's land stays as dark and green as its
  * afternoon's. */
 export function cloudedHighSun( elevation: number, skyMix: readonly number[], low: number ): number {

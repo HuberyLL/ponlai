@@ -46,8 +46,8 @@ export interface GrowthInput<L> {
 	renderer: THREE.WebGPURenderer;
 	/** the next version's world */
 	data: L;
-	/** metres from a point to the islander's walking loop on the next land */
-	walkDistance( x: number, z: number ): number;
+	/** metres from a point to the scene's path on the next land (for an island, its walking loop) */
+	pathDistance( x: number, z: number ): number;
 	/** keeps a staged in-place write (Upload.ts stagedWriteSteps) until the swap's frames are done */
 	stage( free: ( () => void ) | null ): void;
 }

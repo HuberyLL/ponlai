@@ -236,14 +236,13 @@ by a name. A key a layer names in an object's `userData` is one the renderer dec
 headless code load is free of three.js, whichever layer it is in. The tools and the checks are
 white-box: they may import any layer.
 
-The renderer still carries this island's words as names: in the look's types (the yunpeng's dusk
-window and night share, the island's sky rows), in the shared uniforms (the sward's tint, the
-island's irradiance source, the leaves' gain), as the name of its own techniques, passes and look
-table (`meadow`), in the debug flags, in the closed list of the debug view's kinds (rule 18), in the
-meadow's `userData` marks and in the walk's distance in the growth's input. It tells the island's
-things apart by these names in two places only: the lighting model multiplies the blade family's
-ambient light by the sward's tint, and the profiler's labels take the page's parts by name and wrap
-the islanders' update.
+The renderer's names hold no proper name of this island: what it shares with a scene is named for
+what it is (the dusk window of what glows by night, the sky light lent to the land, the distance to
+the scene's path in the growth's input). Ordinary words for an open-air scene stay its own: the
+meadow's shade, canopy and depth pass, the blade family's ambient tint (`swardTint`), the debug
+view's kinds and the grade's bands. One parameter still carries the island's word: the sea's inputs
+from the land's shape in `createWater` (`islandSea`). The debug flags are one open object for every
+layer, and the renderer's header lists the island's flags with its own.
 
 **Why:** the renderer is to be usable without this island, and a test scene builds it alone. A
 renderer that imports the island cannot be built, read or checked without it, and every change to

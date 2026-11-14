@@ -1,5 +1,5 @@
 import type { DayKey } from '../../render/index.ts';
-import type { IslandSkyRow, Rgb, SkyLook } from '../../render/setup.ts';
+import type { LandSkyRow, Rgb, SkyLook } from '../../render/setup.ts';
 
 // The island's sky look: its numbers for the sky's tables.
 //
@@ -14,7 +14,7 @@ import type { IslandSkyRow, Rgb, SkyLook } from '../../render/setup.ts';
 // sun elevation, and a cast about the sunset and in the night, ISLAND_SKY: the environment's
 // source panorama, which lights the terrain and plants, in its bake (its haze without the fog
 // layer: `fogEnvironment`), and the islanders' sky fill
-// (`islandIrradianceNode`, the irradiance probe graded the same way). The seen sky, the panorama
+// (`landIrradianceNode`, the irradiance probe graded the same way). The seen sky, the panorama
 // the sea reflects and the irradiance probe itself, which lights the sea's body, keep the
 // atmosphere's own, so the evening's sky and sea look as they did. Each row is an elevation
 // (degrees, descending): the colour the light is drawn toward (linear, at the light's own
@@ -48,14 +48,14 @@ import type { IslandSkyRow, Rgb, SkyLook } from '../../render/setup.ts';
 // cliffs of a cloudy or overcast evening read a warm brown under a blue deck and sea (the rock at
 // -5 degrees red over green 0.83, against 0.5 and a blue grey under the clouded rows). A clouded
 // sky takes rows of its own (ISLAND_SKY_CLOUDED: a light warm cast, the gains of 0.65 and 0.5 at
-// -4 and -5.3 degrees) by its clouded share (`islandSky`).
+// -4 and -5.3 degrees) by its clouded share (`landSky`).
 // The rising sun has rows of its own (ISLAND_SKY_RISING).
 // By day a clouded sky lends the island its own light: a deck of cloud passes on little of the blue
 // of the sky's high key (SKY_LIGHT), so from 12 to 40 degrees, as that key climbs, the light lent to
 // the island is drawn most of the way to a warm grey (CLOUD_LIGHT_TINT, Weather.ts `cloudedHighSun`). The land
 // keeps its green under a high sun; the meter's level is the same, the tint keeping the luminance.
 const CLOUD_LIGHT_TINT = [ 1.2, 1, 0.5, 0.6 ] as const;
-const ISLAND_SKY: readonly IslandSkyRow[] = [
+const ISLAND_SKY: readonly LandSkyRow[] = [
 	{ at: 2 },
 	{ at: 1, tint: [ 1.085, 0.988, 0.872 ], amount: 0.15, gain: 1.16 },
 	{ at: 0.5, tint: [ 1.128, 0.982, 0.807 ], amount: 0.225, gain: 1.24 },
@@ -68,7 +68,7 @@ const ISLAND_SKY: readonly IslandSkyRow[] = [
 	{ at: - 8.6, gain: 0.76 },
 	{ at: - 13.2 },
 ];
-const ISLAND_SKY_CLOUDED: readonly IslandSkyRow[] = [
+const ISLAND_SKY_CLOUDED: readonly LandSkyRow[] = [
 	...ISLAND_SKY.slice( 0, 4 ),
 	{ at: - 1.3, tint: [ 1, 0.75, 0.45 ], amount: 0.5, gain: 0.89 },
 	{ at: - 2.6, tint: [ 0.95, 0.8, 0.58 ], amount: 0.5, gain: 0.96 },
@@ -87,9 +87,9 @@ const ISLAND_SKY_CLOUDED: readonly IslandSkyRow[] = [
 // where the sky's has fallen behind the sun's coming, to none from 2 up.
 // A blue cast of its own turned the rock's brightest tenth to C 0.08 to 0.09 at -6.5 degrees,
 // against 0.07 to 0.08 without: the land takes the sky's own colour. A clouded
-// morning keeps these tints but takes the evening's gains back by its clouded share (`islandSky`):
+// morning keeps these tints but takes the evening's gains back by its clouded share (`landSky`):
 // its exposure stays on the clouded keys, which these gains were not set under.
-const ISLAND_SKY_RISING: readonly IslandSkyRow[] = [
+const ISLAND_SKY_RISING: readonly LandSkyRow[] = [
 	{ at: 2 },
 	{ at: 1, gain: 1.3 },
 	{ at: 0, gain: 1.6 },
@@ -458,7 +458,7 @@ const KEY_THROUGH_CLOUD = 3;
 
 export const SKY: SkyLook = {
 	cloudLightTint: CLOUD_LIGHT_TINT,
-	islandSky: { setting: ISLAND_SKY, clouded: ISLAND_SKY_CLOUDED, rising: ISLAND_SKY_RISING },
+	landSky: { setting: ISLAND_SKY, clouded: ISLAND_SKY_CLOUDED, rising: ISLAND_SKY_RISING },
 	clearShade: CLEAR_SHADE,
 	clearShadeTint: CLEAR_SHADE_TINT,
 	lowSun: LOW_SUN,

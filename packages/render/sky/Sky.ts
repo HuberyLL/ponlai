@@ -28,7 +28,7 @@ import type { SkyTables } from '../look/SkyLook.ts';
 import type { DayCycleSnapshot } from './DayCycle.ts';
 import type { WeatherState } from './Weather.ts';
 import { setKeyCloud } from '../lighting/KeyCloud.ts';
-import { bakeColour, dirToEquirect, discCloudTransmittance, domeColour, equirectToDir, lendIsland } from './SkyDome.ts';
+import { bakeColour, dirToEquirect, discCloudTransmittance, domeColour, equirectToDir, lendLand } from './SkyDome.ts';
 import { abortSlices, bake, finishSlices, runSlices, startSlices, type Slice } from './SkyBake.ts';
 import { trackSky } from './SkyTrack.ts';
 
@@ -91,8 +91,8 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // island takes its light from there (lighting/KeyLift.ts), and the key's direction (`keyDir`)
 // turns there over the handoff and holds there all night, so the water's glint and the clouds'
 // light see the moon where it is drawn. The clouds take their own path between the two in the
-// twilight, while no light reaches them (CLOUD_TURN). After sunset the light the sky lends the island takes a gain
-// of its own (`look.islandSky`), and under a clouded high sun a tint of its own (`look.cloudLightTint`), which
+// twilight, while no light reaches them (CLOUD_TURN). After sunset the light the sky lends the land takes a gain
+// of its own (`look.landSky`), and under a clouded high sun a tint of its own (`look.cloudLightTint`), which
 // the sky the eye sees, the sea's reflection of it and the sea's own body never take. The dome lays the air's haze over
 // itself (`fogDome`, VolumetricHaze.ts `skyHaze`): the clouds at the distance to their shell's middle
 // height (the weather's shell: `look.cloudSkies`, low under cloudy and overcast skies), under the low
@@ -299,8 +299,8 @@ export class Sky {
 	// cross-faded with it. The dome's metering illuminance and the exposure's sky term (shared.ts
 	// `skyMeterLog2`).
 	readonly meterLog2Node: THREE.Node<'float'>;
-	// The irradiance probe as lent to the island after sunset (`look.islandSky`): the islanders' sky fill.
-	readonly islandIrradianceNode: V3;
+	// The irradiance probe as lent to the land after sunset (`look.landSky`): the figures' sky fill.
+	readonly landIrradianceNode: V3;
 	// The cloudless sky's irradiance over pi (the clear sky the atmosphere gives, with the night's
 	// moonlit sky, under no clouds and none of the weather's dimming), baked and cross-faded with
 	// irradianceNode: the haze's sky light, which the weather scales instead (weather/HazeKeys.ts).
@@ -446,13 +446,13 @@ export class Sky {
 	environmentStops: [ number, number ] = [ 0, 0 ];
 	environmentGainA = uniform( 1 );
 	environmentReadValue = 1;
-	// The light the sky lends the island for this frame's sun (`look.islandSky`: the tint and its amount,
-	// the gain), and the bake's copies: the island's for the environment's source, neutral for the
+	// The light the sky lends the land for this frame's sun (`look.landSky`: the tint and its amount,
+	// the gain), and the bake's copies: the land's for the environment's source, neutral for the
 	// other panoramas.
-	islandTint = uniform( new THREE.Vector4( 1, 1, 1, 0 ) );
-	islandGain = uniform( 1 );
-	bakeIslandTint = uniform( new THREE.Vector4( 1, 1, 1, 0 ) );
-	bakeIslandGain = uniform( 1 );
+	landTint = uniform( new THREE.Vector4( 1, 1, 1, 0 ) );
+	landGain = uniform( 1 );
+	bakeLandTint = uniform( new THREE.Vector4( 1, 1, 1, 0 ) );
+	bakeLandGain = uniform( 1 );
 	// 1 while the bake draws the environment's source or the probe's panorama, which take the haze
 	// all round (`fogEnvironment`; the source without the fog layer); the seen panorama takes it
 	// above the horizon only, as the dome fogs what it shows of it under the horizon itself
@@ -516,7 +516,7 @@ export class Sky {
 		const irradiance = textureLoad( texture( this.irradianceDisplay.texture ), ivec2( 0 ) );
 		this.irradianceNode = irradiance.rgb;
 		this.meterLog2Node = irradiance.a;
-		this.islandIrradianceNode = lendIsland( this.irradianceNode, this.islandTint, this.islandGain );
+		this.landIrradianceNode = lendLand( this.irradianceNode, this.landTint, this.landGain );
 		this.clearIrradianceA = texture( this.endpoints[ 0 ].clearIrradianceMap.texture );
 		this.clearIrradianceB = texture( this.endpoints[ 1 ].clearIrradianceMap.texture );
 		const clearBlendMat = new THREE.NodeMaterial();
@@ -938,11 +938,11 @@ export class Sky {
 
 	}
 
-	/** The sky's irradiance over pi as lent to the island (`islandIrradianceNode`) on the CPU, from
+	/** The sky's irradiance over pi as lent to the land (`landIrradianceNode`) on the CPU, from
 	 * `skyIrradiance`. */
-	islandSkyIrradiance( target = new THREE.Color() ): THREE.Color {
+	landSkyIrradiance( target = new THREE.Color() ): THREE.Color {
 
-		const light = this.skyIrradiance, tint = this.islandTint.value, gain = this.islandGain.value;
+		const light = this.skyIrradiance, tint = this.landTint.value, gain = this.landGain.value;
 		const l = 0.2126 * light.r + 0.7152 * light.g + 0.0722 * light.b;
 		return target.setRGB(
 			( light.r + ( tint.x * l - light.r ) * tint.w ) * gain,

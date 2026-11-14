@@ -69,14 +69,14 @@ const seaPanorama = Fn( ( [ d, clearSky, sea ]: [ V3, V3, V3 ] ) => {
 	{ name: 'd', type: 'vec3' }, { name: 'clearSky', type: 'vec3' }, { name: 'sea', type: 'vec3' },
 ] } );
 
-// A sky radiance or irradiance as lent to the island (`look.islandSky`): drawn toward `tint.rgb` at its
+// A sky radiance or irradiance as lent to the land (`look.landSky`): drawn toward `tint.rgb` at its
 // own luminance by `tint.w`, times `gain`. Linear in the light, so the graded probe's integral is
 // the integral of the graded panorama.
-export const lendIsland = Fn( ( [ light, tint, gain ]: [ V3, V4, F ] ) => {
+export const lendLand = Fn( ( [ light, tint, gain ]: [ V3, V4, F ] ) => {
 
 	return mix( light, tint.rgb.mul( dot( light, vec3( 0.2126, 0.7152, 0.0722 ) ) ), tint.w ).mul( gain );
 
-} ).setLayout( { name: 'lendIsland', type: 'vec3', inputs: [ { name: 'light', type: 'vec3' }, { name: 'tint', type: 'vec4' }, { name: 'gain', type: 'float' } ] } );
+} ).setLayout( { name: 'lendLand', type: 'vec3', inputs: [ { name: 'light', type: 'vec3' }, { name: 'tint', type: 'vec4' }, { name: 'gain', type: 'float' } ] } );
 
 // The closed deck's glow about the key light toward `d` (CloudModel.ts DECK_GLOW), drawn where the sky is
 // composed, not marched: smooth and round whatever the deck's depth and its rolls. The drawn deck
@@ -141,7 +141,7 @@ export function bakeColour( sky: Sky, haze?: SkyHaze ): V4 {
 		const d = equirectToDir( q ).toVar();
 		const cloud = sky.layerAt( vec2( q.x, abs( q.y.sub( 0.5 ) ).mul( 2 ) ) ).toVar();
 		const up = vec3( d.x, abs( d.y ), d.z );
-		// (the environment's source takes the light lent to the island: `look.islandSky`; the haze as the
+		// (the environment's source takes the light lent to the land: `look.landSky`; the haze as the
 		// dome lays it, from the sea's level: see `fogEnvironment`)
 		const clear = sky.gapSky( up ).toVar();
 		// the closed deck's glow over the clouds, whole in the seen panorama, about the sun alone in
@@ -172,7 +172,7 @@ export function bakeColour( sky: Sky, haze?: SkyHaze ): V4 {
 			fogged = mix( air, seen, max( sky.bakeHaze, step( 0, d.y ) ) );
 
 		}
-		const lent = lendIsland( fogged.mul( sky.ambientGain ), sky.bakeIslandTint, sky.bakeIslandGain );
+		const lent = lendLand( fogged.mul( sky.ambientGain ), sky.bakeLandTint, sky.bakeLandGain );
 		// (no stars: starlight is a few hundredths of the moonlit sky's light on level ground, and the
 		// sky the eye sees draws them itself)
 		const radiance = seaPanorama( d, lent, seaNode( sky ) );

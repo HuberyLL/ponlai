@@ -31,14 +31,14 @@ import type { SeaLook } from '../look/Look.ts';
 // that sweep the meadow (Wind.ts `gustAt`, a noise field swept with the wind's travel and reshaped
 // in time), so a dark rough patch on the water upwind travels onto the island at the wind's speed,
 // sweeps the grass at the same place and moment, and leaves the lee as a patch on the water again.
-// The meadow's gust q (0..1) is mapped by ISLAND_LULL + ISLAND_SPAN x q, a mapping set for the
+// The meadow's gust q (0..1) is mapped by LAND_LULL + LAND_SPAN x q, a mapping set for the
 // earlier gust map (then 0 between gusts and 1 at a core, a third of the area in a gust: the same
 // mean, 0.55, and spread, 0.26, as tidewater's, measured over both noise maps) and kept as it was.
 // The gust field's repeat (Wind.ts GUST_TILE) would show toward the horizon, so it holds out to
-// ISLAND_NEAR metres from the land's box and gives way to tidewater's two octaves by ISLAND_FAR
+// LAND_NEAR metres from the land's box and gives way to tidewater's two octaves by LAND_FAR
 // (`setLand`, which Water.setLand calls, so it follows a grown island). The water reads the
-// island's gust in its vertex stage (`islandGust`: arithmetic, no texture) and hands it over in a
-// varying; its grid's spacing grows to a few metres at ISLAND_FAR, finer than the gusts' 43 m
+// island's gust in its vertex stage (`landGust`: arithmetic, no texture) and hands it over in a
+// varying; its grid's spacing grows to a few metres at LAND_FAR, finer than the gusts' 43 m
 // cells. tidewater's octaves drift with the wind's integrated displacement (at the wind's speed;
 // tidewater moved them at 0.7 times it), slower than the meadow's gusts (Wind.ts GUST_TRAVEL times
 // the plants' speed), which run across the near water at the meadow's pace.
@@ -57,14 +57,14 @@ type V2 = THREE.Node<'vec2'>;
 
 const NOISE_SIZE = 256;
 // the meadow's gust as the sea's (see the note at the top)
-const ISLAND_LULL = 0.3;
-const ISLAND_SPAN = 0.72;
+const LAND_LULL = 0.3;
+const LAND_SPAN = 0.72;
 /** tidewater's octaves drift with the wind's integrated displacement times this: at the wind's
  * speed (tidewater's own, 0.7, lagged behind it). */
 export const OPEN_DRIFT = 1;
 // metres from the land's box: the meadow's gusts alone within NEAR, tidewater's alone from FAR
-const ISLAND_NEAR = 60;
-const ISLAND_FAR = 220;
+const LAND_NEAR = 60;
+const LAND_FAR = 220;
 
 export class SeaDetail {
 
@@ -73,15 +73,15 @@ export class SeaDetail {
 	readonly slickAmount: THREE.UniformNode<'float', number>;
 	readonly streakAmount: THREE.UniformNode<'float', number>;
 	/** ( rough, gust, slick, streak ) at a world xz (explicit level: callable in branches), given
-	 * the island's gust there (`islandGust`; read here when left out). Inlined where it is called:
+	 * the land's gust there (`landGust`; read here when left out). Inlined where it is called:
 	 * as a layout function reading this module's uniforms and texture, r186 emitted it with the
 	 * first material's binding names in the next one that called it. */
-	readonly sample: ( xz: V2, islandGust?: F ) => THREE.Node<'vec4'>;
+	readonly sample: ( xz: V2, landGust?: F ) => THREE.Node<'vec4'>;
 	/** The meadow's gust at a world xz (Wind.ts `gustAt`): plain nodes, for a vertex stage. */
-	readonly islandGust: ( xz: V2 ) => F;
-	/** The sea's gust at a world xz, 0..1, from the island's gust there, the wind's integrated
+	readonly landGust: ( xz: V2 ) => F;
+	/** The sea's gust at a world xz, 0..1, from the land's gust there, the wind's integrated
 	 * displacement and the scene time (the wind probe evaluates it at other steps). */
-	readonly gustOf: ( xz: V2, islandGust: F, displacement: V2, time: F ) => F;
+	readonly gustOf: ( xz: V2, landGust: F, displacement: V2, time: F ) => F;
 	// the land's box (setLand): its centre and half extents
 	private landCentre: THREE.UniformNode<'vec2', THREE.Vector2>;
 	private landHalf: THREE.UniformNode<'vec2', THREE.Vector2>;
@@ -99,7 +99,7 @@ export class SeaDetail {
 		const wind = shared.wind;
 		const { gustAmount, slickAmount, streakAmount, landCentre, landHalf } = this;
 
-		this.islandGust = ( xz ) => gustAt( wind, xz );
+		this.landGust = ( xz ) => gustAt( wind, xz );
 		// tidewater's gusts before their contrast: two octaves (about 600 m and 230 m features), the
 		// second slowly morphing; ( gust, the second octave )
 		const openGust = ( xz: V2, displacement: V2, time: F ) => {
@@ -110,22 +110,22 @@ export class SeaDetail {
 			return { gust: g1.mul( 0.62 ).add( g2.mul( 0.38 ) ).sub( 0.5 ).mul( 2.4 ).add( 0.5 ), g2 };
 
 		};
-		const blend = ( xz: V2, open: F, islandGust: F ) => {
+		const blend = ( xz: V2, open: F, landGust: F ) => {
 
 			const outside = length( max( abs( xz.sub( landCentre ) ).sub( landHalf ), 0 ) );
-			const island = islandGust.mul( ISLAND_SPAN ).add( ISLAND_LULL );
-			const g = mix( open, island, smoothstep( ISLAND_FAR, ISLAND_NEAR, outside ) );
+			const land = landGust.mul( LAND_SPAN ).add( LAND_LULL );
+			const g = mix( open, land, smoothstep( LAND_FAR, LAND_NEAR, outside ) );
 			return clamp( g.sub( 0.5 ).mul( gustAmount ).add( 0.5 ), 0, 1 );
 
 		};
-		this.gustOf = ( xz, islandGust, displacement, time ) => blend( xz, openGust( xz, displacement, time ).gust, islandGust );
+		this.gustOf = ( xz, landGust, displacement, time ) => blend( xz, openGust( xz, displacement, time ).gust, landGust );
 
-		const sample = Fn( ( [ xz, islandGust ]: [ V2, F ] ) => {
+		const sample = Fn( ( [ xz, landGust ]: [ V2, F ] ) => {
 
 			const windSpeed = wind.breeze.mul( REFERENCE_SPEED );
 			const open = openGust( xz, wind.displacement, shared.time );
 			const g2 = open.g2;
-			const gust = blend( xz, open.gust, islandGust ).toVar();
+			const gust = blend( xz, open.gust, landGust ).toVar();
 
 			// a frame along the wind, lightly domain-warped so that the bands meander
 			const w = wind.direction;
@@ -150,7 +150,7 @@ export class SeaDetail {
 			return vec4( rough, gust, slick, streak );
 
 		} );
-		this.sample = ( xz, islandGust ) => sample( xz, islandGust ?? this.islandGust( xz ) );
+		this.sample = ( xz, landGust ) => sample( xz, landGust ?? this.landGust( xz ) );
 
 	}
 

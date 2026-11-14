@@ -69,7 +69,7 @@ const TWILIGHT = [ 'sun', 'hazeSun', 'hazeSky' ];
 const WIDTHS = [ 1, 1.5, 2, 3, 4, 5, 6, 8 ];
 // shares whose form is not a dusk window: the moon's key and its sky follow the moon's own
 // visibility, the yunpeng and the local lights are lamps on a form of their own
-const KEPT = [ 'moonKey', 'moonSky', 'yunpeng', 'localLights' ];
+const KEPT = [ 'moonKey', 'moonSky', 'nightGlow', 'localLights' ];
 // (the top: dusk-grid's day window starts at +2.5, which no share may reach)
 const LATTICE = { top: 2.5, bottom: - 18, step: 0.25 };
 

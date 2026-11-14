@@ -11,6 +11,6 @@ export { ACTIVE_QUALITY, DEFAULT_QUALITY, QUALITY, QUALITY_TIERS, isQualityTier,
 export type { QualityProfile, QualityTier } from './Quality.ts';
 export { installSettings, numberSetting, parseSettings, settingProblems, settings } from './Settings.ts';
 export type { SettingName, SettingsQuery } from './Settings.ts';
-export type { AmbientLook, AmbientRowLook, BloomKey, DayLook, DesaturationKey, DisplayLook, ExposureKey, ExposureLook, FullKey, HazeLook, IslandSkyRow, LocalLightsLook, Look, MeadowCanopyLook, OcclusionLook, Rgb, SeaLook, SharingKey, SkyLook, WindLook } from './look/Look.ts';
+export type { AmbientLook, AmbientRowLook, BloomKey, DayLook, DesaturationKey, DisplayLook, ExposureKey, ExposureLook, FullKey, HazeLook, LandSkyRow, LocalLightsLook, Look, MeadowCanopyLook, OcclusionLook, Rgb, SeaLook, SharingKey, SkyLook, WindLook } from './look/Look.ts';
 export { NEUTRAL_LOOK } from './look/NeutralLook.ts';
 export { dynamicRange, outputPixelRatio, renderPixelRatio } from './post/RenderScale.ts';

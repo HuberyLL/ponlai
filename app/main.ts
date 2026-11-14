@@ -176,8 +176,10 @@ checkMotion( render );
 
 if ( render.profiler ) {
 
-	const { labelPonlaiPasses } = await import( '../packages/render/debug/FrameProfiler.ts' );
-	labelPonlaiPasses( render.profiler, { scene: render.scene, waterScene: render.waterScene, rainScene: render.rainScene, pipeline: render.pipeline, sky: render.sky, rain: render.rain, sunShadow: render.sunShadow, refractedSun: render.refractedSun, fft: render.fft, stormSea: render.stormSea, shoreWaves: render.shoreWaves, groundBounce: render.groundBounce, characters: island.characters } );
+	const { labelPasses } = await import( '../packages/render/debug/FrameProfiler.ts' );
+	labelPasses( render.profiler, { scene: render.scene, waterScene: render.waterScene, rainScene: render.rainScene, pipeline: render.pipeline, sky: render.sky, rain: render.rain, sunShadow: render.sunShadow, refractedSun: render.refractedSun, fft: render.fft, stormSea: render.stormSea, shoreWaves: render.shoreWaves, groundBounce: render.groundBounce } );
+	// the page's own parts: the islanders' update draws their shadow
+	render.profiler.scope( island.characters, 'update', 'character shadow' );
 
 }
 primeSharedBuilds( render );

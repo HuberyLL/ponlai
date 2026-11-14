@@ -87,7 +87,7 @@ export const YUNPENG = {
 	far: { sides: 4, ring: 0.4, leaves: 0.5 },
 };
 
-/** The night's share of the glow and the light (0 by day: DayCycle.ts `yunpengNightShare`), each
+/** The night's share of the glow and the light (0 by day: DayCycle.ts `nightGlowShare`), each
  * frame. */
 export const yunpengNight = uniform( 0 );
 /** Sets the night's share for the frame and returns it: the page's tick does, from the sky. */
