@@ -81,7 +81,7 @@ export interface PlantInstance {
 	width: number;
 	/** how far its parts reach out from its stem's axis (m), for its bounding sphere */
 	reach: number;
-	/** the kind's own values (the bamboo: age, grove density, leaf tone) */
+	/** four values of the kind's own */
 	look: readonly [ number, number, number, number ];
 }
 

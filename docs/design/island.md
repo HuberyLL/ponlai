@@ -200,8 +200,9 @@ returns:
 
 - Penglai's own bamboo (浮筠之簳, Shiyi ji: "green leaves, purple stems, seeds as big as pearls") grows
   over the whole island, as a running bamboo left to itself takes a hillside: in groves whose
-  culms vary in height and girth, the taller the thicker, and whose edges run out in lobes, single culms ahead of them on the open meadow, and glades of
-  meadow between. Avoid one round crown and a closed forest.
+  culms vary in height and girth, the taller the thicker, and whose edges run out in lobes, single
+  culms ahead of them on the open meadow, and glades of meadow between. Avoid one round crown and a
+  closed forest.
 - No placement rule: it stands at the cliff's edge as anywhere else.
 - Its culms are tall and slender, bare to about half their height, their leaves narrow and in loose
   drooping layers, so the culms show from above between them.
@@ -213,6 +214,10 @@ returns:
 - Its leaves are nearly as matte as the meadow's blades: no pale sheen over a crown, whose lit
   leaves stay a plain green and whose depth stays dark. The inner leaves of a crown and the crowns
   deep in a grove are darker.
+- Each plant's leaves take their own colour along one band, from a dull grey green through a clear
+  saturated green to a pale yellow green, hue and lightness together. Few plants sit toward the
+  dull end and most between the middle and the pale end, so a grove's crowns read as many greens
+  around the same mean, not one block of colour.
 - Under a sun more than a few degrees up, a crown's shaded leaves still take a share of the sun
   through the leaves above, so its dark side reads green rather than as dark and as blue as the
   sky. At a sun on the horizon, under a closed sky and by night they take none.

@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import { attribute, float, fwidth, mix, mx_noise_float, positionGeometry, smoothstep, vec3 } from 'three/tsl';
 import { GroundBounceLightingModel, CANOPY_SHADE, receiveScreenAO, receiveScreenShadow, screenThickness, type Shared, CROWN_DRAG, branchBend, mainBend, useSpecular, useVegetationMotion, placeVertex, type PlantDraw, type PlantInstances, IDENTITY_COLOUR, LeafPainter, leafMaterial as treeLeaves, plantTint, type LeafAtlas, type PlantTint, rootHash, writeMeter, tuneUniform } from '../../render/index.ts';
 import { mulberry32 } from '../../render/data.ts';
-import { CULM, LEAF_COLOURS, LEAF_SHARE, LEAF_UNDER, MOTTLE, NODE_RING } from './BambooColours.ts';
+import { CULM, LEAF_ATLAS_MEAN, LEAF_BAND_FACTORS, LEAF_COLOURS, LEAF_MEAN, LEAF_SHARE, LEAF_UNDER, MOTTLE, NODE_RING, leafBandColour, leafBandOf, srgbToLinear } from './BambooColours.ts';
 import { GROVES } from './BambooGroves.ts';
 
 // The bamboo's surfaces (Bamboo.ts): its culms and its leaves.
@@ -29,10 +29,14 @@ import { GROVES } from './BambooGroves.ts';
 // Leaves: narrow, lance-shaped, about a hand long and a finger wide, drawn to a long point and
 // curving a little; two to four at a twig's end in a narrow fan pointing on with it (the
 // painters' 个, not a star), the twigs off a branchlet (a 2x2
-// atlas of sprays on the trees' painter, vegetation/TreeSurfaces.ts). A clear green, the old
-// leaves a few yellow. Here and there a cluster of pale, lustrous seeds, as big as pearls.
+// atlas of sprays on the trees' painter, vegetation/TreeSurfaces.ts). The atlas is a clear green
+// with small changes of lightness between its leaves and a few old yellow ones; each plant lays its
+// own colour over it from a band (BambooColours.ts LEAF_BAND: a dull grey green, a clear saturated
+// green, a pale yellow green), at its place on the band carried in its instance's `look` w (Bamboo.ts,
+// from the culm's seed), so crown differs from crown in hue and lightness while their mean stays
+// the crowns'. Here and there a cluster of pale, lustrous seeds, as big as pearls.
 // The leaves the wind takes off the crowns (world/FallingLeaves.ts) are one such leaf on a card
-// of its own (`singleLeaf`), tinted per leaf in the crowns' mix of colours (`LEAF_TINTS`).
+// of its own (`singleLeaf`), tinted per leaf in the plants' colours along the band (`LEAF_TINTS`).
 
 /** The culms' specular reflectance (vegetation/Material.ts useSpecular). */
 const CULM_F0 = 0.016;
@@ -46,9 +50,11 @@ const CULM_F0 = 0.016;
  * quarter lighter, those at its edge as light as the open shade's ground beside them. */
 const CULM_SHADE = { foot: 0.05, footHeight: 1 } as const;
 
-/** Each culm's own tint over its leaves (TreeSurfaces.ts plantTint): a little cooler, neutral, a
- * little yellower, by the culm's hash; and the leaves' colour matrix. */
-export const BAMBOO_TINT: PlantTint = { keys: [ [ 0.47, 0.5, 0.52 ], [ 0.5, 0.5, 0.5 ], [ 0.54, 0.52, 0.46 ] ], keep: 0.4, matrix: IDENTITY_COLOUR };
+/** Each culm's own colour over its leaves (TreeSurfaces.ts plantTint, at its place on the leaf
+ * band): the band's keys as overlay keys over the atlas (an overlay on an albedo below a half
+ * multiplies it by twice the key, so a key is half the plant's factor over the atlas's mean), none
+ * of the atlas's colour kept, so the band's dark end takes the atlas to about a quarter. */
+export const BAMBOO_TINT: PlantTint = { keys: LEAF_BAND_FACTORS.map( ( f ) => f.map( ( v ) => v / 2 ) as [ number, number, number ] ), keep: 0, matrix: IDENTITY_COLOUR };
 /** Each culm's own lightness on its wood: 0.85 to 1.15 times by a hash of its foot (overlay keys
  * about 0.5), apart from its leaves' tint. */
 const CULM_TINT: PlantTint = { keys: [ [ 0.425, 0.425, 0.425 ], [ 0.5, 0.5, 0.5 ], [ 0.575, 0.575, 0.575 ] ], keep: 0, matrix: IDENTITY_COLOUR };
@@ -305,19 +311,22 @@ export function leafAtlas( size = 512 ): LeafAtlas {
 
 }
 
-/** The leaves' colours as linear factors over the clear green, and their shares: a single leaf's
- * tint (world/FallingLeaves.ts), so a leaf off the crowns takes their mix of colours. */
-export const LEAF_TINTS: readonly { tint: readonly [ number, number, number ]; share: number }[] = LEAF_COLOURS.map( ( c, i ) => ( {
-	tint: [ 0, 1, 2 ].map( ( k ) => srgbToLinear( c[ k ] ) / srgbToLinear( LEAF_COLOURS[ 0 ][ k ] ) ) as [ number, number, number ],
-	share: LEAF_SHARE[ i ],
-} ) );
-
-function srgbToLinear( v: number ): number {
-
-	const c = v / 255;
-	return c <= 0.04045 ? c / 12.92 : ( ( c + 0.055 ) / 1.055 ) ** 2.4;
-
-}
+/** A single leaf's tints (world/FallingLeaves.ts) as linear factors over the clear green it is
+ * drawn in, and their shares: the plants' colours at the middles of ten equal shares of their places
+ * on the band, and the atlas's old yellow leaves at their share, at the plants' mean factor, so a
+ * leaf off the crowns takes their mix of colours. */
+const FALLING_TINTS = 10, YELLOW = LEAF_COLOURS.length - 1;
+const clearGreen = ( v: number, k: number ) => v / srgbToLinear( LEAF_COLOURS[ 0 ][ k ] );
+export const LEAF_TINTS: readonly { tint: readonly [ number, number, number ]; share: number }[] = [
+	...Array.from( { length: FALLING_TINTS }, ( _, i ) => ( {
+		tint: leafBandColour( leafBandOf( ( i + 0.5 ) / FALLING_TINTS ) ).map( clearGreen ) as [ number, number, number ],
+		share: ( 1 - LEAF_SHARE[ YELLOW ] ) / FALLING_TINTS,
+	} ) ),
+	{
+		tint: LEAF_COLOURS[ YELLOW ].map( ( v, k ) => clearGreen( srgbToLinear( v ) * LEAF_MEAN[ k ] / LEAF_ATLAS_MEAN[ k ], k ) ) as [ number, number, number ],
+		share: LEAF_SHARE[ YELLOW ],
+	},
+];
 
 /** One bamboo leaf across a square texture in the clear green (the first of LEAF_COLOURS), its
  * stalk at the left edge's middle and its tip near the right edge, with the crowns' midrib and
@@ -354,7 +363,8 @@ export const LEAF_TRANSLUCENCY = tuneUniform( 'lighting.vegetation.bambooTranslu
 
 /** The leaves' material: the trees' leaf material on the atlas over a plant draw's prototype
  * (PlantInstances.ts), swaying with each culm (from its foot), fluttering, toned by the plant's
- * `look` z (a culm's depth in its grove); half translucent (`LEAF_TRANSLUCENCY`: the strength of
+ * `look` z (1 for every culm), coloured by its place on the leaf band (`look` w,
+ * `BAMBOO_TINT`); half translucent (`LEAF_TRANSLUCENCY`: the strength of
  * the light through them, VegetationLighting; a leaf's diffuse does not wrap), firmer leaves than
  * the meadow's blades. */
 export function leafMaterial( shared: Shared, atlas: LeafAtlas, plants: PlantInstances ): THREE.MeshStandardNodeMaterial {
@@ -362,7 +372,7 @@ export function leafMaterial( shared: Shared, atlas: LeafAtlas, plants: PlantIns
 	const v = plants.vertex();
 	const material = treeLeaves( shared, atlas, v.foot, {
 		name: 'bamboo leaves', roughness: 0.75, wind: BAMBOO_WIND, branches: true, tint: BAMBOO_TINT, tone: 0.22, translucency: LEAF_TRANSLUCENCY,
-		place: placeVertex( v ), shade: v.lookVarying.z,
+		place: placeVertex( v ), shade: v.lookVarying.z, tintAt: v.lookVarying.w,
 	} );
 	// the screen-space ambient occlusion (post/GTAO.ts) and shade on the key (post/MeadowShade.ts)
 	receiveScreenAO( material );

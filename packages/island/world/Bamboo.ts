@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { type Shared, AIR_DENSITY, REFERENCE_SPEED, logLaw, CROWN_DRAG, runSteps, PLANT_PART, PlantInstances, levelDraws, type PlantDraw, type PlantInstance, type PlantPool, type KindGrowth, type VegetationKind, BRANCH_ATTRIBUTES, MeshBuilder, UP, branchValues, leafLayout, smooth, sprayValues, streamAt, type LeafAtlas } from '../../render/index.ts';
 import { BAMBOO_PARTS, bambooMaterials } from './BambooMaterials.ts';
 import { GROVES, plantCulms, type CulmSite } from './BambooGroves.ts';
+import { leafBandAt } from './BambooColours.ts';
 import { mulberry32, type Rng } from '../../render/data.ts';
 import { SEABED_TILE } from './SeabedTile.ts';
 import { islandSurfaceHeight } from './WorldShapes.ts';
@@ -49,11 +50,13 @@ import type { WorldData } from './types.ts';
 // its branches and leaves built at the origin (BAMBOO.prototypes: a band of heights by a band of
 // girths, each from a fixed seed, so the same on every page); every site
 // an instance of the nearest, scaled to its height and girth, turned to the way it leans, leaning
-// and bowing by its site (`stemAxis`, the curve this module built each culm along), its age, grove
-// and leaf tone carried per instance (`look`). The instance's wind is read at its own foot, so each
-// culm still swings on its own. Each prototype has a far level (BAMBOO.far: a culm of four sides, a
-// ring at each node, half its leaf cards, the outer ones kept and enlarged to keep its cover) that
-// takes over where its culm is a few pixels wide (vegetation/Lod.ts LEVEL_SWITCH).
+// and bowing by its site (`stemAxis`, the curve this module built each culm along). Its `look`
+// carries the culm's age, the groves' density at its foot, 1 (the leaves' shade, BambooMaterials.ts
+// leafMaterial) and its place on the leaf band (BambooColours.ts leafBandAt). The instance's wind
+// is read at its own foot, so each culm still swings on its own. Each prototype has a far level
+// (BAMBOO.far: a culm of four sides, a ring at each node, half its leaf cards, the outer ones kept
+// and enlarged to keep its cover) that takes over where its culm is a few pixels wide
+// (vegetation/Lod.ts LEVEL_SWITCH).
 //
 // Two vegetation kinds: the culms and branches (an ordinary shadow, no depth prepass) and the
 // leaves (the vegetation's shadow filter and depth prepass, drawn before the terrain), each a group
@@ -385,7 +388,7 @@ function instances( sites: Sites ): PlantInstance[] {
 			height: site.height, scale, girth: site.radius / proto.radius, limb: scale,
 			lean: site.lean, bow: site.bow, load: culmLoad( site.height, site.radius ),
 			width: 2 * site.radius, reach: BAMBOO.branch * site.height + BAMBOO.card,
-			look: [ site.age, site.grove, 1, 0 ],
+			look: [ site.age, site.grove, 1, leafBandAt( site.seed ) ],
 		};
 
 	} );

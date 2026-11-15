@@ -57,7 +57,7 @@ import { LEAF_TINTS, LEAF_TRANSLUCENCY } from './BambooMaterials.ts';
 // Drawn with the bamboo crowns' leaf light (vegetation/Material.ts's 'leaf' family: alpha to
 // coverage under MSAA, the vegetation tag, translucency, the screen-space AO and shade), from one
 // leaf of the bamboo's own atlas (BambooMaterials.ts `singleLeaf`) tinted per leaf in the crowns'
-// mix of colours. It casts no shadow and stays out of the water's reflection (its box ends at 3 m:
+// colours along their band. It casts no shadow and stays out of the water's reflection (its box ends at 3 m:
 // a leaf of this size reads as nothing there). Under the temporal modes it writes its motion from
 // the previous rendered frame's position, angle and tilt, which the kernels keep once per frame.
 // `debugFlags.fallingLeaves = false` skips the pass and hides the leaves (read every frame; on
@@ -426,7 +426,7 @@ export class FallingLeaves {
 		const looks = look.toAttribute() as unknown as V4;
 		const position = leafCorner( now.xyz, now.w, looks.y, looks.x );
 		const previous = leafCorner( was.xyz, was.w, looks.w, looks.z );
-		// the crowns' mix of colours, picked by share
+		// the crowns' colours along their band (BambooMaterials.ts LEAF_TINTS), picked by share
 		const pick = ( state.toAttribute() as unknown as V4 ).z;
 		let colour: V3 = vec3( ...LEAF_TINTS[ LEAF_TINTS.length - 1 ].tint );
 		let end = 1;

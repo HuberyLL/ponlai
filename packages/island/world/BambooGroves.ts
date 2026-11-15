@@ -15,7 +15,7 @@ import type { RimGroundField } from './types.ts';
 //   a grown island keeps its groves where they were.
 // - Each cell of a world lattice (`cell`) draws once from a stream of its own whether a culm stands
 //   in it (likely in a grove, now and then on the open meadow), where, and the culm's height, girth,
-//   age, lean and the seed of its form.
+//   age, lean and the seed of its form and of its leaves' colour (BambooColours.ts leafBandAt).
 // - The heights in a grove vary as a stand of moso bamboo's do: a coefficient of variation of 0.16
 //   to 0.18 (Yang and Tang 2021, Journal of Zhejiang A&F University 38(6); Zhou et al. 2023,
 //   Frontiers in Plant Science 14: 1095126). The taller culms are the thicker: those sources give a
@@ -80,7 +80,7 @@ export function loadBambooLook( option: string | null ): void {
 
 /** A culm's place and build: its foot, height (m), foot radius (m), age (0 new to 1 old), the
  * level way it leans ( outX, outZ ), its lean (rad) and bow (m), the groves' density at its foot
- * and the seed of its form. */
+ * and the seed of its form and its leaves' colour. */
 export interface CulmSite {
 	x: number; y: number; z: number; grove: number;
 	height: number; radius: number; age: number;

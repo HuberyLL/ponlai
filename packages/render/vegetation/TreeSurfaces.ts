@@ -374,8 +374,8 @@ export interface CrownWind { rate: number; drag: number; flutter: number }
  * `tone` about 1), swaying from `foot` (a tree's, or a node: several trees' in one mesh, per
  * vertex), letting light through by `translucency` (VegetationLighting). With `branches` the
  * cards move with their branch and their spray too (Deform.ts `branchBend`, `sprayBend`, the mesh's
- * TreeMesh.ts BRANCH_ATTRIBUTES). With `tint` each plant (its foot's hash) takes its own tint over
- * the leaves (`plantTint`). With `place` the mesh is a prototype drawn as instances
+ * TreeMesh.ts BRANCH_ATTRIBUTES). With `tint` each plant (its foot's hash, or `tintAt` where
+ * given) takes its own tint over the leaves (`plantTint`). With `place` the mesh is a prototype drawn as instances
  * (PlantInstances.ts): every point, normal and limb placed by the instance, the plant's foot its
  * root. */
 export function leafMaterial( shared: Shared, atlas: LeafAtlas, foot: THREE.Vector3 | V3, o: {
@@ -383,6 +383,8 @@ export function leafMaterial( shared: Shared, atlas: LeafAtlas, foot: THREE.Vect
 	/** an instanced plant's vertex (PlantInstances.ts `placeVertex`; `foot` is then ignored) and its
 	 * leaves' shade (fragment) */
 	place?: PlacedVertex; shade?: F;
+	/** the plant's place on its tint's gradient (0..1, fragment), in place of its foot's hash */
+	tintAt?: F;
 } ): THREE.MeshStandardNodeMaterial {
 
 	const place = o.place;
@@ -408,7 +410,7 @@ export function leafMaterial( shared: Shared, atlas: LeafAtlas, foot: THREE.Vect
 			const base = materialColor.mul( vec4( o.shade ? leaf.mul( o.shade ) : leaf, 1 ) );
 			if ( ! o.tint ) return base;
 			const c = base.toVar();
-			return vec4( plantTint( c.rgb, rootHash( tintRoot.xz ), float( 1 ), o.tint ), c.a );
+			return vec4( plantTint( c.rgb, o.tintAt ?? rootHash( tintRoot.xz ), float( 1 ), o.tint ), c.a );
 
 		},
 		rest: position,
