@@ -386,7 +386,7 @@ export function createVegetation( render: RenderParts, island: IslandParts, { fr
 	const { frameLand } = framing;
 	staged( island ).setSunCasters = setSunCasters;
 	island.compileDraws = compileDraws;
-	const grass = buildGrass( plantGrass( data.vegetation ), shared );
+	const grass = buildGrass( plantGrass( data.vegetation, data.rimGround ), shared );
 	island.grass = grass;
 	// The vegetation's kinds (vegetation/Registry.ts), in the order the scene draws them; every list
 	// of vegetation below reads it.

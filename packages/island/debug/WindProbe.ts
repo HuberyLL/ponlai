@@ -176,7 +176,7 @@ function kinds( ctx: WindProbeContext, o: Options ): Kind[] {
 		out.push( { name, inputs, root, body } );
 
 	};
-	const { crowns: all } = plantGrass( data.vegetation );
+	const { crowns: all } = plantGrass( data.vegetation, data.rimGround );
 	const keep = Math.min( 1, o.tufts / all.length );
 	const points = all.filter( () => random() < keep ).map( ( t ) => [ t.origin.x, t.origin.z, t.top, random() ] );
 	if ( o.kinds.includes( 'grass' ) ) {

@@ -5,12 +5,13 @@ import {
 	select, sin, smoothstep, sqrt, step, storage, texture, textureLoad, uint, uniform, varying, vec2, vec3, vec4,
 	positionWorld, specularColor, specularColorBlended, specularF90, vertexIndex, workgroupArray, workgroupBarrier, workgroupId,
 } from 'three/tsl';
-import { LAWN_GAIN, MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_SIZE, groundGains, supportsMeadow } from '../materials/Meadow.ts';
+import { LAWN_GAIN, MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_SIZE, groundGains } from '../materials/Meadow.ts';
 import { GUST_MEAN, gustAt, gustJitter, wave, windStrength, type WindState, RESPONSE, displacementAt, runSteps, CANOPY_SHADE, transmission, vegetationMaterial, unjitteredPadded, TEMPORAL, debugFlags, MEADOW_SHADE, meadowShadeAt, meadowShadeFloor, receiveScreenAO, textureSteps, type VegetationKind, type Shared, tune, tuneApply, tuneUniform, liftKeyWorld } from '../../render/index.ts';
-import { VEGETATION_STRIDE as STRIDE, type WorldData } from './types.ts';
-import { noise3, smoothstep as smoothstepNumber } from '../../render/data.ts';
-import { GROVES, grassOnLitter } from './BambooGroves.ts';
+import type { WorldData } from './types.ts';
+import { GROUND_A, HEIGHT_MAP, LIP, SINK, SWARD_DEPTH, grassSteps, type GrassPlan } from './GrassGround.ts';
+import { GROVES } from './BambooGroves.ts';
 import { soilGroveAt } from '../materials/Soil.ts';
+export { plantGrass, type GrassPlan } from './GrassGround.ts';
 import { canopySteps, crownSteps, setCanopyTop, setSwardField, swardSteps } from './SwardField.ts';
 
 // The meadow: one grass blade per cell of a world grid, generated on the GPU as the view changes.
@@ -67,9 +68,12 @@ import { canopySteps, crownSteps, setCanopyTop, setSwardField, swardSteps } from
 // - The ground under the blades (TerrainMaterial.ts, `GRASS_ROOTS`): brown soil at every distance,
 //   seen through the gaps between the blades; darker on screen by the shade alone.
 //
-// The ground map (`bakeGround`): over the meadow's square (MEADOW_EXTENT, MEADOW_SIZE texels), the
-// turf anchors splatted bilinearly: the share of the anchors that hold turf (`supportsMeadow`, and
-// thinning into the bamboo groves: BambooGroves.ts `grassOnLitter`), their mean height and mean sky
+// The ground map (`grassSteps`): over the meadow's square (MEADOW_EXTENT, MEADOW_SIZE texels), the
+// turf anchors splatted bilinearly (those on the cliff's face under the lip left out): the share of
+// the anchors that hold turf (inland `supportsMeadow`, on the rim the rim's turf that
+// TerrainMaterial.ts draws, RimGround.ts `rimTurfCover`, and thinning into the bamboo groves:
+// BambooGroves.ts `grassOnLitter`), their mean height (on the lip a line in the rim distance, LIP)
+// and mean sky
 // visibility, and the grass-height map (HEIGHT_MAP), which shortens toward the land's edge only:
 // the grass round a clearing in the litter keeps its height up to it. Its A holds that height map
 // free of the land's edge as well as what the edge takes off it (GROUND_A): the blades read the
@@ -77,8 +81,11 @@ import { canopySteps, crownSteps, setCanopyTop, setSwardField, swardSteps } from
 // the turf's run under the layer reads the free one (`meadowGroundRuns`), so the turf along the rim,
 // under blades that shorten and thin, lies as deep in the layer as the turf inland and does not take
 // the key the layer's edge would let in. Generation
-// reads it with texel loads; a growth step bakes a new one and swaps it in through the one texture
-// node (`groundMap`), with the sward and crown fields the ground under the meadow reads
+// reads it with texel loads, and beside it the lip's map of the same size (`lipMap`: per texel the
+// rim distance, the roots' slope in it and the turf's reach, LIP), by which each blade on the lip
+// takes its own roots' height and grows no further out than the turf; a growth step bakes new ones
+// and swaps them in through the two texture nodes, with the sward and crown fields the ground
+// under the meadow reads
 // (SwardField.ts). The blades follow the land as it grows, the same function of it as at load.
 
 type F = THREE.Node<'float'>;
@@ -131,22 +138,6 @@ const shapeOf = ( verts: number ) => ( { segments: ( verts - 1 ) / 2, root: vert
 const REACH = 240, REACH_FADE = 20, FRUSTUM_PAD = 1;
 /** The tallest a blade stands (m), for the tiles' boxes and the longest blade. */
 const TALLEST = 1;
-/** The roots sit this far below the anchors' mean height. */
-const SINK = 0.02;
-
-/** The grass-height map (0..1): a mottle of patches (`patch` m) over broad swells (`swell` m),
- * `patchShare` of its variance in the patches, around `mean` by `spread` (one standard deviation,
- * clipped at 0 and 1), lower within `edge` m of the meadow's edge. NOISE_SD is noise3's standard
- * deviation over a plane. The blades' lengths follow it (LENGTH); the turf's run under the layer
- * takes it without `edge` (`meadowGroundRuns`). */
-const HEIGHT_MAP = { mean: 0.8, spread: 0.15, patch: 4.5, swell: 60, patchShare: 0.55, edge: 1 };
-/** The ground map's A: the height map free of the land's edge in its fraction, and in its whole part
- * what `edge` takes off it, k = round( ( 1 - e ) `steps` ), e the edge's factor (0..1): inland k is 0
- * and A is the map. The map stops at `most`: a clipped 1 would read as a fraction of 0, and any
- * nearer to 1 than a float32's step at k = 255, 2^-16, the sum rounds up to k + 1 (a float's last
- * step under 1, 2^-24, does at every k from 1). It is read through `groundHeights`, on texels
- * loaded and blended by hand: a filter between two texels would break A. */
-const GROUND_A = { steps: 255, most: 1 - 2 ** - 16 };
 
 // --- the blades' make
 
@@ -302,20 +293,9 @@ const LOD = { near: 40, levels: 5, jitter: 1, on: debugFlags.grassLod === true }
  * `near` m times 0.5 to 1.5 at random per blade, so the widening does not begin on one ring. Edge
  * on, a blade shows one half width more on either side, beyond `far` two. */
 const THICKEN = { near: 5, far: 25 };
-const NOISE_SD = 0.27;
-
-function heightMapAt( x: number, z: number ): number {
-
-	const { mean, spread, patch, swell, patchShare } = HEIGHT_MAP;
-	const n = Math.sqrt( patchShare ) * noise3( x / patch + 11.3, 3.7, z / patch - 5.1 ) + Math.sqrt( 1 - patchShare ) * noise3( x / swell - 7.9, 8.1, z / swell + 2.6 );
-	return Math.min( 1, Math.max( 0, mean + spread * n / NOISE_SD ) );
-
-}
 
 // --- the ground under the meadow (TerrainMaterial.ts, SwardField.ts)
 
-/** The sward's depth where the meadow grows (the full shade from it up) and the crowns' height. */
-const SWARD_DEPTH = 0.73, CROWN_TOP = 0.3;
 /** The ground under the meadow (TerrainMaterial.ts's meadow ground): the key's and the sky's light
  * left there under the full sward (`key`, `sky`), the share of its colour the sward darkens
  * (`darkening`), the sward's depth where the meadow grows (`tall`) and the shade left under the
@@ -328,142 +308,13 @@ export const GRASS_ROOTS = {
 };
 export const rootsSky = /*@__PURE__*/ tuneUniform( 'grass.roots.sky', GRASS_ROOTS.sky, { min: 0.2, max: 1 } );
 const SWARD_FALLBACK = SWARD_DEPTH * 0.97;
-/** Anchors this far inside the rim (m, the anchor's rim distance) are the meadow's edge roots. */
-const EDGE = [ - 1.5, - 0.3 ];
 
-/** What the meadow is planted from: the ground map's texels, the sward's samples ( x, z, depth or
- * -1 ), the crowns, the edge roots and the box the meadow grows in. */
-export interface GrassPlan {
-	ground: Float32Array;
-	sward: number[];
-	crowns: { origin: THREE.Vector3; top: number }[];
-	roots: number[][];
-	box: THREE.Box3;
-}
-
-/** The plan for the turf anchors `veg` (VEGETATION_STRIDE floats each), in steps. The ground map's
- * texels: the mean height of the anchors that hold turf, their share (0 where they are too few),
- * their mean sky visibility (1 where none) and the grass-height map with the land's edge's share
- * (GROUND_A). */
-export function* grassSteps( veg: Float32Array ): Generator<void, GrassPlan> {
-
-	const size = MEADOW_SIZE, n = veg.length / STRIDE;
-	const all = new Float32Array( size * size ), land = new Float32Array( size * size ), held = new Float32Array( size * size ), height = new Float32Array( size * size ), sky = new Float32Array( size * size );
-	const sward: number[] = [], crowns: GrassPlan[ 'crowns' ] = [], roots: number[][] = [];
-	const box = new THREE.Box3();
-	for ( let a = 0; a < n; a ++ ) {
-
-		const k = a * STRIDE;
-		const x = veg[ k ], y = veg[ k + 1 ], z = veg[ k + 2 ];
-		// the land holds turf, and grass grows there, thinner under the groves
-		const onLand = supportsMeadow( x, y, z, veg[ k + 4 ] );
-		const holds = onLand && grassOnLitter( x, z );
-		const fx = ( x / MEADOW_EXTENT + 0.5 ) * size - 0.5, fz = ( z / MEADOW_EXTENT + 0.5 ) * size - 0.5;
-		const ix = Math.floor( fx ), iz = Math.floor( fz ), tx = fx - ix, tz = fz - iz;
-		for ( let c = 0; c < 4; c ++ ) {
-
-			const i = ix + ( c & 1 ), j = iz + ( c >> 1 );
-			if ( i < 0 || j < 0 || i >= size || j >= size ) continue;
-			const w = ( c & 1 ? tx : 1 - tx ) * ( c >> 1 ? tz : 1 - tz );
-			all[ j * size + i ] += w;
-			if ( onLand ) land[ j * size + i ] += w;
-			if ( holds ) {
-
-				held[ j * size + i ] += w;
-				height[ j * size + i ] += w * ( y - SINK );
-				sky[ j * size + i ] += w * veg[ k + 8 ];
-
-			}
-
-		}
-		sward.push( x, z, holds ? SWARD_DEPTH : - 1 );
-		if ( holds ) {
-
-			crowns.push( { origin: new THREE.Vector3( x, y, z ), top: CROWN_TOP } );
-			box.expandByPoint( crowns[ crowns.length - 1 ].origin );
-			if ( veg[ k + 6 ] > EDGE[ 0 ] && veg[ k + 6 ] < EDGE[ 1 ] ) roots.push( [ x, y, z, 1 ] );
-
-		}
-		// (a step's quarter of a millisecond: the litter's test costs about a third of a microsecond)
-		if ( ( a & 1023 ) === 1023 ) yield;
-
-	}
-	const ground = new Float32Array( size * size * 4 );
-	// each meadow texel's distance (m) to the nearest texel whose land holds no turf (a chamfer
-	// distance, two passes), for the height map's edge: the land's, so the grass round a clearing
-	// in the groves' litter keeps its height up to the clearing
-	const edge = new Float32Array( size * size );
-	for ( let t = 0; t < size * size; t ++ ) {
-
-		const valid = held[ t ] > 1e-3;
-		ground[ t * 4 ] = valid ? height[ t ] / held[ t ] : 0;
-		ground[ t * 4 + 1 ] = valid ? held[ t ] / all[ t ] : 0;
-		ground[ t * 4 + 2 ] = valid ? sky[ t ] / held[ t ] : 1;
-		edge[ t ] = land[ t ] > 1e-3 && land[ t ] / all[ t ] >= 0.5 ? 1e9 : 0;
-		if ( ( t & 65535 ) === 65535 ) yield;
-
-	}
-	const texel = MEADOW_EXTENT / size, diagonal = texel * Math.SQRT2;
-	const relax = ( t: number, i: number, j: number, di: number, dj: number, d: number ) => {
-
-		if ( i + di >= 0 && i + di < size && j + dj >= 0 && j + dj < size ) edge[ t ] = Math.min( edge[ t ], edge[ t + dj * size + di ] + d );
-
-	};
-	for ( let j = 0; j < size; j ++ ) {
-
-		for ( let i = 0; i < size; i ++ ) {
-
-			const t = j * size + i;
-			if ( edge[ t ] === 0 ) continue;
-			relax( t, i, j, - 1, 0, texel );
-			relax( t, i, j, 0, - 1, texel );
-			relax( t, i, j, - 1, - 1, diagonal );
-			relax( t, i, j, 1, - 1, diagonal );
-
-		}
-		if ( ( j & 63 ) === 63 ) yield;
-
-	}
-	for ( let j = size - 1; j >= 0; j -- ) {
-
-		for ( let i = size - 1; i >= 0; i -- ) {
-
-			const t = j * size + i;
-			if ( edge[ t ] === 0 ) continue;
-			relax( t, i, j, 1, 0, texel );
-			relax( t, i, j, 0, 1, texel );
-			relax( t, i, j, 1, 1, diagonal );
-			relax( t, i, j, - 1, 1, diagonal );
-
-		}
-		if ( ( j & 63 ) === 63 ) yield;
-
-	}
-	for ( let t = 0, done = 0; t < size * size; t ++ ) {
-
-		if ( edge[ t ] === 0 ) continue;
-		const x = ( ( t % size + 0.5 ) / size - 0.5 ) * MEADOW_EXTENT, z = ( ( Math.floor( t / size ) + 0.5 ) / size - 0.5 ) * MEADOW_EXTENT;
-		ground[ t * 4 + 3 ] = Math.min( heightMapAt( x, z ), GROUND_A.most ) + Math.round( ( 1 - smoothstepNumber( 0, HEIGHT_MAP.edge, edge[ t ] ) ) * GROUND_A.steps );
-		if ( ( ++ done & 4095 ) === 4095 ) yield;
-
-	}
-	return { ground, sward, crowns, roots, box };
-
-}
-
-/** The plan for the turf anchors `veg`, at once (the page's load and the tools). */
-export function plantGrass( veg: Float32Array ): GrassPlan {
-
-	return runSteps( grassSteps( veg ) );
-
-}
-
-function groundTexture( ground: Float32Array, size = MEADOW_SIZE ): THREE.DataTexture {
+function groundTexture( ground: Float32Array, size = MEADOW_SIZE, name = 'grassGround' ): THREE.DataTexture {
 
 	const map = new THREE.DataTexture( ground, size, size, THREE.RGBAFormat, THREE.FloatType );
 	map.magFilter = map.minFilter = THREE.NearestFilter;
 	map.generateMipmaps = false;
-	map.name = 'grassGround';
+	map.name = name;
 	map.needsUpdate = true;
 	return map;
 
@@ -473,6 +324,10 @@ function groundTexture( ground: Float32Array, size = MEADOW_SIZE ): THREE.DataTe
  * swapped as the land grows (`MeadowBlades.setGround`): a texel of no turf until the meadow is
  * planted. */
 const groundMap = texture( groundTexture( new Float32Array( 4 ), 1 ) );
+/** The lip's map beside it, of its size and swapped with it (`MeadowBlades.setGround`): per texel
+ * the rim distance at its centre, the slope of its roots' line in that distance and the farthest
+ * distance out a blade over it grows to (LIP); only the blades' generation reads it. */
+const lipMap = texture( groundTexture( new Float32Array( [ 0, 0, LIP.none, 0 ] ), 1, 'grassLip' ) );
 
 /** The two height maps in a texel's A (GROUND_A): `free` of the land's edge, and `short`, as the
  * blades' lengths take it. */
@@ -538,21 +393,25 @@ class MeadowBlades {
 	private box = new THREE.Box3();
 	/** The ground map's node (`groundMap`, its value swapped as the land grows). */
 	readonly ground = groundMap;
+	/** The lip's map's node (`lipMap`, swapped with the ground map). */
+	readonly lip = lipMap;
 	readonly stats = { dispatches: 0, skipped: 0, tiles: 0 };
 
-	constructor( map: THREE.DataTexture, box: THREE.Box3 ) {
+	constructor( map: THREE.DataTexture, lip: THREE.DataTexture, box: THREE.Box3 ) {
 
 		this.ground.value = map;
+		this.lip.value = lip;
 		this.box.copy( box );
 		this.indirect.array.set( [ BLADES * INDICES, 0, 0, 0, 0, BLADES * LOW_INDICES, 0, 0, 0, 0 ] );
 
 	}
 
-	/** Takes a new ground map and box (a growth step); returns the old map. */
-	setGround( map: THREE.DataTexture, box: THREE.Box3 ): THREE.Texture {
+	/** Takes a new ground map, lip's map and box (a growth step); returns the old maps. */
+	setGround( map: THREE.DataTexture, lip: THREE.DataTexture, box: THREE.Box3 ): THREE.Texture[] {
 
-		const old = this.ground.value;
+		const old = [ this.ground.value, this.lip.value ];
 		this.ground.value = map;
+		this.lip.value = lip;
 		this.box.copy( box );
 		this.key.fill( NaN );
 		return old;
@@ -668,7 +527,7 @@ class MeadowBlades {
 		const tiles = node( this.tiles, 'uvec4', MAX_TILES, true );
 		const total = node( this.count, 'uint', 4 );
 		const args = node( this.indirect as unknown as THREE.StorageBufferAttribute, 'uint', 10 );
-		const { planes, groups, ground, eye } = this;
+		const { planes, groups, ground, lip, eye } = this;
 
 		// The ground map at ( x, z ): the bilinear weights of the four nearest texels and the texels.
 		const groundAt = ( x: F, z: F ) => {
@@ -692,6 +551,30 @@ class MeadowBlades {
 
 			} );
 			const height = sum.div( max( weight, 1e-6 ) );
+			// on the lip (LIP): the rim distance here, bilinear; the roots' height, each holding
+			// texel's line at that distance (inland its mean: a slope of 0); and the farthest distance
+			// out a holding texel's turf reaches
+			const atLip = () => {
+
+				const lips = [ [ 0, 0 ], [ 1, 0 ], [ 0, 1 ], [ 1, 1 ] ].map( ( [ dx, dz ] ) => ( textureLoad( lip, ivec2( clamp( i0.add( vec2( dx, dz ) ), 0, MEADOW_SIZE - 1 ) ) ) as unknown as V4 ).toVar() );
+				let distance: F = float( 0 );
+				lips.forEach( ( q, k ) => {
+
+					distance = distance.add( weights[ k ].mul( q.x ) );
+
+				} );
+				const d = distance.toVar();
+				let rooted: F = float( 0 ), farthest: F = float( - LIP.none );
+				texels.forEach( ( p, k ) => {
+
+					const holds = step( 1e-9, p.y );
+					rooted = rooted.add( weights[ k ].mul( holds ).mul( p.x.add( lips[ k ].y.mul( d.sub( lips[ k ].x ) ) ) ) );
+					farthest = max( farthest, select( p.y.greaterThan( 1e-9 ), lips[ k ].z, float( - LIP.none ) ) );
+
+				} );
+				return { height: rooted.div( max( weight, 1e-6 ) ), on: d.lessThanEqual( farthest ) };
+
+			};
 			// grass where the texel picked by `pick` (0..1) with the bilinear weights holds it (one of
 			// the four texels chosen at random, weighted by the position among them: Wohllaib 04:04)
 			const holds = ( pick: F ) => {
@@ -701,7 +584,7 @@ class MeadowBlades {
 				return share.greaterThanEqual( 0.5 );
 
 			};
-			return { height, weight, holds, sky, map };
+			return { height, weight, holds, sky, map, atLip };
 
 		};
 
@@ -763,7 +646,7 @@ class MeadowBlades {
 			// the doubling before: its share of the blade sat( xi + 3 - 4x ), within the reach's
 			const leaving = top.equal( level ).and( level.lessThan( LOD.levels ) ).toVar();
 			const share = select( leaving, min( keep, clamp( random( 24 ).add( 3 ).sub( within.mul( 4 ) ), 0, 1 ) ), keep ).toVar();
-			const grow = inside.and( at.holds( r[ 2 ] ) ).and( at.map.greaterThanEqual( LENGTH.bare ) )
+			const grow = inside.and( at.holds( r[ 2 ] ) ).and( at.atLip().on ).and( at.map.greaterThanEqual( LENGTH.bare ) )
 				.and( share.greaterThan( 0 ) ).and( top.greaterThanEqual( level ) ).toVar();
 			// in the far draw from LOW.from m on (the near blades a 1 in the word's low half, the far
 			// ones in its high half: `count`, `scatter`)
@@ -926,9 +809,10 @@ class MeadowBlades {
 				const centred = clump.near.mul( clump.mean ).sub( 0.25 ).toVar();
 				// the root, drawn toward the clump's centre
 				const pull = CLUMP.on ? clamp( clump.near.mul( CLUMP.pull ).mul( u( 6 ) ).mul( clump.mean ), 0, 1 ) : float( 0 );
-				const root = mix( vec2( blade.x, blade.z ), clump.centre, pull ).toVar();
-				const ground = groundAt( root.x, root.y );
-				const y = ground.height.toVar();
+				const pulled = mix( vec2( blade.x, blade.z ), clump.centre, pull ).toVar();
+				// (drawn no further out than the lip's turf: off it, the root stays at its cell's point)
+				const root = select( groundAt( pulled.x, pulled.y ).atLip().on, pulled, vec2( blade.x, blade.z ) ).toVar();
+				const y = groundAt( root.x, root.y ).atLip().height.toVar();
 				const height = clamp( centred.mul( LENGTH.vary ).add( at.map ).mul( LENGTH.full ).mul( u( 0 ).mul( LENGTH.mix ).add( 1 - LENGTH.mix ) ), LENGTH.least, TALLEST ).toVar();
 				const lean = u( 2 ).mul( 1.4 ).add( 0.3 ).mul( TILT.lean ).mul( at.map.mul( 0.25 ).add( 1 ) );
 				const bend = u( 3 ).add( 0.5 ).mul( BEND.arch ).mul( select( u( 4 ).lessThan( 0.5 ), float( - 1 ), float( 1 ) ) );
@@ -1635,7 +1519,7 @@ export function buildGrass( plan: GrassPlan, shared: Shared ): THREE.Group {
 	const crowns = runSteps( crownSteps( [ plan.crowns ] ) );
 	setSwardField( runSteps( swardSteps( plan.sward, SWARD_FALLBACK, crowns ) ) );
 	setCanopyTop( runSteps( canopySteps( crowns ) ) );
-	const blades = new MeadowBlades( groundTexture( plan.ground ), plan.box );
+	const blades = new MeadowBlades( groundTexture( plan.ground ), groundTexture( plan.lip, MEADOW_SIZE, 'grassLip' ), plan.box );
 	// the near draw and the far one (LOW), each from its own arguments in the one indirect buffer;
 	// the first to draw for a camera generates the blades (`update` does nothing again for it)
 	const draw = ( low: boolean ) => {
@@ -1677,7 +1561,7 @@ export function buildGrass( plan: GrassPlan, shared: Shared ): THREE.Group {
 
 }
 
-interface GrassPrepared { plan: GrassPlan; ground: THREE.DataTexture; sward: THREE.DataTexture; crowns: THREE.DataTexture }
+interface GrassPrepared { plan: GrassPlan; ground: THREE.DataTexture; lip: THREE.DataTexture; sward: THREE.DataTexture; crowns: THREE.DataTexture }
 
 /** The meadow as a vegetation kind (vegetation/Registry.ts): a growth step bakes the next ground
  * map and the fields under the meadow, and swaps them in. */
@@ -1687,7 +1571,7 @@ export function grassKind( group: THREE.Group ): VegetationKind<GrassPrepared, W
 		growth: {
 			*prepare( input ) {
 
-				const plan = yield* grassSteps( input.data.vegetation );
+				const plan = yield* grassSteps( input.data.vegetation, input.data.rimGround );
 				const crownData = yield* crownSteps( [ plan.crowns ] );
 				const sward = yield* swardSteps( plan.sward, SWARD_FALLBACK, crownData );
 				yield* textureSteps( input.renderer, sward );
@@ -1695,18 +1579,20 @@ export function grassKind( group: THREE.Group ): VegetationKind<GrassPrepared, W
 				yield* textureSteps( input.renderer, crowns );
 				const ground = groundTexture( plan.ground );
 				yield* textureSteps( input.renderer, ground );
-				return { plan, ground, sward, crowns };
+				const lip = groundTexture( plan.lip, MEADOW_SIZE, 'grassLip' );
+				yield* textureSteps( input.renderer, lip );
+				return { plan, ground, lip, sward, crowns };
 
 			},
 			swap( prepared ) {
 
 				const blades = group.userData.blades as MeadowBlades;
-				const oldGround = blades.setGround( prepared.ground, prepared.plan.box );
+				const oldGround = blades.setGround( prepared.ground, prepared.lip, prepared.plan.box );
 				group.userData.plan = prepared.plan;
 				const oldSward = setSwardField( prepared.sward ), oldCrowns = setCanopyTop( prepared.crowns );
 				return () => {
 
-					oldGround.dispose();
+					for ( const map of oldGround ) map.dispose();
 					oldSward.dispose();
 					oldCrowns.dispose();
 
