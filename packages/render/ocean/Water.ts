@@ -14,6 +14,7 @@ import {
 	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, modelViewMatrix, modelViewProjection, cameraProjectionMatrixInverse, screenUV,
 	float, int, bool, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, sqrt, exp, log2,
 	abs, fwidth, reflect, refract, select, step, dFdx, dFdy, perspectiveDepthToViewZ, cameraNear, cameraFar, luminance, property,
+	screenCoordinate, Discard,
 } from 'three/tsl';
 import type { Sky } from '../sky/Sky.ts';
 import { FFT_SIZE, NEAR_RIPPLES, type OceanFFT } from './OceanFFT.ts';
@@ -35,8 +36,7 @@ import { REFERENCE_SPEED } from '../weather/Wind.ts';
 import { motionNode, motionState, motionUniforms, outputStruct, reactiveUniforms } from '../post/Motion.ts';
 import { sceneUnits } from '../post/PreExposure.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
-import type { DepthPyramid } from '../post/DepthPyramid.ts';
-import { screenReflection } from './ScreenReflection.ts';
+import type { SeaReflection } from './SeaReflection.ts';
 import { settings } from '../Settings.ts';
 
 // The sea surface: an FFT-displaced grid with its normal, reflection, refraction and foam.
@@ -90,7 +90,9 @@ import { settings } from '../Settings.ts';
 //     far sea's reflection comes, with the distance, to the night sky as the dome draws it
 //     (SEEN_SKY: the dome's night sky stands below the light it sheds, which the bake holds); both read the sea's slopes before the waves' damping, so a lee stands level with the sea round it, never a pale tongue
 //     of a mirror's reflectance; the screen-space reflection of the cliffs and the islanders behind
-//     tidewater's gate (rays near the horizon, reflectance over 0.05)
+//     tidewater's gate (rays near the horizon, reflectance over 0.05): the mean over the pixel's
+//     lobe of what its rays meet, traced and denoised by SeaReflection.ts and read at the pixel,
+//     premultiplied by the share of the lobe that met something, so the rest keeps the sky above
 //   - the key's specular: the sun's Beckmann lobe of the base roughness and the slopes the pixel
 //     cannot resolve (Cox & Munk 1954's mean square slope for the wind, J. Opt. Soc. Am. 44:838, the
 //     share finer than the pixel), which is the distribution's alpha^2 itself, with Beckmann's Smith
@@ -122,7 +124,8 @@ import { settings } from '../Settings.ts';
 //     (tidewater's fresh foam, not its persistent foam, which integrates in time), lit as a bright diffuse scatterer
 // Drawn after the opaque pass into the same multisampled target, depth-tested per sample against
 // the opaque surfaces, reading a copy of that pass's resolved colour, its linear depth and the
-// underwater pyramid, and the refraction pass's colour and depth. Those images hold radiance
+// underwater pyramid, the refraction pass's colour and depth, and the sea's reflection
+// (SeaReflection.ts), which a prepass of this surface alone feeds. Those images hold radiance
 // pre-exposed, and so does the water's own output (post/PreExposure.ts): it reads them back in
 // scene units (`sceneUnits`) and shades in scene units, and its `outputStruct` stores the result.
 //
@@ -481,9 +484,9 @@ export interface WaterInputs {
 	sunShadow: SunShadow;
 	storm: StormSea;
 	detail: SeaDetail; // gusts, slicks and windrows
-	sceneColor: THREE.Texture; // the opaque pass's resolved colour, with mips (the reflection's cone)
+	sceneColor: THREE.Texture; // the opaque pass's resolved colour, with mips
 	linearDepth: THREE.Texture; // its view-space z: sample 0 (x) and the farthest sample (y)
-	depthPyramid: DepthPyramid; // that depth's pyramid of nearest and farthest depths (the reflection's trace)
+	reflection: SeaReflection; // the reflection of what stands above the sea, traced and denoised ahead of the water (SeaReflection.ts)
 	underwater: THREE.Texture; // that colour under the sea, premultiplied by its weight, with mips (Pipeline.ts)
 	refraction: { color: THREE.Texture; depth: THREE.Texture; guard: THREE.UniformNode<'vec4', THREE.Vector4> }; // the refraction pass's image and its guard band (Refraction.ts)
 	size?: number;
@@ -535,11 +538,11 @@ const REFLECTOR_HEIGHT = 3;
 const REFLECTION_FLOOR = 0.35;
 
 // The ways of building the sea's shading, each its own material (a debug flag picks one, for A/B
-// timing in one page). cull and clip: how the reflection's trace uses that box (ScreenReflection.ts).
-// refraction: the refraction pass's image is the refraction source (else the opaque copy alone).
-interface WaterVariant { cull: boolean; clip: boolean; refraction: boolean }
-const SHIPPED: WaterVariant = { cull: true, clip: true, refraction: true };
-const variantKey = ( v: WaterVariant ) => ( v.cull ? 1 : 0 ) + ( v.clip ? 2 : 0 ) + ( v.refraction ? 4 : 0 );
+// timing in one page). refraction: the refraction pass's image is the refraction source (else the
+// opaque copy alone).
+interface WaterVariant { refraction: boolean }
+const SHIPPED: WaterVariant = { refraction: true };
+const variantKey = ( v: WaterVariant ) => v.refraction ? 1 : 0;
 
 const DEBUG = import.meta.env.DEV || settings.has( 'debug' );
 
@@ -564,8 +567,9 @@ export class Water {
 		shoreFoam: uniform( 1 ), // the foam the waves leave at the rock (ShoreWaves)
 	};
 
-	private reflectorMin = uniform( new THREE.Vector3() );
-	private reflectorMax = uniform( new THREE.Vector3() );
+	// the sea's surface alone, drawn ahead of the opaque copy's reflection (SeaReflection.ts)
+	readonly prepassMesh: THREE.Mesh;
+	private prepassMaterial: THREE.NodeMaterial | null = null;
 	private inputs: WaterInputs;
 	private materials = new Map<number, THREE.NodeMaterial>();
 	// The temporal modes' motion: the scene clock's step since the rendered frame before (s), 0
@@ -649,13 +653,17 @@ export class Water {
 		this.mesh = new THREE.Mesh( geo, this.material );
 		this.mesh.frustumCulled = false;
 		this.mesh.name = 'water';
+		this.prepassMesh = new THREE.Mesh( geo, this.prepassMaterial! );
+		this.prepassMesh.frustumCulled = false;
+		this.prepassMesh.name = 'water prepass';
+		inputs.reflection.prepassScene.add( this.prepassMesh );
 
 	}
 
 	// The sea's shading for one variant (see WaterVariant).
 	private buildMaterial( variant: WaterVariant ): THREE.NodeMaterial {
 
-		const { fft, sky, shared, shore, seabedHeight, shoreWaves, sunShadow, storm, detail, sceneColor, linearDepth, depthPyramid, underwater, refraction, openSea } = this.inputs;
+		const { fft, sky, shared, shore, seabedHeight, shoreWaves, sunShadow, storm, detail, sceneColor, linearDepth, reflection, underwater, refraction, openSea } = this.inputs;
 		const quality = this.quality;
 		const u = this.uniforms;
 		// (REFLECTION_LOBE's spread and lift, and the panorama's texel in radians)
@@ -788,39 +796,23 @@ export class Water {
 		};
 		const viewZOf = ( depth: F ) => perspectiveDepthToViewZ( depth, cameraNear, cameraFar );
 
-		// The screen-space reflection of the opaque scene (the cliffs, the plants, the islanders).
-		const screen = screenReflection( {
-			depth: tDepth, sceneColor, pyramid: depthPyramid, iterations: quality.ssrIterations,
-			box: { min: this.reflectorMin, max: this.reflectorMax, cull: variant.cull, clip: variant.clip },
-			waterLevel: shared.waterLevel, gale: shared.wind.gale, belowHorizon: BELOW_HORIZON,
-		} );
-
 		// the surface's metering illuminance, assigned inside the shading (from its sun's shadow and
 		// clouds) and read by the outputs after it: a fragment-stage property, no varying
 		const meter = property( 'float', 'WaterMeter' ) as unknown as THREE.Node<'float'>;
-		material.fragmentNode = Fn( () => {
+		// The surface at the fragment, which the water's shading and the reflection's prepass
+		// (`prepassMaterial`) both build: its derivatives first, while control flow is still uniform.
+		const surface = () => {
 
 			const time = shared.time;
 			const wp = positionWorld;
-
-			// ---- everything that needs screen-space derivatives, while control flow is still uniform
 			const footprint = max( length( fwidth( vLag ) ), 1e-4 ).toVar();
 			const lagDx = dFdx( vLag ).toVar(), lagDy = dFdy( vLag ).toVar();
-			// The storm foam's texture level: the pixel's area, not its longest side. At grazing angles
-			// the longest side is many times the width and would blur the mat into a flat grey film.
-			const foamFootprint = max( abs( lagDx.x.mul( lagDy.y ).sub( lagDx.y.mul( lagDy.x ) ) ).sqrt(), 1e-4 ).toVar();
 			const shoreWave = shoreWaves.surfaceAt( wp.xz, time ).toVar();
 			const rainGradient = rainRippleGradient( wp.xz, time, shared.rain, footprint ).toVar();
 			// the cascades' slopes, each damped as its displacement is (the fine one by its physical
 			// damping alone: its mips filter it with the distance)
 			const ws = [ vWeights.x, vWeights.y, vWeights.z, vWeights.w ];
 			const d = sum( [ 0, 1, 2, 3 ].map( ( c ) => cascade( fft.derivatives, c, vLag ).mul( ws[ c ] ) ) ).toVar();
-			// the whitecaps' bubbly mat: two layers of the foam pattern at other scales and angles
-			const fuv = vLag.mul( FOAM_SCALE ).toVar();
-			const p1 = texture( storm.pattern, fuv ).toVar();
-			const p2 = texture( storm.pattern, rotate( fuv, 0.6435 ).mul( 2.37 ).add( vec2( 0.31, 0.77 ) ) ).toVar();
-			// the pattern of the foam at the rock, finer (SHORE_FOAM_SCALE)
-			const ps = texture( storm.pattern, rotate( vLag.mul( SHORE_FOAM_SCALE ), 1.13 ).add( vec2( 0.57, 0.19 ) ) ).toVar();
 			// the sea's large-scale detail: ( rough, gust, slick, streak ); the island's wave shadow
 			// smooths the slopes no pixel resolves as it damps the finest cascade (WaveDamping.ts LEE)
 			const sea = detail.sample( vLag, vLandGust ).toVar();
@@ -852,7 +844,6 @@ export class Water {
 				slopes.addAssign( sum( NEAR_RIPPLES.map( ( r ) => rotate( ripple( r.scale, r.angle ), - r.angle ).mul( r.weight ) ) ).mul( near ) );
 
 			} );
-			const jac = d.z.add( 1 ).mul( d.w.add( 1 ) ).toVar();
 			const toCam = cameraPosition.sub( wp ).toVar();
 			const V = toCam.div( length( toCam ) ).toVar();
 			// A facet turned away from the eye (a fold of the choppy surface) is bent to just past
@@ -861,8 +852,61 @@ export class Water {
 			const unfold = ( n: V3 ) => normalize( n.add( V.mul( max( dot( n, V ).negate().add( 0.03 ), 0 ) ) ) );
 			const N = unfold( N0 ).toVar();
 			const Nrefracted = unfold( normalize( vec3( resolvedSlopes.x.negate(), 1, resolvedSlopes.y.negate() ) ) ).toVar();
-			const L = shared.sunDir;
 			const posV = cameraViewMatrix.mul( vec4( wp, 1 ) ).xyz.toVar();
+			// the slopes no pixel resolves at this distance (Cox-Munk's mean square slope 0.003 +
+			// 0.00512 U, the share finer than the pixel's wavenumber, scaled by the gusts and slicks)
+			const mss = windSpeed.mul( COX_MUNK.perWind ).add( COX_MUNK.base );
+			const unresolvedShare = sat( log2( footprint.mul( 110 / PI ) ).div( 9 ) ).toVar();
+			// the mean surface's: the same share of the sea's slopes, before the waves' damping
+			const sigmaMean = sqrt( mss.mul( unresolvedShare ).mul( sea.x.mul( sea.x ) ) ).toVar();
+			const NdV = max( dot( N, V ), 1e-4 ).toVar();
+			const Fr = fresnelDielectric( NdV, float( IOR ) ).toVar();
+			// the screen's reflection is traced where the reflectance shows it (tidewater's gate)
+			const traced = u.ssr.greaterThan( 0.5 ).and( Fr.greaterThan( quality.ssrMinFresnel ) );
+			return { time, wp, footprint, lagDx, lagDy, shoreWave, rainGradient, d, sea, rough, slopes, resolvedSlopes, toCam, V, N, Nrefracted, posV, mss, unresolvedShare, sigmaMean, NdV, Fr, traced };
+
+		};
+		// The reflection's prepass (SeaReflection.ts): the normal's x and z, the Beckmann alpha of
+		// the mean surface's unresolved slopes (REFLECTION_LOBE's spread: sqrt( 2 ) times the slopes'
+		// along one axis) or -1 where no reflection is traced, and the view distance; nothing where
+		// the opaque scene stands in front of the sea (sample 0 of the linear depth).
+		if ( ! this.prepassMaterial ) {
+
+			const prepass = new THREE.NodeMaterial();
+			prepass.name = 'water prepass';
+			prepass.positionNode = displaced;
+			prepass.vertexNode = material.vertexNode;
+			prepass.fragmentNode = Fn( () => {
+
+				const s = surface();
+				If( textureLoad( tDepth, pixel( screenUV ) ).x.greaterThan( s.posV.z ), () => {
+
+					Discard();
+
+				} );
+				const alpha = select( s.traced, max( s.sigmaMean.mul( lobeSlopeScale ), 0 ), float( - 1 ) );
+				return vec4( s.N.x, s.N.z, alpha, s.posV.z.negate() );
+
+			} )();
+			prepass.side = THREE.DoubleSide;
+			this.prepassMaterial = prepass;
+
+		}
+		material.fragmentNode = Fn( () => {
+
+			// ---- everything that needs screen-space derivatives, while control flow is still uniform
+			// the whitecaps' bubbly mat: two layers of the foam pattern at other scales and angles
+			const fuv = vLag.mul( FOAM_SCALE ).toVar();
+			const p1 = texture( storm.pattern, fuv ).toVar();
+			const p2 = texture( storm.pattern, rotate( fuv, 0.6435 ).mul( 2.37 ).add( vec2( 0.31, 0.77 ) ) ).toVar();
+			// the pattern of the foam at the rock, finer (SHORE_FOAM_SCALE)
+			const ps = texture( storm.pattern, rotate( vLag.mul( SHORE_FOAM_SCALE ), 1.13 ).add( vec2( 0.57, 0.19 ) ) ).toVar();
+			const { wp, footprint, lagDx, lagDy, shoreWave, d, sea, rough, V, N, Nrefracted, posV, toCam, mss, unresolvedShare, sigmaMean, NdV, Fr, traced } = surface();
+			// The storm foam's texture level: the pixel's area, not its longest side. At grazing angles
+			// the longest side is many times the width and would blur the mat into a flat grey film.
+			const foamFootprint = max( abs( lagDx.x.mul( lagDy.y ).sub( lagDx.y.mul( lagDy.x ) ) ).sqrt(), 1e-4 ).toVar();
+			const jac = d.z.add( 1 ).mul( d.w.add( 1 ) ).toVar();
+			const L = shared.sunDir;
 
 			// ---- the key reaching the surface: through the clouds, on every path, and by the shadow's
 			// soft read from the vertex stage, whole here (the terms' shares: SHADOW_SOFT_RADIUS)
@@ -916,27 +960,15 @@ export class Water {
 			const shoreFoam = max( shoreMat, shoreLace.mul( 0.75 ) ).mul( ps.z.mul( 0.3 ).add( 0.75 ) ).mul( white.mul( 0.35 ).add( 0.5 ) ).mul( smoothstep( 0, 0.05, white ) );
 			foam.assign( max( foam, mix( shoreFoam, white.mul( 0.6 ), smoothstep( 0.05, 0.4, footprint ) ) ) );
 
-			// ---- roughness: the slopes no pixel resolves at this distance (Cox-Munk's mean square
-			// slope 0.003 + 0.00512 U, the share finer than the pixel's wavenumber, scaled by the
-			// gusts and slicks) over the base
-			const mss = windSpeed.mul( COX_MUNK.perWind ).add( COX_MUNK.base );
-			const unresolvedShare = sat( log2( footprint.mul( 110 / PI ) ).div( 9 ) ).toVar();
+			// ---- roughness: the slopes no pixel resolves (`surface`) over the base
 			const unresolved = unresolvedShare.mul( rough.mul( rough ) ).toVar();
 			// (Cox-Munk's mean square slope over both axes is Beckmann's alpha^2 itself; the moon's alpha
 			// takes twice it, of a smaller share of those slopes: MOON_UNRESOLVED)
 			const alpha2 = u.roughness.mul( u.roughness ).add( mss.mul( mix( float( 2 ), float( 1 ), keyChroma ) ).mul( unresolved ).mul( mix( float( MOON_UNRESOLVED ), float( 1 ), keyChroma ) ) ).add( foam.mul( 0.2 ) ).toVar();
 			const sigmaUnresolved = sqrt( mss.mul( unresolved ) ).toVar();
-			// the mean surface's: the same share of the sea's slopes, before the waves' damping
-			const sigmaMean = sqrt( mss.mul( unresolvedShare ).mul( sea.x.mul( sea.x ) ) ).toVar();
-
-			const NdV = max( dot( N, V ), 1e-4 ).toVar();
-			const Fr = fresnelDielectric( NdV, float( IOR ) ).toVar();
 
 			// ---- reflection
 			const Rraw = reflect( V.negate(), N ).toVar();
-			// How the reflected direction turns across the pixel (taken here, while control flow is
-			// uniform): the screen-space reflection's cone (ScreenReflection.ts).
-			const dRx = dFdx( Rraw ).toVar(), dRy = dFdy( Rraw ).toVar();
 			// The mean surface's reflection over the slopes the pixel does not resolve (REFLECTION_LOBE):
 			// the slopes' spread along the view, the visible facets' mean cosine, the lobe's lift, width
 			// and shadowing (whose mean Fresnel the water's blend takes below).
@@ -950,7 +982,6 @@ export class Water {
 			const lift = cosVisible.sub( cosMean ).mul( lobeLift ).toVar();
 			const lobeY = min( cosMean.add( lift ), 1 ).toVar();
 			const lobeW = sigmaV.mul( 2 ).toVar();
-			const cone = screen.cone( dRx, dRy, lobeW, V.y ).toVar();
 			const lobeShadow = smithG1( lobeY.sub( lobeW ), sigmaV ).mul( 0.25 ).add( smithG1( lobeY, sigmaV ).mul( 0.5 ) )
 				.add( smithG1( lobeY.add( lobeW ), sigmaV ).mul( 0.25 ) ).toVar();
 			// The pixel's own mirror, lifted as the mean surface's lobe is; its share over the horizon
@@ -981,13 +1012,14 @@ export class Water {
 			const seenSky = shared.seenNight.sub( 1 ).mul( smoothstep( SEEN_SKY.near, SEEN_SKY.far, length( toCam ) ) ).add( 1 );
 			const refl = mix( horizon.mul( BELOW_HORIZON ), skyReflection, skyShare )
 				.mul( shared.skyLift.sub( 1 ).mul( bandRamp ).add( 1 ) ).mul( seenSky ).toVar();
-			// The cliffs, the plants and the islanders from the screen: where the reflectance is small the
-			// reflection cannot be seen (tidewater's gate); the box (`reflectionBounds`) decides
-			// which rays can meet them. One ray through the pixel's centre, read through its cone.
-			If( u.ssr.greaterThan( 0.5 ).and( Fr.greaterThan( quality.ssrMinFresnel ) ), () => {
+			// The cliffs, the plants and the islanders from the screen (SeaReflection.ts), where the
+			// reflectance shows them (`surface`'s gate, which the prepass traced by): its image at
+			// this pixel, premultiplied by its confidence, over the sky's reflection; the box
+			// (`reflectionBounds`) decides which rays can meet them.
+			If( traced, () => {
 
-				const rc = screen.trace( posV, normalize( cameraViewMatrix.mul( vec4( Rraw, 0 ) ).xyz ), cone ).toVar();
-				refl.assign( mix( refl, rc.rgb, rc.a ) );
+				const rc = textureLoad( reflection.result, ivec2( screenCoordinate.xy ) ).mul( reflection.weight ).toVar();
+				refl.assign( refl.mul( float( 1 ).sub( rc.a ) ).add( sceneUnits( rc.rgb.mul( reflection.shown ) ) ) );
 
 			} );
 			refl.mulAssign( u.reflection );
@@ -1357,13 +1389,12 @@ export class Water {
 			this.clock.time = time;
 
 		}
-		this.reflectorMin.value.copy( this.reflectionBounds.min );
-		this.reflectorMax.value.copy( this.reflectionBounds.max );
-		// debugFlags.ssrCull / ssrClip = false trace without the box, and refraction =
-		// false the opaque copy as the only refraction source (with the refraction pass skipped:
-		// Pipeline.ts), for A/B timing in one page (each variant is its own material and pipeline,
-		// built on first use).
-		const variant = { cull: debugFlags.ssrCull !== false, clip: debugFlags.ssrClip !== false, refraction: debugFlags.refraction !== false };
+		this.inputs.reflection.boxMin.value.copy( this.reflectionBounds.min );
+		this.inputs.reflection.boxMax.value.copy( this.reflectionBounds.max );
+		// debugFlags.refraction = false: the opaque copy as the only refraction source (with the
+		// refraction pass skipped: Pipeline.ts), for A/B timing in one page (each variant is its own
+		// material and pipeline, built on first use).
+		const variant = { refraction: debugFlags.refraction !== false };
 		const key = variantKey( variant );
 		let material = this.materials.get( key );
 		if ( ! material ) this.materials.set( key, material = this.buildMaterial( variant ) );

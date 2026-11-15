@@ -813,8 +813,10 @@ export function createSeaAndPipeline( render: RenderParts, { rainCeiling, extraP
 			jitterNdc: jitter.uniforms.ndc, opaqueBelow: ( MOTION_CLASS.opaque + MOTION_CLASS.vegetation ) / 2,
 		},
 	} );
-	const pipeline = new Pipeline( renderer, sky, createDisplayTables( look.display ), sunShadow, render.rain, postOptionsFromURL( params, quality.post ), quality.taa, extraPasses );
+	const pipeline = new Pipeline( renderer, sky, createDisplayTables( look.display ), sunShadow, render.rain, postOptionsFromURL( params, quality.post ), quality.taa, extraPasses, quality.water.ssrIterations );
 	render.pipeline = pipeline;
+	// across a cut the sea's reflection reprojects nothing from the frames before
+	render.history.onCut( 'sea reflection', () => pipeline.seaReflection.clearHistory() );
 	// the pipeline's scene passes by their typed names, for what registers a draw for later
 	render.latents = pipeline.graph;
 	// The profiler labels each pass the graph runs by the pass's label (its groups), unless a
@@ -995,7 +997,7 @@ export function createWater( render: RenderParts, { fields, landBox, seaShape, h
 	render.water = new Water( {
 		fft, sky, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves,
 		land: landBox, ...seaShape, sunShadow, storm: stormSea, detail: seaDetail,
-		sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, depthPyramid: pipeline.depthPyramid, underwater: pipeline.textures.underwater, quality: quality.water,
+		sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, reflection: pipeline.seaReflection, underwater: pipeline.textures.underwater, quality: quality.water,
 		refraction: { color: pipeline.textures.refraction, depth: pipeline.textures.refractionDepth, guard: pipeline.refraction.guard },
 	} );
 	pipeline.seaLevel.value = shared.waterLevel.value;
@@ -1176,6 +1178,7 @@ export function createFrameStages( render: RenderParts, host: FrameHost ): Frame
 		host.pending( pending );
 		if ( sunShadow.pending ) pending.push( 'sun shadow' );
 		if ( pipeline.air.pending ) pending.push( 'haze rest' );
+		if ( pipeline.seaReflection.pending ) pending.push( 'sea reflection rest' );
 		if ( pipeline.exposurePending ) pending.push( 'exposure' );
 		if ( preExposure.pending ) pending.push( PRE_EXPOSURE_PENDING );
 		if ( ! ambientRelight.ready ) pending.push( 'ambient relight' );
@@ -1399,6 +1402,7 @@ export function registerLightHistories( render: RenderParts ) {
 
 	const { history, pipeline, groundBounce, refractedSun } = render;
 	history.onJump( 'haze', () => pipeline.air.invalidate() );
+	history.onJump( 'sea reflection', () => pipeline.seaReflection.invalidate() );
 	history.onJump( 'ground bounce', () => groundBounce.invalidate() );
 	history.onJump( 'refracted sun', () => {
 

@@ -45,6 +45,8 @@ import { restEpoch, restKey } from './TemporalRest.ts';
 import { tuneCheck, tuneObject } from '../debug/Tune.ts';
 import type { ExtraPass } from './ExtraPass.ts';
 import type { WaveMaps } from '../ocean/WaveMaps.ts';
+import { SeaReflection } from '../ocean/SeaReflection.ts';
+import { DEFAULT_WATER_QUALITY } from '../ocean/Water.ts';
 import { settings } from '../Settings.ts';
 import { DEFAULT_POST_OPTIONS, postOptionsFromURL, type PostOptions } from './PostOptions.ts';
 import type { DisplayTables } from '../look/DisplayLook.ts';
@@ -68,7 +70,11 @@ import { buildDisplay, GRADE_TABLE, NIGHT, TONE_SPACE } from './PipelineDisplay.
 //   depth pyramid ── the nearest and farthest depth per cell over ten levels, in a storage buffer
 //     (DepthPyramid.ts; in a frame with water): what the sea's reflection is traced over
 //   opaque copy ── opaqueRT (the resolved opaque colour, with mips: what the water refracts where
-//     the refraction image holds nothing, and reflects over its cone's footprint)
+//     the refraction image holds nothing, and what the sea's reflection meets)
+//   sea reflection ── the water's surface drawn alone (its normal, roughness and view depth), one
+//     stochastic reflected ray per pixel traced over the depth pyramid, and its denoiser
+//     (reprojection, prefilter, temporal resolve) into seaResolved, what the water reads at its pixel
+//     (ocean/SeaReflection.ts; in a frame with water, held once a still view has converged)
 //   refraction ── refraction and refractionDepth: the world under the sea through a wider view, at
 //     half the render's pixel density (ocean/Refraction.ts; the water's refraction source where the
 //     opaque image does not hold the floor: behind what stands above the water, and off the screen)
@@ -410,6 +416,10 @@ export class Pipeline {
 	/** The linear depth's pyramid of nearest and farthest depths, which the sea's reflection traces
 	 * over (DepthPyramid.ts). */
 	readonly depthPyramid: DepthPyramid;
+	/** The sea's reflection of what stands above it, traced and denoised ahead of the water
+	 * (ocean/SeaReflection.ts), and its trace's most steps (WaterQuality `ssrIterations`). */
+	readonly seaReflection: SeaReflection;
+	readonly seaIterations: number;
 	/** The sea's mean level (m), which the underwater pyramid keeps what lies under (main.ts sets it
 	 * from the shared uniforms'). */
 	readonly seaLevel = uniform( 0 );
@@ -539,7 +549,7 @@ export class Pipeline {
 
 	/** `look`: the display's tables (look/DisplayLook.ts `createDisplayTables`); `temporal`: the
 	 * tier's resolve settings (Quality.ts `taa`); `extraPasses`: ExtraPass.ts. */
-	constructor( renderer: THREE.WebGPURenderer, readonly sky: Sky, readonly look: DisplayTables, sunShadow: SunShadow, rain?: Rain, options: Partial<PostOptions> = postOptionsFromURL(), temporal?: TemporalSettings, readonly extraPasses: readonly ExtraPass[] = [] ) {
+	constructor( renderer: THREE.WebGPURenderer, readonly sky: Sky, readonly look: DisplayTables, sunShadow: SunShadow, rain?: Rain, options: Partial<PostOptions> = postOptionsFromURL(), temporal?: TemporalSettings, readonly extraPasses: readonly ExtraPass[] = [], seaIterations = DEFAULT_WATER_QUALITY.ssrIterations ) {
 
 		// (the bloom's and the vignette's strengths tunable on debug pages, debug/Tune.ts:
 		// `post.bloom.strength`, `post.vignette.strength`)
@@ -590,7 +600,7 @@ export class Pipeline {
 		const sceneColor = g.color( 'sceneColor', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType, samples: 'scene' } );
 		const sceneDepth = g.depth( 'sceneDepth', { size: RENDER, samples: 'scene', type: THREE.FloatType } );
 		const linearDepth = g.color( 'linearDepth', { size: RENDER, format: THREE.RGFormat, type: THREE.FloatType } );
-		// (with mips: the sea's reflection reads it over its cone's footprint, ocean/ScreenReflection.ts)
+		// (with mips, which the water's refraction reads; the sea's reflection reads level 0, ocean/ScreenReflection.ts)
 		const opaqueColor = g.color( 'opaqueColor', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType, mips: true } );
 		const surfaceDepth = g.color( 'surfaceDepth', { size: RENDER, format: THREE.RedFormat, type: THREE.FloatType } );
 		// what the water refracts at its footprint: the opaque colour under the sea and its mips
@@ -689,6 +699,8 @@ export class Pipeline {
 
 		}
 		this.depthPyramid = new DepthPyramid( g.texture( linearDepth ) );
+		this.seaReflection = new SeaReflection( g );
+		this.seaIterations = seaIterations;
 		this.textures = {
 			opaqueColor: g.texture( opaqueColor ), linearDepth: g.texture( linearDepth ), surfaceDepth: g.texture( surfaceDepth ),
 			underwater: g.texture( underwater ), refraction: g.texture( refraction ), refractionDepth: g.texture( refractionDepth ),
@@ -960,6 +972,7 @@ export class Pipeline {
 				this.u.proj.value.copy( f.camera.projectionMatrix );
 				this.air.setProjectionInverse( inverse );
 				this.shafts.setProjectionInverse( inverse );
+				this.seaReflection.setProjection( f.camera.projectionMatrix );
 
 			};
 			g.hooks.jitterEnd = ( f ) => jitter.end( f.camera );
@@ -1127,7 +1140,10 @@ export class Pipeline {
 		preExposure.viewFrame( restKey( this.viewKey, camera, this.width, this.height, this.outputWidth, this.outputHeight, frame.time, frame.settle?.signature ?? [], restEpoch.value - preExposure.changes ),
 			frame.settle !== undefined && this.settled.sceneQuiet, this.settled.settle );
 		const projection = TEMPORAL ? jitter.uniforms.unjitteredProjection.value : camera.projectionMatrix;
-		this.air.update( camera, projection, this.width, this.height, this.outputWidth, this.outputHeight, frame.haze ?? { time: frame.time, signature: [], stable: false } );
+		const haze = frame.haze ?? { time: frame.time, signature: [], stable: false };
+		this.air.update( camera, projection, this.width, this.height, this.outputWidth, this.outputHeight, haze );
+		// (the sea's reflection rests once the haze's has: the opaque image it reflects is then still)
+		this.seaReflection.update( camera, projection, this.width, this.height, { ...haze, stable: haze.stable && ! this.air.pending } );
 		this.shafts.update( camera as THREE.PerspectiveCamera, this.air.seaLevelExtinction, this.air.transmittance( camera.position.y, this.shafts.flareDirection ), projection );
 		this.updateDisplay( frame );
 		this.u.afterOn.value = frame.afterScene !== undefined ? 1 : 0;

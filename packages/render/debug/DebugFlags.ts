@@ -13,7 +13,7 @@
 // shader, so each side runs its own pipeline. A missing flag reads as undefined: the old path
 // while a change is under development. Once an optimisation ships, a missing flag must mean the
 // shipped path, so its flag either selects the old path only on an explicit `false`
-// (`flags.ssrCull = false`) or is named for the old path (`flags.skyWholeBake = true`); the code
+// (`flags.seaReflection = false`) or is named for the old path (`flags.skyWholeBake = true`); the code
 // that reads the flag says which. --toggle sets the flag explicitly on both sides either way.
 //
 // `mv` holds the temporal modes' motion vector sources (packages/render/post/Motion.ts), each on unless set to

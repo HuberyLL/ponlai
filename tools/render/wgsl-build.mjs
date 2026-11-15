@@ -42,6 +42,8 @@
 //   night              the moon on the dome, the flare and its visibility, the composite's rods' colour
 //                      (packages/render/sky/NightSky.ts, packages/render/post/LightShafts.ts, packages/render/post/Purkinje.ts)
 //   terrain            the island's ground, the stones and the sea floor (packages/island/materials/TerrainMaterial.ts)
+//   sea-reflection     the sea reflection's full-screen passes, the trace through the temporal resolve,
+//                      on stand-in opaque images (packages/render/ocean/SeaReflection.ts)
 //   wave-maps          the caustics' splats at their four focal planes, each drawn as its grid's two
 //                      halves of triangles (packages/render/ocean/WaveMaps.ts)
 //   post               the exposure's meter, the bloom's levels and the local tone's grid and slicing
