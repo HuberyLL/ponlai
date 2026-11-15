@@ -8,7 +8,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, Break, texture, textureLoad, textureSize, cameraPosition, cameraProjectionMatrix, cameraProjectionMatrixInverse,
 	cameraViewMatrix, cameraWorldMatrix, float, int, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, max, min, abs, select,
-	sqrt, log2, exp2, floor, asin, sin, cos, normalize,
+	sqrt, exp, log2, exp2, floor, round, asin, sin, cos, normalize,
 } from 'three/tsl';
 import { sceneUnits } from '../post/PreExposure.ts';
 import { cellIndex, NO_SURFACE, PYRAMID_LEVELS, SKY_Z, type DepthPyramid } from '../post/DepthPyramid.ts';
@@ -51,25 +51,32 @@ type V4 = THREE.Node<'vec4'>;
 // the tangent of the view's elevation, nearly nothing at a grazing view: the reflection of a cliff
 // in a rippled sea is drawn out downward, not blurred sideways. The hit's colour is the opaque
 // colour read over that footprint: TAPS reads down its height, each over a square of the
-// footprint's width (the colour's mips: Pipeline.ts `opaqueColor`), and each read classed by the
-// depth under it. A surface above the sea is a reflector, which the colour averages; the sky above
-// the horizon is what the ray goes on to, which the weight leaves to the sky's reflection
-// underneath (the weight is the reflectors' share of the reads that are either); what lies under
-// the sea or the dome under the horizon no reflected ray can reach, and is left out of both. Where
-// two neighbouring reads differ, a reflector and the open sky, a bisection of EDGE_STEPS finds the
-// edge between them and each weighs its side of it, so the weight follows an edge through the
-// footprint smoothly, not in steps of a read. So the top of a cliff's reflection fades into the
-// sky's over its height, a culm narrower than the footprint shows as its share of it, and the
-// reflection's foot takes no colour from the seabed behind it. On a calm sea the footprint is a
-// pixel and the reflection a sharp mirror.
+// footprint's width (the colour's mips: Pipeline.ts `opaqueColor`), each read classed by the depth
+// under it and placed by the elevation at which the water sees what it holds. What lies under the
+// sea, or the dome under the horizon, no reflected ray can reach, and is left out.
 //
-// Which ray is traced: the cone's lower edge, the pixel's own ray turned down by half the cone's
-// height (never below the horizontal, unless the pixel's own ray is), and the footprint is read
-// round the pixel's own ray as far along. A cliff stands on the sea with the sky above it, so the
-// lower edge meets it wherever any of the cone does: the pixels whose own rays pass just over the
-// cliff's top take the share of their footprint the cliff fills, as those just under it do. Tracing
-// the pixel's own ray gave the first nothing, and as the waves turn each pixel's ray across the top
-// a pixel at a time, the top of the reflection broke into single-pixel specks of sky.
+// The weight is the share of the lobe's directions over the horizon that meet something (the
+// lobe is a Gaussian in the sine of the elevation, round the pixel's own ray, one standard deviation
+// half the cone's height). A cliff stands on the sea with the sky above it, so what the reflection
+// meets is all below a skyline: the highest elevation, seen from the water, of the surfaces the
+// footprint reads. ABOVE reads more over the footprint's top find the skyline out to two standard
+// deviations, and EDGE_READS more between the read that set it and the next one up place its top
+// within a fraction of a read. The weight is the lobe's share under the skyline, a smooth function
+// of where the skyline stands in the lobe, so the top of a cliff's reflection fades into the sky's
+// over its height and a pixel just over the top takes its share, not a speck of sky. A share of the
+// lobe falls under the horizon, which the sky's reflection gives the horizon's colour by
+// BELOW_HORIZON (a downward ray meets the next wave): where the cliff covers the lobe's foot, the
+// colour keeps that same share, so the cliff's reflection stands as dark against the water as the
+// horizon's does. The colour is the surfaces' reads, each weighed by the lobe at its elevation; a
+// surface lower than the one under it, which the water cannot see past it (the meadow seen from
+// above behind a cliff's top), weighs a hundredth as much, so it colours only what nothing else
+// does. On a calm sea the footprint is a pixel and the reflection a sharp mirror.
+//
+// Which ray is traced: the pixel's own ray turned down by half the cone's height, never below the
+// horizontal (a ray turned under it meets the next wave, which reflects the horizon; the weight
+// above holds that share), and the footprint is read round the pixel's own ray as far along.
+// The lower ray meets a cliff wherever the upper part of the lobe does. The reads are made outside any branch:
+// made inside one, they abort Metal's compiler on the water's shader.
 //
 // The box (Water.ts `reflectionBounds`), in two switches, each its own material: cull, a ray that
 // never meets the box within its stretch keeps the sky without tracing (most of the sea away from
@@ -97,9 +104,14 @@ const FARTHEST = 260;
 const THICKNESS = { least: 0.35, share: 0.02 } as const;
 // The cone spans `lobe` standard deviations of the unresolved slopes' lobe either side.
 const CONE = { lobe: 1 } as const;
-// The reads down the footprint's height, and the bisection's steps for an edge between two of them.
+// The traced ray is turned down SPAN times the cone's half height (one standard deviation of the
+// lobe) from the pixel's own: the lobe's directions out to two standard deviations, all but a fiftieth.
+const SPAN = 1;
+// The reads down the footprint's height, those over its top that find the skyline out to about two
+// standard deviations, and those that place the skyline's top between two reads.
 const TAPS = 6;
-const EDGE_STEPS = 3;
+const ABOVE = 3;
+const EDGE_READS = 3;
 
 // The distances along a ray (origin, unit direction) at which it enters and leaves a box (slab
 // method); enter > leave when it misses.
@@ -125,6 +137,7 @@ export interface ScreenReflectionInputs {
 	box: { min: V3; max: V3; cull: boolean; clip: boolean }; // what the sea can reflect (world space)
 	waterLevel: F;
 	gale: F; // the wind's gale share (shared.ts), which lowers the lifted rock at the waterline
+	belowHorizon: number; // what a reflection turned under the horizon keeps of what it meets (Water.ts BELOW_HORIZON)
 }
 
 export interface ScreenReflection {
@@ -141,7 +154,7 @@ export interface ScreenReflection {
 
 export function screenReflection( inputs: ScreenReflectionInputs ): ScreenReflection {
 
-	const { depth, sceneColor, pyramid, iterations, box, waterLevel, gale } = inputs;
+	const { depth, sceneColor, pyramid, iterations, box, waterLevel, gale, belowHorizon } = inputs;
 	const size = vec2( textureSize( depth ) as unknown as IV2 );
 	const lastPixel = ivec2( size ).sub( int( 1 ) );
 	const cells = pyramid.reader();
@@ -176,78 +189,94 @@ export function screenReflection( inputs: ScreenReflectionInputs ): ScreenReflec
 	// radians to pixels at unit depth (the projection's y scale: column 1's y)
 	const focalPixels = ( ( cameraProjectionMatrix as unknown as { element( i: I ): V4 } ).element( int( 1 ) ) ).y.mul( size.y.mul( 0.5 ) );
 
+	// What the screen shows at pixel `p`, whose ray is `ray` (xyz in world space, w its view z),
+	// seen from the water at the camera's position less `fromWater`, the sea `sea` above it: 1 a
+	// surface above the sea, - 1 the sky, 0 neither, times 4, plus the sine of its elevation from the
+	// water (one value: `unpack` parts them).
+	const seenFrom = Fn( ( [ p, ray, fromWater, sea ]: [ V2, V4, V3, F ] ) => {
+
+		const z = viewZAt( p ).toVar();
+		const d = ray.xyz.mul( z.div( ray.w ) ).add( fromWater ).toVar();
+		const kind = select( d.y.greaterThanEqual( sea ), select( z.lessThan( SKY_Z ), float( - 1 ), float( 1 ) ), float( 0 ) );
+		return kind.mul( 4 ).add( d.y.div( max( length( d ), 1e-4 ) ) );
+
+	} ).setLayout( { name: 'seenFrom', type: 'float', inputs: [ { name: 'p', type: 'vec2' }, { name: 'ray', type: 'vec4' }, { name: 'fromWater', type: 'vec3' }, { name: 'sea', type: 'float' } ] } );
+
+	// ( what, the sine of the elevation ) from `seenFrom`'s one value
+	const unpack = ( v: F ) => {
+
+		const what = round( v.mul( 0.25 ) );
+		return vec2( what, v.sub( what.mul( 4 ) ) );
+
+	};
+
 	// The opaque colour over a footprint at pixel `p`, `width` pixels across and `height` down (the
-	// header, The cone), and the reflectors' share of what the footprint reads (a).
-	const overFootprint = Fn( ( [ p, width, height ]: [ V2, F, F ] ) => {
+	// header, The cone), the cone round the elevation `own` (radians), `sigma` (one standard deviation
+	// of the lobe) either side, seen from the water at `origin` (world space), and the share of the
+	// lobe's directions over the horizon that meet something (a).
+	const overFootprint = Fn( ( [ p, width, height, origin, own, sigma ]: [ V2, F, F, V3, F, F ] ) => {
 
 		const mip = log2( max( max( width, height.div( TAPS ) ), 1 ) ).toVar();
-		// (the footprint's first and last reads, and the rays through them in view space and their
-		// world height's share: homogeneous coordinates are linear on the screen)
+		// (the footprint's first and last reads, and the rays through them in view and world space:
+		// homogeneous coordinates are linear on the screen)
 		const first = p.add( vec2( 0, height.mul( 0.5 / TAPS - 0.5 ) ) ).toVar();
 		const last = p.add( vec2( 0, height.mul( 0.5 - 0.5 / TAPS ) ) ).toVar();
 		const rayFirst = pixelRay( first ).xyz.toVar(), rayLast = pixelRay( last ).xyz.toVar();
-		const upFirst = cameraWorldMatrix.mul( vec4( rayFirst, 0 ) ).y.toVar(), upLast = cameraWorldMatrix.mul( vec4( rayLast, 0 ) ).y.toVar();
-		// what the footprint holds at share f of the way from the first read to the last: 1 a surface
-		// above the sea, - 1 the sky above the horizon, 0 neither (the world height of what the pixel
-		// holds: the sky's far depth puts it far up or down)
-		const classAt = ( f: F | number ) => {
+		const worldFirst = vec4( cameraWorldMatrix.mul( vec4( rayFirst, 0 ) ).xyz, rayFirst.z ).toVar();
+		const worldLast = vec4( cameraWorldMatrix.mul( vec4( rayLast, 0 ) ).xyz, rayLast.z ).toVar();
+		const fromWater = cameraPosition.sub( origin ).toVar();
+		const sea = waterLevel.sub( origin.y ).toVar();
+		// what the footprint shows at share f of the way from the first read to the last (`seenFrom`)
+		const look = ( f: F | number ) => unpack( seenFrom( mix( first, last, f ), mix( worldFirst, worldLast, f ), fromWater, sea ) );
+		// The directions in the sine of their elevation, in which the cone's few degrees are near
+		// enough straight: the pixel's own, the lobe's spread and the step between two reads.
+		const centre = sin( own ).toVar();
+		const spread = cos( own ).mul( sigma ).toVar();
+		const step = spread.mul( 2 / TAPS ).toVar();
+		// Up the footprint from its foot: the colour of the surfaces the water sees in it (none lower
+		// than one under it, which would hide it), each read weighed by the lobe at its direction,
+		// those the water does not see a hundredth as much, so that they give the colour only where
+		// none is seen; and the skyline, the highest elevation of the surfaces read, with the read that
+		// set it. ABOVE reads more over the footprint's top find the skyline out to two standard
+		// deviations; they give no colour, whose reads' mips would reach past the cliff's top.
+		const colour = vec4( 0 ).toVar();
+		const skyline = float( - 1 ).toVar(), skylineAt = float( 0 ).toVar();
+		for ( let k = TAPS - 1; k >= - ABOVE; k -- ) {
 
-			const z = viewZAt( mix( first, last, f ) ).toVar();
-			const worldY = cameraPosition.y.add( mix( upFirst, upLast, f ).mul( z.div( mix( rayFirst.z, rayLast.z, f ) ) ) );
-			return select( worldY.greaterThanEqual( waterLevel ), select( z.lessThan( SKY_Z ), float( - 1 ), float( 1 ) ), float( 0 ) );
+			const f = k / ( TAPS - 1 );
+			const r = look( f ).toVar();
+			const surface = r.x.greaterThan( 0.5 ).toVar();
+			if ( k >= 0 ) {
 
-		};
-		const reads: F[] = [];
-		const weights: F[] = [];
-		for ( let k = 0; k < TAPS; k ++ ) {
+				const lobe = Math.exp( - 0.5 * ( ( 1 - 1 / TAPS ) * ( 1 - 2 * f ) ) ** 2 );
+				const tint = select( surface, select( r.y.greaterThanEqual( skyline.sub( step.mul( 0.5 ) ) ), float( lobe ), float( lobe * 0.01 ) ), float( 0 ) );
+				colour.addAssign( vec4( sceneUnits( texture( sceneColor, mix( first, last, f ).div( size ) ).level( mip ).rgb ).mul( tint ), tint ) );
 
-			reads.push( classAt( TAPS > 1 ? k / ( TAPS - 1 ) : 0 ).toVar() );
-			weights.push( float( 1 ).toVar() );
-
-		}
-		// Between a reflector's read and the open sky's, the edge, found by bisection: each read
-		// weighs the share of the footprint on its side of it, so the weight follows an edge across
-		// the footprint smoothly rather than in steps of a read.
-		for ( let k = 1; k < TAPS; k ++ ) {
-
-			If( reads[ k - 1 ].mul( reads[ k ] ).lessThan( 0 ), () => {
-
-				const f0 = ( k - 1 ) / ( TAPS - 1 ), f1 = k / ( TAPS - 1 );
-				const lo = float( f0 ).toVar(), hi = float( f1 ).toVar();
-				for ( let i = 0; i < EDGE_STEPS; i ++ ) {
-
-					const mid = lo.add( hi ).mul( 0.5 ).toVar();
-					If( classAt( mid ).equal( reads[ k - 1 ] ), () => {
-
-						lo.assign( mid );
-
-					} ).Else( () => {
-
-						hi.assign( mid );
-
-					} );
-
-				}
-				const shift = lo.add( hi ).mul( 0.5 ).sub( f0 ).div( f1 - f0 ).sub( 0.5 ).toVar();
-				weights[ k - 1 ].addAssign( shift );
-				weights[ k ].subAssign( shift );
-
-			} );
+			}
+			const higher = surface.and( r.y.greaterThan( skyline ) );
+			skylineAt.assign( select( higher, float( f ), skylineAt ) );
+			skyline.assign( select( higher, r.y, skyline ) );
 
 		}
-		const reflector = vec4( 0 ).toVar();
-		const open = float( 0 ).toVar();
-		for ( let k = 0; k < TAPS; k ++ ) {
+		// The skyline's top lies between the read that set it and the next one up: EDGE_READS more
+		// reads between them raise it to within a fraction of a step. (A surface the camera sees there
+		// from above, the meadow behind a cliff's top, lies lower and leaves it.) The reads are made
+		// outside any branch: made in one, they abort Metal's compiler on the water's shader.
+		for ( let j = 1; j <= EDGE_READS; j ++ ) {
 
-			const at = mix( first, last, TAPS > 1 ? k / ( TAPS - 1 ) : 0 );
-			const w = select( reads[ k ].greaterThan( 0.5 ), weights[ k ], float( 0 ) );
-			reflector.addAssign( vec4( sceneUnits( texture( sceneColor, at.div( size ) ).level( mip ).rgb ).mul( w ), w ) );
-			open.addAssign( select( reads[ k ].lessThan( - 0.5 ), weights[ k ], float( 0 ) ) );
+			const r = look( skylineAt.sub( j / ( ( EDGE_READS + 1 ) * ( TAPS - 1 ) ) ) ).toVar();
+			skyline.assign( select( r.x.greaterThan( 0.5 ), max( skyline, r.y ), skyline ) );
 
 		}
-		return vec4( reflector.rgb.div( max( reflector.a, 1e-4 ) ), reflector.a.div( max( reflector.a.add( open ), 1e-4 ) ) );
+		// The share of the lobe's directions over the horizon that lie under the skyline (a Gaussian
+		// lobe: the logistic form of its integral, within a hundredth of it).
+		const cdf = ( x: F ) => float( 1 ).div( exp( x.div( max( spread, 1e-5 ) ).mul( - 1.702 ) ).add( 1 ) );
+		const sees = select( skyline.greaterThan( 0 ), float( 1 ).sub( cdf( centre.sub( skyline ) ) ), float( 0 ) ).toVar();
+		const turnedDown = float( 1 ).sub( cdf( centre ) );
+		const kept = float( 1 ).sub( min( turnedDown.div( max( sees, 1e-4 ) ), 1 ).mul( 1 - belowHorizon ) );
+		return vec4( colour.rgb.div( max( colour.a, 1e-6 ) ).mul( kept ), clamp( sees, 0, 1 ) );
 
-	} ).setLayout( { name: 'overFootprint', type: 'vec4', inputs: [ { name: 'p', type: 'vec2' }, { name: 'width', type: 'float' }, { name: 'height', type: 'float' } ] } );
+	} ).setLayout( { name: 'overFootprint', type: 'vec4', inputs: [ { name: 'p', type: 'vec2' }, { name: 'width', type: 'float' }, { name: 'height', type: 'float' }, { name: 'origin', type: 'vec3' }, { name: 'own', type: 'float' }, { name: 'sigma', type: 'float' } ] } );
 
 	const trace = Fn( ( [ posV, Rv, cone ]: [ V3, V3, V2 ] ) => {
 
@@ -255,12 +284,13 @@ export function screenReflection( inputs: ScreenReflectionInputs ): ScreenReflec
 		// (rays toward the camera fade out by this weight; those it zeroes are not traced)
 		const directionWeight = smoothstep( 0.5, 0.1, Rv.z ).toVar();
 		// The ray traced: the cone's lower edge, the pixel's own ray turned down by half the cone's
-		// height, never below the horizontal unless the pixel's own ray is (the header, Which ray is traced).
+		// height, never below the horizontal (the header, Which ray is traced).
 		const Rw = cameraWorldMatrix.mul( vec4( Rv, 0 ) ).xyz.toVar();
 		const elevation = asin( clamp( Rw.y, - 1, 1 ) ).toVar();
-		const lowered = max( elevation.sub( cone.y.mul( 0.5 ) ), min( elevation, 0 ) ).toVar();
+		const lowered = max( elevation.sub( cone.y.mul( 0.5 * SPAN ) ), 0 ).toVar();
 		const heading = normalize( vec3( Rw.x, 0, Rw.z ).add( vec3( 1e-6, 0, 0 ) ) ).mul( cos( lowered ) ).toVar();
 		const Rt = normalize( cameraViewMatrix.mul( vec4( heading.x, sin( lowered ), heading.z, 0 ) ).xyz ).toVar();
+		const origin = cameraWorldMatrix.mul( vec4( posV, 1 ) ).xyz.toVar();
 		// the stretch of the ray traced (m along it): from just off the water, in front of the camera,
 		// to FARTHEST
 		const tIn = max( posV.z.negate().div( 60 ), 1 ).mul( 0.15 ).toVar();
@@ -371,7 +401,7 @@ export function screenReflection( inputs: ScreenReflectionInputs ): ScreenReflec
 				// as far along
 				const footprint = length( posV ).add( cone.mul( focalPixels ).mul( t ) ).div( max( hv.z.negate(), 0.1 ) ).toVar();
 				const hc = cameraProjectionMatrix.mul( vec4( posV.add( Rv.mul( t ) ), 1 ) ).toVar();
-				const seen = overFootprint( toPixels( hc, float( 1 ).div( hc.w ) ), footprint.x, footprint.y ).toVar();
+				const seen = overFootprint( toPixels( hc, float( 1 ).div( hc.w ) ), footprint.x, footprint.y, origin, elevation, cone.y.mul( 0.5 ) ).toVar();
 				const hw = cameraWorldMatrix.mul( vec4( hv, 1 ) ).xyz.toVar();
 				const edge = smoothstep( 0, 0.06, q.x ).mul( smoothstep( 1, 0.94, q.x ) ).mul( smoothstep( 0, 0.06, q.y ) ).mul( smoothstep( 1, 0.94, q.y ) );
 				const base = edge.mul( directionWeight ).mul( smoothstep( FARTHEST, 120, t ) ).toVar();
@@ -386,7 +416,7 @@ export function screenReflection( inputs: ScreenReflectionInputs ): ScreenReflec
 					const hl = cameraProjectionMatrix.mul( vec4( lifted, 1 ) ).toVar();
 					const pl = toPixels( hl, float( 1 ).div( hl.w ) ).toVar();
 					const liftedTouch = float( 1 ).sub( smoothstep( 0.15, 0.6, abs( viewZAt( pl ).sub( lifted.z ) ) ) );
-					const rockSeen = overFootprint( pl, footprint.x, footprint.y ).toVar();
+					const rockSeen = overFootprint( pl, footprint.x, footprint.y, origin, elevation, cone.y.mul( 0.5 ) ).toVar();
 					// Deep hits (the seabed, rock seen past a downward-tilted facet) keep the sky.
 					const shallow = smoothstep( waterLevel.sub( 0.35 ), waterLevel.sub( 0.15 ), hw.y ).mul( float( 1 ).sub( galeShare ) );
 					// Weighted, so that a gale's sea (no lifted rock) blends as the direct hit alone.

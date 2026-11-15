@@ -792,7 +792,7 @@ export class Water {
 		const screen = screenReflection( {
 			depth: tDepth, sceneColor, pyramid: depthPyramid, iterations: quality.ssrIterations,
 			box: { min: this.reflectorMin, max: this.reflectorMax, cull: variant.cull, clip: variant.clip },
-			waterLevel: shared.waterLevel, gale: shared.wind.gale,
+			waterLevel: shared.waterLevel, gale: shared.wind.gale, belowHorizon: BELOW_HORIZON,
 		} );
 
 		// the surface's metering illuminance, assigned inside the shading (from its sun's shadow and
@@ -981,10 +981,10 @@ export class Water {
 			const seenSky = shared.seenNight.sub( 1 ).mul( smoothstep( SEEN_SKY.near, SEEN_SKY.far, length( toCam ) ) ).add( 1 );
 			const refl = mix( horizon.mul( BELOW_HORIZON ), skyReflection, skyShare )
 				.mul( shared.skyLift.sub( 1 ).mul( bandRamp ).add( 1 ) ).mul( seenSky ).toVar();
-			// The cliffs, the plants and the islanders from the screen: only rays near the horizon can
-			// meet them, and where the reflectance is small the reflection cannot be seen (tidewater's
-			// gate). One ray through the pixel's centre, read through its cone.
-			If( u.ssr.greaterThan( 0.5 ).and( Rraw.y.lessThan( 0.45 ) ).and( Fr.greaterThan( quality.ssrMinFresnel ) ), () => {
+			// The cliffs, the plants and the islanders from the screen: where the reflectance is small the
+			// reflection cannot be seen (tidewater's gate); the box (`reflectionBounds`) decides
+			// which rays can meet them. One ray through the pixel's centre, read through its cone.
+			If( u.ssr.greaterThan( 0.5 ).and( Fr.greaterThan( quality.ssrMinFresnel ) ), () => {
 
 				const rc = screen.trace( posV, normalize( cameraViewMatrix.mul( vec4( Rraw, 0 ) ).xyz ), cone ).toVar();
 				refl.assign( mix( refl, rc.rgb, rc.a ) );
