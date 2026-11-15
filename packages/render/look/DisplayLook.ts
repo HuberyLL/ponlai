@@ -32,9 +32,9 @@ export type { BloomKey };
 /** The display's tables, made from a look's (`createDisplayTables`). */
 export interface DisplayTables {
 	// The shade's contrast: under a pivot each stop of the exposed luminance (the local tone's gain
-	// in it) darkens by `slope` of a stop more, over it nothing changes; after the local tone, before
-	// the tone curve. The pivot (stops over mid grey) and slope are set per key (keyed by the sun's
-	// elevation, DayKeys.ts).
+	// in it) darkens by `slope` of a stop more (a negative slope lifts it instead), over it nothing
+	// changes; after the local tone, before the tone curve. The pivot (stops over mid grey) and slope
+	// are set per key (keyed by the sun's elevation, DayKeys.ts).
 	// Tunable on debug pages (debug/Tune.ts): `post.shade.<value>@<key>`.
 	readonly shadeContrast: DayKeys<{ pivot: number; slope: number }>;
 	// The desaturation before the local tone's gain: each colour drawn toward its own luminance by
@@ -94,7 +94,7 @@ export interface DisplayTables {
 /** The display's tables from `display`, a look's (see the header): its tunables register here. */
 export function createDisplayTables( display: DisplayLook ): DisplayTables {
 
-	const shadeContrast = tuneKeys( 'post.shade', display.shadeContrast, { pivot: { min: - 3, max: 4 }, slope: { min: 0, max: 0.5 } } );
+	const shadeContrast = tuneKeys( 'post.shade', display.shadeContrast, { pivot: { min: - 3, max: 4 }, slope: { min: - 0.3, max: 0.5 } } );
 	const desaturation = tuneKeys( 'post.desaturate', display.desaturation, { amount: { min: - 0.5, max: 1 }, cool: { min: 0, max: 1 } } );
 	const whiteRange = { r: { min: 0.2, max: 1.5 }, g: { min: 0.5, max: 1.5 }, b: { min: 0.5, max: 3 } };
 	const whiteBalance = tuneKeys( 'post.white', display.whiteBalance, whiteRange );

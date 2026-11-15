@@ -37,25 +37,27 @@ const BLOOM_HIGH_SUN: BloomKey = {
 export const DISPLAY: DisplayLook = {
 
 	// The shade's contrast: under a pivot each stop of the exposed luminance (the local tone's gain in
-	// it) darkens by `slope` of a stop more, over it nothing changes; after the local tone, before the
-	// tone curve. The pivot (stops over mid grey) and slope are set per key (keyed by the sun's
-	// elevation, DayKeys.ts). By day it is light, its pivot 2 stops over mid grey and its slope 0.05:
-	// on the island view a surface 1, 2, 3 and 4 stops under the sunlit meadow shows at Oklab L 0.46,
-	// 0.32, 0.26 and 0.23 (0.56 for the meadow itself). A day slope of 0.45 over a
-	// pivot 1.6 stops over mid grey took nearly the whole frame under its pivot, the lit ground too,
-	// and showed those stops at 0.39, 0.24, 0.18 and 0.16: the shade, the shaded grass and the rock
-	// under the sea read near black and lost half their chroma. The golden hour keeps most of the
-	// slope with its pivot nearly a stop under mid grey, so only what lies in the long shadows drops,
-	// and the sunlit cliff stays as it is. The
-	// clouded sky deepens
-	// its darks too, from about 0.9 of a stop over mid grey; the night's slope runs to 0 as well, its
-	// darks set by the local tone alone (its pivot acts only while the night fades in under a clouded
-	// sky, beside the cloudy key's: DayKeys.ts `keyed` blends the cloud in first).
+	// it) darkens by `slope` of a stop more (a negative slope lifts it), over it nothing changes;
+	// after the local tone, before the tone curve. The pivot (stops over mid grey) and slope are set
+	// per key (keyed by the sun's elevation, DayKeys.ts). By day it is light, its pivot 2 stops over
+	// mid grey and its slope 0.05: on the island view a surface 1, 2, 3 and 4 stops under the sunlit
+	// meadow shows at Oklab L 0.46, 0.32, 0.26 and 0.23 (0.56 for the meadow itself). A day slope of
+	// 0.45 over a pivot 1.6 stops over mid grey took nearly the whole frame under its pivot, the lit
+	// ground too, and showed those stops at 0.39, 0.24, 0.18 and 0.16: the shade, the shaded grass
+	// and the rock under the sea read near black and lost half their chroma. The golden hour keeps
+	// most of the slope with its pivot nearly a stop under mid grey, so only what lies in the long
+	// shadows drops, and the sunlit cliff stays as it is. The clouded sky deepens its darks too, from
+	// about 0.9 of a stop over mid grey. The night's slope is negative, a lift: under a pivot 2 stops
+	// below mid grey, below the moonlit grass, each stop darker is lifted by a quarter of a stop. The
+	// moon's shadows on the island are mostly narrow, the culms', under the local tone's scale, so the
+	// local tone cannot set them apart from the moonlit land; this lift does it per pixel, the grass in
+	// the moon's shadow about half a stop nearer the moonlit grass while that grass and the sea move by
+	// an eighth of a stop or less.
 	// Tunable on debug pages (debug/Tune.ts): `post.shade.<value>@golden`, `@day`, `@cloudy`, `@night`.
 	shadeContrast: {
 		day: [ { at: 4, name: 'golden', values: { pivot: - 0.86, slope: 0.37 } }, { at: 9, name: 'day', values: { pivot: 2, slope: 0.05 } } ],
 		cloudy: { pivot: 0.902, slope: 0.18 },
-		night: { pivot: 0.516, slope: 0 },
+		night: { pivot: - 2, slope: - 0.25 },
 	},
 
 	// The desaturation before the local tone's gain: each colour drawn toward its own luminance by
