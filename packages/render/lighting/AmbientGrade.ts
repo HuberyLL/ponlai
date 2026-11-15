@@ -23,8 +23,9 @@ import { overcastDeckLight, withMoon } from '../sky/Weather.ts';
 // two sides in a grove's shade move by a few per cent apart). The value is Patry's ("Real-Time
 // Samurai Cinema", p. 43: a 25 % boost toward the direction of the harmonics' linear maximum, used
 // throughout the game), kept after an A/B in our scenes. The other knobs are set by the hour and
-// the sky as the scene's light is tuned, so that they grade style rather than stand in for
-// light the scene does not yet carry.
+// the sky as the scene's light is tuned. The sun's bounce is graded above the physically lit
+// result from the middle to the low sun: the lit ground's own bounced light is carried further into
+// the shade beside it, a choice of style; no knob adds sky light to the shade.
 //
 // Set so far: the sun's bounce. The sky's diffuse light takes no knob: the volume's sky term and
 // the sky it bounces follow the sky itself at gain 1 (AmbientRelight.ts) at every hour and in every
@@ -47,32 +48,32 @@ import { overcastDeckLight, withMoon } from '../sky/Weather.ts';
 // they keep (C about a fifth of their L at -6.5 degrees, whether the reflection is 0.1 or none) is
 // the dawn's display white over a grey surface (look/DisplayLook.ts `whiteBalance`), not this light.
 //
-// The sun's bounce is 1 under the clear and the fair sky from the high sun to its last light at
-// -1.3 degrees, set with the probes' sky gain (AmbientRelight.ts PROBE_SKY) by the lit ground's
-// share of the key's direct light and the shade's depth under it (there). Under the cloudy sky
-// every row takes about half of clear's (8 / 15), under overcast a third (0.33 from 2 degrees
-// down). The moon's key bounces as the sun's does: its part takes the rows at the moon's height
-// (the evening's), by its share of the key (Sky.ts `moonKeyShare`, `update`), so the night's
-// bounce is the day's at that height (1 under the clear and the fair sky, 8 / 15 under cloudy, a
-// third under overcast). The night's rows are the sun's last, for the sun's part. The volume bounces the
-// key as an even lobe over the whole bounced visibility, weighed by level ground's cosine of the
-// key (AmbientRelight.ts), so it falls with the sun as the light on the ground does and reaches a
-// face as far as bounced light reaches it from any side: it lights what faces lit ground or a lit
-// crown (a blade's underside, a culm's sides, the leaves, the islanders). Read at degree 2, the
-// island's receivers' read, under the clear sky the bounces (the sky's and the key's) make 16 % of
-// open level ground's light in shade at 62 degrees (the noon of the sun's earlier, higher path),
-// 13 % at 50, 9 % at 30, 6 % at 20, 4.5 % at 13 and 10 and 3 % at 4. With the day's bounce at 4.5, at 20 degrees bare ground in a grove's shadow
-// at its edge took 13 to 22 % of its shade from the key's bounce and a grove's floor 2 to 4 m in 33
-// to 37 % (reading 0.61 to 0.63 of the edge's shade); a culm at the edge read on its side toward
-// the open 0.85 to 1.2 times the open shade beside it (the volume does not know the sun's shadow:
-// AmbientRelight.ts), a culm's two sides in the grove's shade read 1.25 to 1.4 apart at its heart
-// and about 1.65 at its edge, and a culm's side in the grove 1.1 to 1.35 times its floor; the
-// meadow's blades in the umbra (their ambient then read from both faces at 0.75: world/Grass.ts)
-// read about 1.8 times bare ground in the same shade at 50 degrees and 1.2 to 1.3 at 20. It also
-// scales the sea's bounce onto the cliffs (GroundBounce.ts) and the islanders' bounce.
+// The sun's bounce under the clear and the fair sky is 1 (no grade) at the 60 degree row, about 1.3
+// at the sun's noon of 52 degrees, 2 at 30, 2.3 from 20 down to 9, 1.8 at 7 and 1.4 at 5.5, and 1
+// again from 4 degrees to its last light at -1.3, in the morning as in the evening (the rising
+// sun's rows keep these). Raised so, the key's bounce off the lit meadow is a flat, warm green
+// light in the shade beside it, which does not follow the sun's shadow: the grass in a wide shadow
+// beside the lit meadow stays green and turns only a little blue, while the lit grass moves by a
+// few per cent (the readings: docs/reference/look-values.md, Light and shade). The bounce at 1 is set with the
+// probes' sky gain (AmbientRelight.ts PROBE_SKY) by the lit ground's share of the key's direct
+// light and the shade's depth under it (there). Under the cloudy sky every row takes about half of
+// the bounce at no grade (8 / 15), under overcast a third (0.33 from 2 degrees down). The moon's
+// key bounces as the sun's does: its part takes the rows at the moon's height (the evening's), by
+// its share of the key (Sky.ts `moonKeyShare`, `update`), so the night's bounce is the day's at
+// that height (2.3 under the clear and the fair sky with the moon at 20 degrees, 8 / 15 under
+// cloudy, a third under overcast). The night's rows are the sun's last, for the sun's part. The
+// volume bounces the key as an even lobe over the whole bounced visibility, weighed by level
+// ground's cosine of the key (AmbientRelight.ts), so it falls with the sun as the light on the
+// ground does and reaches a face as far as bounced light reaches it from any side: it lights what
+// faces lit ground or a lit crown (a blade's underside, a culm's sides, the leaves, the
+// islanders). Read at degree 2, the island's receivers' read, with `sunBounce` at 1 (no grade)
+// under the clear sky the bounces (the sky's and the key's) make 16 % of open level ground's light
+// in shade at 62 degrees (the noon of the sun's earlier, higher path), 13 % at 50, 9 % at 30, 6 %
+// at 20, 4.5 % at 13 and 10 and 3 % at 4. It also scales the sea's
+// bounce onto the cliffs (GroundBounce.ts) and the islanders' bounce.
 //
 // Overcast is a dark grey sky with the sun still shining (Weather.ts): its sun's bounce takes a
-// third of clear's, times the sun's part of the weather's land gain under its deck
+// third of the bounce at no grade, times the sun's part of the weather's land gain under its deck
 // (the tables' `overcastLand`, which its sky light takes too: AmbientRelight.ts); the moon's key
 // takes a part of its own (`overcastMoonLand`) at its own height, so the night's bounce under the
 // deck takes that whole.
