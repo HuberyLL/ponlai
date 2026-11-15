@@ -97,8 +97,10 @@ const LIP_SKIN = [ 0.5, 0.52, 0.5 ], LIP_LEDGE = 1.2, RIM_SOIL_TONE = 0.6;
 // soil's colour (`soil`, through the same balance) at their own value, so only their shapes are
 // left in its grain (at half their value they drew dark stains where the leaves lay thick). `gain` sets its mean at the blades' mean albedo.
 // The scan's normal and roughness show wherever the floor does (`floorShare`).
-// The lip's bevel takes the scan's mean (GROUND_FLAT, by the surface's up): mapped from above, the
-// scan ran down its slope in stripes.
+// The ground reads the scan, mapped from above, up to the slopes of the lip's bevel, so the bevel's
+// turf is the meadow's own ground; only steeper faces, where the scan would run down the slope in
+// stripes, take its mean (GROUND_FLAT, by the surface's up). Below it the bevel was one flat colour,
+// a smooth band between the blades and the rock.
 const GROUND_SCANS = {
 	meadow: { tile: 1.3, mean: [ 0.1388, 0.0995, 0.0376 ], luma: [ 0.036, 0.238 ], gain: 0.947 },
 } as const;
@@ -111,7 +113,7 @@ const OCHRE_SOIL = ( () => {
 	return c.map( ( v ) => v / y ) as [ number, number, number ];
 
 } )();
-const GROUND_FLAT = [ 0.82, 0.95 ];
+const GROUND_FLAT = [ 0.45, 0.6 ];
 
 // canopy: direct light left under the meadow's blades (1 where nothing grows)
 // water: share under a water film or standing water (water's specular reflectance)
@@ -535,7 +537,7 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 				// The meadow's ground (GROUND_*): the soil, between the blades and under the groves,
 				// darkened by the sward's depth there (the
 				// meadow map's A) as the blades' roots are, and lit as they are (`rootLight`, the roots'
-				// key and sky). The lip's bevel takes the scan's mean (GROUND_FLAT).
+				// key and sky). Faces steeper than the lip's bevel take the scan's mean (GROUND_FLAT).
 				const R = GRASS_ROOTS;
 				// the sward's depth here (SwardField.ts), its darkening at the root (Grass.ts) and its
 				// shade: full from the tall sward's mean depth up, `open` of it under the shortest turf
