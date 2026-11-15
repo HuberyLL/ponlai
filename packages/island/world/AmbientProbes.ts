@@ -19,7 +19,10 @@
 //
 // - The lattice: SPACING (2 m) apart on all three axes, columns at ( ( I + 0.5 ) 2, ( K + 0.5 ) 2 ),
 //   LEVELS levels from Y0 (2 m under the sea's mean level) to the bamboo's crowns over the plateau
-//   and a cell more (ISLAND_TOP + the default groves' height + two cells: 13 levels, up to 22 m).
+//   (ISLAND_TOP + the default groves' height + two cells: 13 levels, up to 22 m). The tallest culm
+//   a site can take, 1.33 GROVES.height (BambooGroves.ts `size`), tops out on the plateau's peak at
+//   about 21.6 m, 0.4 m under the top level: this holds at the default height only; with
+//   `bamboo=,height` above about 14 m the tallest culms pass the top level.
 //   A chunk owns the 8 x 8 columns its square holds. Only the chunks with land within PROBE_NEAR of
 //   their square bake theirs (Chunks.ts); everywhere else the probe is the open sea's
 //   (`openSeaProbe`), which depends on the level alone.
@@ -85,7 +88,7 @@
 //   Underwater.ts's, and the probes there carry only the geometry (the water's surface lets the sky
 //   through, no attenuation).
 
-import { CULM, LEAF_COLOURS, LEAF_SHARE, PURPLE_CULMS } from './BambooColours.ts';
+import { CULM, LEAF_MEAN, MOTTLE } from './BambooColours.ts';
 import { GROVES, culmAt, groveAt } from './BambooGroves.ts';
 import { islandSurfaceHeight, solidSide, ISLAND_BOTTOM, ISLAND_PEAK, ISLAND_TOP, type Footprint, type HeightFn } from './WorldShapes.ts';
 import { type Bounds, smoothstep, bodyReflectance, META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis, type AmbientLattice } from '../../render/data.ts';
@@ -125,25 +128,20 @@ const SAND = FLOOR_ALBEDO.sand.map( c => c * FLOOR_ALBEDO.gain * FLOOR_ALBEDO.sa
 // it, R( 0- ) = 0.33 bb / ( a + bb ), of the sea's own water (ocean/SeaOptics.ts; GroundBounce.ts takes
 // the same through the surface)
 const WATER_BODY = bodyReflectance();
-// the culms: BambooColours.ts CULM, green to the age's end by the groves' age mix (BambooGroves.ts
-// plantCulms: a fifth new, a fifth and more between, the rest old), the end dull green on most
-// culms and dusty purple on PURPLE_CULMS of them
+// the culms: BambooColours.ts CULM, green to the old colour by the groves' mean age (BambooGroves.ts
+// plantCulms: a fifth new, a fifth and more between, the rest old), then the brown mottle over the
+// cover that mean age gives (MOTTLE: its cover at the foot, thinning to `top` of it between 0.15
+// and 0.85 of the culm's height, averaged here as a straight ramp)
 const AGED_SHARE = 0.22 * 0.55 + 0.58;
-const CULM_MEAN = [ 0, 1, 2 ].map( ( c ) => CULM.green[ c ] * ( 1 - AGED_SHARE ) + ( CULM.dull[ c ] * ( 1 - PURPLE_CULMS ) + CULM.purple[ c ] * PURPLE_CULMS ) * AGED_SHARE );
-// the leaves: BambooColours.ts LEAF_COLOURS (sRGB) by LEAF_SHARE, in linear; a bamboo leaf lets
-// through about a third of what it reflects in the visible, so its scattering albedo is its
-// reflectance times 1.3
-const LEAF = leafAlbedo( LEAF_COLOURS, LEAF_SHARE ).map( ( v ) => 1.3 * v );
+const MOTTLE_SHARE = AGED_SHARE * MOTTLE.cover * ( 0.15 + 0.7 * ( 1 + MOTTLE.top ) / 2 + 0.15 * MOTTLE.top );
+const CULM_MEAN = [ 0, 1, 2 ].map( ( c ) => ( CULM.green[ c ] * ( 1 - AGED_SHARE ) + CULM.old[ c ] * AGED_SHARE ) * ( 1 - MOTTLE_SHARE ) + CULM.mottle[ c ] * MOTTLE_SHARE );
+// the leaves: BambooColours.ts LEAF_MEAN, the atlas's mean times each plant's factor on the leaf
+// band, averaged over the plants; a bamboo leaf lets through about a third of what it reflects in
+// the visible, so its scattering albedo is its reflectance times 1.3
+const LEAF = LEAF_MEAN.map( ( v ) => 1.3 * v );
 // where a culm's branches start, of its height (Bamboo.ts BAMBOO.branches), and its longest
 // branch (BAMBOO.branch): a crown's leaves stand about 0.6 of that round its axis
 const BRANCHES = 0.55, BRANCH = 0.12;
-
-function leafAlbedo( colours: readonly ( readonly number[] )[], share: readonly number[] ): number[] {
-
-	const linear = ( v: number ) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : Math.pow( ( c + 0.055 ) / 1.055, 2.4 ); };
-	return [ 0, 1, 2 ].map( ( c ) => colours.reduce( ( sum, rgb, k ) => sum + linear( rgb[ c ] ) * share[ k ], 0 ) );
-
-}
 
 // ------------------------------------------------------------------ the rays
 
@@ -301,8 +299,9 @@ class Tracer {
 			const x = ( this.mi0 + i + 0.5 ) * MEDIUM_CELL, z = ( this.mk0 + k + 0.5 ) * MEDIUM_CELL, c = k * mn + i;
 			if ( outside( x, z ) ) continue;
 			const d = groveAt( x, z ), g = islandSurfaceHeight( x, z ), crowned = Math.min( crowns[ c ], 1 );
-			// a culm's mean height and diameter at this density (BambooGroves.ts culmAt), and the
-			// crowns' mean height at theirs
+			// a culm's mean height and diameter at this density (BambooGroves.ts culmAt: the heights'
+			// cut normal keeps their mean at 0.95 GROVES.height, the girth's lognormal its height
+			// over diameter near GROVES.slender), and the crowns' mean height at theirs
 			const H = P.height * ( 0.85 + 0.15 * d ) * 0.95, D = H / P.slender;
 			const crownH = P.height * ( 0.85 + 0.15 * crowned ) * 0.95;
 			this.ground[ c ] = g;

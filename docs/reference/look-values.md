@@ -51,3 +51,5 @@ Linear diffuse albedo of the island's main surfaces.
 | The meadow's blades | about 0.08, a sunlit leaf's |
 | The cliff's stone | about 0.1, darker than real limestone (0.2 to 0.35) on purpose |
 | The soil between the blades and under the groves | about 0.09, a yellow-brown earth, grained by a scanned ground |
+| The bamboo's culms | about 0.05 over a grove, most culms old: a new culm about 0.07, a warm olive, red about three quarters of green; an old one about two thirds as light and browner; a dull brown mottle about as dark, on up to about a third of an old culm's foot; 0.85 to 1.15 times from culm to culm |
+| The bamboo's leaves | about 0.12 over the crowns, red about 0.6 of green and blue about a quarter of it; each plant along a band from a dull grey green at about 0.03 through a clear saturated green at about 0.12 to a pale yellow green at about 0.13, 12 % of the plants in its darker half |

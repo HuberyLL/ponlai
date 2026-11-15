@@ -199,19 +199,25 @@ returns:
 ## The bamboo
 
 - Penglai's own bamboo (浮筠之簳, Shiyi ji: "green leaves, purple stems, seeds as big as pearls") grows
-  over the whole island, as a running bamboo left to itself takes a hillside: in groves of even
-  height whose edges run out in lobes, single culms ahead of them on the open meadow, and glades of
-  meadow between. Avoid one round crown and a closed forest.
+  over the whole island, as a running bamboo left to itself takes a hillside: in groves whose
+  culms vary in height and girth, the taller the thicker, and whose edges run out in lobes, single
+  culms ahead of them on the open meadow, and glades of meadow between. Avoid one round crown and a
+  closed forest.
 - No placement rule: it stands at the cliff's edge as anywhere else.
 - Its culms are tall and slender, bare to about half their height, their leaves narrow and in loose
   drooping layers, so the culms show from above between them.
-- Its stems are a mid to dark green, one family with its leaves and the meadow, and most of the
-  time darker than the crowns. A minority of old culms turn a dim dusty purple at the same
-  lightness, so the purple of the old text shows up close and the grove still reads as one green,
-  by its light and shade.
+- Its stems are a warm olive green, one family with its leaves and the meadow, and darker than the
+  lit crowns. The old culms are darker and browner, mottled brown low down; each node
+  carries a thin pale ring with a darker band above it, and the culms differ a little in
+  lightness, so a grove seen from inside is not a fence of one green. The old text gives the
+  bamboo its name; no culm is purple.
 - Its leaves are nearly as matte as the meadow's blades: no pale sheen over a crown, whose lit
   leaves stay a plain green and whose depth stays dark. The inner leaves of a crown and the crowns
   deep in a grove are darker.
+- Each plant's leaves take their own colour along one band, from a dull grey green through a clear
+  saturated green to a pale yellow green, hue and lightness together. Few plants sit toward the
+  dull end and most between the middle and the pale end, so a grove's crowns read as many greens
+  around the same mean, not one block of colour.
 - Under a sun more than a few degrees up, a crown's shaded leaves still take a share of the sun
   through the leaves above, so its dark side reads green rather than as dark and as blue as the
   sky. At a sun on the horizon, under a closed sky and by night they take none.

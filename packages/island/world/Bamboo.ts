@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { type Shared, AIR_DENSITY, REFERENCE_SPEED, logLaw, CROWN_DRAG, runSteps, PLANT_PART, PlantInstances, levelDraws, type PlantDraw, type PlantInstance, type PlantPool, type KindGrowth, type VegetationKind, BRANCH_ATTRIBUTES, MeshBuilder, UP, branchValues, leafLayout, smooth, sprayValues, streamAt, type LeafAtlas } from '../../render/index.ts';
 import { BAMBOO_PARTS, bambooMaterials } from './BambooMaterials.ts';
 import { GROVES, plantCulms, type CulmSite } from './BambooGroves.ts';
+import { leafBandAt } from './BambooColours.ts';
 import { mulberry32, type Rng } from '../../render/data.ts';
 import { SEABED_TILE } from './SeabedTile.ts';
 import { islandSurfaceHeight } from './WorldShapes.ts';
@@ -11,14 +12,12 @@ import type { WorldData } from './types.ts';
 //
 // Penglai's bamboo (浮筠之簳): "green leaves, purple stems, seeds as big as pearls" (Wang Jia, Shiyi
 // ji, book 10, on Penglai), the one plant that text gives the island itself, the wind in its leaves
-// ringing like bells and chimes. Its real kin is the purple (black) bamboo, Phyllostachys nigra: a
-// running bamboo whose culms come up green and turn purple-black in their second or third year,
-// a white bloom of wax under each node, the narrow leaves in fans at the twigs' ends. It grows over
-// the whole island in groves and single culms (BambooGroves.ts: where each culm stands, its
-// height, girth, age, lean and bow); this module builds the culms there. The text gives the
-// bamboo its origin, not its look: here the stems are a mid to dark green, the leaves' family, and
-// a dim dusty purple stays on a minority of old culms at the same lightness, the old lore kept on a
-// few stems (BambooMaterials.ts).
+// ringing like bells and chimes. The text gives the bamboo its name, not its look. Its kin here is a
+// green running bamboo of the genus Phyllostachys: culms that come up a fresh green and age to a
+// darker, browner olive, mottled brown low down, a pale ring at each node and a bloom of wax under
+// it, the narrow leaves in fans at the twigs' ends. It grows over the whole island in groves and
+// single culms (BambooGroves.ts: where each culm stands, its height, girth, age, lean and bow); this
+// module builds the culms there, the material colours them (BambooMaterials.ts).
 //
 // A culm's form, after groves of Phyllostachys:
 // - Straight internodes, short at the foot and longer up the culm (about three times its girth), a
@@ -51,11 +50,13 @@ import type { WorldData } from './types.ts';
 // its branches and leaves built at the origin (BAMBOO.prototypes: a band of heights by a band of
 // girths, each from a fixed seed, so the same on every page); every site
 // an instance of the nearest, scaled to its height and girth, turned to the way it leans, leaning
-// and bowing by its site (`stemAxis`, the curve this module built each culm along), its age, grove
-// and leaf tone carried per instance (`look`). The instance's wind is read at its own foot, so each
-// culm still swings on its own. Each prototype has a far level (BAMBOO.far: a culm of four sides, a
-// ring at each node, half its leaf cards, the outer ones kept and enlarged to keep its cover) that
-// takes over where its culm is a few pixels wide (vegetation/Lod.ts LEVEL_SWITCH).
+// and bowing by its site (`stemAxis`, the curve this module built each culm along). Its `look`
+// carries the culm's age, the groves' density at its foot, 1 (the leaves' shade, BambooMaterials.ts
+// leafMaterial) and its place on the leaf band (BambooColours.ts leafBandAt). The instance's wind
+// is read at its own foot, so each culm still swings on its own. Each prototype has a far level
+// (BAMBOO.far: a culm of four sides, a ring at each node, half its leaf cards, the outer ones kept
+// and enlarged to keep its cover) that takes over where its culm is a few pixels wide
+// (vegetation/Lod.ts LEVEL_SWITCH).
 //
 // Two vegetation kinds: the culms and branches (an ordinary shadow, no depth prepass) and the
 // leaves (the vegetation's shadow filter and depth prepass, drawn before the terrain), each a group
@@ -75,9 +76,11 @@ export const BAMBOO = {
 	sprayStiffness: 0.3, // a spray's stiffness on its branch (Deform.ts sprayBend)
 	branchStiffness: 0.3, // a branch's stiffness k_b at its foot radius `branchRadius` (m), growing with it (Deform.ts branchBend)
 	branchRadius: 0.004,
-	// the culms' prototypes: bands of a culm's height over GROVES.height (all a site can take,
-	// BambooGroves.ts culmAt) by bands of its girth over its height's ( height / GROVES.slender / 2 )
-	prototypes: { heights: 4, height: [ 0.68, 1.1 ] as const, girths: 2, girth: [ 0.85, 1.15 ] as const },
+	// the culms' prototypes: bands of a culm's height over GROVES.height (the sites' 1st to 99th
+	// percentile, BambooGroves.ts culmAt) by bands of its girth over its height's
+	// ( height / GROVES.slender / 2 ), each band an equal ratio, so for all but about one culm in
+	// fifty a culm's leaves are scaled from its prototype's by at most about a tenth
+	prototypes: { heights: 4, height: [ 0.6, 1.28 ] as const, girths: 2, girth: [ 0.74, 1.3 ] as const },
 	// the far level: the culm's sides, its rings an internode, and the share of the leaf cards kept
 	far: { sides: 4, cards: 0.5 },
 };
@@ -345,9 +348,10 @@ function spray( b: Build, c: Culm, from: THREE.Vector3, out: THREE.Vector3, size
 
 // the culms' prototypes, ( height band, girth band ) as height * girths + girth
 const CULM_PROTOTYPES = BAMBOO.prototypes.heights * BAMBOO.prototypes.girths;
-// a band's middle, of `count` over [ lo, hi ]
-const bandMiddle = ( [ lo, hi ]: readonly [ number, number ], count: number, k: number ) => lo + ( hi - lo ) * ( k + 0.5 ) / count;
-const bandOf = ( [ lo, hi ]: readonly [ number, number ], count: number, x: number ) => Math.min( count - 1, Math.max( 0, Math.floor( ( x - lo ) / ( hi - lo ) * count ) ) );
+// a band's middle, of `count` bands of equal ratio over [ lo, hi ] (its geometric middle), and the
+// band of a value
+const bandMiddle = ( [ lo, hi ]: readonly [ number, number ], count: number, k: number ) => lo * ( hi / lo ) ** ( ( k + 0.5 ) / count );
+const bandOf = ( [ lo, hi ]: readonly [ number, number ], count: number, x: number ) => Math.min( count - 1, Math.max( 0, Math.floor( Math.log( x / lo ) / Math.log( hi / lo ) * count ) ) );
 
 /** Prototype `k`'s culm: its band's middle height and girth (GROVES.height is a load knob, read
  * here once). */
@@ -384,7 +388,7 @@ function instances( sites: Sites ): PlantInstance[] {
 			height: site.height, scale, girth: site.radius / proto.radius, limb: scale,
 			lean: site.lean, bow: site.bow, load: culmLoad( site.height, site.radius ),
 			width: 2 * site.radius, reach: BAMBOO.branch * site.height + BAMBOO.card,
-			look: [ site.age, site.grove, 1, 0 ],
+			look: [ site.age, site.grove, 1, leafBandAt( site.seed ) ],
 		};
 
 	} );
