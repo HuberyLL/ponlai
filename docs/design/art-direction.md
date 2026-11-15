@@ -145,8 +145,9 @@ The frame is developed in stages, in this order:
   low sun the land is drawn up as well, the more the darker its surroundings. The detail is kept.
 - **The shade's contrast** is deepened under a pivot, so the shade stays solid under the soft curve,
   which would otherwise lift it with everything else and take its weight. By day the pivot sits over
-  the lit ground. Under a low sun it sits a quarter of a stop under mid grey, where the long shadows
-  take the most. Under clouds and by night it acts gently.
+  the lit ground. Under a low sun it sits nearly a stop under mid grey, where the long shadows take
+  the most. Under clouds it acts gently. By night it lifts instead: its pivot sits under the moonlit
+  grass, and the moon's narrow shadows are drawn toward the lit ground.
 - **A soft filmic curve**, gentle in the shadows and midtones, with a long shoulder and a long toe.
   Deep in the dark the toe halves the screen's level every two stops, keeping the shade's
   gradations, and it still reaches black, with no floor veiling the darks. Its contrast, shoulder,
