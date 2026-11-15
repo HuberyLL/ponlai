@@ -20,7 +20,7 @@ import { displacementField } from '../vegetation/Displacement.ts';
 import { declareExtraPasses } from './ExtraPass.ts';
 import { waveMapsPass } from '../ocean/WaveMaps.ts';
 import { localLightsPass } from '../lighting/LocalLights.ts';
-import type { PassBuilder, Pipeline } from './Pipeline.ts';
+import type { PassBuilder, Pipeline, PipelineFrame } from './Pipeline.ts';
 
 // The frame's passes on the frame graph, declared in order.
 //
@@ -32,6 +32,8 @@ import type { PassBuilder, Pipeline } from './Pipeline.ts';
 
 // what the water pass draws in a frame without water: nothing
 const NO_WATER = new THREE.Scene();
+// (the depth pyramid is built for the water alone)
+const hasWater = ( f: PipelineFrame ) => f.water !== null;
 
 // The refraction pass's only attachment, cleared to zero coverage (alpha 0: nothing drawn there),
 // its colour pre-exposed as the scene target's (PreExposure.ts).
@@ -221,6 +223,8 @@ export function declarePasses( p: Pipeline ): void {
 			return { label: 'depth & copy resolves', quad: p.depthQuad };
 
 		} );
+		// its pyramid, which the water's reflection traces over (DepthPyramid.ts)
+		p.depthPyramid.pass( g, linearDepth, false, hasWater );
 		const copyQuad = p.copyQuad!;
 		g.addPass( 'opaqueCopy', 'quad', ( b ) => {
 
@@ -527,6 +531,7 @@ function declareTemporalScene( p: Pipeline, hazeReads: ResourceHandle[] ): [ Res
 		return { label: 'depth & copy resolves', jittered: true, quad: p.depthQuad };
 
 	} );
+	p.depthPyramid.pass( g, linearDepth, true, hasWater );
 	// single-sampled, the opaque colour is copied as a texture (no draw: it replaces every texel)
 	const from = g.texture( sceneColor ), to = g.texture( opaqueColor );
 	g.addPass( 'opaqueCopy', 'callback', ( b ) => {

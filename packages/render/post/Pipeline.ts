@@ -49,6 +49,7 @@ import { settings } from '../Settings.ts';
 import { DEFAULT_POST_OPTIONS, postOptionsFromURL, type PostOptions } from './PostOptions.ts';
 import type { DisplayTables } from '../look/DisplayLook.ts';
 import { declarePasses } from './PipelinePasses.ts';
+import { DepthPyramid } from './DepthPyramid.ts';
 import { buildDisplay, GRADE_TABLE, NIGHT, TONE_SPACE } from './PipelineDisplay.ts';
 
 // The frame's pipeline: the frame graph of its targets and passes, from scene to canvas.
@@ -64,8 +65,10 @@ import { buildDisplay, GRADE_TABLE, NIGHT, TONE_SPACE } from './PipelineDisplay.
 //     what lies under the sea, and in the guard band beyond that reach, so the refraction pass
 //     shades only what it alone can show
 //   depth resolve ── depthRT (view-space z of the opaque pass: sample 0, and the farthest sample)
-//   opaque copy ── opaqueRT (the resolved opaque colour: what the water refracts where the
-//     refraction image holds nothing, and reflects)
+//   depth pyramid ── the nearest and farthest depth per cell over ten levels, in a storage buffer
+//     (DepthPyramid.ts; in a frame with water): what the sea's reflection is traced over
+//   opaque copy ── opaqueRT (the resolved opaque colour, with mips: what the water refracts where
+//     the refraction image holds nothing, and reflects over its cone's footprint)
 //   refraction ── refraction and refractionDepth: the world under the sea through a wider view, at
 //     half the render's pixel density (ocean/Refraction.ts; the water's refraction source where the
 //     opaque image does not hold the floor: behind what stands above the water, and off the screen)
@@ -121,6 +124,7 @@ import { buildDisplay, GRADE_TABLE, NIGHT, TONE_SPACE } from './PipelineDisplay.
 // jittered, and writes the motion vectors beside the colour:
 //   opaque scene ── sceneColor, velocity and meterLight (an MRT: Motion.ts's sceneMRT), sceneDepth
 //   depth resolve ── depthRT (sample 0 twice: one sample)
+//   depth pyramid ── as above, jittered with the scene
 //   underwater pyramid, refraction reach and mask ── as above, jittered with the scene
 //   refraction ── as above, jittered with the scene
 //   water ── sceneColor and velocity (sceneMRT), depth-tested against the opaque depth
@@ -403,6 +407,9 @@ export class Pipeline {
 		readonly opaqueColor: THREE.Texture; readonly linearDepth: THREE.Texture; readonly surfaceDepth: THREE.Texture;
 		readonly underwater: THREE.Texture; readonly refraction: THREE.Texture; readonly refractionDepth: THREE.Texture;
 	};
+	/** The linear depth's pyramid of nearest and farthest depths, which the sea's reflection traces
+	 * over (DepthPyramid.ts). */
+	readonly depthPyramid: DepthPyramid;
 	/** The sea's mean level (m), which the underwater pyramid keeps what lies under (main.ts sets it
 	 * from the shared uniforms'). */
 	readonly seaLevel = uniform( 0 );
@@ -583,7 +590,8 @@ export class Pipeline {
 		const sceneColor = g.color( 'sceneColor', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType, samples: 'scene' } );
 		const sceneDepth = g.depth( 'sceneDepth', { size: RENDER, samples: 'scene', type: THREE.FloatType } );
 		const linearDepth = g.color( 'linearDepth', { size: RENDER, format: THREE.RGFormat, type: THREE.FloatType } );
-		const opaqueColor = g.color( 'opaqueColor', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
+		// (with mips: the sea's reflection reads it over its cone's footprint, ocean/ScreenReflection.ts)
+		const opaqueColor = g.color( 'opaqueColor', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType, mips: true } );
 		const surfaceDepth = g.color( 'surfaceDepth', { size: RENDER, format: THREE.RedFormat, type: THREE.FloatType } );
 		// what the water refracts at its footprint: the opaque colour under the sea and its mips
 		const underwater = g.color( 'underwater', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType, mips: true } );
@@ -680,6 +688,7 @@ export class Pipeline {
 			gtaoMap.value = g.texture( gtao );
 
 		}
+		this.depthPyramid = new DepthPyramid( g.texture( linearDepth ) );
 		this.textures = {
 			opaqueColor: g.texture( opaqueColor ), linearDepth: g.texture( linearDepth ), surfaceDepth: g.texture( surfaceDepth ),
 			underwater: g.texture( underwater ), refraction: g.texture( refraction ), refractionDepth: g.texture( refractionDepth ),

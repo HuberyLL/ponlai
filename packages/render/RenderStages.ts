@@ -995,7 +995,7 @@ export function createWater( render: RenderParts, { fields, landBox, seaShape, h
 	render.water = new Water( {
 		fft, sky, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves,
 		land: landBox, ...seaShape, sunShadow, storm: stormSea, detail: seaDetail,
-		sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, underwater: pipeline.textures.underwater, quality: quality.water,
+		sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, depthPyramid: pipeline.depthPyramid, underwater: pipeline.textures.underwater, quality: quality.water,
 		refraction: { color: pipeline.textures.refraction, depth: pipeline.textures.refractionDepth },
 	} );
 	pipeline.seaLevel.value = shared.waterLevel.value;

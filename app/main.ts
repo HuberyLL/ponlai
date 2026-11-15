@@ -117,7 +117,7 @@ await startScene( host, { look: PAGE_LOOK, defaults: sceneDefaults( GAME ) }, {
 				// the island grows with the population (Growth.ts, made below: called from the frame loop on)
 				pieces: landOptions.step,
 				island: { approach: ( p ) => island.growth.approach( p ), grow: () => island.growth.grow() },
-				// A prop can rise above all the island grows: the sun's map fits its casters and the sea's reflection marches its box, so both grow to hold it.
+				// A prop can rise above all the island grows: the sun's map fits its casters and the sea's reflection traces through its box, so both grow to hold it.
 				holdOpaque: ( box ) => holdOpaque( render, island, box ),
 				// the game's props, for the scene's pass and the sun's map (see compileDraws)
 				compileDraws: island.compileDraws,

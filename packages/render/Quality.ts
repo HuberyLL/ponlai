@@ -243,7 +243,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		// 1440p's pixels at the baseline (the standard upscales them, a 2K display is native) and 1080p's
 		// at the floor; a display of 1080p or fewer pixels drops at most a quarter per axis
 		render: { dynamic: { max: 2, baseline: 2560 * 1440, floor: 1920 * 1080, floorShare: 0.75, step: 0.05 } },
-		water: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
+		water: { ssrIterations: 48, ssrMinFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { hazeGrid: { width: 160, height: 90, depth: 64 } },
 		ao: true,
 		rainShading: { veilShells: 3, rippleLayers: 2 },
@@ -263,7 +263,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		// TAAU's sharpening softer than high's (higher is softer)
 		taa: { ...TAA, sharpness: { taa: TAA.sharpness.taa, taau: [ 2.0, 1.5 ] } },
 		render: { budget: 1600 * 900 },
-		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
+		water: { ssrIterations: 32, ssrMinFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { hazeGrid: { width: 128, height: 72, depth: 64 } },
 		ao: false,
 		rainShading: { veilShells: 3, rippleLayers: 2 },
@@ -283,7 +283,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		taa: { ...TAA, lite: true, framesStill: 12 },
 		render: { budget: 1280 * 720 },
 		// (the merged storm foam turned the crests' streaks into scattered lace: kept as on high)
-		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
+		water: { ssrIterations: 32, ssrMinFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { hazeGrid: { width: 96, height: 54, depth: 64 } },
 		ao: false,
 		rainShading: { veilShells: 2, rippleLayers: 1 },
@@ -319,7 +319,7 @@ export function loadTier(): QualityTier {
 }
 
 /** The tier's profile with `?tier.<knob path>=<value>` options over it, for A/B captures of one
- * knob (`tier.post.hazeGrid.width=128`, `tier.water.ssrRays=2`; `overrides` the page's). A path
+ * knob (`tier.post.hazeGrid.width=128`, `tier.water.ssrIterations=64`; `overrides` the page's). A path
  * must name an existing knob; numbers, booleans and comma lists are parsed. */
 export function qualityProfile( tier: QualityTier, overrides: ReadonlyArray<readonly [ string, string ]> = settings.prefixed( 'tier.' ) ): QualityProfile {
 
