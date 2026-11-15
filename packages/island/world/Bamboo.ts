@@ -73,9 +73,11 @@ export const BAMBOO = {
 	sprayStiffness: 0.3, // a spray's stiffness on its branch (Deform.ts sprayBend)
 	branchStiffness: 0.3, // a branch's stiffness k_b at its foot radius `branchRadius` (m), growing with it (Deform.ts branchBend)
 	branchRadius: 0.004,
-	// the culms' prototypes: bands of a culm's height over GROVES.height (all a site can take,
-	// BambooGroves.ts culmAt) by bands of its girth over its height's ( height / GROVES.slender / 2 )
-	prototypes: { heights: 4, height: [ 0.68, 1.1 ] as const, girths: 2, girth: [ 0.85, 1.15 ] as const },
+	// the culms' prototypes: bands of a culm's height over GROVES.height (the sites' 1st to 99th
+	// percentile, BambooGroves.ts culmAt) by bands of its girth over its height's
+	// ( height / GROVES.slender / 2 ), each band an equal ratio, so for all but about one culm in
+	// fifty a culm's leaves are scaled from its prototype's by at most about a tenth
+	prototypes: { heights: 4, height: [ 0.6, 1.28 ] as const, girths: 2, girth: [ 0.74, 1.3 ] as const },
 	// the far level: the culm's sides, its rings an internode, and the share of the leaf cards kept
 	far: { sides: 4, cards: 0.5 },
 };
@@ -343,9 +345,10 @@ function spray( b: Build, c: Culm, from: THREE.Vector3, out: THREE.Vector3, size
 
 // the culms' prototypes, ( height band, girth band ) as height * girths + girth
 const CULM_PROTOTYPES = BAMBOO.prototypes.heights * BAMBOO.prototypes.girths;
-// a band's middle, of `count` over [ lo, hi ]
-const bandMiddle = ( [ lo, hi ]: readonly [ number, number ], count: number, k: number ) => lo + ( hi - lo ) * ( k + 0.5 ) / count;
-const bandOf = ( [ lo, hi ]: readonly [ number, number ], count: number, x: number ) => Math.min( count - 1, Math.max( 0, Math.floor( ( x - lo ) / ( hi - lo ) * count ) ) );
+// a band's middle, of `count` bands of equal ratio over [ lo, hi ] (its geometric middle), and the
+// band of a value
+const bandMiddle = ( [ lo, hi ]: readonly [ number, number ], count: number, k: number ) => lo * ( hi / lo ) ** ( ( k + 0.5 ) / count );
+const bandOf = ( [ lo, hi ]: readonly [ number, number ], count: number, x: number ) => Math.min( count - 1, Math.max( 0, Math.floor( Math.log( x / lo ) / Math.log( hi / lo ) * count ) ) );
 
 /** Prototype `k`'s culm: its band's middle height and girth (GROVES.height is a load knob, read
  * here once). */

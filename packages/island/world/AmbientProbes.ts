@@ -19,7 +19,10 @@
 //
 // - The lattice: SPACING (2 m) apart on all three axes, columns at ( ( I + 0.5 ) 2, ( K + 0.5 ) 2 ),
 //   LEVELS levels from Y0 (2 m under the sea's mean level) to the bamboo's crowns over the plateau
-//   and a cell more (ISLAND_TOP + the default groves' height + two cells: 13 levels, up to 22 m).
+//   (ISLAND_TOP + the default groves' height + two cells: 13 levels, up to 22 m). The tallest culm
+//   a site can take, 1.33 GROVES.height (BambooGroves.ts `size`), tops out on the plateau's peak at
+//   about 21.6 m, 0.4 m under the top level: this holds at the default height only; with
+//   `bamboo=,height` above about 14 m the tallest culms pass the top level.
 //   A chunk owns the 8 x 8 columns its square holds. Only the chunks with land within PROBE_NEAR of
 //   their square bake theirs (Chunks.ts); everywhere else the probe is the open sea's
 //   (`openSeaProbe`), which depends on the level alone.
@@ -303,8 +306,9 @@ class Tracer {
 			const x = ( this.mi0 + i + 0.5 ) * MEDIUM_CELL, z = ( this.mk0 + k + 0.5 ) * MEDIUM_CELL, c = k * mn + i;
 			if ( outside( x, z ) ) continue;
 			const d = groveAt( x, z ), g = islandSurfaceHeight( x, z ), crowned = Math.min( crowns[ c ], 1 );
-			// a culm's mean height and diameter at this density (BambooGroves.ts culmAt), and the
-			// crowns' mean height at theirs
+			// a culm's mean height and diameter at this density (BambooGroves.ts culmAt: the heights'
+			// cut normal keeps their mean at 0.95 GROVES.height, the girth's lognormal its height
+			// over diameter near GROVES.slender), and the crowns' mean height at theirs
 			const H = P.height * ( 0.85 + 0.15 * d ) * 0.95, D = H / P.slender;
 			const crownH = P.height * ( 0.85 + 0.15 * crowned ) * 0.95;
 			this.ground[ c ] = g;

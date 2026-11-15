@@ -199,8 +199,8 @@ returns:
 ## The bamboo
 
 - Penglai's own bamboo (浮筠之簳, Shiyi ji: "green leaves, purple stems, seeds as big as pearls") grows
-  over the whole island, as a running bamboo left to itself takes a hillside: in groves of even
-  height whose edges run out in lobes, single culms ahead of them on the open meadow, and glades of
+  over the whole island, as a running bamboo left to itself takes a hillside: in groves whose
+  culms vary in height and girth, the taller the thicker, and whose edges run out in lobes, single culms ahead of them on the open meadow, and glades of
   meadow between. Avoid one round crown and a closed forest.
 - No placement rule: it stands at the cliff's edge as anywhere else.
 - Its culms are tall and slender, bare to about half their height, their leaves narrow and in loose
