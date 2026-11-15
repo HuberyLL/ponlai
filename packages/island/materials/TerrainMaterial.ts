@@ -9,7 +9,7 @@ import { settings } from '../IslandSettings.ts';
 import { SCAN_LAYER, type GroundTextures } from './GroundTextures.ts';
 import { MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_MAX_DROP, groundGains } from './Meadow.ts';
 import { SOIL_EXTENT, SOIL_HEIGHT_RANGE, SOIL_PALETTE, soilGroveSwell, soilUniforms } from './Soil.ts';
-import { RIM_FRINGE_FADE, RIM_INNER_LIMIT, RIM_MAX_DROP } from '../world/RimGround.ts';
+import { RIM_FRINGE_FADE, RIM_INNER_LIMIT, RIM_MAX_DROP, RIM_TURF } from '../world/RimGround.ts';
 import { BARE_GROUND, GRASS_ROOTS, GRASS_SHADOW, rootsSky, meadowGroundRuns, meadowLayerLight } from '../world/Grass.ts';
 import { CROWN_SCALE, swardField } from '../world/SwardField.ts';
 import { seabedAlbedo } from './SeabedLook.ts';
@@ -79,10 +79,9 @@ type F = THREE.Node<'float'>;
 // sea the surface's own, which the water's shading takes (the damp band fades out under the
 // waterline).
 const SUBMERGED_ROCK = 0.94;
-// The rim's turf wraps the lip's bevel where a broad field along the coast (gravel's
-// low-frequency channel at LIP_WRAP_RATE per metre, a few metres a stretch) clears LIP_WRAP; the
-// stone left between is darkened by LIP_SKIN (linear multiplier) on its upward faces.
-const LIP_WRAP = [ 0.38, 0.55 ], LIP_WRAP_RATE = 0.09, LIP_SKIN = [ 0.5, 0.52, 0.5 ], LIP_LEDGE = 1.2, RIM_SOIL_TONE = 0.6;
+// The stone the rim's turf leaves open on the lip's bevel is darkened by LIP_SKIN (linear
+// multiplier) on its upward faces.
+const LIP_SKIN = [ 0.5, 0.52, 0.5 ], LIP_LEDGE = 1.2, RIM_SOIL_TONE = 0.6;
 // The meadow's ground. Between the blades, near and far alike, the meadow scan's soil (below): brown
 // earth seen through the gaps in the sward, at every distance, so the meadow's colour is its
 // blades' over its soil.
@@ -226,7 +225,7 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 		const fresh = detail.y.toVar(), shelter = detail2.x.toVar(), pocket = detail2.z.toVar();
 		// Turf belongs on the meadow only: not on ledges below the lip nor on the stumps of fallen
 		// columns, which stand lower than the meadow's planting height and grow no grass.
-		const meadowTop = vegetation ? smoothstep( 0.32, 0.2, lipDepth ).mul( smoothstep( topY.sub( 0.3 ), topY.sub( 0.18 ), p.y.add( lipDepth ) ) ).toVar() : float( 1 );
+		const meadowTop = vegetation ? smoothstep( 0.32, 0.2, lipDepth ).mul( smoothstep( topY.sub( RIM_TURF.top[ 0 ] ), topY.sub( RIM_TURF.top[ 1 ] ), p.y.add( lipDepth ) ) ).toVar() : float( 1 );
 		// Bare stone must always sample its mineral maps, including upward boulder faces.
 		const legacyTurf = ( vegetation ? smoothstep( 0.85, 0.97, n0.y ).mul( smoothstep( topY.sub( 0.6 ), topY.sub( 0.2 ), p.y ) ).mul( meadowTop ) : float( 0 ) ).toVar();
 		const turf = legacyTurf.toVar();
@@ -239,20 +238,21 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 			const d = ground.r, roof = ground.g, retreat = ground.b;
 			const depth = ground.a.mul( soilUniforms.depth );
 			const cover = smoothstep( retreat.sub( RIM_FRINGE_FADE ), retreat.add( RIM_FRINGE_FADE ), d.negate() );
-			const atRim = smoothstep( - RIM_INNER_LIMIT, - RIM_INNER_LIMIT + 0.15, d )
-				.mul( float( 1 ).sub( smoothstep( 0.20, 0.48, d ) ) );
-			const atRoof = smoothstep( roof.sub( RIM_MAX_DROP ), roof.sub( RIM_MAX_DROP - 0.045 ), p.y );
+			const T = RIM_TURF;
+			const atRim = smoothstep( - RIM_INNER_LIMIT, - RIM_INNER_LIMIT + T.inner, d )
+				.mul( float( 1 ).sub( smoothstep( T.outer[ 0 ], T.outer[ 1 ], d ) ) );
+			const atRoof = smoothstep( roof.sub( RIM_MAX_DROP ), roof.sub( RIM_MAX_DROP - T.roof ), p.y );
 			rimBlend.assign( atRim.mul( atRoof ) );
-			// A shallow root bed lets the turf grow down over the lip, onto steeper faces and further
-			// below the roof, with a ragged lower edge; deep beds stop it short above their soil.
-			// ... and along most of the coast the turf wraps the lip's bevel to its edge (`wrap`, a
-			// broad field along the coast, LIP_WRAP of it), the stone showing only in stretches between
-			const wrap = smoothstep( LIP_WRAP[ 0 ], LIP_WRAP[ 1 ], texture( tex.gravel, p.xz.mul( LIP_WRAP_RATE ).add( 0.31 ) ).a );
-			const overgrown = max( float( 1 ).sub( smoothstep( 0.08, 0.14, depth ) ), wrap ).mul( soilUniforms.strength.min( 1 ) );
+			// A shallow root bed (along most of the coast: the rim field folds the coast's wrap into
+			// it, RimGround.ts LIP_WRAP) lets the turf grow down over the lip's bevel to its edge,
+			// onto steeper faces and further below the roof, with a ragged lower edge; deep beds stop
+			// it short above their soil. The meadow plants its blades by the same terms
+			// (RimGround.ts `rimTurfCover`), so wherever this turf is drawn, blades grow on it.
+			const overgrown = float( 1 ).sub( smoothstep( T.bed[ 0 ], T.bed[ 1 ], depth ) ).mul( soilUniforms.strength.min( 1 ) );
 			const ragged = texture( tex.heights, p.xz.mul( 1.3 ).add( p.y.mul( 0.9 ) ) ).g.sub( 0.5 ).mul( 0.12 );
-			const greenDrop = mix( clamp( depth.add( 0.02 ), 0.05, 0.16 ), float( 0.27 ).add( ragged ), overgrown );
-			rimTurf.assign( cover.mul( smoothstep( mix( 0.65, 0.18, overgrown ), mix( 0.95, 0.6, overgrown ), n0.y ) )
-				.mul( smoothstep( roof.sub( greenDrop ), mix( roof.sub( 0.025 ), roof.sub( greenDrop ).add( 0.04 ), overgrown ), p.y ) ).mul( meadowTop ) );
+			const greenDrop = mix( clamp( depth.add( T.drop.bed ), T.drop.least, T.drop.most ), float( T.drop.wrapped ).add( ragged ), overgrown );
+			rimTurf.assign( cover.mul( smoothstep( mix( T.up.bare[ 0 ], T.up.wrapped[ 0 ], overgrown ), mix( T.up.bare[ 1 ], T.up.wrapped[ 1 ], overgrown ), n0.y ) )
+				.mul( smoothstep( roof.sub( greenDrop ), mix( roof.sub( T.drop.edge ), roof.sub( greenDrop ).add( T.drop.wrappedEdge ), overgrown ), p.y ) ).mul( meadowTop ) );
 			// Root soil occupies small retreat pockets and rounded shoulders. Overlapping grass
 			// and exposed stone interrupt it, rather than drawing a continuous brown collar.
 			const soilBand = smoothstep( - 0.56, - 0.18, d ).mul( float( 1 ).sub( smoothstep( 0.10, 0.35, d ) ) );
@@ -517,8 +517,10 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 			const turfRim = smoothstep( MEADOW_MIN_UP, 0.97, up )
 				.mul( smoothstep( topY.sub( MEADOW_MAX_DROP ), topY.sub( 0.12 ), p.y.add( mossN.mul( 0.15 ) ) ) ).mul( meadowTop );
 			// The turf's own cover, which also sets the blades' shade over it, keeps the plain mask: only the visible mix of turf and stone follows the stone's relief
-			// (`layer` below).
-			const turfCover = max( legacyTurf, turfRim ).toVar();
+			// (`layer` below). In the rim's fringe it is the rim's turf, which the meadow's blades grow
+			// on (RimGround.ts `rimTurfCover`): lit as the meadow's ground under them, not as a band
+			// of bare turf beside it.
+			const turfCover = mix( max( legacyTurf, turfRim ), rimTurf, rimBlend ).toVar();
 			const mossC = mix( vec3( 0.025, 0.06, 0.015 ), vec3( 0.11, 0.2, 0.035 ), smoothstep( 0.2, 0.9, H.g ) ).toVar();
 			mossC.mulAssign( smoothstep( 0.3, 0.8, texture( tex.heights, p.xz.mul( 0.9 ).add( p.y.mul( 0.5 ) ) ).g ).mul( 0.6 ).add( 0.7 ) );
 			mossC.assign( mix( mossC, vec3( 0.2, 0.21, 0.06 ), smoothstep( 0.6, 0.9, big2 ).mul( 0.35 ) ) ); // sun-dried

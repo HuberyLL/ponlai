@@ -20,7 +20,7 @@ export default async function () {
 	const { buildGrass, plantGrass } = await import( '../../../packages/island/world/Grass.ts' );
 	const { shared } = await import( '../../../packages/render/shared.ts' );
 	if ( displacementField ) shaders.push( [ 'displacement-sprite', { material: displacementField.mesh.material, object: displacementField.mesh } ] );
-	const grass = buildGrass( plantGrass( new Float32Array( 0 ) ), shared );
+	const grass = buildGrass( plantGrass( new Float32Array( 0 ), { data: new Float32Array( 4 ), nx: 1, nz: 1, x0: 0, z0: 0, cell: 0.1 } ), shared );
 	for ( const mesh of grass.children ) shaders.push( [ mesh.name, { material: mesh.material, object: mesh } ] );
 	return shaders;
 

@@ -8,13 +8,31 @@ import type { RimGroundField, RimLipData, SDF } from './types.ts';
 export const RIM_FRINGE_FADE = 0.12;
 export const RIM_INNER_LIMIT = 0.70;
 export const RIM_MAX_DROP = 0.30;
+/** Where the rim's turf grows (`rimTurfCover`, and TerrainMaterial.ts's `cliffSurface`, which draws
+ * it from the same terms): the fringe's inner ramp (m of the distance, from -RIM_INNER_LIMIT) and its
+ * outer ramp ( `outer`, m), the band under the roof it covers ( `roof`, m under it, from RIM_MAX_DROP);
+ * the root bed's depth over which the turf stops wrapping the lip's bevel ( `bed`, m: shallower, it
+ * wraps it to its edge); how far under the roof it reaches, a shallow bed's depth plus `drop.bed`
+ * held to `drop.least` - `drop.most` where it does not wrap and `drop.wrapped` where it does, its
+ * lower edge sharp ( `drop.edge`, `drop.wrappedEdge` m over it); the surface's normal's height over
+ * which it holds ( `up`, unwrapped and wrapped); and the meadow's own height band ( `top`, m under
+ * the roof: ledges and fallen columns lower than that grow none). */
+export const RIM_TURF = {
+	inner: 0.15, outer: [ 0.20, 0.48 ], roof: 0.045, bed: [ 0.08, 0.14 ],
+	drop: { bed: 0.02, least: 0.05, most: 0.16, wrapped: 0.27, edge: 0.025, wrappedEdge: 0.04 },
+	up: { bare: [ 0.65, 0.95 ], wrapped: [ 0.18, 0.6 ] }, top: [ 0.3, 0.18 ],
+} as const;
+/** The broad field along the coast where the turf wraps the lip's bevel whatever its root bed (a few
+ * metres a stretch: noise at `rate` per metre over `clear`), folded into the bed's depth: there the
+ * bed reads shallow, so the turf, its planting and the soil under it all follow the one field. */
+const LIP_WRAP = { rate: 0.09, clear: [ 0.38, 0.55 ] };
 
 export interface RimGroundSample { distance: number; roofY: number; retreat: number; depth: number }
 
 // The rim field: the actual upper coast, the turf's retreat and the exposed root depth. By that
 // depth the lip alternates between overgrown stretches (turf down over the shoulder) and cut-open
-// root soil (TerrainMaterial); the meadow's blades shorten and thin toward the land's edge (Grass.ts,
-// the grass-height map's `edge`). It is built per box of a world grid (RIM_BOX) and is
+// root soil (TerrainMaterial); the meadow's blades grow on the rim's turf wherever it is drawn
+// (`rimTurfCover`, Grass.ts) and shorten only near the land's edge (the grass-height map's `edge`). It is built per box of a world grid (RIM_BOX) and is
 // the same, bit for bit, whichever box computed it (tools/island/verify-world-chunks.mjs, S4 and S5).
 
 // The rim ground lies on a world lattice: texel ( i, j ) is centred on ( ( i + 0.5 ) * RIM_CELL,
@@ -126,10 +144,11 @@ export function rimGroundTile( lattice: RimLattice, box: Bounds ): RimGroundFiel
 		data[ k + 1 ] = islandSurfaceHeight( x, z );
 		data[ k + 2 ] = - 0.09 + pocket * 0.43;
 		// The root bed's depth below the roof, patchy along the coast: deep cuts expose a band of
-		// root soil, and where it runs shallow the turf creeps down over the lip instead (see
-		// TerrainMaterial), so the edge alternates between earth and overgrown stretches. Both the
-		// band (3 - 15 cm) and the retreat pockets stay small.
-		data[ k + 3 ] = 0.03 + Math.pow( smoothstep( 0.45, 0.8, roots ), 1.4 ) * 0.12;
+		// root soil, and where it runs shallow (or the coast's wrap holds: LIP_WRAP) the turf creeps
+		// down over the lip instead (`rimTurfCover`), so the edge alternates between earth and
+		// overgrown stretches. Both the band (3 - 15 cm) and the retreat pockets stay small.
+		const wrap = smoothstep( LIP_WRAP.clear[ 0 ], LIP_WRAP.clear[ 1 ], noise3( x * LIP_WRAP.rate + 3.1, 4.7, z * LIP_WRAP.rate - 1.9 ) * 0.5 + 0.5 );
+		data[ k + 3 ] = 0.03 + Math.pow( smoothstep( 0.45, 0.8, roots ), 1.4 ) * 0.12 * ( 1 - wrap );
 
 	}
 	return { data, nx, nz, x0: i0 * RIM_CELL, z0: j0 * RIM_CELL, cell: RIM_CELL };
@@ -218,10 +237,28 @@ export function sampleRimGround( field: RimGroundField, x: number, z: number ): 
 
 }
 
-// Thin the grass only where the same field exposes a little root soil or stone beneath it.
-export function rimGrassCover( ground: RimGroundSample ): number {
+const mix = ( a: number, b: number, t: number ) => a + ( b - a ) * t;
 
-	return smoothstep( ground.retreat - RIM_FRINGE_FADE, ground.retreat + RIM_FRINGE_FADE, - ground.distance );
+/** The turf's cover at a point of the island's top ( x, z ) at height `y`, its surface's normal's
+ * height `up`, given the rim field there (`ground`) and the cover inland of the fringe (`inland`):
+ * mixed into the fringe's (RIM_TURF) by the fringe's share, as TerrainMaterial.ts draws it, without
+ * its ragged lower edge (a texture's ±6 cm about this one). The meadow plants its blades where it is
+ * 1/2 or more (Grass.ts `grassSteps`), so the blades grow on the lip's turf to its edge and on none
+ * of the root soil or stone the field leaves open. `soil` is the soil's depth scale and strength
+ * (materials/Soil.ts `soilUniforms`, 1 by default). */
+export function rimTurfCover( ground: RimGroundSample, y: number, up: number, inland: number, soil = { depth: 1, strength: 1 } ): number {
+
+	const T = RIM_TURF, { distance: d, roofY: roof, retreat } = ground;
+	const share = smoothstep( - RIM_INNER_LIMIT, - RIM_INNER_LIMIT + T.inner, d ) * ( 1 - smoothstep( T.outer[ 0 ], T.outer[ 1 ], d ) )
+		* smoothstep( roof - RIM_MAX_DROP, roof - RIM_MAX_DROP + T.roof, y );
+	const depth = ground.depth * soil.depth;
+	const cover = smoothstep( retreat - RIM_FRINGE_FADE, retreat + RIM_FRINGE_FADE, - d );
+	const wrapped = ( 1 - smoothstep( T.bed[ 0 ], T.bed[ 1 ], depth ) ) * Math.min( soil.strength, 1 );
+	const drop = mix( Math.min( Math.max( depth + T.drop.bed, T.drop.least ), T.drop.most ), T.drop.wrapped, wrapped );
+	const turf = cover * smoothstep( mix( T.up.bare[ 0 ], T.up.wrapped[ 0 ], wrapped ), mix( T.up.bare[ 1 ], T.up.wrapped[ 1 ], wrapped ), up )
+		* smoothstep( roof - drop, mix( roof - T.drop.edge, roof - drop + T.drop.wrappedEdge, wrapped ), y )
+		* smoothstep( roof - T.top[ 0 ], roof - T.top[ 1 ], y );
+	return mix( inland, turf, share );
 
 }
 

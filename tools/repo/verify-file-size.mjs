@@ -38,7 +38,7 @@ const CODE = /\.(ts|mts|js|mjs)$/;
 // remove the entry, with the change that shortens the file; never raise one or add an entry.
 const KNOWN = {
 	'packages/render/weather/VolumetricHaze.ts': 1809,
-	'packages/island/world/Grass.ts': 1732,
+	'packages/island/world/Grass.ts': 1605,
 	'packages/render/ocean/Water.ts': 1645,
 	'packages/render/post/graph/FrameGraph.ts': 1525,
 };
