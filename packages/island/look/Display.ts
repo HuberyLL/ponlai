@@ -225,7 +225,7 @@ export const DISPLAY: DisplayLook = {
 	// open level ground under the night's light, and the strength the change is taken back by at
 	// night: 0.025, set with the night's sky and moon so the dark land keeps a hint of cool green while
 	// the sky and the sea stay blue. Tunable on debug pages (debug/Tune.ts):
-	// `post.purkinje.strength@night`.
+	// `post.purkinje.retina@night`, `post.purkinje.strength@night`.
 	purkinje: { retina: 3, strength: 0.025 },
 
 };
