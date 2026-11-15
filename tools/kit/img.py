@@ -2,7 +2,7 @@
 # requires-python = ">=3.10"
 # dependencies = ["numpy", "pillow"]
 # ///
-"""Measures and arranges captures: differences, crops, sheets, thumbnails, statistics, flicker, ring profiles.
+"""Measures and arranges captures: differences, crops, sheets, thumbnails, means, statistics, flicker, ring profiles.
 
 It does the image work around captures (tools/kit/capture.mjs, capture-set, capture-clip): how two
 captures or sets differ, a region's colour and light, a crop or a labelled sheet for the eye, a
@@ -15,6 +15,7 @@ Usage:
   uv run tools/kit/img.py crop  IMG|DIR...     region [--zoom N] --out DIR
   uv run tools/kit/img.py sheet IMG|DIR...     [region] [--labels a,b] [--cols N] [--diff] [--zoom N | --scale F | --width W] --out FILE
   uv run tools/kit/img.py thumb IMG|DIR...     [--short 360] [--quality 88] --out DIR
+  uv run tools/kit/img.py mean  IMG|DIR...     [--codes] --out FILE
   uv run tools/kit/img.py stats IMG|DIR...     [region] [--pct 1,5,50,95,99] [--oklab] [--linear] [--split] [--cover] [--mask M [--against B]] [--json]
   uv run tools/kit/img.py stats IMG|DIR... --deck [--deck-boxes auto|h|sun|none] [region] [--deck-rows [--horizon x0,x1,y]] [--trend 15] [--px-per-deg 24] [--json]
   uv run tools/kit/img.py flicker CLIP|DIR...  [region] [--frames a-b] [--spike 20,40] [--odd 2.5] [--drop-odd] [--map P] [--json] [--save]
@@ -30,6 +31,7 @@ Options:
   crop          --zoom nearest-neighbour factor (1); --out the directory (required)
   sheet         --labels; --cols; --diff; --zoom (1), --scale or --width; --out the file (required)
   thumb         --short the short side in pixels (360); --quality JPEG quality (88); --out (required)
+  mean          --codes averages the code values as stored; --out the file (required)
   stats         --pct percentiles (1,5,50,95,99); --oklab; --linear; --split; --cover; --mask; --against
   stats --deck  --deck-boxes (auto); --deck-rows; --horizon; --trend degrees (15); --px-per-deg (24)
   flicker       --frames a-b; --spike levels (20,40); --odd factor (2.5, 0 none); --drop-odd; --map; --save
@@ -58,6 +60,12 @@ the same box from every column (an anchor's box comes from the first column's ca
 adds a column after two inputs: their difference times --gain. Tiles are 1:1 unless --zoom
 (nearest, integer), --scale or --width (box filter) is given; a full frame wider than 1280 px is
 scaled down to 1280. thumb: a box-filtered JPEG, a frame kept to be recognised, not measured.
+
+mean: the per-pixel mean of images of one size, written as a PNG: a many-sample reference made of
+captures that each take one sample (a direction, a jitter, a moment), or the mean of a clip. The
+mean is taken in linear light (sRGB decoded) and encoded back, as light adds; --codes averages the
+code values instead, which keeps a share exact when each capture marks a pixel either fully in one
+colour or in another (a debug view's hit and miss).
 
 stats: per image and region, compare-captures.py's metrics (mean RGB, luma mean and standard
 deviation, the mean luma difference of adjacent pixels, the share of pixels with luma over 245) and
@@ -101,7 +109,7 @@ on that side of the point (up: the sky over a low sun, without the sea under it)
 Output: tables on stdout (JSON with --json); notes on stderr. Files: diff --heat and flicker --map
 write a .png for one pair, clip or region, else a directory of <name>[.<region>].diff.png or
 <clip>[.<region>].flash.png; crop writes <out>/<name>.<region>.png; sheet writes --out; thumb writes
-<out>/<name>.jpg; flicker --save writes <clip>/flicker.json.
+<out>/<name>.jpg; mean writes --out; flicker --save writes <clip>/flicker.json.
 
 GPU lock and browser: neither; it reads image files. Cost: under a second to seconds per image; a
 long 4K clip takes longer. It runs with the application policy on macOS (tools/kit/qos.mjs).
@@ -305,6 +313,28 @@ def cmd_thumb(a):
         p = out / f"{f.stem}.jpg"
         im.save(p, quality=a.quality)
         print(p)
+
+
+# ---------------------------------------------------------------------------------------------- mean
+
+def cmd_mean(a):
+    files = expand(a.images, a.match)
+    if not files:
+        sys.exit("mean: no images")
+    total = None
+    for f in files:
+        X = decode(f).astype(np.float64) / 255
+        if not a.codes:
+            X = np.where(X <= 0.04045, X / 12.92, ((X + 0.055) / 1.055) ** 2.4)
+        if total is not None and X.shape != total.shape:
+            sys.exit(f"mean: {f} is {X.shape[1]}x{X.shape[0]}, the first {total.shape[1]}x{total.shape[0]}")
+        total = X if total is None else total + X
+    M = total / len(files)
+    if not a.codes:
+        M = np.where(M <= 0.0031308, M * 12.92, 1.055 * M ** (1 / 2.4) - 0.055)
+    Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(np.clip(np.round(M * 255), 0, 255).astype(np.uint8)).save(a.out)
+    print(f"{a.out} (the mean of {len(files)})")
 
 
 # --------------------------------------------------------------------------------------------- sheet
@@ -1018,6 +1048,13 @@ def main():
     p.add_argument("--quality", type=int, default=88)
     p.add_argument("--out", required=True)
     p.set_defaults(fn=cmd_thumb)
+
+    p = sub.add_parser("mean", help="the per-pixel mean of images, in linear light")
+    p.add_argument("images", nargs="+")
+    p.add_argument("--match", default="*.png", help="the files a directory stands for")
+    p.add_argument("--codes", action="store_true", help="average the code values as stored")
+    p.add_argument("--out", required=True)
+    p.set_defaults(fn=cmd_mean)
 
     p = sub.add_parser("stats", help="mean, luma, percentiles per image or region")
     p.add_argument("images", nargs="+")
