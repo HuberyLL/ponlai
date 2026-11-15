@@ -31,7 +31,7 @@ const NO_BLOOM = (): BloomKey => ( {
 const NO_FOG = { fogLayer: 0, neutral: 0, scatter: 0, fogTop: 10, fogWidth: 10, visibility: 1 };
 const CLEAN_AIR = (): FullKey => ( {
 	deck: 0, overcastDeck: 0, amount: 0, sigmaRed: 1, sigmaGreen: 1, sigmaBlue: 1, desaturate: 0, gain: 1, mist: 0, sunRayleigh: 1, rayleighWeight: 1, mieWeight: 1,
-	top: 10, width: 10, aerosolShare: 0, aerosolHeight: 1000, aerosolTop: Infinity, skyDepth: 0,
+	top: 10, width: 10, aerosolShare: 0, aerosolHeight: 1000, aerosolTop: Infinity, skyDepth: 0, groundLight: 1,
 	...NO_FOG, droplet: 0, fogCoverHigh: 0,
 } );
 const UNIT_SCALE = { sigmaRed: 1, sigmaGreen: 1, sigmaBlue: 1, aerosolScale: 1, aerosolHeight: 1, topScale: 1, widthScale: 1 };

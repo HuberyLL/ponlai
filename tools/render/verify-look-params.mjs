@@ -640,7 +640,7 @@ function hazeKeyReadsOwn( tables, name ) {
 			amount: k.amount * scale.haze / WEATHER_PRESETS.clear.haze,
 			sigmaRed: k.sigmaRed * scale.sigmaRed, sigmaGreen: k.sigmaGreen * scale.sigmaGreen, sigmaBlue: k.sigmaBlue * scale.sigmaBlue,
 			desaturate: 1 - ( 1 - k.desaturate ) * tables.keep[ 0 ], gain: tables.gain[ 0 ], mist: k.mist,
-			sunRayleigh: 1 - ( 1 - k.sunRayleigh ) * ( 1 - tables.sunRayleigh[ 0 ] ), rayleighWeight: k.rayleighWeight, mieWeight: k.mieWeight, skyDepth: k.skyDepth,
+			sunRayleigh: 1 - ( 1 - k.sunRayleigh ) * ( 1 - tables.sunRayleigh[ 0 ] ), rayleighWeight: k.rayleighWeight, mieWeight: k.mieWeight, skyDepth: k.skyDepth, groundLight: k.groundLight,
 			aerosolShare: shape.aerosolShare * scale.aerosolScale, aerosolHeight: shape.aerosolHeight * scale.aerosolHeight,
 			aerosolTop: tables.decked[ 0 ] ? cloudBase( islandSkyTables, 0 ) : Infinity,
 			top: shape.top * scale.topScale * ( 1 - fog.fogLayer ) + fog.fogTop * fog.fogLayer,
@@ -672,7 +672,7 @@ function hazeKeyReadsOwn( tables, name ) {
 		nearHaze( key.amount, k.amount * cloudy.haze / WEATHER_PRESETS.cloudy.haze, `${ what }: amount` );
 		nearHaze( key.sigmaRed, k.sigmaRed * cloudy.sigmaRed, `${ what }: sigmaRed` );
 		nearHaze( key.desaturate, 1 - ( 1 - k.desaturate ) * tables.keep[ 2 ], `${ what }: desaturate` );
-		for ( const f of [ 'rayleighWeight', 'mieWeight', 'skyDepth' ] ) nearHaze( key[ f ], k[ f ], `${ what }: ${ f }` );
+		for ( const f of [ 'rayleighWeight', 'mieWeight', 'skyDepth', 'groundLight' ] ) nearHaze( key[ f ], k[ f ], `${ what }: ${ f }` );
 		rows ++;
 
 	} );

@@ -30,8 +30,8 @@ direction](../design/art-direction.md) and the subject pages it lists.
 | --- | --- | --- |
 | Sunlit grey card on level ground, screen code | clear noon | about 0.70 to 0.75 |
 | The grey card's open shade, screen code | clear noon | near 0.15 |
-| Moonlit grey card on level ground, green code | deep night | about 0.17 to 0.23 |
-| Moonlit grey card on the slopes the moon grazes, green code | deep night | 0.12 to 0.16 |
+| Moonlit grey card on level ground, green code | deep night | about 0.24 to 0.30 |
+| Moonlit grey card on the slopes the moon grazes, green code | deep night | about 0.23 to 0.25 |
 | The closed deck's display lightness, away from the sun | overcast | about 0.33 |
 | The meadow's display lightness under it | overcast | about 0.28 |
 
