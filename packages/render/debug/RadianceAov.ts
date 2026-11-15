@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import type { Pipeline } from '../post/Pipeline.ts';
 import { preExposure } from '../post/PreExposure.ts';
 import { FIT_CLASSES } from './Classes.ts';
+import { SEA_STEP } from '../weather/VolumetricHaze.ts';
 
 // What each cell of a radiance grid shows besides its radiance: depth and the other channels.
 //
@@ -81,7 +82,7 @@ async function readTexture( renderer: THREE.WebGPURenderer, target: THREE.Render
 
 }
 
-const SKY_Z = - 9e4, SEA_STEP = 0.01;
+const SKY_Z = - 9e4;
 
 /** Reads one of the auxiliary values over a grid of cells (see the header). */
 export async function readAov( renderer: THREE.WebGPURenderer, pipeline: Pipeline, camera: THREE.Camera | undefined, options: { aov: Aov; grid?: [ number, number ]; cell?: number; texels?: boolean } ): Promise<AovResult> {

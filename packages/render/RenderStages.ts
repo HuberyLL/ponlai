@@ -1019,7 +1019,7 @@ export function bakeWithHaze( render: RenderParts ) {
 	const { bakeEnvironment } = stage;
 	// the hour's and the weather's key, written each frame (weather/HazeKeys.ts)
 	render.hazeKey = { deck: 0, overcastDeck: 0, amount: 1, sigmaRed: 1, sigmaGreen: 1, sigmaBlue: 1, desaturate: 0, gain: 1, mist: 0, sunRayleigh: 0, rayleighWeight: 1, mieWeight: 1,
-		top: 10, width: 50, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0 };
+		top: 10, width: 50, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0, groundLight: 1 };
 	// the haze exists now: bake the environment again, so it holds the haze every later bake lays over
 	// it (Sky.ts `fogEnvironment`) and a fresh load equals a jump
 	stage.hazeReady = true;

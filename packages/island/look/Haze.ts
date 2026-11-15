@@ -187,6 +187,14 @@ import type { FullKey, HazeLook } from '../../render/setup.ts';
 //     light: the land's ambient over the moon's key rose to about three and a half times the day's
 //     over the sun's, the grass in the moon a stop and four fifths under the day's against the sky
 //     band and the rock's shade two stops over its own against the lit rock.
+//   - groundLight: the share of the air's in-scattered light laid over the land it fogs
+//     (VolumetricHaze.ts `apply`): 1 by day and in every twilight key, 0 in the night's, leaving at
+//     dawn over the evening's night rows mirrored (HazeKeys.ts `keyAlong`). The night
+//     air lays none of its own light on the land: the dark land's lift and its blue come from the
+//     rods' shift alone (post/Purkinje.ts), which lifts the near and the far land alike, and the air's
+//     light stays on the sea and the sky. Its transmittance is kept, so the far land still dims
+//     through the air. Tunable as `haze.key.groundLight@<key>`; it changes nothing but the
+//     composite's land.
 // The weather adds its own: under the cloudy and the overcast sky the air keeps about half the
 // clear day's colour (0.53 times) and shows twice as bright (the key's `gain`, which the keys
 // themselves leave at 1).
@@ -229,7 +237,7 @@ const SHAPE = { top: 10, width: 50, aerosolShare: 0.035, aerosolHeight: 1400, ae
 const NO_FOG = { fogLayer: 0, neutral: 0, scatter: 0, fogTop: 12, fogWidth: 2, visibility: 2 };
 type Sigma = readonly [ number, number, number ];
 const key = ( amount: number, [ sigmaRed, sigmaGreen, sigmaBlue ]: Sigma, desaturate: number, mist: number, sunRayleigh: number ): FullKey =>
-	( { deck: 0, overcastDeck: 0, amount, sigmaRed, sigmaGreen, sigmaBlue, desaturate, gain: 1, mist, sunRayleigh, rayleighWeight: 1, mieWeight: 1, ...SHAPE, ...NO_FOG, droplet: 0, fogCoverHigh: 0 } );
+	( { deck: 0, overcastDeck: 0, amount, sigmaRed, sigmaGreen, sigmaBlue, desaturate, gain: 1, mist, sunRayleigh, rayleighWeight: 1, mieWeight: 1, groundLight: 1, ...SHAPE, ...NO_FOG, droplet: 0, fogCoverHigh: 0 } );
 // the three keys' spectral extinction, and the hours between's from them by the sun's elevation
 // (see the header): the night's at -12 degrees, the golden hour's at 2
 const NIGHT_SIGMA: Sigma = [ 0.463, 0.53, 0.694 ];
@@ -250,7 +258,8 @@ const MIST = { ...key( 0.6, GOLDEN_SIGMA, 0.64, 0, 1 ), rayleighWeight: 0.72, mi
 const MORNING = { ...key( 0.96, DAY_SIGMA, 0.5, 0, 1 ), rayleighWeight: 0.33, mieWeight: 0.83 };
 const DAY = { ...key( 0.659, DAY_SIGMA, 1, 0, 0 ), rayleighWeight: 0.575, mieWeight: 0.79, top: 14, width: 9.431, aerosolShare: 0.06, aerosolHeight: 761,
 	fogLayer: 1, neutral: 1, scatter: 0.3, fogTop: 12, fogWidth: 2, visibility: 0.22 };
-const NIGHT = { ...key( DAY.amount, NIGHT_SIGMA, 0.55, 0, 1 ), rayleighWeight: DAY.rayleighWeight, mieWeight: 2, top: 14, width: 10.162, aerosolShare: 0.003, skyDepth: 0 };
+const NIGHT = { ...key( DAY.amount, NIGHT_SIGMA, 0.55, 0, 1 ), rayleighWeight: DAY.rayleighWeight, mieWeight: 2, top: 14, width: 10.162, aerosolShare: 0.003, skyDepth: 0,
+	groundLight: 0 };
 const GOLDEN = { ...key( 0.606, GOLDEN_SIGMA, 0.331, 0, 1 ), rayleighWeight: 0.58, mieWeight: 3.8, top: 14, width: 11.242, aerosolShare: 0.127, aerosolHeight: 1010,
 	fogLayer: 1, neutral: 1, scatter: 0.2, fogTop: 12, fogWidth: 2, visibility: 0.29 };
 const AFTER_SUNSET = { ...key( 0.45, twilight( - 2.5 ), 0.75, 0, 1 ), rayleighWeight: 0.32, mieWeight: 4.7 };

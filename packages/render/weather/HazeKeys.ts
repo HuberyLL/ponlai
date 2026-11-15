@@ -12,14 +12,15 @@ export type { HazeKey };
 
 // The haze's key at an hour and a weather: the look's keys (look/HazeLook.ts `createHazeTables`,
 // whose header says what each key holds; every function here takes the tables as its first
-// argument) eased by the sun's elevation, the morning's and the evening's apart,
-// and blended by the weather's shares of the four skies, its wind, its rain and the fog's switches.
+// argument) eased by the sun's elevation, the morning's and the evening's apart; the share of the
+// air's light over the land (`groundLight`) leaves at dawn over the evening's night window
+// mirrored, so a dawn and a dusk at one elevation lay one share; and blended by the weather's shares of the four skies, its wind, its rain and the fog's switches.
 // A function of those alone, never of the path to them: a paused frame and a scene jump hold one
 // value, and a change of hour or weather writes the haze's uniforms only.
 
 // (`skyDepth` is eased from each key's own value: the keys without a shape of their own keep
 // SHAPE's 0 rather than taking the day's)
-const FIELDS = [ 'amount', 'sigmaRed', 'sigmaGreen', 'sigmaBlue', 'desaturate', 'mist', 'sunRayleigh', 'rayleighWeight', 'mieWeight', 'skyDepth' ] as const;
+const FIELDS = [ 'amount', 'sigmaRed', 'sigmaGreen', 'sigmaBlue', 'desaturate', 'mist', 'sunRayleigh', 'rayleighWeight', 'mieWeight', 'skyDepth', 'groundLight' ] as const;
 const SHAPE_FIELDS = [ 'top', 'width', 'aerosolShare', 'aerosolHeight' ] as const;
 const FOG_FIELDS = [ 'fogLayer', 'neutral', 'scatter', 'fogTop', 'fogWidth', 'visibility' ] as const;
 
@@ -39,6 +40,15 @@ function keyAlong( tables: HazeTables, windows: DayWindows, rows: HazeKeyRows, e
 	const night = duskForced( 'hazeNight' );
 	const t = night !== null && a === nightKey ? 1 - night : rows === tables.setting && a === nightKey ? 1 - duskIn( windows, elevation, [ e0, e1 ], windows.depth.haze ) : THREE.MathUtils.smoothstep( elevation, e0, e1 );
 	for ( const f of FIELDS ) out[ f ] = a[ f ] + ( b[ f ] - a[ f ] ) * t;
+	// (`groundLight` at dawn: the evening's night segment, mirrored, by `duskIn` (see the header); an
+	// ease along the morning rows would take half the air's light off the land at -9 degrees, where
+	// the twilight's air is bright and the rods' lift still small)
+	if ( night === null && rows === tables.rising && a === nightKey ) {
+
+		const s = tables.setting, k = s.findIndex( ( row ) => row[ 1 ] === nightKey );
+		out.groundLight = b.groundLight + ( nightKey.groundLight - b.groundLight ) * duskIn( windows, elevation, [ s[ k ][ 0 ], s[ k + 1 ][ 0 ] ], windows.depth.haze );
+
+	}
 	const sa = shaped.has( a ) ? a : dayKey, sb = shaped.has( b ) ? b : dayKey;
 	for ( const f of SHAPE_FIELDS ) out[ f ] = sa[ f ] + ( sb[ f ] - sa[ f ] ) * t;
 	const fa = fogOf( a ), fb = fogOf( b );
