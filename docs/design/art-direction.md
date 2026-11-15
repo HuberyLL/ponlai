@@ -88,13 +88,16 @@ SIGGRAPH 2020; "Real-Time Samurai Cinema", SIGGRAPH 2021).
   the light comes from. A stone or a figure has a lit side and a shaded one, and its shade falls on
   what lies beside it. The meadow shows the light in its slopes, in the light through its blades and
   in the sheen a gust sweeps over it.
-- Nothing lifts the shade toward the light: no extra share of sky light on the island (a "clear
-  shade"), no grade tone that softens the contrast and recolours the lights and the shade, no low
-  sun's recolouring, and no film's day for night.
+- Nothing lifts the shade toward the light but the graded bounce below: no extra share of sky
+  light on the island (a "clear shade"), no grade tone that softens the contrast and recolours the
+  lights and the shade, no low sun's recolouring, and no film's day for night.
 - On a clear day the higher the sun, the harder the contrast between the lit ground and the shade.
 - The sunlit ground lights what stands over it from below, one bounce for every lit surface: the
-  shallows light the cliff's walls faintly, the meadow the islanders' undersides. It is strongest
-  around midday.
+  shallows light the cliff's walls faintly, the meadow the islanders' undersides and, as a flat,
+  warm green light that does not follow the shadow's shape, the grass in a wide shadow beside it,
+  which stays green and turns only a little blue. That bounce is raised over the physical one at
+  every sun height the day reaches, most with the sun 9 to 20 degrees up, morning and evening
+  alike, and comes back to the physical one as the sun nears the horizon.
 - Real phenomena are not exaggerated: no glow round every highlight, and no hue turned further than
   a few degrees (the grade turns none more than 7 degrees).
 

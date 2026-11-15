@@ -13,6 +13,8 @@ direction](../design/art-direction.md) and the subject pages it lists.
 | Shade on flat ground against the lit ground's light | clear day, afternoon | about 1/8 |
 | Shade on flat ground against the lit ground's light | clear day, low sun | about 1/3 to 1/6 |
 | Open meadow's lit side against its shade | clear or fair day, noon | about 3 to 4.5 times |
+| Lit meadow against the grass in a wide cast shadow beside it | clear day, sun at 22 degrees; camera 8 to 9 m from a lawn beside a wide cast shadow, looking 32 to 35 degrees down, the sun behind or to the side; lit and shaded grass told apart on the light averaged over a few pixels | about 4.6 times (5.1 with the bounce ungraded) |
+| That shadow's light over the lit grass's, r, g, b over g | the same | about 0.8, 1, 1.2 (0.8, 1, 1.3 with the bounce ungraded) |
 | A grove's floor in shade against the open shade at its edge | any | about half, darker deeper in |
 | Contact shade where a culm or a stone meets the ground | any | darker by a tenth at most |
 | Ground among the grass in shade, against no loss of sky | screen-space occlusion on | a quarter to a third darker |
