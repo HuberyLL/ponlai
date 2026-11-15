@@ -6,6 +6,8 @@
 //     ray's length times it;
 //   - `hazeReach`: the distance along a ray at which the haze lets less than 1/500 through
 //     (`REACH_DEPTH`), 8-bit's floor: past it nothing on the ray can show through the haze;
+//   - `hazeFormKeep` (the haze's alone): the share of a column's scattered light that still keeps
+//     its form (VolumetricHaze.ts's header: a deck's light along a long ray);
 //   - `HazeMedium`: the medium's uniforms a reader outside the haze holds (the clouds build their
 //     march before the haze exists), which the haze writes whenever it sets its own
 //     (VolumetricHaze.ts `prepareMedium`).
@@ -58,6 +60,16 @@ export const meanExtinction = Fn( ( [ a0, b0, layer, ground ]: [ F, F, V3, V3 ] 
 } ).setLayout( { name: 'hazeMeanExtinction', type: 'float', inputs: [
 	{ name: 'a0', type: 'float' }, { name: 'b0', type: 'float' }, { name: 'layer', type: 'vec3' }, { name: 'ground', type: 'vec3' },
 ] } );
+
+// The share of the light a column of the air's optical depth `depth` sends the eye that still keeps
+// its form, the air's anisotropy `g` (see the header: a deck's light along a long ray):
+// ( 1 - e^-( 2 - g ) T ) / ( ( 2 - g ) ( 1 - e^-T ) ), 1 on a short column.
+export const hazeFormKeep = Fn( ( [ depth, g ]: [ F, F ] ) => {
+
+	const a = float( 2 ).sub( g );
+	return expShare( a.mul( depth ) ).div( max( expShare( depth ), 1e-30 ) );
+
+} ).setLayout( { name: 'hazeFormKeep', type: 'float', inputs: [ { name: 'depth', type: 'float' }, { name: 'g', type: 'float' } ] } );
 
 // The exponential layer's top where nothing ends it (no deck): over any height a ray reaches.
 export const AEROSOL_OPEN = 1e9;

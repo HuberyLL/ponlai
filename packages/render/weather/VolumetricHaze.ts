@@ -9,7 +9,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, uniform, texture, texture3D, textureLoad, textureStore, instanceIndex, instancedArray, uv, int, ivec2, ivec3,
-	vec2, vec3, vec4, float, max, min, clamp, exp, exp2, log2, sqrt, mix, dot, normalize, select, fract, floor, ceil, varying, smoothstep, length,
+	vec2, vec3, vec4, float, max, min, clamp, exp2, log2, sqrt, mix, dot, normalize, select, fract, floor, ceil, varying, smoothstep, length,
 } from 'three/tsl';
 import type { Sky } from '../sky/Sky.ts';
 import { EARTH_RADIUS, type Clouds } from '../sky/Clouds.ts';
@@ -17,7 +17,7 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 import { ATMOSPHERE_RADIUS, MIE_G, PLANET_RADIUS, cornetteShanks, skyRayleighPhase, type Atmosphere } from '../sky/Atmosphere.ts';
 import { bandPush, bandToDisplay, bandToDisplayColor } from '../sky/BandMatrix.ts';
 import type { HazeKey } from './HazeKeys.ts';
-import { AEROSOL_OPEN, type HazeMedium, expShare, meanExtinction } from './HazeDepth.ts';
+import { AEROSOL_OPEN, type HazeMedium, expShare, hazeFormKeep, meanExtinction } from './HazeDepth.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tune, tuneObject, tuneUniform } from '../debug/Tune.ts';
 import { duskForce } from '../sky/DayCycle.ts';
@@ -27,6 +27,8 @@ import { TemporalRest, restEpoch } from '../post/TemporalRest.ts';
 import { preExposed, sceneUnits, storePress } from '../post/PreExposure.ts';
 import { shared } from '../shared.ts';
 import { FOG_NOISE, fogDrift } from './FogNoise.ts';
+import { DROPLET, dropletPhase } from './FogDroplets.ts';
+import { halton } from '../post/Jitter.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -57,54 +59,6 @@ const DECK_DIFFUSE = [
 	[ 0.0476, - 0.2387, 0.327 ],
 	[ - 0.3245, 1.3378, - 1.5456 ],
 ];
-// The share of the light a column of the air's optical depth `depth` sends the eye that still keeps
-// its form, the air's anisotropy `g` (see the header: a deck's light along a long ray):
-// ( 1 - e^-( 2 - g ) T ) / ( ( 2 - g ) ( 1 - e^-T ) ), 1 on a short column.
-const hazeFormKeep = Fn( ( [ depth, g ]: [ F, F ] ) => {
-
-	const a = float( 2 ).sub( g );
-	return expShare( a.mul( depth ) ).div( max( expShare( depth ), 1e-30 ) );
-
-} ).setLayout( { name: 'hazeFormKeep', type: 'float', inputs: [ { name: 'depth', type: 'float' }, { name: 'g', type: 'float' } ] } );
-
-// The fog layer's droplets' phase toward the sun with their multiple scattering (see the header,
-// The fog layer): `nu` the cosine of the scattering angle, `tau` the fog layer's optical depth
-// toward the sun, `lobes` the two Henyey-Greenstein lobes ( forward g, backward g, backward
-// share ), `octaves` Wrenninge's ( a, b, c ). DROPLET_OCTAVES terms, the first the single scatter.
-const DROPLET_OCTAVES = 4;
-const dropletPhase = Fn( ( [ nu, tau, lobes, octaves ]: [ F, F, V3, V3 ] ) => {
-
-	const hg = ( g: F ) => {
-
-		const g2 = g.mul( g );
-		return float( 1 ).sub( g2 ).div( max( float( 1 ).add( g2 ).sub( g.mul( nu ).mul( 2 ) ), 1e-4 ).pow( 1.5 ).mul( 4 * Math.PI ) );
-
-	};
-	let sum: F = float( 0 ), a: F = float( 1 ), b: F = float( 1 ), c: F = float( 1 );
-	for ( let k = 0; k < DROPLET_OCTAVES; k ++ ) {
-
-		const phase = mix( hg( lobes.x.mul( c ) ), hg( lobes.y.mul( c ) ), lobes.z );
-		sum = sum.add( a.mul( phase ).mul( exp( tau.mul( b ).negate() ) ) );
-		a = a.mul( octaves.x );
-		b = b.mul( octaves.y );
-		c = c.mul( octaves.z );
-
-	}
-	return sum;
-
-} ).setLayout( { name: 'hazeDropletPhase', type: 'float', inputs: [
-	{ name: 'nu', type: 'float' }, { name: 'tau', type: 'float' }, { name: 'lobes', type: 'vec3' }, { name: 'octaves', type: 'vec3' },
-] } );
-
-// The fog layer's knobs shared by every key (see the header, The fog layer): the droplets' lobes and
-// Wrenninge's b and c.
-const DROPLET = {
-	forward: tune( 'haze.fog.forward', 0.8, { min: 0.6, max: 0.9, onChange: markSkyRetune } ),
-	backward: tune( 'haze.fog.backward', - 0.3, { min: - 0.5, max: - 0.2, onChange: markSkyRetune } ),
-	backShare: tune( 'haze.fog.backShare', 0.3, { min: 0.2, max: 0.5, onChange: markSkyRetune } ),
-	octaveExtinction: tune( 'haze.fog.octaveExtinction', 0.5, { min: 0.3, max: 0.8, onChange: markSkyRetune } ),
-	octaveAnisotropy: tune( 'haze.fog.octaveAnisotropy', 0.5, { min: 0.3, max: 0.8, onChange: markSkyRetune } ),
-};
 // Measuring knobs for the fog's light in the light kernel: the sun's visibility scaled (1 as it is,
 // 0 the air all in shade) and the island's and the clouds' shadow lifted (1 none).
 const LIGHT_DEBUG = {
@@ -554,19 +508,6 @@ const expShare3 = ( x: V3 ): V3 => vec3( expShare( x.x ), expShare( x.y ), expSh
 // on different points of neighbouring froxels.
 const gradientNoise = Fn( ( [ p ]: [ V2 ] ) => fract( fract( dot( p, vec2( 0.06711056, 0.00583715 ) ) ).mul( 52.9829189 ) ) )
 	.setLayout( { name: 'hazeGradientNoise', type: 'float', inputs: [ { name: 'p', type: 'vec2' } ] } );
-
-function halton( index: number, base: number ): number {
-
-	let f = 1, r = 0;
-	for ( let i = index; i > 0; i = Math.floor( i / base ) ) {
-
-		f /= base;
-		r += f * ( i % base );
-
-	}
-	return r;
-
-}
 
 /** What hides the haze from the open sky, for its ambient visibility (Pipeline.ts gives the rain's
  * collision map, RainCollision.ts, and the ambient probes' sky visibility): the island's highest surface seen from straight above, and
