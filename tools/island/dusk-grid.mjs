@@ -403,7 +403,7 @@ const HAZE_VIEW = `(() => { const s = window.__PONLAI__, b = s.controls.ground.b
 // vectors flattened, non-finite numbers as text so the JSON keeps them), and its opacity over the
 // view's azimuth: sky rays at each --haze-sky elevation (the medium to the atmosphere's top, without
 // the dome's own haze) and level rays at the camera's height over a surface at each --haze-distances
-// (the composite's fog over it), read on the GPU by VolumetricHaze.probe. A ray outside the view's
+// (the composite's fog over it, as over the open sea it faces), read on the GPU by VolumetricHaze.probe. A ray outside the view's
 // frustum (the probe takes the composite's grid projection) is not read: null, listed.
 // The view (`haze-rows`): 65 m over the sea at the land box's +x edge, its back to the island, facing
 // the open sea, pitched 10 degrees up with a vertical field of 30; one pose everywhere, so the points
@@ -412,7 +412,7 @@ const HAZE_VIEW = `(() => { const s = window.__PONLAI__, b = s.controls.ground.b
 // weather's haze and fog, the layers, sigma, the dome's own depth), `clouds.*`, `moon.*` (Tune
 // `haze.moon.*`) and `settings.*`. The light's colours are not in it. Opacity is 1 - T per display
 // channel, with the light at full opacity: `sky <e>` and `level <d> m` (the composite's fog over the
-// surface, the volume and the rest beyond it). summary.txt lists the opacity.
+// sea's surface, the volume and the rest beyond it). summary.txt lists the opacity.
 const hazeReadJs = () => `async () => { ${ PAGE }
 	const air = s.pipeline.air, cam = s.camera, medium = {};
 	const put = ( name, v ) => {
@@ -439,7 +439,7 @@ const hazeReadJs = () => `async () => { ${ PAGE }
 		const v = cam.position.clone().set( d.x, d.y, d.z ).transformDirection( cam.matrixWorldInverse );
 		const p = cam.position.clone().set( d.x, d.y, d.z ).multiplyScalar( 1000 ).add( cam.position ).project( cam );
 		if ( ! ( v.z < 0 && Math.abs( p.x ) <= 1 && Math.abs( p.y ) <= 1 ) ) { outside.push( name ); return; }
-		rays.push( distance === undefined ? { direction: d } : { direction: d, distance } );
+		rays.push( distance === undefined ? { direction: d } : { direction: d, distance, sea: true } );
 		names.push( name );
 
 	};

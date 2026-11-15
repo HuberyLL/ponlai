@@ -41,9 +41,11 @@ import { HAZE_KEY_NAMES, type FogFields, type FullKey, type HazeKey, type HazeKe
 //     it gives at the sea (km), `neutral` how far its extinction turns grey and `scatter` its
 //     droplets' multiple scattering (Wrenninge's a);
 //   - sunRayleigh: the sun's share in the haze's Rayleigh light, beside the open sky's;
-//   - rayleighWeight, mieWeight: the two shares' weights.
+//   - rayleighWeight, mieWeight: the two shares' weights;
+//   - groundLight: the share of the air's light laid over the land (VolumetricHaze.ts `apply`).
 // A look gives a key for each of ten hours (look/Look.ts HAZE_KEY_NAMES) and rows of them by the
-// sun's elevation. Four keys hold a medium's shape of their own (the day's, the golden hour's, the
+// sun's elevation; a look whose rising rows hold the night key holds it in its setting rows too,
+// with a row after it (weather/HazeKeys.ts takes the dawn's `groundLight` from them). Four keys hold a medium's shape of their own (the day's, the golden hour's, the
 // night's and the mist's: `shaped`); the others take the day's. Three hold a fog layer of their own
 // (the day's, the golden hour's and the mist's); the morning takes the mist's, the others none
 // (`fogOf`). The weather adds its own per sky of its blend (`keep`, `gain`, `skyScale`, `decked`,
@@ -54,7 +56,7 @@ export type { FullKey, HazeKey };
 /** A key with every field 0, for a reader that fills all of them (weather/HazeKeys.ts). */
 export const blankKey = (): FullKey => ( {
 	deck: 0, overcastDeck: 0, amount: 0, sigmaRed: 0, sigmaGreen: 0, sigmaBlue: 0, desaturate: 0, gain: 0, mist: 0, sunRayleigh: 0, rayleighWeight: 0, mieWeight: 0,
-	top: 0, width: 0, aerosolShare: 0, aerosolHeight: 0, aerosolTop: 0, skyDepth: 0,
+	top: 0, width: 0, aerosolShare: 0, aerosolHeight: 0, aerosolTop: 0, skyDepth: 0, groundLight: 0,
 	fogLayer: 0, neutral: 0, scatter: 0, fogTop: 0, fogWidth: 0, visibility: 0, droplet: 0, fogCoverHigh: 0,
 } );
 
@@ -101,16 +103,19 @@ export interface HazeTables {
 // aerosolShare|aerosolHeight|skyDepth>@<day|golden|night|mist>` (green is sigma's unit), the
 // morning's, the twilight's before dawn (deep and late) and after sunset (the afterglow and the
 // deep twilight) their six up to `mieWeight` (`@morning`, `@earlyDawn`, `@beforeDawn`,
-// `@afterSunset`, `@afterSunsetDeep`, under cloud `@afterSunsetClouded`)
+// `@afterSunset`, `@afterSunsetDeep`, under cloud `@afterSunsetClouded`); every key's
+// `haze.key.groundLight@<key>`
 const SHAPED_NAMES: readonly HazeKeyName[] = [ 'day', 'golden', 'night', 'mist' ];
 const TUNED = [ 'amount', 'sigmaRed', 'sigmaBlue', 'desaturate', 'rayleighWeight', 'mieWeight', 'top', 'width', 'aerosolShare', 'aerosolHeight', 'skyDepth' ] as const;
-const TUNE_RANGE: Record<typeof TUNED[ number ], TuneOptions> = {
+const TUNE_RANGE: Record<typeof TUNED[ number ] | 'groundLight', TuneOptions> = {
 	amount: { min: 0.1, max: 10, scale: 'log', onChange: markSkyRetune }, sigmaRed: { min: 0.05, max: 1.5, scale: 'log', onChange: markSkyRetune },
 	sigmaBlue: { min: 0.3, max: 3, scale: 'log', onChange: markSkyRetune }, desaturate: { min: 0, max: 1, onChange: markSkyRetune },
 	rayleighWeight: { min: 0.05, max: 40, scale: 'log', onChange: markSkyRetune }, mieWeight: { min: 0.05, max: 50, scale: 'log', onChange: markSkyRetune },
 	top: { min: 0, max: 60, onChange: markSkyRetune }, width: { min: 5, max: 300, scale: 'log', onChange: markSkyRetune },
 	aerosolShare: { min: 0.003, max: 3, scale: 'log', onChange: markSkyRetune }, aerosolHeight: { min: 300, max: 8000, scale: 'log', onChange: markSkyRetune },
 	skyDepth: { min: 0, max: 0.5, onChange: markSkyRetune },
+	// (the light over the land is the composite's alone: no bake or sky reads it)
+	groundLight: { min: 0, max: 1 },
 };
 
 /** The haze's tables made from a look's table: registers their tunables (see the header). */
@@ -123,6 +128,7 @@ export function createHazeTables( look: HazeLook ): HazeTables {
 
 		const fields = SHAPED_NAMES.includes( name ) ? TUNED : TUNED.slice( 0, 6 );
 		tuneObject( keys[ name ], Object.fromEntries( fields.map( ( f ) => [ f, `haze.key.${ f }@${ name }` ] ) ), TUNE_RANGE );
+		tuneObject( keys[ name ], { groundLight: `haze.key.groundLight@${ name }` }, TUNE_RANGE );
 
 	}
 	tuneObject( mist, { mist: 'haze.key.mist@mist' }, { mist: { min: 0, max: 2, onChange: markSkyRetune } } );

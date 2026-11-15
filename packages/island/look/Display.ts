@@ -221,11 +221,12 @@ export const DISPLAY: DisplayLook = {
 	},
 	bloomStart: BLOOM_HIGH_SUN,
 
-	// The rods' colour at night (post/Purkinje.ts): the retinal illuminance (trolands) of white on
-	// open level ground under the night's light, and the strength the change is taken back by at
-	// night: 0.025, set with the night's sky and moon so the dark land keeps a hint of cool green while
-	// the sky and the sea stay blue. Tunable on debug pages (debug/Tune.ts):
+	// The rods' colour at night (post/Purkinje.ts, whose header gives the shape `retina` sets): the
+	// retinal illuminance (trolands) white on open level ground under the night's light is taken
+	// to, and the strength the change is taken back by at night. The darker a colour is against lit
+	// white, the more the rods lift it and the cooler it turns, so the darkest land turns cooler than
+	// the lit meadow. Tunable on debug pages (debug/Tune.ts): `post.purkinje.retina@night`,
 	// `post.purkinje.strength@night`.
-	purkinje: { retina: 3, strength: 0.025 },
+	purkinje: { retina: 250, strength: 0.13 },
 
 };

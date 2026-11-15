@@ -9,7 +9,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, uniform, texture, texture3D, textureLoad, textureStore, instanceIndex, instancedArray, uv, int, ivec2, ivec3,
-	vec2, vec3, vec4, float, max, min, clamp, exp, exp2, log2, sqrt, mix, dot, normalize, select, fract, floor, ceil, varying, smoothstep, length,
+	vec2, vec3, vec4, float, max, min, clamp, exp2, log2, sqrt, mix, dot, normalize, select, fract, floor, ceil, varying, smoothstep, length,
 } from 'three/tsl';
 import type { Sky } from '../sky/Sky.ts';
 import { EARTH_RADIUS, type Clouds } from '../sky/Clouds.ts';
@@ -17,7 +17,7 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 import { ATMOSPHERE_RADIUS, MIE_G, PLANET_RADIUS, cornetteShanks, skyRayleighPhase, type Atmosphere } from '../sky/Atmosphere.ts';
 import { bandPush, bandToDisplay, bandToDisplayColor } from '../sky/BandMatrix.ts';
 import type { HazeKey } from './HazeKeys.ts';
-import { AEROSOL_OPEN, type HazeMedium, expShare, meanExtinction } from './HazeDepth.ts';
+import { AEROSOL_OPEN, type HazeMedium, expShare, hazeFormKeep, meanExtinction } from './HazeDepth.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tune, tuneObject, tuneUniform } from '../debug/Tune.ts';
 import { duskForce } from '../sky/DayCycle.ts';
@@ -27,6 +27,8 @@ import { TemporalRest, restEpoch } from '../post/TemporalRest.ts';
 import { preExposed, sceneUnits, storePress } from '../post/PreExposure.ts';
 import { shared } from '../shared.ts';
 import { FOG_NOISE, fogDrift } from './FogNoise.ts';
+import { DROPLET, dropletPhase } from './FogDroplets.ts';
+import { halton } from '../post/Jitter.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -57,54 +59,6 @@ const DECK_DIFFUSE = [
 	[ 0.0476, - 0.2387, 0.327 ],
 	[ - 0.3245, 1.3378, - 1.5456 ],
 ];
-// The share of the light a column of the air's optical depth `depth` sends the eye that still keeps
-// its form, the air's anisotropy `g` (see the header: a deck's light along a long ray):
-// ( 1 - e^-( 2 - g ) T ) / ( ( 2 - g ) ( 1 - e^-T ) ), 1 on a short column.
-const hazeFormKeep = Fn( ( [ depth, g ]: [ F, F ] ) => {
-
-	const a = float( 2 ).sub( g );
-	return expShare( a.mul( depth ) ).div( max( expShare( depth ), 1e-30 ) );
-
-} ).setLayout( { name: 'hazeFormKeep', type: 'float', inputs: [ { name: 'depth', type: 'float' }, { name: 'g', type: 'float' } ] } );
-
-// The fog layer's droplets' phase toward the sun with their multiple scattering (see the header,
-// The fog layer): `nu` the cosine of the scattering angle, `tau` the fog layer's optical depth
-// toward the sun, `lobes` the two Henyey-Greenstein lobes ( forward g, backward g, backward
-// share ), `octaves` Wrenninge's ( a, b, c ). DROPLET_OCTAVES terms, the first the single scatter.
-const DROPLET_OCTAVES = 4;
-const dropletPhase = Fn( ( [ nu, tau, lobes, octaves ]: [ F, F, V3, V3 ] ) => {
-
-	const hg = ( g: F ) => {
-
-		const g2 = g.mul( g );
-		return float( 1 ).sub( g2 ).div( max( float( 1 ).add( g2 ).sub( g.mul( nu ).mul( 2 ) ), 1e-4 ).pow( 1.5 ).mul( 4 * Math.PI ) );
-
-	};
-	let sum: F = float( 0 ), a: F = float( 1 ), b: F = float( 1 ), c: F = float( 1 );
-	for ( let k = 0; k < DROPLET_OCTAVES; k ++ ) {
-
-		const phase = mix( hg( lobes.x.mul( c ) ), hg( lobes.y.mul( c ) ), lobes.z );
-		sum = sum.add( a.mul( phase ).mul( exp( tau.mul( b ).negate() ) ) );
-		a = a.mul( octaves.x );
-		b = b.mul( octaves.y );
-		c = c.mul( octaves.z );
-
-	}
-	return sum;
-
-} ).setLayout( { name: 'hazeDropletPhase', type: 'float', inputs: [
-	{ name: 'nu', type: 'float' }, { name: 'tau', type: 'float' }, { name: 'lobes', type: 'vec3' }, { name: 'octaves', type: 'vec3' },
-] } );
-
-// The fog layer's knobs shared by every key (see the header, The fog layer): the droplets' lobes and
-// Wrenninge's b and c.
-const DROPLET = {
-	forward: tune( 'haze.fog.forward', 0.8, { min: 0.6, max: 0.9, onChange: markSkyRetune } ),
-	backward: tune( 'haze.fog.backward', - 0.3, { min: - 0.5, max: - 0.2, onChange: markSkyRetune } ),
-	backShare: tune( 'haze.fog.backShare', 0.3, { min: 0.2, max: 0.5, onChange: markSkyRetune } ),
-	octaveExtinction: tune( 'haze.fog.octaveExtinction', 0.5, { min: 0.3, max: 0.8, onChange: markSkyRetune } ),
-	octaveAnisotropy: tune( 'haze.fog.octaveAnisotropy', 0.5, { min: 0.3, max: 0.8, onChange: markSkyRetune } ),
-};
 // Measuring knobs for the fog's light in the light kernel: the sun's visibility scaled (1 as it is,
 // 0 the air all in shade) and the island's and the clouds' shadow lifted (1 none).
 const LIGHT_DEBUG = {
@@ -450,6 +404,17 @@ const SEEN_AIR = { near: 200, far: 2000 } as const;
 //     atmosphere show through only high up, where the rays are short. The clouds' haze, the probe's
 //     sky rays, the CPU `transmittance` (the sun's glare, the flares' visibility) and `openSky`
 //     (the light the sky lends) read the medium alone.
+//   - The light over the land: the composite lays over the land only the key's `groundLight` share
+//     of the haze's light, c ( 1 - a ) + L a groundLight, its transmittance the same everywhere
+//     (a look's key sets it, look/Look.ts `HazeKey`; at 1 the result is the plain mix); the sea and
+//     the sky keep the whole light at every hour, so the far sea and the horizon still end in the
+//     haze. The land is told from the sea per pixel (`apply`): the sea is the nearest
+//     surface lying in front of the opaque one (debug/RadianceAov.ts `isSea`); where the opaque
+//     sample sees the sky and the nearest surface stands more than 2 m and a pixel's height there
+//     over the sea (metres on the far sea, else a dark line along the horizon), the island's
+//     skyline under the multisampled resolve, it is land. The depth reads and the scaling sit in a
+//     branch on the uniform `groundLight` under 1, so the day draws none of it. The probe's surface
+//     rays take the land's share unless they ask for the sea's (`probe`).
 //
 // Rules: the shadow's filter is a history-dependent effect (ARCHITECTURE.md, rule 4). While the scene runs, each
 // froxel blends its new sample into its history, reprojected through the previous frame's camera,
@@ -479,6 +444,10 @@ const CUT = THREE.MathUtils.degToRad( 1 );
 const JUMP = { distance: 8, angle: THREE.MathUtils.degToRad( 30 ) };
 // view z of the sky (the composite's depth holds -1e5 there)
 const SKY_Z = - 9e4;
+// the sea's step in front of the opaque depth (m; debug/RadianceAov.ts `isSea` too), and the height
+// over the sea above which a nearest surface over an opaque sample of the sky is a skyline (m): `apply`
+export const SEA_STEP = 0.01;
+const GROUND_SKYLINE = 2;
 // the rays `probe` takes at once
 const PROBE_RAYS = 64;
 const _transmittance = new THREE.Color(), _reading = new THREE.Color();
@@ -555,19 +524,6 @@ const expShare3 = ( x: V3 ): V3 => vec3( expShare( x.x ), expShare( x.y ), expSh
 const gradientNoise = Fn( ( [ p ]: [ V2 ] ) => fract( fract( dot( p, vec2( 0.06711056, 0.00583715 ) ) ).mul( 52.9829189 ) ) )
 	.setLayout( { name: 'hazeGradientNoise', type: 'float', inputs: [ { name: 'p', type: 'vec2' } ] } );
 
-function halton( index: number, base: number ): number {
-
-	let f = 1, r = 0;
-	for ( let i = index; i > 0; i = Math.floor( i / base ) ) {
-
-		f /= base;
-		r += f * ( i % base );
-
-	}
-	return r;
-
-}
-
 /** What hides the haze from the open sky, for its ambient visibility (Pipeline.ts gives the rain's
  * collision map, RainCollision.ts, and the ambient probes' sky visibility): the island's highest surface seen from straight above, and
  * the ambient probes' sky visibility. */
@@ -605,12 +561,13 @@ export class VolumetricHaze {
 	// the hour's and the weather's key (HazeKeys.ts, `setLook`): each band's sigma, the light's
 	// desaturation, the weather's gain over `gain`, the sun's share in the Rayleigh light and the two shares'
 	// weights, the medium's shape (the ground layer's top over the sea and its width,
-	// the aerosol layer's share, scale height and top, the dome's own depth per kilometre)
+	// the aerosol layer's share, scale height and top, the dome's own depth per kilometre), the share
+	// of its light the composite lays over the land (`apply`)
 	// and the fog layer's (HazeKeys.ts, see the header, The fog layer): its share of the ground
 	// layer, the droplets' share of its light, the extinction's neutral share, Wrenninge's a, the
 	// visibility at the sea (km) and the banks' threshold at its top (FogNoise.ts)
 	readonly look = { sigma: new THREE.Vector3( 1, 1, 1 ), desaturate: 0.26, gain: 1, sunRayleigh: 0, rayleighWeight: 1, mieWeight: 1,
-		top: 10, width: 50, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0,
+		top: 10, width: 50, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0, groundLight: 1,
 		fogLayer: 0, droplet: 0, neutral: 0, scatter: 0, visibility: 2, coverHigh: FOG_NOISE.high() };
 	// the weather's share of the sun's direct light below the clouds and its diffuse gain
 	// (Weather.ts `directVisibility`, `ambientGain`), which scale the light's colours; its day sky
@@ -650,6 +607,8 @@ export class VolumetricHaze {
 	// the dome's own thin haze (the key's `skyDepth`), in the medium's depth per metre before each
 	// band's sigma: green's optical depth per metre over green's sigma (`skyHaze` with `dome`)
 	private readonly skyDepth = uniform( 0 );
+	// the share of the air's light laid over the land (the key's `groundLight`, `apply`)
+	private readonly groundLight = uniform( 1 );
 	/** A copy of the medium a reader built before the haze holds (the clouds' `haze`, which ends
 	 * the low deck's march where this medium closes: sky/CloudKernels.ts `makeMarch`), written with it. */
 	cloudMedium: HazeMedium | null = null;
@@ -721,7 +680,7 @@ export class VolumetricHaze {
 	// the composite's switches: the haze over the sky, tricubic, density anti-aliasing, the debug view
 	private readonly switches = uniform( new THREE.Vector4( 1, 1, 1, 0 ) );
 	// `probe`'s kernel and its buffers, built on its first call
-	private probeKernel: { input: THREE.StorageBufferNode<'vec4'>; heights: THREE.StorageBufferNode<'float'>; out: THREE.StorageBufferNode<'vec4'>; kernel: THREE.ComputeNode } | null = null;
+	private probeKernel: { input: THREE.StorageBufferNode<'vec4'>; heights: THREE.StorageBufferNode<'vec2'>; out: THREE.StorageBufferNode<'vec4'>; kernel: THREE.ComputeNode } | null = null;
 	// the render's size, the frame graph's (set in `apply`)
 	private resolution!: THREE.UniformNode<'vec2', THREE.Vector2>;
 
@@ -1206,8 +1165,10 @@ export class VolumetricHaze {
 	// `forward` its view depth per metre: the light volume sampled at reach (at most the grid's far
 	// end), the opacity exact from the medium's optical depth `depth` (before each band's sigma; or
 	// the grid's own with the density anti-aliasing off), each channel through its sigma and the
-	// band-to-display matrix.
-	private fogOver( colour: V3, q: V2, forward: F, reach: F, depth: F, drifted: boolean ): { result: V3; opacity: V3 } {
+	// band-to-display matrix. `ground`, given, is the share of the light laid over `colour` (1 keeps
+	// it whole), built only inside a branch the key's `groundLight` under 1 takes, a uniform branch
+	// (see `apply`): at 1 the result is the plain mix's.
+	private fogOver( colour: V3, q: V2, forward: F, reach: F, depth: F, drifted: boolean, ground?: () => F ): { result: V3; opacity: V3 } {
 
 		const { depth: D } = this.grid;
 		const at = min( reach.mul( forward ), this.far ).toVar();
@@ -1232,7 +1193,20 @@ export class VolumetricHaze {
 		const opacity = select( this.switches.z.greaterThan( 0.5 ), exact, held ).toVar();
 		// (the debug views: the visibility card alone, or the haze's light over black)
 		const under = select( this.switches.w.equal( 3 ), vec3( 0 ), colour );
-		const result = select( this.switches.w.equal( 1 ), lit, mix( under, lit, opacity ) );
+		let over = mix( under, lit, opacity );
+		if ( ground ) {
+
+			// (the light alone scaled, the transmittance kept: c ( 1 - a ) + lit a ground)
+			const scaled = over.toVar();
+			If( this.groundLight.lessThan( 1 ), () => {
+
+				scaled.assign( under.mul( vec3( 1 ).sub( opacity ) ).add( lit.mul( opacity ).mul( ground() ) ) );
+
+			} );
+			over = scaled;
+
+		}
+		const result = select( this.switches.w.equal( 1 ), lit, over );
 		return { result, opacity };
 
 	}
@@ -1359,19 +1333,22 @@ export class VolumetricHaze {
 	 * first call (none exists on a page that never calls it). A ray's `height` (metres over the sea)
 	 * starts it there instead of at the camera: the opacity is the medium's own along that ray, as
 	 * a camera there would see it, while the light stays the camera's volume's. A sky ray reads the
-	 * medium alone, without the dome's own thin haze (`skyHaze`'s `dome`, the key's `skyDepth`). For
-	 * a script that reads cells. */
-	async probe( renderer: THREE.WebGPURenderer, rays: readonly { direction: THREE.Vector3Like; distance?: number; height?: number }[] ): Promise<{ opacity: number[]; light: number[] }[]> {
+	 * medium alone, without the dome's own thin haze (`skyHaze`'s `dome`, the key's `skyDepth`). A
+	 * surface ray's light is the land's unless `sea` is set: the key's `groundLight` scales it as the
+	 * composite scales the light over the land (`apply`). For a script that reads cells. */
+	async probe( renderer: THREE.WebGPURenderer, rays: readonly { direction: THREE.Vector3Like; distance?: number; height?: number; sea?: boolean }[] ): Promise<{ opacity: number[]; light: number[] }[]> {
 
 		if ( rays.length > PROBE_RAYS ) throw new Error( `VolumetricHaze.probe: at most ${ PROBE_RAYS } rays` );
 		if ( ! this.probeKernel ) {
 
-			const input = instancedArray( PROBE_RAYS, 'vec4' ), heights = instancedArray( PROBE_RAYS, 'float' ), out = instancedArray( PROBE_RAYS * 2, 'vec4' );
+			const input = instancedArray( PROBE_RAYS, 'vec4' ), heights = instancedArray( PROBE_RAYS, 'vec2' ), out = instancedArray( PROBE_RAYS * 2, 'vec4' );
 			const kernel = Fn( () => {
 
 				const ray = input.element( instanceIndex ).toVar();
 				const d = normalize( ray.xyz ).toVar();
-				const from = heights.element( instanceIndex ).toVar();
+				// (x: the start's height; y: 1 over the sea, 0 over the land)
+				const start = heights.element( instanceIndex ).toVar();
+				const from = start.x;
 				// (the medium alone: not the dome's own haze, so the readings are the medium's opacity)
 				const sky = this.skyHaze( d, undefined, from, false );
 				// (a surface: the composite's ray, through the grid's own projection of d)
@@ -1379,7 +1356,8 @@ export class VolumetricHaze {
 				const clip = this.gridProjection.mul( vec4( view, 1 ) ).toVar();
 				const q = vec2( clip.x.div( clip.w ).mul( 0.5 ).add( 0.5 ), float( 0.5 ).sub( clip.y.div( clip.w ).mul( 0.5 ) ) );
 				const distance = max( ray.w, 0 ).toVar();
-				const surface = this.fogOver( vec3( 0 ), q, view.z.negate(), distance, distance.mul( meanExtinction( from, from.add( d.y.mul( distance ) ), this.layer, this.ground ) ), true );
+				const ground = () => float( 1 ).add( this.groundLight.sub( 1 ).mul( float( 1 ).sub( start.y ) ) );
+				const surface = this.fogOver( vec3( 0 ), q, view.z.negate(), distance, distance.mul( meanExtinction( from, from.add( d.y.mul( distance ) ), this.layer, this.ground ) ), true, ground );
 				const onSky = ray.w.lessThan( 0 ).toVar();
 				const opacity = select( onSky, vec3( 1 ).sub( sky.transmittance ), surface.opacity ).toVar();
 				const added = select( onSky, sky.light, surface.result ).toVar();
@@ -1397,7 +1375,8 @@ export class VolumetricHaze {
 		rays.forEach( ( ray, i ) => {
 
 			data.set( [ ray.direction.x, ray.direction.y, ray.direction.z, ray.distance ?? - 1 ], i * 4 );
-			from[ i ] = ray.height ?? this.origin.value.y;
+			from[ i * 2 ] = ray.height ?? this.origin.value.y;
+			from[ i * 2 + 1 ] = ray.sea ? 1 : 0;
 
 		} );
 		( input.value as THREE.StorageBufferAttribute ).needsUpdate = true;
@@ -1413,7 +1392,10 @@ export class VolumetricHaze {
 
 	}
 
-	/** `depth` is the linear view z of the nearest surface, the sea's included. `veil` returns the
+	/** `depth` is the linear view z of the nearest surface, the sea's included, and `opaqueDepth` the
+	 * opaque scene's (its r: sample 0's), which tell the land from the sea for the key's
+	 * `groundLight`: the haze's light over the land is scaled by it, over the sea and the sky never
+	 * (see the header, The light over the land). `veil` returns the
 	 * colour `background` seen through the rain along a view direction, in front of content at a
 	 * given distance, and the veil's opacity there in its alpha, which the result keeps (0 without
 	 * a veil); it is also given the haze's transmittance to that content (`background` is `color`
@@ -1421,7 +1403,7 @@ export class VolumetricHaze {
 	 * after the resolve, Pipeline.ts, where the veil is laid later along `viewRay`). The volumes are
 	 * imported into `graph`; `passes` then adds the kernels' passes. Called once, as the frame graph
 	 * is built. */
-	apply( color: V3, depth: THREE.Texture, sky: Sky, graph: GraphResources, veil?: ( direction: V3, distance: F, background: V3, transmittance: F ) => V4 ): V4 {
+	apply( color: V3, depth: THREE.Texture, opaqueDepth: THREE.Texture, sky: Sky, graph: GraphResources, veil?: ( direction: V3, distance: F, background: V3, transmittance: F ) => V4 ): V4 {
 
 		const { width: W, height: H } = this.grid;
 		this.resolution = graph.extent( { of: 'render' } );
@@ -1432,7 +1414,7 @@ export class VolumetricHaze {
 		};
 		this.visibilityKernels = [ this.buildVisibilityKernel( 0, sky ), this.buildVisibilityKernel( 1, sky ) ];
 		this.lightKernels = [ this.buildLightKernel( 0, sky.deckIrradianceNode, sky.clouds ), this.buildLightKernel( 1, sky.deckIrradianceNode, sky.clouds ) ];
-		const sceneDepth = texture( depth );
+		const sceneDepth = texture( depth ), opaque = texture( opaqueDepth );
 		return Fn( () => {
 
 			const q = uv().toVar();
@@ -1448,7 +1430,22 @@ export class VolumetricHaze {
 			const sky_ = z.lessThan( SKY_Z ).toVar();
 			// (the veil's distance: the surface's, 1e5 for the sky)
 			const distance = select( sky_, float( 1e5 ), z.div( view.z ) ).toVar();
-			const fogged = this.fogOver( color, q, forward, distance, distance.mul( meanExtinction( this.origin.y, this.origin.y.add( direction.y.mul( distance ) ), this.layer, this.ground ) ), true );
+			// The share of the light here while the key's `groundLight` is under 1 (the header, The light
+			// over the land): the sea's 1, the land's `groundLight`. The sea lies in front of the opaque
+			// surface (debug/RadianceAov.ts `isSea`), unless sample 0 sees the sky and the nearest sample
+			// stands over GROUND_SKYLINE plus the pixel's height there (`slack`): the island's skyline.
+			const ground = () => {
+
+				const opaqueZ = ( textureLoad( opaque, px ) as unknown as V4 ).r;
+				const sea = z.greaterThan( opaqueZ.add( SEA_STEP ) );
+				const height = this.origin.y.add( direction.y.mul( distance ) );
+				const slack = distance.mul( length( this.projectionInverse.mul( vec4( 0, float( 2 ).div( this.resolution.y ), 0, 0 ) ).xyz.div( viewFar.w ) ).div( length( ray ) ) );
+				const skyline = opaqueZ.lessThan( SKY_Z ).and( height.greaterThan( slack.add( GROUND_SKYLINE ) ) );
+				const land = select( sea.and( skyline.not() ), float( 0 ), float( 1 ) );
+				return float( 1 ).add( this.groundLight.sub( 1 ).mul( land ) );
+
+			};
+			const fogged = this.fogOver( color, q, forward, distance, distance.mul( meanExtinction( this.origin.y, this.origin.y.add( direction.y.mul( distance ) ), this.layer, this.ground ) ), true, ground );
 			// (the opacity view: the sky 2)
 			const result = select( this.switches.w.equal( 2 ), select( sky_, vec3( 2 ), fogged.opacity ), select( sky_, color, fogged.result ) );
 			// (the veil's: green's)
@@ -1555,6 +1552,7 @@ export class VolumetricHaze {
 		this.fogCover.value.set( FOG_NOISE.low(), look.coverHigh, look.top + look.width, FOG_NOISE.regionShare() );
 		this.fogShape.value.set( FOG_NOISE.rough(), FOG_NOISE.warp(), 0, 0 );
 		this.skyDepth.value = look.skyDepth / 1000 / Math.max( look.sigma.y, 1e-6 );
+		this.groundLight.value = look.groundLight;
 		const copy = this.cloudMedium;
 		if ( copy ) {
 
@@ -1699,6 +1697,7 @@ export class VolumetricHaze {
 		look.aerosolHeight = key.aerosolHeight;
 		look.aerosolTop = key.aerosolTop;
 		look.skyDepth = key.skyDepth;
+		look.groundLight = key.groundLight;
 		// (a key without a fog layer holds none)
 		look.fogLayer = key.fogLayer ?? 0;
 		look.droplet = key.droplet ?? 0;

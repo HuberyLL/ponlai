@@ -88,7 +88,7 @@ export function declarePasses( p: Pipeline ): void {
 	// (lighting/LocalLights.ts)
 	localLightsPass( g );
 	let { sceneColor, sceneDepth, linearDepth, opaqueColor, underwater, surfaceDepth, velocity, meterLight } = p.resources;
-	if ( TEMPORAL ) [ sceneColor, surfaceDepth, velocity, opaqueColor, meterLight ] = declareTemporalScene( p, hazeReads );
+	if ( TEMPORAL ) [ sceneColor, surfaceDepth, velocity, opaqueColor, meterLight, linearDepth ] = declareTemporalScene( p, hazeReads );
 	else {
 
 		// the vegetation's depth first, the opaque scene's copies (post/OpaquePrepass.ts), the
@@ -286,12 +286,14 @@ export function declarePasses( p: Pipeline ): void {
 
 	} );
 	// what the composite reads: the scene (after the rain, which may be skipped), the nearest
-	// surface's depth, the haze's light, the light shafts and the constants (the flare's
+	// surface's depth, the opaque scene's (which tells the land from the sea for the haze's light
+	// over the land), the haze's light, the light shafts and the constants (the flare's
 	// visibility, the rods' colour's scale)
 	const compositeReads = ( b: PassBuilder ) => {
 
 		b.readOptional( sceneColor );
 		b.read( surfaceDepth );
+		b.read( linearDepth );
 		for ( const h of hazeReads ) b.read( h );
 		for ( const h of shaftReads ) b.readOptional( h );
 		b.read( constants );
@@ -498,8 +500,8 @@ export function declarePasses( p: Pipeline ): void {
 // The opaque and water passes draw with the scene MRT (sceneMRT), the rain and the storm's spray
 // in the overlay pass with the overlay MRT, which keeps the motion of the surfaces under them
 // (Motion.ts). Returns the scene colour's, the nearest surface's, the velocity's, the opaque
-// copy's and the metering illuminance's last versions.
-function declareTemporalScene( p: Pipeline, hazeReads: ResourceHandle[] ): [ ResourceHandle, ResourceHandle, ResourceHandle, ResourceHandle, ResourceHandle ] {
+// copy's, the metering illuminance's and the opaque depth's last versions.
+function declareTemporalScene( p: Pipeline, hazeReads: ResourceHandle[] ): [ ResourceHandle, ResourceHandle, ResourceHandle, ResourceHandle, ResourceHandle, ResourceHandle ] {
 
 	const g = p.graph;
 	let { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, meterLight } = p.resources;
@@ -578,7 +580,7 @@ function declareTemporalScene( p: Pipeline, hazeReads: ResourceHandle[] ): [ Res
 	} );
 	// the nearest surface's depth, kept for the next frame (the resolve's; FSR keeps its own)
 	if ( p.resources.surfaceDepthPrev ) g.copyToPersistent( surfaceDepth, p.resources.surfaceDepthPrev );
-	return [ sceneColor, surfaceDepth, velocity, opaqueColor, meterLight ];
+	return [ sceneColor, surfaceDepth, velocity, opaqueColor, meterLight, linearDepth ];
 
 }
 

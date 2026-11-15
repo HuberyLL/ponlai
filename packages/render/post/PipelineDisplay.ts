@@ -205,7 +205,8 @@ export function buildDisplay( p: Pipeline, c: DisplayBuild ): void {
 	const constants = p.constants.output = g.color( 'postConstants', { size: { of: 'fixed', width: 1, height: 1 }, format: THREE.RGBAFormat, type: THREE.FloatType } );
 	const constant = textureLoad( texture( g.texture( constants ) ), ivec2( 0 ) ) as unknown as THREE.Node<'vec4'>;
 	// (in scene units: the haze, the shafts and the rods' colour are; hdr is pre-exposed again)
-	const aired = p.air.apply( sceneUnits( sceneTex.rgb ), tSurfaceDepth, sky, g, rainAir ? ( _d, _distance, background, transmittance ) => vec4( background, transmittance ) : veil );
+	// (the opaque scene's depth tells the land from the sea for the air's light over the land)
+	const aired = p.air.apply( sceneUnits( sceneTex.rgb ), tSurfaceDepth, p.textures.linearDepth, sky, g, rainAir ? ( _d, _distance, background, transmittance ) => vec4( background, transmittance ) : veil );
 	const shafts = p.shafts.build( tSurfaceDepth, sky, g );
 	// The sky's own per-frame constants, which the flare's visibility reads (the post constants
 	// below): the mean cloud transmittance over the sun's disc and over the moon's (Sky.ts
@@ -223,7 +224,7 @@ export function buildDisplay( p: Pipeline, c: DisplayBuild ): void {
 	// key's share at its lifted cosine and the sky's irradiance lent to the land, at its fill;
 	// Purkinje.ts `purkinjeScale`)
 	const openLight = u.purkinjeKey.add( luminance( sky.landIrradianceNode ).mul( shared.skyFill ) );
-	constantsMat.fragmentNode = vec4( purkinjeScale( look.purkinje.retina, openLight ), 0, 0, p.shafts.occlusion( tSurfaceDepth, g.extent( { of: 'render' } ), discCloud.r, discCloud.g ) );
+	constantsMat.fragmentNode = vec4( purkinjeScale( u.purkinjeRetina, openLight ), 0, 0, p.shafts.occlusion( tSurfaceDepth, g.extent( { of: 'render' } ), discCloud.r, discCloud.g ) );
 	p.constants.quad = new THREE.QuadMesh( constantsMat );
 	p.constants.quad.name = 'Post.Constants';
 	// with the rods' colour by night (Purkinje.ts, off: its strength 0; its retinal scale the

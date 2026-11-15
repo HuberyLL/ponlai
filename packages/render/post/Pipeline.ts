@@ -507,9 +507,10 @@ export class Pipeline {
 		// the white balance alone (`whiteBalance`), through which the desaturation's cool share reads
 		// its colours
 		balance: uniform( new THREE.Matrix3() ),
-		// the Purkinje shift's weight: the night's times its strength, and the key's share of the
-		// light its retinal scale is taken from (Purkinje.ts `purkinjeScale`)
-		purkinje: uniform( 0 ), purkinjeKey: uniform( 0 ),
+		// the Purkinje shift's weight: the night's times its strength, the key's share of the light
+		// its retinal scale is taken from and the retinal illuminance that light is taken to
+		// (Purkinje.ts `purkinjeScale`)
+		purkinje: uniform( 0 ), purkinjeKey: uniform( 0 ), purkinjeRetina: uniform( 1 ),
 		// the tone curve's input matrix (the white balance in it) and output matrix
 		toneIn: uniform( new THREE.Matrix3() ), toneOut: uniform( TONE_SPACE.output ),
 		// the tone curve's numerator's a, b, c and its denominator's d, e, f (ToneCurve.ts)
@@ -1227,6 +1228,7 @@ export class Pipeline {
 		const desaturation = keyed( D.desaturation, this.sky.elevation, night, this.desaturation, cloud, this.sky.rising );
 		u.desaturate.value = desaturation.amount; u.desaturateCool.value = desaturation.cool;
 		u.purkinje.value = night * D.purkinje.strength;
+		u.purkinjeRetina.value = D.purkinje.retina;
 		const keyColor = this.sky.keyColor;
 		u.purkinjeKey.value = ( 0.2126 * keyColor.r + 0.7152 * keyColor.g + 0.0722 * keyColor.b ) * liftedKeyHeight( this.sky.keyLift, this.sky.keyDir, this.sky.keyIsMoon ) / Math.PI;
 		// the day's and the clouded white (DayKeys.ts `keyed`, without the night), overcast's

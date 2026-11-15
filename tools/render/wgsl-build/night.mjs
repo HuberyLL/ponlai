@@ -35,7 +35,7 @@ export default function () {
 	const light = uniform( 0.01 );
 	const constants = new THREE.NodeMaterial();
 	constants.name = 'flare-visibility';
-	constants.fragmentNode = vec4( purkinjeScale( ISLAND_LOOK.display.purkinje.retina, light ), 0, 0, shafts.occlusion( depth, vec2( 4, 4 ), cloud.x, cloud.y ) );
+	constants.fragmentNode = vec4( purkinjeScale( float( ISLAND_LOOK.display.purkinje.retina ), light ), 0, 0, shafts.occlusion( depth, vec2( 4, 4 ), cloud.x, cloud.y ) );
 	const visible = uniform( 1 ), gain = uniform( 1 );
 	const flare = new THREE.NodeMaterial();
 	flare.name = 'flare';

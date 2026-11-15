@@ -18,6 +18,9 @@ are in [Look values](../reference/look-values.md#exposure).
   quiet, far less saturated than they are: the meadow a very dark, quiet green with a hint of cool,
   never black; the rock a cool grey that catches the moon and stands as the brightest thing on the
   island.
+- The night's air lays no light of its own on the land. The dark land's lift comes from the rods
+  alone, so the far land's shadows are no brighter or bluer than the near land's; the air's light
+  stays on the sea and the sky.
 - Under the moon, stone, sand and skin stay apart from the meadow and from each other in tone.
 - One night key serves every night's sky, so the deep night holds its exposure whatever the moon.
   The exposure keeps the moonlit island readable and the moon's path on the sea crisp.

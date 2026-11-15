@@ -213,6 +213,9 @@ export interface HazeKey {
 	// the aerosol layer's top (m; Infinity for none): a low deck's base
 	aerosolTop: number;
 	skyDepth: number;
+	// the share of the air's in-scattered light laid over the land it fogs: the sea and the sky keep
+	// all of it, its transmittance is the same everywhere (weather/VolumetricHaze.ts `apply`)
+	groundLight: number;
 	// the fog layer, optional so a key written elsewhere without them holds none:
 	// the share of the ground layer that is the fog layer (its density from `visibility`, its top
 	// `fogTop` and the width of its edge `fogWidth`), the share of the ground layer's light that is the droplets' (VolumetricHaze.ts), how

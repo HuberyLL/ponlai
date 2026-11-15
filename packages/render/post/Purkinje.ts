@@ -22,27 +22,31 @@
 //   M's cone rows' inverses. The constants are the ones Patry gives. Folded, the shader is the
 //   talk's: lmsr = LMSR_FROM_RGB c, c + RGB_FROM_GAIN rsqrt( 1 + lmsr.xyz ) lmsr.w.
 // - The model reads the light at the eye, and our night is lit far above a real one (a full moon
-//   gives the island about a sunset's light). So the colour is taken to the retinal illuminance of
-//   a real night first, and the change scaled back: white on open level ground under the night's
-//   light reads as one under a full moon (about 0.25 lx) through a dark-adapted pupil (7 mm), about
-//   3 trolands (`retina`; a grey card of 18 % about half a troland). The light on that ground
-//   (`purkinjeScale`'s input, Pipeline.ts) is a defined reference, the luminance of a white
-//   Lambertian card in the open, not what the meter reads (lighting/MeterLight.ts also takes the
-//   shadows, the sky's occlusion and the ground's bounce): the key's luminance at the lifted cosine
-//   level ground takes (lighting/KeyLift.ts `liftedKeyHeight`; the sun's at dusk, the moon's at
-//   night, under the weather's dimming but not the shadow of the cloud cover) plus the sky's
-//   irradiance lent to the land (Sky.ts `landIrradianceNode`) at its fill. Each pixel still
-//   turns as blue as its own light is dark against that card. Under a cloud cover the card stays
-//   brighter than the ground, so a cloudy or an overcast night turns bluer than a clear one at the
-//   same strength, as a darker night should; on a clear night the open meadow's blue is about the
-//   one the metered scale gave. The post constants' texel holds the scale (Pipeline.ts), once a
-//   frame. There the gains sit near 1 and the rods'
-//   change is several times the colour itself, a strong blue; `strength` takes it back to the
-//   look, and the night's weight fades it in (`night`, Pipeline's). The rods' light brightens the
-//   frame too.
-// - `strength` is 0.025 at night (`post.purkinje.strength@night`, 0 to 0.05; with the retinal
-//   illuminance, look/DisplayLook.ts `purkinje`); at 0 the shift adds nothing and the night's
-//   colour is the grade's and the white balance's.
+//   gives the island about a sunset's light). So the colour is taken to a retinal illuminance
+//   first, and the change scaled back: white on open level ground under the night's light is taken
+//   to `retina` trolands. That value sets where the lift starts: the cones' gains fall as the light
+//   at the eye rises, so lit white keeps little of the rods' change, and the darker a colour is
+//   against it the more the rods lift it and the bluer it turns. A look sets it (its display
+//   table's `purkinje`). Ours, 250, is far above a real moonlit night's few trolands, tuned to the
+//   shape of the dark tones on screen: before the tone curve the lit meadow gains about a fifth, a
+//   colour four stops below it about 1.35 times as much.
+//   The light on that ground (`purkinjeScale`'s input, Pipeline.ts) is a defined reference, the
+//   luminance of a white Lambertian card in the open, not what the meter reads
+//   (lighting/MeterLight.ts also takes the shadows, the sky's occlusion and the ground's bounce):
+//   the key's luminance at the lifted cosine level ground takes (lighting/KeyLift.ts
+//   `liftedKeyHeight`; the sun's at dusk, the moon's at night, under the weather's dimming but not
+//   the shadow of the cloud cover) plus the sky's irradiance lent to the land (Sky.ts
+//   `landIrradianceNode`) at its fill. Each pixel still turns as blue as its own light is dark
+//   against that card. Under a cloud cover the card stays brighter than the ground, so a cloudy or
+//   an overcast night turns bluer than a clear one at the same strength, as a darker night should.
+//   The post constants' texel holds the scale (Pipeline.ts), once a frame. Only the darkest tones'
+//   gains approach 1, where the rods' change is several times the colour itself, a strong blue;
+//   `strength` takes it back to the look, and the night's weight fades it in (`night`,
+//   Pipeline's). The rods' light brightens the frame too.
+// - `strength` (`post.purkinje.strength@night`, 0 to 0.4) and `retina`
+//   (`post.purkinje.retina@night`, 1 to 2000) are the look's (look/DisplayLook.ts `purkinje`), read
+//   every frame; at strength 0 the shift adds nothing and the night's colour is the grade's and the
+//   white balance's.
 // - The test mode: nothing the shift reads comes from the meter or from the frame's exposure (the
 //   key and the fill are functions of the clock, the weather and the tuning; the sky's irradiance
 //   is the environment's, which on a running page cross-fades between bakes as it does for every
@@ -57,17 +61,17 @@
 //   (a moonlit glint glows in the night's colour), the local tone's grid (its base and the pixel
 //   agree) and the grade. Under fsr3 the upscaler resolves the shifted image; the rain drawn after
 //   the resolve (taa, taau) leaves it out.
-import { Fn, If, dot, float, inverseSqrt, max, vec3 } from 'three/tsl';
+import { Fn, If, dot, inverseSqrt, max, vec3 } from 'three/tsl';
 import type * as THREE from 'three/webgpu';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 
-/** The colour's scale to the retinal illuminance of a real night (`purkinjeShift`'s `scale`), from
+/** The colour's scale to `retina`'s retinal illuminance (`purkinjeShift`'s `scale`), from
  * `retina`, the retinal illuminance of white on open level ground under the night's light (the
  * display's tables, look/DisplayLook.ts `purkinje`), and `light`, the luminance of that white in
  * scene units (see the header). */
-export const purkinjeScale = ( retina: number, light: F ) => float( retina ).div( max( light, 1e-12 ) );
+export const purkinjeScale = ( retina: F, light: F ) => retina.div( max( light, 1e-12 ) );
 
 // the receptors' responses from linear Rec.709: the cones' gain arguments 0.33 ( q_i + k_i q_R ) / m_i, then q_R
 // (computed offline from the published tables named above)
@@ -80,8 +84,9 @@ const FROM_GAIN_R = vec3( 8.42712, - 9.02804, 0.268173 );
 const FROM_GAIN_G = vec3( 1.53333, 6.29916, - 0.288388 );
 const FROM_GAIN_B = vec3( 17.3479, 17.2285, 1.5731 );
 
-/** The colour `c` (linear scene units; `scale` takes it to the retinal illuminance of a real night:
- * `purkinjeScale`) with the rods' change added, times `amount` (`c` itself while `amount` is 0, by day). */
+/** The colour `c` (linear scene units; `scale` takes it to the retinal illuminance `retina` sets:
+ * `purkinjeScale`) with the rods' change added, times `amount` (`c` itself while `amount` is 0,
+ * by day). */
 export const purkinjeShift = Fn( ( [ c, scale, amount ]: [ V3, F, F ] ) => {
 
 	const out = c.toVar();

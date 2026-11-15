@@ -19,13 +19,13 @@ import type { BloomKey, DesaturationKey, DisplayLook, Rgb } from './Look.ts';
 // `updateDisplay` keys them by the sun and the weather each frame, and the methods that read them
 // are their modules' (post/ToneCurve.ts, post/GradeLut.ts, post/PhysicalBloom.ts,
 // post/Purkinje.ts).
-// - The tables register their tunables (debug/Tune.ts) as they are created, under the names they
-//   always had (`post.shade.*`, `post.desaturate.*`, `post.white.*`, `post.bloom.*`,
-//   `post.purkinje.strength@night`); the cool share's edges and overcast's highlights register where
-//   the display chain builds the uniforms that hold them (post/PipelineDisplay.ts), and the tone
-//   curve and the two strengths on the pipeline's settings (post/Pipeline.ts `settings`). The tune
-//   table is one per process: on a debug page a second set made from another table reads the first
-//   one's tunables.
+// - The tables register their tunables (debug/Tune.ts) as they are created, under their names
+//   (`post.shade.*`, `post.desaturate.*`, `post.white.*`, `post.bloom.*`,
+//   `post.purkinje.<retina|strength>@night`); the cool share's edges and overcast's highlights
+//   register where the display chain builds the uniforms that hold them (post/PipelineDisplay.ts),
+//   and the tone curve and the two strengths on the pipeline's settings (post/Pipeline.ts
+//   `settings`). The tune table is one per process: on a debug page a second set made from another
+//   table reads the first one's tunables.
 
 export type { BloomKey };
 
@@ -85,9 +85,10 @@ export interface DisplayTables {
 	 * debug pages (debug/Tune.ts `post.bloom.<value>@<key>`); a tuned sky threshold leaves its knee
 	 * where the table puts it. */
 	readonly bloom: DayKeys<BloomKey>;
-	/** The rods' colour at night (post/Purkinje.ts): the retinal illuminance (trolands) of white on
-	 * open level ground under the night's light, and the strength the change is taken back by at
-	 * night. Tunable on debug pages (debug/Tune.ts): `post.purkinje.strength@night`. */
+	/** The rods' colour at night (post/Purkinje.ts): the retinal illuminance (trolands) white on open
+	 * level ground under the night's light is taken to, which sets where the rods' lift starts, and
+	 * the strength the change is taken back by at night. Read every frame. Tunable on debug pages
+	 * (debug/Tune.ts): `post.purkinje.retina@night`, `post.purkinje.strength@night`. */
 	readonly purkinje: { retina: number; strength: number };
 }
 
@@ -101,8 +102,8 @@ export function createDisplayTables( display: DisplayLook ): DisplayTables {
 	const whiteOvercast = tuneObject( { ...display.whiteOvercast },
 		{ r: 'post.white.r@overcast', g: 'post.white.g@overcast', b: 'post.white.b@overcast' }, whiteRange );
 	const bloom = tuneKeys( 'post.bloom', display.bloom, { skyThreshold: { min: 3, max: 40, scale: 'log' }, skyCap: { min: 100, max: 3000, scale: 'log' } } );
-	const purkinje = tuneObject( { ...display.purkinje }, { strength: 'post.purkinje.strength@night' },
-		{ strength: { min: 0, max: 0.05 } } );
+	const purkinje = tuneObject( { ...display.purkinje }, { retina: 'post.purkinje.retina@night', strength: 'post.purkinje.strength@night' },
+		{ retina: { min: 1, max: 2000, scale: 'log' }, strength: { min: 0, max: 0.4 } } );
 	return {
 		shadeContrast, desaturation,
 		coolShare: { ...display.coolShare },

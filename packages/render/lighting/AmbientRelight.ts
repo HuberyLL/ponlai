@@ -83,11 +83,12 @@ import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from './Prob
 //               island's receivers read it (AmbientSample.ts), the key's bounce on a face turned up
 //               is 0.79 % of level ground's direct light per unit of `sunBounce` at 62 degrees (the
 //               noon of the sun's earlier, higher path; it now culminates at 52), 0.74 % at 50, 0.67 % at 30, 0.63 % at 18 to 20, 0.60 to 0.61 % at 13 and 10 (the lift's
-//               floor) and 0.57 % at 4. At the day's `sunBounce` of 1 it makes 14 % of the ground's
+//               floor) and 0.57 % at 4. At `sunBounce` 1 (no grade) it makes 14 % of the ground's
 //               light in shade at 62 degrees, 12 % at 50, 8 % at 30, 5 % at 20, 3 % at 13 and 10 and
-//               1.6 % at 4; with `sunBounce` at 4.5, by the lit meadow, 0.3 m over the ground, the
-//               light from below was 2.5 to 3 times the light from above by a grove's edge at 50 to
-//               62 degrees, 1.8 at 30, 1.35 at 20 and 1.1 at 13 and 10.
+//               1.6 % at 4 (the clear day's table raises it from 30 down to 5.5 degrees:
+//               AmbientGrade.ts); with `sunBounce` at 4.5, by the lit meadow, 0.3 m over the
+//               ground, the light from below was 2.5 to 3 times the light from above by a grove's
+//               edge at 50 to 62 degrees, 1.8 at 30, 1.35 at 20 and 1.1 at 13 and 10.
 //   The groves' in-scatter (the light their leaves and culms scatter toward the probe, a part of
 //   the bounced visibility the bake keeps apart: world/AmbientProbes.ts) is baked under the sky
 //   over the crowns, which lights the shade a grove casts as it lights its sunward side; the key
@@ -224,8 +225,9 @@ const BOUNCE_GAIN = 9.4;
  * ratio to the sun's light can be set at every hour without changing the sky the eye sees. It sets
  * the key's illuminance at normal incidence against the ambient light's irradiance on open level
  * ground (with the ground's bounce). Set on the land's sky light without the fog layer (Sky.ts
- * `fogEnvironment`), with the key's bounce at 1 by day (AmbientGrade.ts): 1.19 at the low key and
- * at the high one. Measured in the evening on lit open ground, the key's illuminance at normal
+ * `fogEnvironment`), with the key's bounce at 1 (no grade; the clear day's table raises it from 30
+ * down to 5.5 degrees: AmbientGrade.ts): 1.19 at the low key and at the high one. Measured with
+ * the bounce at 1, in the evening on lit open ground, the key's illuminance at normal
  * incidence stands about 23 times the ambient light's irradiance there at 22 and at 12 degrees,
  * 24 at 40, 20 at 6 and about 18 at 52 (noon), and the key's direct light makes about 0.84 of
  * that ground's light at 22 degrees and 0.81 at 12. Taken with the fog layer's haze and its
