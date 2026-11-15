@@ -21,7 +21,6 @@ import { COX_MUNK } from './OceanSpectrum.ts';
 import type { ShoreWaves } from './ShoreWaves.ts';
 import type { StormSea } from './StormSea.ts';
 import type { SeaDetail } from './SeaDetail.ts';
-import { REFRACTION_GUARD } from './Refraction.ts';
 import { waveDamping } from './WaveDamping.ts';
 import type { Shared } from '../shared.ts';
 import type { SunShadow } from '../lighting/SunShadow.ts';
@@ -486,7 +485,7 @@ export interface WaterInputs {
 	linearDepth: THREE.Texture; // its view-space z: sample 0 (x) and the farthest sample (y)
 	depthPyramid: DepthPyramid; // that depth's pyramid of nearest and farthest depths (the reflection's trace)
 	underwater: THREE.Texture; // that colour under the sea, premultiplied by its weight, with mips (Pipeline.ts)
-	refraction: { color: THREE.Texture; depth: THREE.Texture }; // the refraction pass's image (Refraction.ts)
+	refraction: { color: THREE.Texture; depth: THREE.Texture; guard: THREE.UniformNode<'vec4', THREE.Vector4> }; // the refraction pass's image and its guard band (Refraction.ts)
 	size?: number;
 	res?: number;
 	quality?: Partial<WaterQuality>; // compile-time: read once, a change needs a new Water (a reload)
@@ -776,10 +775,10 @@ export class Water {
 		const sceneAt = ( q: V2 ) => sceneUnits( texture( sceneColor, q ).level( float( 0 ) ).rgb );
 		// The refraction pass's image at a screen uv, through its wider view (Refraction.ts): its
 		// colour, filtered (premultiplied by its coverage, alpha), and the view z of its nearest texel.
-		const G = REFRACTION_GUARD;
+		const G = refraction.guard; // ( sx, sy, cx, cy )
 		const refractionColor = texture( refraction.color ), refractionDepth = texture( refraction.depth );
 		const refractionSize = vec2( textureSize( refractionDepth ) as unknown as THREE.Node<'ivec2'> );
-		const refractionUV = ( q: V2 ) => vec2( q.x.sub( 0.5 ).div( G.sx ).add( 0.5 - G.cx / ( 2 * G.sx ) ), q.y.sub( 0.5 ).div( G.sy ).add( 0.5 + G.cy / ( 2 * G.sy ) ) );
+		const refractionUV = ( q: V2 ) => vec2( q.x.sub( 0.5 ).sub( G.z.mul( 0.5 ) ).div( G.x ).add( 0.5 ), q.y.sub( 0.5 ).add( G.w.mul( 0.5 ) ).div( G.y ).add( 0.5 ) );
 		const refractedAt = ( q: V2 ) => {
 
 			const r = refractionUV( q ).toVar();

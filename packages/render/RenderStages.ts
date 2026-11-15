@@ -996,7 +996,7 @@ export function createWater( render: RenderParts, { fields, landBox, seaShape, h
 		fft, sky, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves,
 		land: landBox, ...seaShape, sunShadow, storm: stormSea, detail: seaDetail,
 		sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, depthPyramid: pipeline.depthPyramid, underwater: pipeline.textures.underwater, quality: quality.water,
-		refraction: { color: pipeline.textures.refraction, depth: pipeline.textures.refractionDepth },
+		refraction: { color: pipeline.textures.refraction, depth: pipeline.textures.refractionDepth, guard: pipeline.refraction.guard },
 	} );
 	pipeline.seaLevel.value = shared.waterLevel.value;
 	// the boxes held so far (the plants', a game's props shown before the sea was made)

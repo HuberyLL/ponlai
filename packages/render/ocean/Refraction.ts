@@ -5,7 +5,7 @@
  */
 
 import * as THREE from 'three/webgpu';
-import { float } from 'three/tsl';
+import { float, uniform } from 'three/tsl';
 
 // The water's refraction source: the scene below the water only, drawn at half density.
 //
@@ -42,12 +42,25 @@ import { float } from 'three/tsl';
 //
 // The view is wider than the screen (a guard band): light bends down into the water, so a refracted
 // ray lands on floor lower on the screen than the pixel it is seen through, and near the bottom edge
-// below the screen. The band holds that floor, so the water never has to invent it. GUARD: the extra
-// view in NDC units (1 = half the screen) on each side. tidewater widens the sides by 0.15; here
-// they take 0.3, which makes the view as much wider as it is taller (1.3 times both ways), so the
-// target is one of the graph's render-relative size classes (one scale for both axes).
-// REFRACTION_GUARD is the clip-space scale ( sx, sy ) and centre ( cx, cy ):
-// ndc_refraction = ( ndc_screen - c ) / s, as the water maps its lookups.
+// below the screen. The band holds that floor, so the water never has to invent it. The extra view
+// is in NDC units (1 = half the screen): GUARD_SIDE on the left and the right (tidewater widens them
+// by 0.15; here 0.3, so the target's width is a render-relative size class), none above, and below
+// as far as this frame's refracted ends reach (`setGuard`). How far that is depends on the camera
+// alone: from the island camera's height a few per cent of the screen, but seen low over the sea,
+// and above all looking up a little, a refracted ray from the bottom edge runs down to the floor
+// several screen heights below it (four and more NDC units below the edge with the camera half a
+// metre over the sea, pitched up 20 degrees). A fixed band either misses those ends, which then
+// read the band's last row stretched down the screen as stripes with a hard line where the band
+// ends, or spends its texels in every view on a reach only a few need. So the band below is
+// measured every frame on the CPU, from the camera: the bottom half of the screen's rays to the
+// level sea, refracted through the flat surface and tilted by REACH_SLOPE (as the reach pass and the
+// water bound them: kept heading down, at most MAX_PATH metres), their ends projected; the farthest
+// below the edge, with a margin, between GUARD_BELOW and GUARD_BELOW_MAX. The target keeps its size,
+// so a deeper band lowers the image's density down the screen (by a fifth at a band of one, a half
+// at three): only the views that look past the edge pay for it. The mask (Pipeline.ts) still leaves
+// unshaded what lies past the lookups' measured reach, so a deeper band does not shade more.
+// `guard` is the clip-space scale ( sx, sy ) and centre ( cx, cy ) as a uniform:
+// ndc_refraction = ( ndc_screen - c ) / s, as the water and the mask map their lookups.
 
 /** Fragments above this height over the sea level are left out (m): the troughs and crests move
  * the real surface around it. */
@@ -56,33 +69,96 @@ export const CLIP_MARGIN = 0.4;
 /** The layer of what the refraction's camera draws. */
 export const REFRACTED_LAYER = 7;
 
-const GUARD = { left: 0.3, right: 0.3, bottom: 0.6, top: 0 };
-export const REFRACTION_GUARD = {
-	cx: ( GUARD.right - GUARD.left ) / 2, cy: ( GUARD.top - GUARD.bottom ) / 2,
-	sx: 1 + ( GUARD.left + GUARD.right ) / 2, sy: 1 + ( GUARD.top + GUARD.bottom ) / 2,
-};
+/** The band beside the screen, left and right (NDC units). */
+const GUARD_SIDE = 0.3;
+/** The band below the screen at its least, and at its most (NDC units): the most covers a camera half a
+ * metre over the sea, pitched up 30 degrees, under a vertical view of 65 degrees. */
+export const GUARD_BELOW = 0.6, GUARD_BELOW_MAX = 6;
+/** The band's horizontal scale, fixed: the target's width follows it. */
+const SCALE_X = 1 + GUARD_SIDE;
+/** The bound of the band on each side (NDC units), for what must cover all of it (the clusters of the
+ * local lights, LocalLightClusters.ts). */
+export const REFRACTION_GUARD_BOUND = { left: GUARD_SIDE, right: GUARD_SIDE, bottom: GUARD_BELOW_MAX, top: 0 } as const;
 
-/** The target's size: half the render's pixel density over the wider view. */
-export const REFRACTION_SIZE = { of: 'render', scale: 0.5 * REFRACTION_GUARD.sx, min: 1 } as const;
-if ( REFRACTION_GUARD.sx !== REFRACTION_GUARD.sy ) throw new Error( 'Refraction: the guard band must widen both axes alike' );
+/** The target's size: half the render's pixel density across the wider view (and down it at the
+ * least band). */
+export const REFRACTION_SIZE = { of: 'render', scale: 0.5 * SCALE_X, min: 1 } as const;
 
-const guardMatrix = new THREE.Matrix4().set(
-	1 / REFRACTION_GUARD.sx, 0, 0, - REFRACTION_GUARD.cx / REFRACTION_GUARD.sx,
-	0, 1 / REFRACTION_GUARD.sy, 0, - REFRACTION_GUARD.cy / REFRACTION_GUARD.sy,
-	0, 0, 1, 0,
-	0, 0, 0, 1,
-);
+// The band's measure (setGuard): the surface's tilt besides the flat sea, as the reach pass follows it
+// (Pipeline.ts REACH_SLOPE), the water's bounds on a refracted ray (Water.ts: kept heading down, at
+// most MAX_PATH metres to its lookup), the margin past the farthest end, and the screen's points
+// sampled (a grid over its bottom half: the ends that leave it lie under it).
+const TILT = 0.3, DOWN = - 0.08, MAX_PATH = 80, MARGIN = 0.05, IOR = 1.333;
+const SAMPLES: [ number, number ][] = [];
+for ( let j = 0; j <= 4; j ++ ) for ( let i = 0; i <= 8; i ++ ) SAMPLES.push( [ i / 4 - 1, - 1 + j / 8 ] );
+
+const _dir = new THREE.Vector3(), _eye = new THREE.Vector3(), _surface = new THREE.Vector3(), _n = new THREE.Vector3();
+const _along = new THREE.Vector3(), _across = new THREE.Vector3(), _t = new THREE.Vector3(), _end = new THREE.Vector3();
+const _clip = new THREE.Vector4();
 
 /** The refraction pass's camera: the scene camera, as it draws this frame, through the guard band. */
 export class RefractionView {
 
 	readonly camera = new THREE.PerspectiveCamera();
+	/** The band's clip-space ( sx, sy, cx, cy ) this frame (setGuard). */
+	readonly guard = uniform( new THREE.Vector4( SCALE_X, 1 + GUARD_BELOW / 2, 0, - GUARD_BELOW / 2 ) );
+	private readonly guardMatrix = new THREE.Matrix4();
 
 	constructor() {
 
 		this.camera.layers.set( REFRACTED_LAYER );
 		this.camera.matrixAutoUpdate = false;
 		this.camera.matrixWorldAutoUpdate = false;
+		this.setBelow( GUARD_BELOW );
+
+	}
+
+	/** At the frame's start, before anything reads the band: the band below the screen that this
+	 * frame's refracted ends reach (see the header), from the camera without its jitter. */
+	setGuard( camera: THREE.Camera, seaLevel: number ): void {
+
+		_eye.setFromMatrixPosition( camera.matrixWorld );
+		let below = GUARD_BELOW;
+		if ( _eye.y > seaLevel ) {
+
+			const projection = camera.projectionMatrix, view = camera.matrixWorldInverse;
+			for ( const [ x, y ] of SAMPLES ) {
+
+				_dir.set( x, y, 0.5 ).applyMatrix4( camera.projectionMatrixInverse ).applyMatrix4( camera.matrixWorld ).sub( _eye ).normalize();
+				if ( _dir.y > - 1e-3 ) continue;
+				_surface.copy( _eye ).addScaledVector( _dir, ( _eye.y - seaLevel ) / - _dir.y );
+				_along.set( _dir.x + 1e-5, 0, _dir.z ).normalize();
+				_across.set( - _along.z, 0, _along.x );
+				for ( const [ a, b ] of [ [ 0, 0 ], [ 1, 0 ], [ - 1, 0 ], [ 0, 1 ], [ 0, - 1 ] ] ) {
+
+					_n.set( 0, 1, 0 ).addScaledVector( _across, a * TILT ).addScaledVector( _along, b * TILT ).normalize();
+					if ( ! refract( _dir, _n, 1 / IOR, _t ) ) continue;
+					_t.y = Math.min( _t.y, DOWN );
+					_t.normalize();
+					_end.copy( _surface ).addScaledVector( _t, MAX_PATH );
+					_clip.set( _end.x, _end.y, _end.z, 1 ).applyMatrix4( view ).applyMatrix4( projection );
+					// (an end behind the eye cannot be on the image: the band then takes its most)
+					below = Math.max( below, _clip.w > 1e-3 ? - 1 - _clip.y / _clip.w + MARGIN : GUARD_BELOW_MAX );
+
+				}
+
+			}
+
+		}
+		this.setBelow( Math.min( below, GUARD_BELOW_MAX ) );
+
+	}
+
+	private setBelow( below: number ): void {
+
+		this.guard.value.set( SCALE_X, 1 + below / 2, 0, - below / 2 );
+		const g = this.guard.value;
+		this.guardMatrix.set(
+			1 / g.x, 0, 0, - g.z / g.x,
+			0, 1 / g.y, 0, - g.w / g.y,
+			0, 0, 1, 0,
+			0, 0, 0, 1,
+		);
 
 	}
 
@@ -93,12 +169,23 @@ export class RefractionView {
 		const c = this.camera, scene = camera as THREE.PerspectiveCamera;
 		c.matrixWorld.copy( camera.matrixWorld );
 		c.matrixWorldInverse.copy( camera.matrixWorldInverse );
-		c.projectionMatrix.multiplyMatrices( guardMatrix, camera.projectionMatrix );
+		c.projectionMatrix.multiplyMatrices( this.guardMatrix, camera.projectionMatrix );
 		c.projectionMatrixInverse.copy( c.projectionMatrix ).invert();
 		c.near = scene.near;
 		c.far = scene.far;
 
 	}
+
+}
+
+// Snell's refraction of the unit direction `d` through the unit normal `n` at the ratio `eta`, into
+// `out`; false under total internal reflection (GLSL's refract).
+function refract( d: THREE.Vector3, n: THREE.Vector3, eta: number, out: THREE.Vector3 ): boolean {
+
+	const c = d.dot( n ), k = 1 - eta * eta * ( 1 - c * c );
+	if ( k < 0 ) return false;
+	out.copy( d ).multiplyScalar( eta ).addScaledVector( n, - ( eta * c + Math.sqrt( k ) ) );
+	return true;
 
 }
 

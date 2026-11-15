@@ -33,7 +33,7 @@ import { ambientSkyVisibility } from '../lighting/AmbientSample.ts';
 import { liftedKeyHeight } from '../lighting/KeyLift.ts';
 import { duskForce } from '../sky/DayCycle.ts';
 import type { Rain } from '../weather/Rain.ts';
-import { CLIP_MARGIN, RefractionView, REFRACTION_GUARD, REFRACTION_SIZE } from '../ocean/Refraction.ts';
+import { CLIP_MARGIN, RefractionView, REFRACTION_SIZE } from '../ocean/Refraction.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { whiteBalance } from './ToneSpace.ts';
 import { checkToneCurve, solveToneCurve, type ToneCurve } from './ToneCurve.ts';
@@ -884,7 +884,7 @@ export class Pipeline {
 		// (refractionReach, the largest of the columns or rows around; below a corner, the sideways
 		// spill of the ends below the screen as well), grown by REACH_MARGIN for the floor's slopes
 		// and the waves' beyond the reach's tilt.
-		const G = REFRACTION_GUARD;
+		const G = this.refraction.guard; // ( sx, sy, cx, cy ), this frame's (Refraction.ts setGuard)
 		const refractionSize = g.extent( REFRACTION_SIZE );
 		const tReach = texture( g.texture( refractionReach ) );
 		const maskMat = new THREE.NodeMaterial();
@@ -893,7 +893,7 @@ export class Pipeline {
 		maskMat.fragmentNode = Fn( () => {
 
 			const r = screenCoordinate.xy.div( refractionSize );
-			const sx = r.x.mul( 2 ).sub( 1 ).mul( G.sx ).add( G.cx ), sy = float( 1 ).sub( r.y.mul( 2 ) ).mul( G.sy ).add( G.cy );
+			const sx = r.x.mul( 2 ).sub( 1 ).mul( G.x ).add( G.z ), sy = float( 1 ).sub( r.y.mul( 2 ) ).mul( G.y ).add( G.w );
 			const q = vec2( sx.mul( 0.5 ).add( 0.5 ), float( 0.5 ).sub( sy.mul( 0.5 ) ) ).toVar();
 			const inside = q.x.greaterThan( 0 ).and( q.x.lessThan( 1 ) ).and( q.y.greaterThan( 0 ) ).and( q.y.lessThan( 1 ) );
 			// the reach past an edge around texel index k (a column for below, a row for the sides)
@@ -1088,6 +1088,8 @@ export class Pipeline {
 		// the P the last reading asks for, before the rests read the epoch it may bump
 		preExposure.beginFrame();
 		camera.updateMatrixWorld();
+		// the refraction's band below the screen, before the passes that read it
+		this.refraction.setGuard( camera, this.seaLevel.value );
 		u.projInv.value.copy( ( camera as THREE.PerspectiveCamera ).projectionMatrixInverse );
 		u.cameraWorld.value.copy( camera.matrixWorld );
 		u.proj.value.copy( camera.projectionMatrix );
