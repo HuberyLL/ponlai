@@ -1,21 +1,24 @@
 import * as THREE from 'three/webgpu';
-import { attribute, float, mix, mx_noise_float, positionGeometry, smoothstep, step, varying, vec3 } from 'three/tsl';
+import { attribute, float, fwidth, mix, mx_noise_float, positionGeometry, smoothstep, vec3 } from 'three/tsl';
 import { GroundBounceLightingModel, CANOPY_SHADE, receiveScreenAO, receiveScreenShadow, screenThickness, type Shared, CROWN_DRAG, branchBend, mainBend, useSpecular, useVegetationMotion, placeVertex, type PlantDraw, type PlantInstances, IDENTITY_COLOUR, LeafPainter, leafMaterial as treeLeaves, plantTint, type LeafAtlas, type PlantTint, rootHash, writeMeter, tuneUniform } from '../../render/index.ts';
 import { mulberry32 } from '../../render/data.ts';
-import { CULM, LEAF_COLOURS, LEAF_SHARE, LEAF_UNDER, PURPLE_CULMS } from './BambooColours.ts';
+import { CULM, LEAF_COLOURS, LEAF_SHARE, LEAF_UNDER, MOTTLE, NODE_RING } from './BambooColours.ts';
 import { GROVES } from './BambooGroves.ts';
 
 // The bamboo's surfaces (Bamboo.ts): its culms and its leaves.
 //
-// Culms: smooth with a soft sheen, a mid to dark green: fresh the first year, then duller in
-// blotches that spread until the culm is a dull green (the culm's age, from its `culm` attribute,
-// against a noise stretched along the culm); a thin pale ring of wax just under each node, a fine
-// streaking along the grain. On a minority of the old culms (`PURPLE_CULMS`, by a hash of the foot)
-// the age turns a dim dusty purple instead, the island's old lore on a few stems, at the same
-// lightness, so the grove stays one family of green. They are the plants' own colour: darker than
-// a lit crown, the same value old or young, stems that read dark against the light and lit where
+// Culms: smooth with a soft sheen, a warm olive green (BambooColours.ts CULM): fresh the first year,
+// then darker and browner in blotches that spread until the culm is the old colour (the
+// culm's age, from its `look` x, against a noise stretched along the culm); on the old culms a
+// dull brown mottle in soft patches of a few centimetres to a few tens (MOTTLE), its cover growing
+// with the age and thinning up the culm; a thin pale yellowish ring at each node with a darker band
+// above it (NODE_RING), a paler band of wax just under it, a fine streaking along the grain; each
+// culm a little lighter or darker than the next (`CULM_TINT`, by a hash of its foot). They are the
+// plants' own colour: darker than a lit crown, stems that read dark against the light and lit where
 // the sun finds them, never the palest thing in a grove. Their specular is close to a leaf's
 // (`CULM_F0`), a smooth cuticle.
+// The node's ring is narrower than a pixel at a distance: where `fwidth` of the internode's phase
+// says so, it fades to its mean over the internode, so a far culm shows no bands.
 // The sky reaches a culm's lower part only through its grove's canopy, so a grove is dark inside
 // and its culms light where the sun finds them: the ambient volume's irradiance
 // (lighting/AmbientSample.ts) sees the grove and darkens it, read at the culm's own normal, so a
@@ -44,10 +47,15 @@ const CULM_F0 = 0.016;
 const CULM_SHADE = { foot: 0.05, footHeight: 1 } as const;
 
 /** Each culm's own tint over its leaves (TreeSurfaces.ts plantTint): a little cooler, neutral, a
- * little yellower, by the culm's hash; and the leaves' colour matrix. The culms' wood takes only
- * its matrix (no leaf there). */
+ * little yellower, by the culm's hash; and the leaves' colour matrix. */
 export const BAMBOO_TINT: PlantTint = { keys: [ [ 0.47, 0.5, 0.52 ], [ 0.5, 0.5, 0.5 ], [ 0.54, 0.52, 0.46 ] ], keep: 0.4, matrix: IDENTITY_COLOUR };
-const CULM_TINT: PlantTint = { ...BAMBOO_TINT, matrix: IDENTITY_COLOUR };
+/** Each culm's own lightness on its wood: 0.85 to 1.15 times by a hash of its foot (overlay keys
+ * about 0.5), apart from its leaves' tint. */
+const CULM_TINT: PlantTint = { keys: [ [ 0.425, 0.425, 0.425 ], [ 0.5, 0.5, 0.5 ], [ 0.575, 0.575, 0.575 ] ], keep: 0, matrix: IDENTITY_COLOUR };
+
+/** The mottle's noise: two octaves of MaterialX's Perlin noise, their sum's standard deviation
+ * (measured over 400 000 points), which sets the threshold for a cover. */
+const MOTTLE_SD = 0.29;
 
 /** The bamboo's wind: the culms' sway rate (swings a metre of the plants' travel, Deform.ts
  * mainBend: 0.9 Hz on a fair day), the drag's exponent of the wind, its leaved crown's
@@ -69,17 +77,34 @@ export function culmMaterial( shared: Shared, plants: PlantInstances ): THREE.Me
 	// blotches along the culm, through which its age spreads: on the prototype's rest
 	// position (so they hold still on a swaying culm) moved by the culm's foot (so no two culms of a
 	// prototype share them)
+	// the node's ring: the phase's change across a pixel, taken first (a derivative, in uniform
+	// control flow)
+	// (floored: on the branches the phase is constant, and smoothstep's edges must differ)
+	const across = fwidth( phase ).max( 1e-4 ).toVar();
 	const grain = positionGeometry.add( v.footVarying );
 	const blotch = mx_noise_float( grain.mul( vec3( 22, 2.5, 22 ) ) ).mul( 0.5 ).add( 0.5 );
 	const aged = smoothstep( blotch.sub( 0.18 ), blotch.add( 0.18 ), age );
-	// the minority: a hash of the foot, taken in the vertex stage so a culm is one or the other
-	// from end to end, whatever the interpolation does to a varying foot
-	const oldPurple = varying( float( 1 ).sub( step( PURPLE_CULMS, rootHash( v.foot.xz ) ) ), 'vCulmPurple' );
-	const ageEnd = mix( vec3( ...CULM.dull ), vec3( ...CULM.purple ), oldPurple );
+	// the brown mottle: soft patches over the noise's threshold for the cover the culm's age and
+	// height give (the normal quantile, Schmeiser's approximation, times the noise's deviation)
+	const mottleNoise = mx_noise_float( grain.mul( vec3( 4, 2, 4 ) ) ).add( mx_noise_float( grain.mul( vec3( 9.6, 4.8, 9.6 ) ).add( vec3( 31.7, 11.3, 5.1 ) ) ).mul( 0.5 ) );
+	const cover = age.mul( MOTTLE.cover ).mul( mix( float( 1 ), float( MOTTLE.top ), smoothstep( 0.15, 0.85, eta ) ) ).clamp( 1e-4, 0.5 );
+	const threshold = float( 1 ).sub( cover ).pow( 0.14 ).sub( cover.pow( 0.14 ) ).mul( 4.91 * MOTTLE_SD );
+	const mottle = smoothstep( threshold.sub( 0.05 ), threshold.add( 0.05 ), mottleNoise );
 	const streak = mx_noise_float( grain.mul( vec3( 160, 1.2, 160 ) ) ).mul( 0.12 ).add( 1 );
 	// the ring of wax just under the node above
 	const wax = smoothstep( 0.9, 0.96, phase ).mul( float( 1 ).sub( smoothstep( 0.985, 1, phase ) ) ).mul( 0.5 );
-	material.colorNode = plantTint( mix( mix( vec3( ...CULM.green ), ageEnd, aged ).mul( streak ), vec3( ...CULM.wax ), wax ), rootHash( v.footVarying.xz ), float( 0 ), CULM_TINT );
+	// the node's pale ring at the internode's foot and the darker band over it, faded to their mean
+	// where the ring is under two pixels wide and gone to it at one
+	const R = NODE_RING.width;
+	const ring = float( 1 ).sub( smoothstep( across.negate().add( R ), across.add( R ), phase ) );
+	const band = smoothstep( across.negate().add( R ), across.add( R ), phase ).mul( float( 1 ).sub( smoothstep( across.negate().add( 2 * R ), across.add( 2 * R ), phase ) ) );
+	const light = vec3( ...NODE_RING.light );
+	const rings = mix( vec3( 1 ), light, ring ).mul( mix( float( 1 ), float( NODE_RING.dark ), band ) );
+	const ringsMean = vec3( ...NODE_RING.light.map( ( l ) => 1 + ( l - 1 ) * R + ( NODE_RING.dark - 1 ) * R ) );
+	const node = mix( rings, ringsMean, smoothstep( 0.5 * R, R, across ) );
+	const wood = mix( mix( vec3( ...CULM.green ), vec3( ...CULM.old ), aged ), vec3( ...CULM.mottle ), mottle ).mul( streak );
+	// (the foot's hash on z, x: apart from the wind's phase, Deform.ts, which hashes x, z)
+	material.colorNode = plantTint( mix( wood, vec3( ...CULM.wax ), wax ).mul( node ), rootHash( v.footVarying.zx ), float( 1 ), CULM_TINT );
 	material.roughnessNode = mix( mix( float( 0.62 ), float( 0.55 ), aged ), float( 0.75 ), wax );
 	useSpecular( material, float( CULM_F0 ) );
 	material.name = 'bamboo culms';

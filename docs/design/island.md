@@ -205,10 +205,11 @@ returns:
 - No placement rule: it stands at the cliff's edge as anywhere else.
 - Its culms are tall and slender, bare to about half their height, their leaves narrow and in loose
   drooping layers, so the culms show from above between them.
-- Its stems are a mid to dark green, one family with its leaves and the meadow, and most of the
-  time darker than the crowns. A minority of old culms turn a dim dusty purple at the same
-  lightness, so the purple of the old text shows up close and the grove still reads as one green,
-  by its light and shade.
+- Its stems are a warm olive green, one family with its leaves and the meadow, and darker than the
+  lit crowns. The old culms are darker and browner, mottled brown low down; each node
+  carries a thin pale ring with a darker band above it, and the culms differ a little in
+  lightness, so a grove seen from inside is not a fence of one green. The old text gives the
+  bamboo its name; no culm is purple.
 - Its leaves are nearly as matte as the meadow's blades: no pale sheen over a crown, whose lit
   leaves stay a plain green and whose depth stays dark. The inner leaves of a crown and the crowns
   deep in a grove are darker.

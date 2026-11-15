@@ -11,14 +11,12 @@ import type { WorldData } from './types.ts';
 //
 // Penglai's bamboo (浮筠之簳): "green leaves, purple stems, seeds as big as pearls" (Wang Jia, Shiyi
 // ji, book 10, on Penglai), the one plant that text gives the island itself, the wind in its leaves
-// ringing like bells and chimes. Its real kin is the purple (black) bamboo, Phyllostachys nigra: a
-// running bamboo whose culms come up green and turn purple-black in their second or third year,
-// a white bloom of wax under each node, the narrow leaves in fans at the twigs' ends. It grows over
-// the whole island in groves and single culms (BambooGroves.ts: where each culm stands, its
-// height, girth, age, lean and bow); this module builds the culms there. The text gives the
-// bamboo its origin, not its look: here the stems are a mid to dark green, the leaves' family, and
-// a dim dusty purple stays on a minority of old culms at the same lightness, the old lore kept on a
-// few stems (BambooMaterials.ts).
+// ringing like bells and chimes. The text gives the bamboo its name, not its look. Its kin here is a
+// green running bamboo of the genus Phyllostachys: culms that come up a fresh green and age to a
+// darker, browner olive, mottled brown low down, a pale ring at each node and a bloom of wax under
+// it, the narrow leaves in fans at the twigs' ends. It grows over the whole island in groves and
+// single culms (BambooGroves.ts: where each culm stands, its height, girth, age, lean and bow); this
+// module builds the culms there, the material colours them (BambooMaterials.ts).
 //
 // A culm's form, after groves of Phyllostachys:
 // - Straight internodes, short at the foot and longer up the culm (about three times its girth), a

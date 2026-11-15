@@ -85,7 +85,7 @@
 //   Underwater.ts's, and the probes there carry only the geometry (the water's surface lets the sky
 //   through, no attenuation).
 
-import { CULM, LEAF_COLOURS, LEAF_SHARE, PURPLE_CULMS } from './BambooColours.ts';
+import { CULM, LEAF_COLOURS, LEAF_SHARE, MOTTLE } from './BambooColours.ts';
 import { GROVES, culmAt, groveAt } from './BambooGroves.ts';
 import { islandSurfaceHeight, solidSide, ISLAND_BOTTOM, ISLAND_PEAK, ISLAND_TOP, type Footprint, type HeightFn } from './WorldShapes.ts';
 import { type Bounds, smoothstep, bodyReflectance, META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis, type AmbientLattice } from '../../render/data.ts';
@@ -125,11 +125,13 @@ const SAND = FLOOR_ALBEDO.sand.map( c => c * FLOOR_ALBEDO.gain * FLOOR_ALBEDO.sa
 // it, R( 0- ) = 0.33 bb / ( a + bb ), of the sea's own water (ocean/SeaOptics.ts; GroundBounce.ts takes
 // the same through the surface)
 const WATER_BODY = bodyReflectance();
-// the culms: BambooColours.ts CULM, green to the age's end by the groves' age mix (BambooGroves.ts
-// plantCulms: a fifth new, a fifth and more between, the rest old), the end dull green on most
-// culms and dusty purple on PURPLE_CULMS of them
+// the culms: BambooColours.ts CULM, green to the old colour by the groves' mean age (BambooGroves.ts
+// plantCulms: a fifth new, a fifth and more between, the rest old), then the brown mottle over the
+// cover that mean age gives (MOTTLE: its cover at the foot, thinning to `top` of it between 0.15
+// and 0.85 of the culm's height, averaged here as a straight ramp)
 const AGED_SHARE = 0.22 * 0.55 + 0.58;
-const CULM_MEAN = [ 0, 1, 2 ].map( ( c ) => CULM.green[ c ] * ( 1 - AGED_SHARE ) + ( CULM.dull[ c ] * ( 1 - PURPLE_CULMS ) + CULM.purple[ c ] * PURPLE_CULMS ) * AGED_SHARE );
+const MOTTLE_SHARE = AGED_SHARE * MOTTLE.cover * ( 0.15 + 0.7 * ( 1 + MOTTLE.top ) / 2 + 0.15 * MOTTLE.top );
+const CULM_MEAN = [ 0, 1, 2 ].map( ( c ) => ( CULM.green[ c ] * ( 1 - AGED_SHARE ) + CULM.old[ c ] * AGED_SHARE ) * ( 1 - MOTTLE_SHARE ) + CULM.mottle[ c ] * MOTTLE_SHARE );
 // the leaves: BambooColours.ts LEAF_COLOURS (sRGB) by LEAF_SHARE, in linear; a bamboo leaf lets
 // through about a third of what it reflects in the visible, so its scattering albedo is its
 // reflectance times 1.3
