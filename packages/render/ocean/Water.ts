@@ -1076,7 +1076,7 @@ export class Water {
 			const widen = ( g: V2 ) => {
 
 				const px = max( length( g.mul( depthSize ) ), 1e-3 );
-				return g.mul( sqrt( px.mul( px ).add( blur.mul( blur ) ) ).div( px ) ).toVar();
+				return g.mul( sqrt( px.mul( px ).add( blur.mul( blur ) ) ).div( px ) );
 
 			};
 			const uvRdx = vec2( 0 ).toVar().assign( dFdx( uvR ) ), uvRdy = vec2( 0 ).toVar().assign( dFdy( uvR ) );
