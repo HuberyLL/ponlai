@@ -2,9 +2,9 @@ import * as THREE from 'three/webgpu';
 import type { Pipeline } from '../post/Pipeline.ts';
 import { readTexture } from './RadianceAov.ts';
 
-// Where a paused frame is compared within the held tolerance: the cells of the frame the sea's
-// reflection reaches.
+// Reads where a paused frame is compared within the held tolerance.
 //
+// The region is the cells of the frame the sea's reflection reaches.
 // The sea's reflection (ocean/SeaReflection.ts) averages a fixed sequence of frames of the opaque
 // image and then holds its result. On a paused page under MSAA a few of those frames can differ in
 // their last bits from load to load (the browser's or the driver's doing, not the scene's), and the
