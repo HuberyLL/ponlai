@@ -16,7 +16,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, float, int, ivec2, vec2, vec3, vec4, mat4, uniform, texture, textureLoad, screenCoordinate, outputStruct, mrt, output,
-	floor, fract, mix, min, max, abs, sqrt, exp, pow, dot, length, normalize, select,
+	floor, fract, mix, min, max, abs, sqrt, exp, exp2, log2, trunc, clamp, step, pow, dot, length, normalize, select,
 } from 'three/tsl';
 import type { FrameGraph, ResourceHandle } from '../post/graph/FrameGraph.ts';
 import { blueNoiseTexture, BLUE_NOISE } from '../post/BlueNoise.ts';
@@ -57,8 +57,10 @@ type Histories = Pick<FrameGraph<never>, 'color' | 'previous' | 'texture' | 'cop
 //   Sobol-scrambled table (about 330 000 numbers) is replaced by the blue-noise tile read at two
 //   offsets, moved each frame by the R2 sequence (Roberts, "The Unreasonable Effectiveness of
 //   Quasirandom Sequences", 2018).
-// - seaMoments (two passes, horizontal then vertical): the 9 x 9 Gaussian moments
-//   (`exp( -3 i^2 / 25 )` per axis) FidelityFX takes in shared memory, here separable.
+// - seaReflectionMoments: the 9 x 9 Gaussian moments (`exp( -3 i^2 / 25 )` per axis) FidelityFX
+//   takes in shared memory, here separable: a pass sums the rows, and the passes that read the
+//   moments sum the rows' sums down the column at their own pixels (`columns`), which saves a pass
+//   whose two half-float targets were stored whole for the pixels of the sea alone to read.
 // - seaReflectionReproject: the history reprojected, FidelityFX's `PickReprojection`: the hit's
 //   (the reflected point seen through the surface, reprojected by the frame before's view) where
 //   the surface's normal and roughness match there, else the surface's own if its history lies
@@ -70,7 +72,7 @@ type Histories = Pick<FrameGraph<never>, 'color' | 'previous' | 'texture' | 'cop
 //   (`max( exp( -0.3 L ), 0.01 )`), which FidelityFX gathers in shared memory in the same pass.
 // - seaReflectionPrefilter: FidelityFX's 15 taps (Halton 2, 3 within 3 pixels), weighted by the
 //   normals, the depths, the radiance against the tile's average and the variance.
-// - seaMoments again, of the prefiltered radiance.
+// - seaReflectionMoments again, of the prefiltered radiance.
 // - seaReflectionResolve: the temporal resolve, the reprojected history clipped to the
 //   neighbourhood's box (`ClipAABB`) and blended by the samples, into `seaResolved` and its variance
 //   (both histories), which the water reads (`result`).
@@ -159,6 +161,17 @@ const disocclusion = ( n: V3, hn: V3, d: F, hd: F ) =>
 		.mul( exp( abs( hd.sub( d ) ).div( d ).negate().mul( DISOCCLUSION_DEPTH_WEIGHT ) ) );
 // a surface texel's normal (its x and z stored; the sea's normals face up)
 const normalOf = ( s: V4 ) => vec3( s.x, sqrt( max( float( 1 ).sub( s.x.mul( s.x ) ).sub( s.y.mul( s.y ) ), 0 ) ), s.y );
+// `x` rounded to half float toward zero (normal and subnormal halves; no overflow)
+const halfTowardZero = ( x: V4 ) => {
+
+	const a = max( abs( x ), 1e-30 ).toVar();
+	const e0 = floor( log2( a ) ).toVar();
+	const p = exp2( e0 ).toVar();
+	// (log2 may land one off next to a power of two)
+	const e = clamp( e0.sub( float( 1 ).sub( step( p, a ) ) ).add( step( p.mul( 2 ), a ) ), - 14, 15 ).toVar();
+	return trunc( x.mul( exp2( float( 10 ).sub( e ) ) ) ).mul( exp2( e.sub( 10 ) ) );
+
+};
 // a 9-tap weight of the moments' Gaussian
 const momentWeight = ( i: number ) => Math.exp( - GAUSSIAN_K * i * i / ( ( NEIGHBOURHOOD + 1 ) ** 2 ) );
 
@@ -396,10 +409,11 @@ export class SeaReflection {
 
 		} );
 
-		// ---- the moments of a radiance over its 9 x 9 neighbourhood, in two passes
-		const moments = ( source: ResourceHandle, stage: string ): [ ResourceHandle, ResourceHandle ] => {
+		// ---- the moments of a radiance over its 9 x 9 neighbourhood: the rows' sums in a pass, the
+		// columns' where they are read (`columns`)
+		const rows = ( source: ResourceHandle, stage: string ): [ ResourceHandle, ResourceHandle ] => {
 
-			const along = ( from: THREE.Texture, square: THREE.Texture | null, dx: number, dy: number ) => Fn( () => {
+			const sums = Fn( () => {
 
 				const p = pixel().toVar();
 				const m1 = vec4( 0 ).toVar(), m2 = vec4( 0 ).toVar();
@@ -408,45 +422,48 @@ export class SeaReflection {
 
 					const w = momentWeight( i );
 					total += w;
-					const q = p.add( vec2( i * dx, i * dy ) ).toVar();
-					const c = load( from, q ).toVar();
+					const c = load( T( source ), p.add( vec2( i, 0 ) ) ).toVar();
 					m1.addAssign( c.mul( w ) );
-					m2.addAssign( ( square ? load( square, q ) : c.mul( c ) ).mul( w ) );
+					m2.addAssign( c.mul( c ).mul( w ) );
 
 				}
-				const m = m1.div( total ).toVar(), sq = m2.div( total ).toVar();
-				// (the vertical pass's second output is the variance)
-				return mat4( m, square ? abs( sq.sub( m.mul( m ) ) ) : sq, vec4( 0 ), vec4( 0 ) );
+				return mat4( m1.div( total ), m2.div( total ), vec4( 0 ), vec4( 0 ) );
 
 			} )() as unknown as Columns;
-			const x = along( T( source ), null, 1, 0 );
-			const xQuad = quad( `SeaReflection.Moments${ stage }X`, outputStruct( x.element( 0 ), x.element( 1 ) ) as unknown as V4 );
-			g.addPass( `seaReflectionMoments${ stage }X`, 'quad', ( b ) => {
+			const rowsQuad = quad( `SeaReflection.Moments${ stage }`, outputStruct( sums.element( 0 ), sums.element( 1 ) ) as unknown as V4 );
+			g.addPass( `seaReflectionMoments${ stage }`, 'quad', ( b ) => {
 
 				b.readOptional( source );
 				mean = b.write( mean );
 				meanSq = b.write( meanSq );
-				return { label: 'sea reflection', jittered, when, whenLabel: 'sea reflection due', quad: xQuad, mrt: mrt( {} ) };
+				return { label: 'sea reflection', jittered, when, whenLabel: 'sea reflection due', quad: rowsQuad, mrt: mrt( {} ) };
 
 			} );
-			// (written over the horizontal pass's targets' twins: a pass cannot read what it writes)
-			const meanY = g.color( `seaMoments${ stage }Mean`, half( 'rgba' ) ), varianceY = g.color( `seaMoments${ stage }Variance`, half( 'rgba' ) );
-			let outMean = meanY, outVariance = varianceY;
-			const y = along( T( mean ), T( meanSq ), 0, 1 );
-			const yQuad = quad( `SeaReflection.Moments${ stage }Y`, outputStruct( y.element( 0 ), y.element( 1 ) ) as unknown as V4 );
-			g.addPass( `seaReflectionMoments${ stage }Y`, 'quad', ( b ) => {
-
-				b.readOptional( mean );
-				b.readOptional( meanSq );
-				outMean = b.write( outMean );
-				outVariance = b.write( outVariance );
-				return { label: 'sea reflection', jittered, when, whenLabel: 'sea reflection due', quad: yQuad, mrt: mrt( {} ) };
-
-			} );
-			return [ outMean, outVariance ];
+			return [ mean, meanSq ];
 
 		};
-		const [ rayMean, rayVariance ] = moments( ray, 'Ray' );
+		// the mean and the variance at `p`, the rows' sums summed down the column: each rounded to
+		// half float toward zero, as the half-float targets of a pass of their own stored them on the
+		// GPU measured (the reflection is then the one that pass gave, within the held tolerance), so a
+		// pass's whole-target store is saved for the few loads of the pixels that read them
+		const columns = ( rowMean: ResourceHandle, rowSquare: ResourceHandle, p: V2 ): [ V4, V4 ] => {
+
+			const m1 = vec4( 0 ).toVar(), m2 = vec4( 0 ).toVar();
+			let total = 0;
+			for ( let i = - NEIGHBOURHOOD; i <= NEIGHBOURHOOD; i ++ ) {
+
+				const w = momentWeight( i );
+				total += w;
+				const q = p.add( vec2( 0, i ) ).toVar();
+				m1.addAssign( load( T( rowMean ), q ).mul( w ) );
+				m2.addAssign( load( T( rowSquare ), q ).mul( w ) );
+
+			}
+			const m = m1.div( total ).toVar(), sq = m2.div( total ).toVar();
+			return [ halfTowardZero( m ), halfTowardZero( abs( sq.sub( m.mul( m ) ) ) ) ];
+
+		};
+		const [ rayRows, raySquares ] = rows( ray, 'Ray' );
 
 		// ---- the reprojection
 		const surfaceBefore = texture( T( this.surfacePrev ) );
@@ -471,7 +488,8 @@ export class SeaReflection {
 				const rayLen = load( T( rayLength ), p ).x;
 				const hitW = C.world.mul( vec4( normalize( posV ).mul( length( posV ).add( rayLen ) ), 1 ) ).xyz;
 				const surfaceUV = previousUV( posW ).toVar(), hitUV = previousUV( hitW ).toVar();
-				const neighbourMean = load( T( rayMean ), p ).toVar(), neighbourVariance = load( T( rayVariance ), p ).toVar();
+				const [ nm, nv ] = columns( rayRows, raySquares, p );
+				const neighbourMean = nm.toVar(), neighbourVariance = nv.toVar();
 				const surfaceS = sample( surfaceBefore, surfaceUV ).toVar(), hitS = sample( surfaceBefore, hitUV ).toVar();
 				const surfaceHistory = sample( radianceBefore, surfaceUV ).mul( this.historyScale ).toVar();
 				const hitHistory = sample( radianceBefore, hitUV ).mul( this.historyScale ).toVar();
@@ -584,8 +602,8 @@ export class SeaReflection {
 			b.readOptional( surface );
 			b.readOptional( ray );
 			b.readOptional( rayLength );
-			b.readOptional( rayMean );
-			b.readOptional( rayVariance );
+			b.readOptional( rayRows );
+			b.readOptional( raySquares );
 			b.read( this.surfacePrev );
 			b.read( this.resolvedPrev );
 			b.read( this.varianceHistoryPrev );
@@ -689,7 +707,7 @@ export class SeaReflection {
 			return { label: 'sea reflection', jittered, when, whenLabel: 'sea reflection due', quad: prefilterQuad, mrt: mrt( {} ) };
 
 		} );
-		const [ filteredMean, filteredSpread ] = moments( filtered, 'Filtered' );
+		const [ filteredRows, filteredSquares ] = rows( filtered, 'Filtered' );
 
 		// ---- the temporal resolve
 		const samplesNow = follow( this.samples );
@@ -710,8 +728,9 @@ export class SeaReflection {
 				const count = load( samplesNow, p ).x.toVar();
 				const avg = averageAt( p ).toVar();
 				const old = load( T( reprojected ), p ).toVar();
-				const m = load( T( filteredMean ), p ).toVar();
-				const spread = load( T( filteredSpread ), p ).toVar();
+				const [ fm, fs ] = columns( filteredRows, filteredSquares, p );
+				const m = fm.toVar();
+				const spread = fs.toVar();
 				const deviation = sqrt( spread ).add( length( m.sub( avg ) ) ).mul( TEMPORAL_STABILITY * 1.4 ).toVar();
 				const centre = mix( m, avg, 0.2 ).toVar();
 				const oldClipped = clipToBox( centre.sub( deviation ), centre.add( deviation ), old ).toVar();
@@ -736,8 +755,8 @@ export class SeaReflection {
 			b.readOptional( surface );
 			b.readOptional( filtered );
 			b.readOptional( filteredVariance );
-			b.readOptional( filteredMean );
-			b.readOptional( filteredSpread );
+			b.readOptional( filteredRows );
+			b.readOptional( filteredSquares );
 			b.readOptional( samples );
 			b.readOptional( average );
 			b.readOptional( reprojected );
