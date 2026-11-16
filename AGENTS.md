@@ -1,9 +1,9 @@
 # Ponlai
 
-A small island in an open sea, rendered in the browser: a visual sample for a game, and the game
-growing behind `?game`. The look is a calm, painterly island,
-inspired by the eastern aesthetic of Ghost of Tsushima, on a physically based scene lit as the
-sun and the sky give it (deep clear water, chunky stone, a lush meadow that moves in the wind).
+A physically based render pipeline for the browser, on three.js WebGPU, shown on a small island in
+an open sea (what it offers and how to use it: `README.md`). The island is calm and painterly,
+inspired by the eastern aesthetic of Ghost of Tsushima, lit as the sun and the sky give it (deep
+clear water, chunky stone, a lush meadow that moves in the wind); `?game` opens a game prototype.
 
 ## Where things are written
 
@@ -47,11 +47,9 @@ sun and the sky give it (deep clear water, chunky stone, a lush meadow that move
   the task's artifacts folder and runs through `node tools/kit/qos.mjs <command>`.
 - Everything that renders the scene in a browser takes the GPU lock
   (`node tools/kit/gpu-lock.mjs run [--shared] -- <command>`): timing runs hold it alone, paused
-  captures and probes share it. Sessions leave `PONLAI_GPU_PRIORITY` unset.
+  captures and probes share it.
 - Every wait goes through `tools/kit/job.mjs`, never a sleep loop; a job is stopped with
   `job.mjs stop <log>` before an agent hands back.
-- A headed browser run takes over the user's screen: run one only for what a screen alone shows, and
-  only while `node tools/kit/display-gate.mjs status` allows it.
 
 ## Skills
 
@@ -106,8 +104,6 @@ writing-tools-and-checks (tools and checks), writing-tsl-and-passes (TSL, passes
   plans or reports, or internal task and milestone names (a tool's output folder may be named).
 - Player-facing words are in `packages/game/ui/i18n/`, never in code (partly: `verify-i18n`, Chinese
   literals only).
-- Game UI (what the player sees in `?game`, mock-ups too) is built with the
-  `threejs-game-ui-designer` skill when the agent has it, to read as a game's, not a product's.
 - Code style follows three.js (mrdoob): tabs, spaces inside parentheses and brackets, English
   comments that explain why.
 - A visual change is compared against captures from before it, crops included, and the measured
