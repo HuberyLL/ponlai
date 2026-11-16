@@ -4,7 +4,8 @@
 // asset goes into git: a repository that keeps every version of every binary only grows, and its
 // history cannot be cut back without rewriting it. The assets live in public/, git-ignored, which
 // Vite serves at the site's root and copies into dist/. Each version of the whole set is published
-// as one archive (`ponlai-assets-v<N>.tar.gz`) on a GitHub release tagged `assets-v<N>`.
+// as one archive (`ponlai-assets-<version>.tar.gz`) on a GitHub release tagged `assets-<version>`,
+// the version the UTC date it was packed on (`2026.11.16`, a second that day `2026.11.16.2`).
 // assets.lock.json, committed, pins the release, the archive's size and SHA-256 and every file's,
 // so a commit names the assets it runs with and a checkout of it gets exactly those back (the
 // byte-for-byte checks compare commits). Use it to see whether public/ matches the lock, to fill
@@ -39,10 +40,12 @@
 // checkout's public/ (a clone where the file system can).
 //
 // A release packed with --local exists on this machine only until it is published: its cache must
-// be kept, and a checkout elsewhere cannot pull it. A release takes the first number past the
-// lock's that the cache does not hold, so a branch packing from an older lock never overwrites
-// another branch's pack (the two locks then merge by hand: the later release repacked over both
-// sets of changes).
+// be kept, and a checkout elsewhere cannot pull it. A release takes the first version of the day
+// that neither the lock nor the cache holds, so a branch packing from an older lock never
+// overwrites another branch's pack (the two locks then merge by hand: the later release repacked
+// over both sets of changes). Locks that name `assets-v<N>` come from before the first published
+// release: no release holds those sets, so the commits that carry them pull nothing, and `release`
+// packs public/ again over such a lock even when nothing changed.
 //
 // Rules:
 // - A file the page loads is placed under public/ and loaded through
@@ -83,7 +86,6 @@ import { fileURLToPath } from 'node:url';
 
 const LOCK = 'assets.lock.json';
 const PUBLIC = 'public';
-const TAG = /^assets-v(\d+)$/;
 
 const sha256 = ( path ) => createHash( 'sha256' ).update( readFileSync( path ) ).digest( 'hex' );
 
@@ -281,13 +283,31 @@ const needGh = () => {
 
 };
 
-/** Uploads a packed release from the cache: its archive, its notes and `attach`. */
+/** A release named by its date (`assets-2026.11.16`), not by the number the first ones carried. */
+const DATED = /^assets-\d{4}\.\d{2}\.\d{2}(\.\d+)?$/;
+
+/** A release's version: its tag without `assets-`. */
+const versionOf = ( lock ) => lock.release.replace( /^assets-/, '' );
+
+/** The next release's version: today's UTC date, with a count past the first that day that the
+ * lock or the cache holds. */
+function nextVersion( root, old ) {
+
+	const date = new Date().toISOString().slice( 0, 10 ).replaceAll( '-', '.' );
+	const taken = ( version ) => old?.release === `assets-${ version }` || existsSync( join( cacheRoot( root ), `assets-${ version }` ) );
+	let version = date;
+	for ( let n = 2; taken( version ); n ++ ) version = `${ date }.${ n }`;
+	return version;
+
+}
+
+/** Uploads a packed release from the cache: its archive, its notes and `attach`. Never marked the
+ * repository's latest release, which the project's own versions hold. */
 function upload( root, lock, attach ) {
 
 	const dir = join( cacheRoot( root ), lock.release );
 	const archive = join( dir, lock.archive.name );
-	const version = lock.release.match( TAG )[ 1 ];
-	execFileSync( 'gh', [ 'release', 'create', lock.release, archive, ...attach, '--repo', lock.repo, '--title', `Assets v${ version }`, '--notes-file', join( dir, 'notes.md' ) ], { stdio: 'inherit' } );
+	execFileSync( 'gh', [ 'release', 'create', lock.release, archive, ...attach, '--repo', lock.repo, '--title', `Assets ${ versionOf( lock ) }`, '--latest=false', '--notes-file', join( dir, 'notes.md' ) ], { stdio: 'inherit' } );
 
 }
 
@@ -308,18 +328,19 @@ export function releaseAssets( root, { notes = '', attach = [], local = false } 
 
 	}
 
-	const before = old ? old.files : {};
+	// a lock of the numbered releases names a set no release holds: it is packed again, all of it new
+	const dated = old !== null && DATED.test( old.release );
+	const before = dated ? old.files : {};
 	const added = names.filter( ( n ) => ! ( n in before ) );
 	const changed = names.filter( ( n ) => n in before && before[ n ].sha256 !== files[ n ].sha256 );
 	const removed = Object.keys( before ).filter( ( n ) => ! ( n in files ) );
-	if ( old && added.length + changed.length + removed.length === 0 ) throw new Error( `public/ matches ${ old.release }: nothing to release` );
+	if ( dated && added.length + changed.length + removed.length === 0 ) throw new Error( `public/ matches ${ old.release }: nothing to release` );
 
-	let version = old ? Number( old.release.match( TAG )[ 1 ] ) + 1 : 1;
-	while ( existsSync( join( cacheRoot( root ), `assets-v${ version }` ) ) ) version ++;
-	const release = `assets-v${ version }`;
+	const version = nextVersion( root, old );
+	const release = `assets-${ version }`;
 	const repo = old ? old.repo : originRepo( root );
 	const dir = join( cacheRoot( root ), release );
-	const archive = join( dir, `ponlai-assets-v${ version }.tar.gz` );
+	const archive = join( dir, `ponlai-assets-${ version }.tar.gz` );
 	mkdirSync( dir, { recursive: true } );
 	const list = join( dir, 'files.txt' );
 	writeFileSync( list, names.join( '\n' ) + '\n' );
@@ -337,7 +358,7 @@ export function releaseAssets( root, { notes = '', attach = [], local = false } 
 	].join( '\n' );
 	writeFileSync( join( dir, 'notes.md' ), body );
 
-	const lock = { repo, release, archive: { name: `ponlai-assets-v${ version }.tar.gz`, size: statSync( archive ).size, sha256: sha256( archive ) }, files };
+	const lock = { repo, release, archive: { name: `ponlai-assets-${ version }.tar.gz`, size: statSync( archive ).size, sha256: sha256( archive ) }, files };
 	if ( ! local ) upload( root, lock, attach );
 	writeFileSync( join( root, LOCK ), JSON.stringify( lock, null, '\t' ) + '\n' );
 	return { release, added, changed, removed };
@@ -353,7 +374,7 @@ export function publishAssets( root, { attach = [] } = {} ) {
 	const dir = join( cacheRoot( root ), lock.release );
 	const archive = join( dir, lock.archive.name );
 	if ( ! existsSync( archive ) || statSync( archive ).size !== lock.archive.size || sha256( archive ) !== lock.archive.sha256 ) throw new Error( `${ lock.archive.name } in the cache does not match assets.lock.json: ${ lock.release } was not packed on this machine` );
-	if ( ! existsSync( join( dir, 'notes.md' ) ) ) writeFileSync( join( dir, 'notes.md' ), `The game's assets, version ${ lock.release.match( TAG )[ 1 ] } (tools/repo/assets.mjs).` );
+	if ( ! existsSync( join( dir, 'notes.md' ) ) ) writeFileSync( join( dir, 'notes.md' ), `The game's assets, version ${ versionOf( lock ) } (tools/repo/assets.mjs).` );
 	upload( root, lock, attach );
 	return lock.release;
 

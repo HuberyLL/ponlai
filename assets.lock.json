@@ -1,10 +1,10 @@
 {
 	"repo": "HuberyLL/ponlai",
-	"release": "assets-v4",
+	"release": "assets-2026.11.16",
 	"archive": {
-		"name": "ponlai-assets-v4.tar.gz",
-		"size": 14631113,
-		"sha256": "8bd314a4e62f8da79ac6033def9ff6f6660fd4ef6a1cdddd345b40efdd05e7fa"
+		"name": "ponlai-assets-2026.11.16.tar.gz",
+		"size": 13010926,
+		"sha256": "3edfa8c6f32cd0527d4c3e4810e0e7c7f3e47b06b688faa5b1007a344e72eb6c"
 	},
 	"files": {
 		"characters/hanming/Hanming.bin": {
@@ -30,18 +30,6 @@
 		"characters/hanming/textures/wicker-roughness.png": {
 			"size": 297624,
 			"sha256": "910ee2028c6a914c74aa569b4ba7f37c84d06ef613400fe5062124bb34c27321"
-		},
-		"characters/quaternius/ultimate-modular-characters/Adventurer.gltf": {
-			"size": 3671456,
-			"sha256": "21f7a61afb6bd6cef6961490c367594e3c2fc01ec1f041662131172ce763063e"
-		},
-		"characters/quaternius/ultimate-modular-characters/Casual_2.gltf": {
-			"size": 3058092,
-			"sha256": "55c654d09a2a5ff6e3bd6158d4a1b462f181cd6f1e12a0f5e9d959f9c3abc438"
-		},
-		"characters/quaternius/ultimate-modular-characters/Farmer.gltf": {
-			"size": 2998119,
-			"sha256": "46d3e85fa8d848ee479ab8e4672c16724ee4ea51f3af5733705a153937f93555"
 		},
 		"clouds/baseShape64.bin": {
 			"size": 908287,
