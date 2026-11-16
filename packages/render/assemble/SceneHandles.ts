@@ -238,6 +238,8 @@ export function exposeSceneHandles( render: RenderParts, shared: Shared, host: S
 		} ),
 		// the scene's linear radiance over screen boxes (debug/Radiance.ts), loaded on first call
 		radiance: async ( options?: import( '../debug/Radiance.ts' ).RadianceOptions ) => ( await import( '../debug/Radiance.ts' ) ).readRadiance( renderer, pipeline, options, camera ),
+		// where a paused frame is compared within the held tolerance (debug/HeldRegion.ts), loaded on first call
+		heldRegion: async ( cell?: number ) => ( await import( '../debug/HeldRegion.ts' ) ).readHeldRegion( renderer, pipeline, cell ),
 		// the haze's key as the last frame set it (weather/HazeKeys.ts `hazeKeyAt`, `prepareHaze`): the
 		// medium's amount and shape, the light's weights, the deck's shares; read, never written
 		hazeKey,

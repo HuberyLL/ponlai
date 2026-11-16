@@ -100,7 +100,10 @@
 // `window.__PONLAI_CROPS__` (tools/island/parity/views.mjs). stdout prints each eval, `unsettled` or
 // `unstable` when so, the file with the diagnostics, and the errors. A worker writes to the paths
 // capture-set names and adds `page`: the visit's index, `load` or `jump`, the view before, the world
-// time, the lock wait (`lockKept` when kept), the time to the shot and the page's memory.
+// time, the lock wait (`lockKept` when kept), the time to the shot and the page's memory, and
+// `held` when the page offers `heldRegion()` on its handle: the cells of the frame shot where a
+// held history-dependent effect may differ between loads, which diff-set.py --held compares within
+// a tolerance (tools/kit/tolerance.py).
 //
 // GPU lock and browser: a headless browser in a persistent profile slot. A paused capture takes the
 // GPU lock shared (its pixels do not depend on what else renders); a running one, or --exclusive,
@@ -352,6 +355,9 @@ async function captureView( session, { url, query, evals, steps, readySteps = []
 	await shooter.close();
 	const diag = await page.evaluate( ( n ) => ( { ...window[ n.diagnostics ] } ), PAGE );
 	const crops = await page.evaluate( ( n ) => window[ n.crops ] ?? null, PAGE );
+	// a set's shot: where it is compared within the held tolerance (tools/kit/tolerance.py), the frame
+	// just shot read back
+	const held = pageInfo ? await page.evaluate( ( n ) => window[ n.handle ]?.heldRegion?.() ?? null, PAGE ) : null;
 	session.gpu ??= await page.evaluate( async () => {
 
 		const adapter = await navigator.gpu.requestAdapter();
@@ -364,7 +370,7 @@ async function captureView( session, { url, query, evals, steps, readySteps = []
 		...( evalRecords.length ? { evals: evalRecords } : {} ), ...( readyRecords.length ? { readyEvals: readyRecords } : {} ),
 		errors: record.errors, failures: record.failures,
 		meanFrameMs: samples.reduce( ( s, d ) => s + d.frameMs, 0 ) / samples.length,
-		...( frameCount > 1 ? { frames } : {} ), ...( crops ? { crops } : {} ), ...( visit ? { page: visit } : {} ),
+		...( frameCount > 1 ? { frames } : {} ), ...( crops ? { crops } : {} ), ...( held ? { held } : {} ), ...( visit ? { page: visit } : {} ),
 	};
 	await writeFile( `${ out }.json`, JSON.stringify( json, null, 2 ) );
 	return { out: `${ out }.png`, ready, diag, record, evals: evalRecords, readyEvals: readyRecords };

@@ -65,8 +65,8 @@ export function forCellTexels( nx: number, ny: number, width: number, height: nu
 
 }
 
-// a render target's texture read back whole: ( x, y, channel ) to its stored value
-async function readTexture( renderer: THREE.WebGPURenderer, target: THREE.RenderTarget, index: number ): Promise<{ width: number; height: number; at: ( x: number, y: number, c?: number ) => number }> {
+/** A render target's texture read back whole: ( x, y, channel ) to its stored value. */
+export async function readTexture( renderer: THREE.WebGPURenderer, target: THREE.RenderTarget, index: number ): Promise<{ width: number; height: number; at: ( x: number, y: number, c?: number ) => number }> {
 
 	const texture = target.textures[ index ];
 	const width = target.width, height = target.height;

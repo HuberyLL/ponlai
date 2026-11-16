@@ -89,13 +89,17 @@ type Histories = Pick<FrameGraph<never>, 'color' | 'previous' | 'texture' | 'cop
 // variance's floor, the average's weight) assume; it is clamped to SIGNAL_CEILING, whose square
 // stays in half float. The history is rescaled when the pre-exposure moves.
 //
-// Rest (the test mode's paused frame repeats exactly, however it was reached): the temporal rest
-// (TemporalRest.ts) keyed by the camera, the clock, the sizes, the scene's epoch, the pre-exposure,
-// the page's signature and the box the reflection traces in. At its first frame of the sequence
-// the histories are cleared, and the passes run its `sequence` frames with the rest's own noise
-// indices: what they hold after the last one is a function of the scene alone. It is then held:
-// the passes stop and the water reads the last resolve. `pending` holds the page's settled signal
-// until then. A cut (SceneHistory) and a scene jump clear the histories and the rest.
+// Rest (the test mode's paused frame repeats, however it was reached: within a tolerance where the
+// reflection reaches, exactly elsewhere): the temporal rest (TemporalRest.ts) keyed by the camera,
+// the clock, the sizes, the scene's epoch, the pre-exposure, the page's signature and the box the
+// reflection traces in. At its first frame of the sequence the histories are cleared, and the
+// passes run its `sequence` frames with the rest's own noise indices: what they hold after the last
+// one is a function of the scene and of the opaque frames they read. It is then held: the passes
+// stop and the water reads the last resolve. `pending` holds the page's settled signal until then.
+// A cut (SceneHistory) and a scene jump clear the histories and the rest. Under MSAA a few opaque
+// frames of a paused page can differ in their last bits from load to load (the browser's or the
+// driver's doing), and the held result keeps what those frames held; so the pixels it reaches
+// (`surfaceHistory`, debug/HeldRegion.ts) are compared within tools/kit/tolerance.py's `HELD`.
 
 // the target the signal is stored at: the opaque colour, pre-exposed, times this (see the header)
 const SIGNAL = 2 ** PRE_EXPOSURE_BIAS;
@@ -804,6 +808,15 @@ export class SeaReflection {
 
 		this.camera.projection.value.copy( projection );
 		this.camera.projectionInverse.value.copy( projection ).invert();
+
+	}
+
+	/** The surface the reflection last traced from (the prepass's `seaSurface`, copied at the end of
+	 * each frame that drew it): a texel traces where its view distance (w) is over 0 and its roughness
+	 * (z) is not negative, and only there is the result not 0 (debug/HeldRegion.ts reads it). */
+	get surfaceHistory(): ResourceHandle {
+
+		return this.surfacePrev;
 
 	}
 
