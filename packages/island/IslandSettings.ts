@@ -24,7 +24,6 @@ export const ISLAND_SETTINGS = {
 	// debug
 	chunkBorders: { type: 'switch', default: 'off', about: 'shows the world\'s chunks as lines' },
 	// islanders
-	look: { type: 'choice', default: 'Hanming', values: [ 'kit' ], about: '`kit`: the islanders\' earlier kit look' },
 	islander: { type: 'choice', default: 'the look\'s own', values: [ 'stock', 'subtle', 'medium', 'strong', 'real' ], about: 'the islanders\' proportions' },
 	body: { type: 'text', default: 'M30', about: 'the scene\'s walker\'s sex and age' },
 } as const satisfies SettingsTable;

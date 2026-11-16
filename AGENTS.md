@@ -98,7 +98,7 @@ writing-tools-and-checks (tools and checks), writing-tsl-and-passes (TSL, passes
   asks for a notice or credit, assets included; a technique, a paper or public-domain code is
   credited in a comment where used. No reference images in git, no unlicensed third-party art.
 - No asset in git: what the page loads lives in the git-ignored `public/`, loads through
-  `import.meta.env.BASE_URL`, ships in a GitHub release (`assets-v<N>`, never changed once
+  `import.meta.env.BASE_URL`, ships in a GitHub release (`assets-<date>`, fixed once
   published) pinned by `assets.lock.json`, the new lock in the commit whose code needs it
   (`tools/repo/assets.mjs`).
 - Machine details (hardware, user names, local paths) stay out of the repository; measurements are

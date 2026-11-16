@@ -9,7 +9,7 @@ type Reflected = { directDiffuse: V3 };
 // The surfaces of the feather-robed islanders: painted parts and lit feather cards.
 //
 // The surfaces of the feather-robed islanders (looks.ts HANMING), lit as the rest of the island
-// is (three's physical model with the ground's bounce), not in the kit figures' painted cel steps:
+// is (three's physical model with the ground's bounce):
 // - the body's painted parts (head, body, legs, sandals, the shell under the feathers):
 //   vertex colours as linear albedo, rough cloth, skin and leather a little smoother;
 // - the feathers: cards cut from a photograph of a white feather (alpha to coverage under 4x, a
@@ -20,9 +20,8 @@ type Reflected = { directDiffuse: V3 };
 // Each figure part casts into the figures' shadow map but the feathers (their cards would cast
 // whole rectangles; the shell under them casts the figure's shape), and every part receives that
 // map, so a hat's brim shades the face and shoulders under it. Every part reads the ambient volume
-// at degree 2 under the receiver name the kit figures' model uses too, `figures`
-// (lighting/AmbientSample.ts), so `flags=ambientVolumeOff:figures` sends both looks back to the
-// environment's light.
+// at degree 2 under the receiver name `figures` (lighting/AmbientSample.ts), so
+// `flags=ambientVolumeOff:figures` sends them back to the environment's light.
 
 export const figureLook = {
 	// the feathers' white (a multiplier on the photograph, linear): a white feather's albedo, kept

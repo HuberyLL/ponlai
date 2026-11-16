@@ -83,7 +83,7 @@ given in `public/` (`tools/repo/assets.mjs`). A file made by a tool says how in 
   acknowledgement, which this is. `public/sky/stars.bin`.
 - *Ultimate Modular Men Pack*, Quaternius,
   [quaternius.com](https://quaternius.com/packs/ultimatemodularcharacters.html), CC0-1.0:
-  `public/characters/quaternius/` and, built from it, `public/characters/hanming/`.
+  `public/characters/hanming/` is built from it.
 - *A single white feather closeup*, João Estevão Andrade de Freitas,
   [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:A_single_white_feather_closeup.jpg),
   public domain: `public/characters/hanming/textures/feather-atlas.png`.

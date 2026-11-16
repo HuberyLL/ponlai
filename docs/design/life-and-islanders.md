@@ -92,5 +92,3 @@ The cast the texts give so far:
   `packages/island/characters/Proportions.ts`).
 - They are built in Blender on the character kit's rig and its clips, never modelled in code
   (`packages/island/characters/looks.ts`).
-- The kit-dressed islander, with soft cel steps and the kit's medium build, stays selectable
-  (`look=kit`, [URL options](../reference/url-options.md#islanders)).

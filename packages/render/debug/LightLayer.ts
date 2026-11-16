@@ -50,9 +50,9 @@ import { diffuseOcclusion } from '../lighting/AmbientGrade.ts';
 // (ocean/Water.ts): `ambientOnly` writes it without its key term, so the meter's two terms read
 // apart; the sea's colour is left as it is.
 //
-// One hook, `useLightLayer`, run by the constructors of the two lighting model roots every lit
-// material builds on (GroundBounceLightingModel, which the terrain's, the vegetation's and the
-// feathers' models extend, and the islanders' CharacterLighting). It sets instance overrides of the
+// One hook, `useLightLayer`, run by the constructor of the lighting model root every lit material
+// builds on (GroundBounceLightingModel, which the terrain's, the vegetation's and the figures'
+// models extend). It sets instance overrides of the
 // model's methods, so a subclass's own `direct` is replaced as well, without a check in each. With
 // no flag set it does nothing: the shaders, pipelines and frames are those without the module.
 // Being load-time, a change of view reloads the page (and gives its own pipelines).

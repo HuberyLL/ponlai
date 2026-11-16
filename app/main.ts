@@ -128,7 +128,7 @@ await startScene( host, { look: PAGE_LOOK, defaults: sceneDefaults( GAME ) }, {
 				loadLook: async ( look, body ) => {
 
 					const dress = island.GAME_LOOKS[ look % island.GAME_LOOKS.length ];
-					const figure = await loadVillager( dress.base, dress.parts, page.shared, PROPORTIONS[ island.islanderBuild.proportions ], dress.lit, dress.ages ? body : undefined );
+					const figure = await loadVillager( dress.base, dress.parts, PROPORTIONS[ island.islanderBuild.proportions ], dress.ages ? body : undefined );
 					await render.latents.latent( 'opaque', [ figure.group ] );
 					await island.characterShadow.compile( render.renderer, render.scene, figure.group );
 					return figure;

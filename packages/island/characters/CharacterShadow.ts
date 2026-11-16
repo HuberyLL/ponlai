@@ -107,13 +107,10 @@ export class CharacterShadow {
 		const island = shadow.filterNode;
 		const depth = this.depth, toLocal = this.toLocal;
 		const size = this.size;
-		shadow.filterNode = Fn( ( input: FilterInput, builder: THREE.NodeBuilder ) => {
+		shadow.filterNode = Fn( ( input: FilterInput ) => {
 
 			// TSL hands a Fn its arguments behind a proxy; pass the island's filter a plain object
 			const own = { depthTexture: input.depthTexture, shadowCoord: input.shadowCoord };
-			// Figures skip their own map: stepped light already shapes them, and a hat brim or an arm
-			// shadowing the simple flat-coloured forms reads as a stain rather than as form.
-			if ( builder.material?.userData.casterOfCharacterShadow === true ) return island( own );
 			const local = toLocal.mul( vec4( input.shadowCoord, 1 ) ).xyz;
 			return island( own ).mul( tentVisibility( depth, local, size ) );
 

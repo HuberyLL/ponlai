@@ -41,7 +41,6 @@ export interface PageParts {
 	windView: { level: WindLevel; heading: number };
 	shownWind: string;
 	timeView: { preset: string };
-	islanderF: GUI;
 	hazeF: GUI;
 	H: { near: number; far: number; growth: number; fogExtinction: number; albedo: number; anisotropy: number; gain: number; ambientFloor: number; ambientSoftness: number; blend: number; restFrames: number; jitter: boolean; tricubic: boolean; densityAA: boolean; sky: boolean; debug: number };
 	/** sizes the canvas and the render to the window (the frame's sizing) */

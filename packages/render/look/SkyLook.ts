@@ -174,7 +174,7 @@ export interface SkyTables {
 	// what the layer passes down the land keeps as a light along the key, the one knob for how deep
 	// the clouds shade the land. The sea keeps the same floor (`seaKeyVisibility`; its glint only the
 	// direct beam, `cloudDirectVisibility`), and under a closed sky the air does (`deckKeyFloor`, by
-	// overcast's share; lighting/KeyCloud.ts). The floor rides on whichever light keys the scene, the
+	// overcast's share). The floor rides on whichever light keys the scene, the
 	// moon's by night as the sun's by day; under a closed sky the sun's part of it leaves over the
 	// last 2.5 degrees before the horizon (Weather.ts `overcastFloorSun`).
 	// Tunable: `lighting.keyThroughCloud`.

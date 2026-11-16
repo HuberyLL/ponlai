@@ -67,7 +67,7 @@ type B = THREE.Node<'bool'>;
 //
 // Under a deck the land's key keeps the weather's floor through the clouds (Sky.ts
 // `keyDirectVisibility`, three's sun, which every receiver takes), and the sea's is the same (Sky.ts
-// `seaKeyVisibility`, lighting/KeyCloud.ts): the sunlight a closed deck passes down and what a
+// `seaKeyVisibility`): the sunlight a closed deck passes down and what a
 // cumulus' shadow keeps of the key reach the sea's surface as they reach the land. A point under
 // the long waves' surface takes three's sun with no share of its own: the floor's light enters
 // ahead of the surface, as the land takes it along the key, so the share of the key that enters

@@ -541,10 +541,8 @@ takes the render pipeline's options of this page (the sky and weather, `paused`,
 
 ## Islanders
 
-- `look=kit` dresses the islanders in the earlier kit look (pointed ears, linen shirt, cel steps)
-  instead of the feather-clad Hanming look (`packages/island/characters/looks.ts`).
 - `islander` picks the islanders' proportions (the look's own by default: `real` for the Hanming
-  look, `medium` for the kit's; or `stock` (the kit's own), `subtle` and `strong` builds of
+  look; or `stock` (the character kit's own), `subtle`, `medium` and `strong` builds of
   `Proportions.ts`); also in the GUI's Islander folder, which
   rebuilds the scene's walker in place. In game mode the folder's proportion control is disabled:
   the game's islanders take their build from the URL option as they load, so a change applies on
@@ -672,7 +670,6 @@ This table is written from the declarations (`node tools/repo/verify-settings.mj
 | `approach` | a number, 0 to 1 | 0 | island | the progress toward the next piece, its shoal put on at once |
 | `terrainHex` | `0` | on | island | `0`: the cliff's plain triplanar tiling |
 | `chunkBorders` | named (its value unread) | off | island | shows the world's chunks as lines |
-| `look` | `kit` | Hanming | island | `kit`: the islanders' earlier kit look |
 | `islander` | `stock`, `subtle`, `medium`, `strong`, `real` | the look's own | island | the islanders' proportions |
 | `body` | text | M30 | island | the scene's walker's sex and age |
 | `bodies` | a comma list | the simulation's three | game | a new game's islanders' sexes and ages |

@@ -45,9 +45,8 @@ import { createSkyTables } from './look/SkyLook.ts';
 import { createDisplayTables } from './look/DisplayLook.ts';
 import type { Look } from './look/Look.ts';
 import { DAY_PRESETS, type DayPreset, DayCycle, sunRising, duskForce, nightAmbientShare } from './sky/DayCycle.ts';
-import { isParkedWeather, WEATHER_PRESETS, type WeatherName, isWindLevel, type WindLevel, Weather, type TunedField, type WeatherState, deckLight, cloudedShare, type WindChoice } from './sky/Weather.ts';
+import { isParkedWeather, WEATHER_PRESETS, type WeatherName, isWindLevel, type WindLevel, Weather, type TunedField, type WeatherState, cloudedShare, type WindChoice } from './sky/Weather.ts';
 import type { QualityProfile, QualityTier } from './Quality.ts';
-import { keyDeckShare } from './lighting/KeyCloud.ts';
 import { Wind, weatherWind } from './weather/Wind.ts';
 import { Rain, setRainShading } from './weather/Rain.ts';
 import { OceanFFT } from './ocean/OceanFFT.ts';
@@ -611,13 +610,8 @@ export function createEnvironment( render: RenderParts ) {
 		// three's sun: the direct key, the sky's, which the clouds' shadow cuts per point over the land's
 		// floor, the share of the key a cloud passes on (Sky.ts `keyDirectVisibility`, `look.keyThroughCloud`); the
 		// land's key (shared.landKey) and the sea's (shared.sunColor): both the sky's key, the sea's cut
-		// by the clouds' own transmittance over the land's floor (Sky.ts `seaKeyVisibility`,
-		// lighting/KeyCloud.ts)
-		const overcast = weather.skyMix[ 3 ] ?? 0;
+		// by the clouds' own transmittance over the land's floor (Sky.ts `seaKeyVisibility`)
 		sun.color.copy( sky.keyColor );
-		// how far the open key on the land is its floor's under a deck: the islanders read their cast
-		// shadow against it (lighting/KeyCloud.ts `keyDeckShare`)
-		keyDeckShare.value = deckLight( sky.elevation, cloudedShare( weather.skyMix ), overcast );
 		shared.landKey.value.set( sun.color.r, sun.color.g, sun.color.b );
 		// a low sun's lift of the sky's light on the water: the sea's bounce onto the land, the water's
 		// sky light and the sea's reflection (lighting/AmbientRelight.ts `lowSunSkyLift`)

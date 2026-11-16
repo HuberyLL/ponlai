@@ -1,13 +1,13 @@
 import * as THREE from 'three/webgpu';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { makeVertexColourCharacterMaterial, KIND } from './CharacterMaterial.ts';
+import { KIND } from './CharacterMaterial.ts';
 import { CharacterShadow } from './CharacterShadow.ts';
 import { makeFeatherMaterial, makeLitFigureMaterial, makeWeaveMaterial } from './FigureSurfaces.ts';
 import { pointedEars } from './Ears.ts';
 import { reproportion, PROPORTIONS, type Proportions } from './Proportions.ts';
 import { FigureAge, derivedShapeKeys, mergeShapeKeys, strideSteps, takeShapeKeys, type ShapeKeys } from './FigureAge.ts';
-import { runSteps, type Shared } from '../../render/index.ts';
+import { runSteps } from '../../render/index.ts';
 import type { Body, Sex } from './Ages.ts';
 import type { TrampleWalker } from '../world/Trample.ts';
 
@@ -16,19 +16,18 @@ import type { TrampleWalker } from '../world/Trample.ts';
 // Islanders assembled from modular low-poly parts (Ultimate Modular Characters by Quaternius,
 // CC0): every outfit shares one rig, so a head, body, legs and feet from different outfits fit
 // one skeleton and its animation clips. The parts are repainted in the island's palette as
-// vertex colours and merged into one skinned mesh, lit by the island's character light. One
-// walks a loop through the meadow; the walk clip's rate follows its speed so feet do not slide.
+// vertex colours and merged into one skinned mesh. One walks a loop through the meadow; the walk
+// clip's rate follows its speed so feet do not slide.
 // Its place on the loop is a function of the scene clock; its clips cross-fade on the frame delta,
 // which a paused clock holds, so a scene jump restarts them (`reset`).
-// Their dress stays plain while the basic look settles: undyed linen and calm earthy tones, leather
-// shoes, no hat (looks.ts). A small moving sun-shadow map of the figures is multiplied into the
-// island's (CharacterShadow.ts).
+// Their dress is the Hanming look (looks.ts). A small moving sun-shadow map of the figures is
+// multiplied into the island's (CharacterShadow.ts).
 // The walker parts the meadow (world/Trample.ts): its track there is its schedule at the
 // scene clock's earlier times (`track`), so the trail behind it is a function of the clock as well.
-// A look may be `lit` (the feather-robed islanders, looks.ts HANMING): its painted parts take the
-// island's light (FigureSurfaces.ts) and its textured parts (`surface`: the feathers, the woven
-// hat) draw as meshes of their own on the same skeleton, re-proportioned with it; the feathers stay out
-// of the figures' shadow map, and the figure's height is its painted body's, hat left out.
+// A figure's painted parts take the island's light (FigureSurfaces.ts `makeLitFigureMaterial`); its
+// textured parts (`surface`: the feathers, the woven hat) draw as meshes of their own on the same
+// skeleton, re-proportioned with it; the feathers stay out of the figures' shadow map, and the
+// figure's height is its painted body's, hat left out.
 // A figure loaded with a body (a sex and an age: Ages.ts) wears its sex's parts and takes its
 // age's shape and proportions instead of a fixed build (FigureAge.ts): its height follows the
 // age, and its clips animate through `animate`, which lays the old's stoop on them. Every part's
@@ -124,7 +123,7 @@ function paintPart( mesh: THREE.SkinnedMesh, paint: PartSpec[ 'paint' ], hands?:
  * re-proportion the figure (Proportions.ts; the kit's own proportions by default), or give it a
  * body's sex and age, its proportions those of its age against these (FigureAge.ts).
  */
-export async function loadVillager( base: string, parts: PartSpec[], shared: Shared, proportions: Proportions = PROPORTIONS.stock, lit = false, body?: Body ): Promise<Villager> {
+export async function loadVillager( base: string, parts: PartSpec[], proportions: Proportions = PROPORTIONS.stock, body?: Body ): Promise<Villager> {
 
 	const loader = new GLTFLoader();
 	const files = new Map<string, GLTF>();
@@ -185,7 +184,7 @@ export async function loadVillager( base: string, parts: PartSpec[], shared: Sha
 	model.traverse( ( o ) => { if ( ( o as THREE.Mesh ).isMesh ) old.push( o ); } );
 	for ( const o of old ) o.removeFromParent();
 	const merged = mergeGeometries( geometries )!;
-	const mesh = new THREE.SkinnedMesh( merged, lit ? makeLitFigureMaterial() : makeVertexColourCharacterMaterial( shared ) );
+	const mesh = new THREE.SkinnedMesh( merged, makeLitFigureMaterial() );
 	mesh.name = 'villager';
 	const meshes: THREE.SkinnedMesh<THREE.BufferGeometry, THREE.Material>[] = [ mesh ];
 	for ( const s of surfaces ) {
