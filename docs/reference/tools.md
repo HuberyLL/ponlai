@@ -49,7 +49,7 @@ Contents:
 | Serve this worktree's page, or another commit's, without a port clash | `tools/kit/serve.mjs` |
 | Take one screenshot of the page, with its diagnostics | `tools/kit/capture.mjs` |
 | Read a value from the running page (a diagnostic, a uniform, a timing, the pipelines an action builds) | `tools/kit/probe.mjs` |
-| Diff, crop, lay out, measure or check two captures for flicker; how much structure a cloud deck shows (`stats --deck`) | `tools/kit/img.py` |
+| Diff, crop, lay out, average, measure or check two captures for flicker; how much structure a cloud deck shows (`stats --deck`) | `tools/kit/img.py` |
 | Measure two overview captures region by region | `tools/kit/compare-captures.py` |
 | Capture a set of paused views and check it against a commit's references | `tools/kit/parity/capture-set.mjs` |
 | Compare a capture set with a reference set, exactly or within a tolerance | `tools/kit/diff-set.py` |
