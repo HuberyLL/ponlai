@@ -872,19 +872,27 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 
 // Wave ripples on the sand. The swell's to-and-fro over the shelf rakes the sand into ripples some
 // 15 - 25 cm apart whose crests run along the coast, as the waves' own crests do once they feel the
-// floor, and fine dark detritus settles in their troughs (`trough`: the darkening against the crests),
-// so a sunlit floor shows them from above even at noon. Here the crests follow the contours of the shoreline's distance, wandering by two
-// octaves of the detail textures' low-frequency variation (`warp`: its scale per metre and its phase
-// shift in cycles, twice), with rounded troughs and sharp crests ( ( 1 + cos ) / 2 ) squared, of a
-// height `steepness` times their spacing (slopes up to about 0.5; real wave ripples stand 0.15 - 0.2
-// of their spacing). They stand on the bare sand only,
+// floor. Crest and trough are the same sand: what shows them is the light on their two slopes. Fine
+// dark detritus settles in the troughs only in patches (`trough`: the darkening against the crests at
+// most, `patch`: the share of the floor, on the largest variation, where it gathers). Real fields are
+// not ruled lines: crests bend, split and end, and their spacing drifts. Here the crests follow the
+// contours of the shoreline's distance, wandering by three octaves of the detail textures'
+// low-frequency variation (`warp`: its scale per metre and its phase shift in cycles, thrice; the
+// finest bends single crests), and their height comes and goes on another (`breakup`: its scale per
+// metre and the floor's share where crests stand full), so crests end and rejoin along their length.
+// The profile has rounded troughs and sharp crests ( ( 1 + cos ) / 2 ) squared, of a height
+// `steepness` times their spacing (slopes up to about 0.5; real wave ripples stand 0.15 - 0.2 of
+// their spacing). They stand on the bare sand only,
 // strongest on the shelf and gone below `depth` (m under the sea), where the swell no longer stirs
 // the floor; they die out against the cliff's foot (`wall`, m) and where the contours turn sharply
 // (the crease of the distance field in a cove's middle, where two stretches of coast meet), and
 // below a pixel they give way to their mean. They replace the detail texture's tiled ripples, which
 // ran one way across the whole world, along the coast on one side of the island and across it on the
 // other, and showed as sparse grooves a metre apart in a low sun.
-const RIPPLE = { spacing: 0.2, steepness: 0.13, trough: 0.28, depth: [ 5, 8 ], wall: [ 0.6, 2.2 ], warp: [ 0.11, 6, 0.37, 1.2 ] } as const;
+const RIPPLE = {
+	spacing: 0.2, steepness: 0.13, trough: 0.14, patch: [ 0.5, 0.62 ], depth: [ 5, 8 ], wall: [ 0.6, 2.2 ],
+	warp: [ 0.11, 6, 0.37, 1.2, 0.83, 0.45 ], breakup: [ 0.53, 0.4 ],
+} as const;
 
 function seabedSurface( { tex, shore, shared }: Ctx, shoreXform: THREE.Node<'vec4'> ) {
 
@@ -905,7 +913,7 @@ function seabedSurface( { tex, shore, shared }: Ctx, shoreXform: THREE.Node<'vec
 
 		// (the detail texture's tiled ripples left out at their mean, 0.5: the ripples are RIPPLE's)
 		const pdx = dFdx( p.xz ).toVar(), pdy = dFdy( p.xz ).toVar();
-		const [ w1, s1, w2, s2 ] = RIPPLE.warp;
+		const [ w1, s1, w2, s2, w3, s3 ] = RIPPLE.warp;
 		const lowNoise = texture( tex.normalsB, p.xz.mul( w1 ).add( 0.41 ) ).a.sub( 0.5 ).toVar();
 		// the gravel's level is worked out here, where derivatives may be taken: the stones are sampled
 		// inside the apron's branch only (SeabedLook.ts), so the rest of the floor does not pay for them
@@ -921,7 +929,12 @@ function seabedSurface( { tex, shore, shared }: Ctx, shoreXform: THREE.Node<'vec
 		const across = vec2( shoreAt( p.xz.add( vec2( e, 0 ) ) ).sub( shoreAt( p.xz.sub( vec2( e, 0 ) ) ) ),
 			shoreAt( p.xz.add( vec2( 0, e ) ) ).sub( shoreAt( p.xz.sub( vec2( 0, e ) ) ) ) ).div( 2 * e );
 		const wander = lowNoise.mul( s1 )
-			.add( texture( tex.normalsB, p.zx.mul( w2 ).add( 0.17 ) ).a.sub( 0.5 ).mul( s2 ) );
+			.add( texture( tex.normalsB, p.zx.mul( w2 ).add( 0.17 ) ).a.sub( 0.5 ).mul( s2 ) )
+			.add( texture( tex.normalsB, mat2( 0.8, 0.6, - 0.6, 0.8 ).mul( p.xz ).mul( w3 ).add( 0.29 ) ).a.sub( 0.5 ).mul( s3 ) );
+		// (the crests' height along their length: full on `breakup[ 1 ]` of the floor, fading out
+		// between, at most a third gone where the crests are lowest so the field never breaks into islands)
+		const stand = smoothstep( 0.5 - RIPPLE.breakup[ 1 ] * 0.25, 0.5 + RIPPLE.breakup[ 1 ] * 0.25,
+			texture( tex.normalsB, mat2( 0.6, - 0.8, 0.8, 0.6 ).mul( p.xz ).mul( RIPPLE.breakup[ 0 ] ).add( 0.61 ) ).a ).mul( 0.67 ).add( 0.33 );
 		const phase = sd.div( RIPPLE.spacing ).add( wander ).toVar();
 		const fdx = dFdx( phase ).toVar(), fdy = dFdy( phase ).toVar();
 		const det = pdx.x.mul( pdy.y ).sub( pdx.y.mul( pdy.x ) );
@@ -935,10 +948,12 @@ function seabedSurface( { tex, shore, shared }: Ctx, shoreXform: THREE.Node<'vec
 		const site = float( 1 ).sub( smoothstep( RIPPLE.depth[ 0 ], RIPPLE.depth[ 1 ], depth ) ).mul( smoothstep( RIPPLE.wall[ 0 ], RIPPLE.wall[ 1 ], sd ) )
 			.mul( smoothstep( 0.55, 0.85, length( across ) ) ).mul( float( 1 ).sub( grass ) ).mul( float( 1 ).sub( rubble ) ).toVar();
 		const resolved = float( 1 ).sub( smoothstep( 0.18, 0.4, max( abs( fdx ), abs( fdy ) ) ) ).toVar();
-		const rippleSlope = grad.mul( dHeight.mul( RIPPLE.steepness * RIPPLE.spacing ) ).mul( site.mul( resolved ) );
-		// (the troughs darker and the crests clean, about the sand's own colour on the mean, 5/8 of a
-		// full trough, so the shallows keep their tone; under a pixel, that mean)
-		albedo.mulAssign( float( 1 ).sub( float( 1 ).sub( height ).sub( 0.625 ).mul( resolved ).mul( site ).mul( RIPPLE.trough ) ) );
+		const shown = site.mul( resolved ).mul( stand ).toVar();
+		const rippleSlope = grad.mul( dHeight.mul( RIPPLE.steepness * RIPPLE.spacing ) ).mul( shown );
+		// (the troughs darker and the crests clean where detritus gathers, about the sand's own colour
+		// on the mean, 5/8 of a full trough, so the shallows keep their tone; under a pixel, that mean)
+		const detritus = smoothstep( RIPPLE.patch[ 0 ], RIPPLE.patch[ 1 ], big );
+		albedo.mulAssign( float( 1 ).sub( float( 1 ).sub( height ).sub( 0.625 ).mul( shown ).mul( detritus ).mul( RIPPLE.trough ) ) );
 
 		// the sand's fine grain from the detail texture, and the ripples
 		const grain = vec2( B.r.mul( 2 ).sub( 1 ), B.g.mul( 2 ).sub( 1 ) ).mul( 0.06 );
