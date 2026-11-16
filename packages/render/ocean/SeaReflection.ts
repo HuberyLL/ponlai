@@ -92,7 +92,12 @@ type Histories = Pick<FrameGraph<never>, 'color' | 'previous' | 'texture' | 'cop
 // own). The signal is the opaque colour (pre-exposed, PreExposure.ts) times 2^PRE_EXPOSURE_BIAS,
 // about the exposed image's scale, which FidelityFX's absolute constants (a luminance of 0.5 as the
 // variance's floor, the average's weight) assume; it is clamped to SIGNAL_CEILING, whose square
-// stays in half float. The history is rescaled when the pre-exposure moves.
+// stays in half float. When the pre-exposure moves, the history's colour is rescaled by the ratio and
+// its confidence (alpha) is kept: rescaled with the colour, a rise of two stops took the confidence
+// to 4, the water's weight of its own sky, 1 - confidence, went negative, and the sea where the
+// reflection is confident came out at half float's largest value for a few frames. The meter read
+// that frame as a bright view and asked for the lower pre-exposure back, so on a night view the
+// pre-exposure alternated and a paused page never settled.
 //
 // Rest (the test mode's paused frame repeats, however it was reached: within a tolerance where the
 // reflection reaches, exactly elsewhere): the temporal rest (TemporalRest.ts) keyed by the camera,
@@ -224,7 +229,8 @@ export class SeaReflection {
 	private readonly previousViewProjection = uniform( new THREE.Matrix4() );
 	private readonly noise = uniform( new THREE.Vector3() );
 	private readonly historyValid = uniform( 0 );
-	private readonly historyScale = uniform( 1 );
+	// the history's colour rescaled to this frame's pre-exposure, its confidence (alpha) kept (the header)
+	private readonly historyScale = uniform( new THREE.Vector4( 1, 1, 1, 1 ) );
 	private readonly key: number[] = [];
 	private readonly viewProjection = new THREE.Matrix4();
 	private lastViewProjection: THREE.Matrix4 | null = null;
@@ -856,7 +862,8 @@ export class SeaReflection {
 		if ( index === 0 ) this.clearHistory();
 		const k = index ?? ( this.frame = ( this.frame + 1 ) % 1024 );
 		this.noise.value.set( ( k * R3[ 0 ] ) % 1, ( k * R3[ 1 ] ) % 1, ( k * R3[ 2 ] ) % 1 );
-		this.historyScale.value = 2 ** ( preExposure.stops - this.historyStops );
+		const ratio = 2 ** ( preExposure.stops - this.historyStops );
+		this.historyScale.value.set( ratio, ratio, ratio, 1 );
 
 	}
 
