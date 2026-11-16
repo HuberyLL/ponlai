@@ -1,0 +1,43 @@
+# The checks every commit passes (tools/check.mjs: types, the code lint, every check that needs no
+# GPU), the docs' lint and the production build. The world's chunk checks of `check --full` take too
+# long on a hosted runner's few cores and stay local; the checks that render run by hand on a machine
+# with WebGPU (AGENTS.md, Checks run by hand).
+name: check
+
+# main after every merge, every pull request, and any branch by hand (gh workflow run check --ref <branch>)
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# a newer push to the same branch or pull request cancels the run still going
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+      # verify-licences runs the REUSE tool through uv (setup-uv publishes no major-version tag)
+      - uses: astral-sh/setup-uv@v10.3.3
+      # the docs' lint checks links offline with lychee
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: lychee
+      - run: npm ci
+      - run: npm run check
+      - run: npm run lint:docs
+      # the build pulls the assets from the release assets.lock.json names, through gh
+      - run: npm run build
+        env:
+          GH_TOKEN: ${{ github.token }}
