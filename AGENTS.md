@@ -75,8 +75,9 @@ writing-tools-and-checks (tools and checks), writing-tsl-and-passes (TSL, passes
 - A history-dependent effect is cleared by a scene jump, converges on a still scene or is frozen or
   off in the test mode, and is compared within a tolerance (rule 4).
 - The test mode is a paused page under MSAA, shot once `settled` holds; a paused frame repeats
-  exactly and equals a fresh load's. A new history-dependent effect keeps `settled` false until
-  converged and obeys the test mode's switch (`docs/reference/test-mode.md`).
+  exactly and equals a fresh load's, but for the sea reflection's held region, within `HELD`. A new
+  history-dependent effect keeps `settled` false until converged and obeys the test mode's switch
+  (`docs/reference/test-mode.md`).
 - What is generated for the island or fitted to the land derives from the land's footprint, the
   island's SDF and fixed-seed fields, never hand-placed coordinates; counts follow the coast or the
   area (rule 5).
@@ -141,20 +142,19 @@ without an error. Its rules for every layer, by section (the render pipeline's o
   `post/SubmitBatch.ts` (Submits and encoders). Screen uv, NDC and depth conventions (Screen
   conventions). Temporal modes: velocity, MRT blends, unjittered projection, scene events (Temporal
   modes).
-- The water takes no more textures, no history; a mesh under the sea or tall or offshore tells the
-  water (The water's textures).
+- The water samples at most 15 textures, no history but the sea reflection's at its pixel; a mesh
+  under the sea or tall or offshore tells the water (The water's textures).
 
 ## What the checks hold
 
 `npm run check` holds these, and its failures say what to write instead: shaders in TSL only, never
-WGSL or GLSL strings; TSL's `mix`, `step`, `smoothstep` in the function form; no `DynamicDrawUsage`
-(static usage with update ranges instead); one owner of timestamp queries; vegetation found by
-`userData.vegetation`, not `alphaToCoverage`; imports only from the layers below, a package only
-through its exits (a newly needed name is added there), a `userData` key on its layer's list; a
-plant kind, a kind of local light or an extra pass declares its cost knob, test-mode stand and
-growth; three's internals only in `packages/render/three/`; nothing binary or over 1 MiB in git;
-REUSE, and SPDX tags in every `/*!` notice; `npm run lint:docs` before a commit that changes
-Markdown.
+WGSL or GLSL strings; TSL's `mix`, `step`, `smoothstep` in the function form; no `DynamicDrawUsage`;
+one owner of timestamp queries; vegetation found by `userData.vegetation`, not `alphaToCoverage`;
+imports only from the layers below, a package only through its exits (a newly needed name is added
+there), a `userData` key on its layer's list; a plant kind, a kind of local light or an extra pass
+declares its cost knob, test-mode stand and growth; three's internals only in
+`packages/render/three/`; nothing binary or over 1 MiB in git; REUSE, and SPDX tags in every `/*!`
+notice; `npm run lint:docs` before a commit that changes Markdown.
 
 ## Checks run by hand
 
