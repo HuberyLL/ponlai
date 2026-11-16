@@ -20,7 +20,7 @@ import { displacementField } from '../vegetation/Displacement.ts';
 import { declareExtraPasses } from './ExtraPass.ts';
 import { waveMapsPass } from '../ocean/WaveMaps.ts';
 import { localLightsPass } from '../lighting/LocalLights.ts';
-import type { PassBuilder, Pipeline } from './Pipeline.ts';
+import type { PassBuilder, Pipeline, PipelineFrame } from './Pipeline.ts';
 
 // The frame's passes on the frame graph, declared in order.
 //
@@ -32,6 +32,18 @@ import type { PassBuilder, Pipeline } from './Pipeline.ts';
 
 // what the water pass draws in a frame without water: nothing
 const NO_WATER = new THREE.Scene();
+// (the depth pyramid is built for the water alone)
+const hasWater = ( f: PipelineFrame ) => f.water !== null;
+// the sea's reflection's passes meet the frame: they run where there is water, drawn by the frame's
+// camera after the water's own setup (Water.ts `prepare`, which sets the box the trace keeps to)
+const SEA_HOOKS = { active: hasWater, camera: ( f: PipelineFrame ) => f.camera, before: ( f: PipelineFrame ) => f.water?.prepare( f.sun ) };
+// before the water draws: its setup, and its read of the reflection bound to the image written last
+const waterBefore = ( p: Pipeline, f: PipelineFrame ) => {
+
+	f.water?.prepare( f.sun );
+	p.seaReflection.bind();
+
+};
 
 // The refraction pass's only attachment, cleared to zero coverage (alpha 0: nothing drawn there),
 // its colour pre-exposed as the scene target's (PreExposure.ts).
@@ -221,6 +233,8 @@ export function declarePasses( p: Pipeline ): void {
 			return { label: 'depth & copy resolves', quad: p.depthQuad };
 
 		} );
+		// its pyramid, which the water's reflection traces over (DepthPyramid.ts)
+		p.depthPyramid.pass( g, linearDepth, false, hasWater );
 		const copyQuad = p.copyQuad!;
 		g.addPass( 'opaqueCopy', 'quad', ( b ) => {
 
@@ -229,6 +243,8 @@ export function declarePasses( p: Pipeline ): void {
 			return { label: 'depth & copy resolves', quad: copyQuad };
 
 		} );
+		// the sea's reflection of the opaque image, traced and denoised (ocean/SeaReflection.ts)
+		const seaReflected = p.seaReflection.passes( g, { linearDepth, opaqueColor, pyramid: p.depthPyramid, iterations: p.seaIterations }, false, SEA_HOOKS );
 		g.addPass( 'water', 'scene', ( b ) => {
 
 			b.read( opaqueColor );
@@ -236,11 +252,12 @@ export function declarePasses( p: Pipeline ): void {
 			b.read( underwater );
 			b.readOptional( refraction );
 			b.readOptional( refractionDepth );
+			b.readOptional( seaReflected );
 			sceneColor = b.write( sceneColor );
 			meterLight = b.write( meterLight );
 			sceneDepth = b.depth( sceneDepth, { write: true } );
 			return {
-				label: 'water', mrt: sceneMRT, before: ( f ) => f.water?.prepare( f.sun ),
+				label: 'water', mrt: sceneMRT, before: ( f ) => waterBefore( p, f ),
 				scene: ( f ) => f.water ? f.waterScene : NO_WATER, camera: ( f ) => f.camera,
 			};
 
@@ -527,6 +544,7 @@ function declareTemporalScene( p: Pipeline, hazeReads: ResourceHandle[] ): [ Res
 		return { label: 'depth & copy resolves', jittered: true, quad: p.depthQuad };
 
 	} );
+	p.depthPyramid.pass( g, linearDepth, true, hasWater );
 	// single-sampled, the opaque colour is copied as a texture (no draw: it replaces every texel)
 	const from = g.texture( sceneColor ), to = g.texture( opaqueColor );
 	g.addPass( 'opaqueCopy', 'callback', ( b ) => {
@@ -536,6 +554,7 @@ function declareTemporalScene( p: Pipeline, hazeReads: ResourceHandle[] ): [ Res
 		return { label: 'depth & copy resolves', jittered: true, copy: true, run: () => p.renderer.copyTextureToTexture( from, to ) };
 
 	} );
+	const seaReflected = p.seaReflection.passes( g, { linearDepth, opaqueColor, pyramid: p.depthPyramid, iterations: p.seaIterations }, true, SEA_HOOKS );
 	g.addPass( 'water', 'scene', ( b ) => {
 
 		b.read( opaqueColor );
@@ -543,12 +562,13 @@ function declareTemporalScene( p: Pipeline, hazeReads: ResourceHandle[] ): [ Res
 		b.read( underwater );
 		b.readOptional( refraction );
 		b.readOptional( refractionDepth );
+		b.readOptional( seaReflected );
 		sceneColor = b.write( sceneColor );
 		velocity = b.write( velocity );
 		meterLight = b.write( meterLight );
 		sceneDepth = b.depth( sceneDepth, { write: true } );
 		return {
-			label: 'water', mrt: sceneMRT, jittered: true, before: ( f ) => f.water?.prepare( f.sun ),
+			label: 'water', mrt: sceneMRT, jittered: true, before: ( f ) => waterBefore( p, f ),
 			scene: ( f ) => f.water ? f.waterScene : NO_WATER, camera: ( f ) => f.camera,
 		};
 

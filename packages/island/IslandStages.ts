@@ -492,7 +492,7 @@ export function createVegetation( render: RenderParts, island: IslandParts, { fr
 }
 
 /** Holds a box that may rise above all the island grows (a game's prop): the sun's map grows to
- * hold it and the sea's reflection marches it (now, or once the sea is made: `heldOpaque`), and
+ * hold it and the sea's reflection traces through it (now, or once the sea is made: `heldOpaque`), and
  * both keep it over the island's growth. */
 export function holdOpaque( render: RenderParts, island: IslandParts, box: THREE.Box3 ): void {
 

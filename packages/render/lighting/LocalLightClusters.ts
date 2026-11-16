@@ -1,4 +1,4 @@
-import { REFRACTION_GUARD } from '../ocean/Refraction.ts';
+import { REFRACTION_GUARD_BOUND } from '../ocean/Refraction.ts';
 
 // The local lights' cluster grid and its CPU side: the depth slices and each frame's sort.
 //
@@ -17,12 +17,9 @@ export const CLUSTER_WORDS = 1 + PER_CLUSTER / 2;
 /** The first slice's far end, m: from the camera to here, the rest exponential beyond. */
 export const FIRST_SLICE = 5;
 
-/** The refraction's guard band in NDC units on each side (ocean/Refraction.ts: s = 1 + ( l + r ) / 2,
- * c = ( r - l ) / 2), which the edge tiles take in. */
-export const GUARD = {
-	left: REFRACTION_GUARD.sx - 1 - REFRACTION_GUARD.cx, right: REFRACTION_GUARD.sx - 1 + REFRACTION_GUARD.cx,
-	bottom: REFRACTION_GUARD.sy - 1 - REFRACTION_GUARD.cy, top: REFRACTION_GUARD.sy - 1 + REFRACTION_GUARD.cy,
-};
+/** The refraction's guard band in NDC units on each side at its widest (ocean/Refraction.ts), which
+ * the edge tiles take in: the band below follows the camera, and the clusters cover all it can reach. */
+export const GUARD = REFRACTION_GUARD_BOUND;
 
 /** The slices' three numbers: the first's far end, the last's, and k = ( GRID.z - 1 ) / ln( last / first ),
  * for the farthest reach of a source in view `reach` (m). */

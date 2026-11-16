@@ -33,6 +33,15 @@ repeats pixel for pixel between page loads, so a reference and a test set must m
 captured with `--repeat` (`--aa-floor`). A view that repeats on the reference must repeat on the
 test side and match it pixel for pixel.
 
+The sea's reflection is the one exception under MSAA. It averages a fixed sequence of frames and
+holds the result (`packages/render/ocean/SeaReflection.ts`, Rest), and a few of the opaque frames it
+reads can differ in their last bits from load to load, so the pixels it reaches can differ by a
+level or two between loads. Each capture records those pixels in its JSON (`held`: cells of the
+render, `packages/render/debug/HeldRegion.ts`), and `diff-set.py --held` counts two captures as
+equal when they are identical, or identical outside the union of both sides' regions and within the
+held tolerance inside it (`HELD` in `tools/kit/tolerance.py`). `capture-set.mjs --check` and
+`verify-scene-jump.mjs --check` pass `--held` for every MSAA comparison.
+
 A scene jump keeps that contract. Only the load-time options need a new page (quality, aa, size and
 device pixel ratio, the debug switches); the views' weather, time, moon and camera are runtime
 state, and `__PONLAI__.establishScene( query )` reaches them in place. After the jump and one
@@ -95,7 +104,13 @@ or waits while another process captures it.
 ## Repeatability observed
 
 - MSAA views repeat pixel for pixel between page loads, with readiness by stability
-  (`tools/kit/capture.mjs`); temporal sets never do.
+  (`tools/kit/capture.mjs`), but where the sea's held reflection reaches; temporal sets never do.
+- The sea's held reflection: in 12 fresh loads of each of the sea's parity views, the views whose
+  traced sea lies near the camera (island-fair-noon, island-clear-golden, island-night-clear,
+  sunrise-long-shadows, meadow-close) repeat pixel for pixel; the others (horizon-fair-noon,
+  water-skim-cliffs, island-from-sea, night-moon, low-36, rim-sea, cliff-sea-golden) show up to 7
+  distinct frames, which differ inside the region only, by 1 level on up to about 200 pixels and by
+  2 on one pixel.
 - A clip of a slow pan over the meadow repeats pixel for pixel between fresh loads. Vegetation crops
   elsewhere can differ in single frames: with the vegetation's depth prepass on, a few samples pass
   its equal depth test differently from frame to frame (blobs of a few to 150 pixels on leaves and

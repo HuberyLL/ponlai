@@ -58,10 +58,12 @@
 // the fresh side stores each ad-hoc view with its definition's hash: a changed query or eval
 // captures it again. The two jump orders (the list, and the reverse with `--suffix .repeat`) then
 // run at once as two child processes, each with its own browser profile (<profile> and
-// <profile>-reverse) and leased slot, and diff-set.py judges them (--aa-floor, or --temporal for
-// aa=taa, taau, fsr3 or gt). By hand: --fresh, --fresh --suffix .repeat (the reference's A/A), the
-// list, the reverse with --suffix .repeat, then `uv run --with numpy --with pillow
-// tools/kit/diff-set.py <ref> <test> --aa-floor`.
+// <profile>-reverse) and leased slot, and diff-set.py judges them (--aa-floor --held, or --temporal
+// for aa=taa, taau, fsr3 or gt). By hand: --fresh, --fresh --suffix .repeat (the reference's A/A),
+// the list, the reverse with --suffix .repeat, then `uv run --with numpy --with pillow
+// tools/kit/diff-set.py <ref> <test> --aa-floor --held`. --held compares the region the sea's held
+// reflection reaches within tools/kit/tolerance.py's HELD and the rest of the frame exactly: each
+// shot's JSON records that region as `held` (packages/render/debug/HeldRegion.ts).
 //
 // --legacy jumps with establishScene's options only (weather, preset or hour, time) and resets the
 // camera to the island view. --retune rebakes the sky on every scene visited, after the view's eval
@@ -82,9 +84,9 @@
 // so --frames keeps that rule only by request. A persistent profile keeps the world and shader caches
 // across runs (one browser per profile at a time).
 //
-// Output: <outDir>/<view><suffix>.png and .json (the page's diagnostics, the crop anchors, the scene
-// it was reached from, `ready`: the readiness record, as capture.mjs's); with --check also
-// <outDir>/diff.txt and diff/. stdout: a line per view and a closing line with the run's time and how
+// Output: <outDir>/<view><suffix>.png and .json (the page's diagnostics, the crop anchors, the held
+// region, the scene it was reached from, `ready`: the readiness record, as capture.mjs's); with
+// --check also <outDir>/diff.txt and diff/. stdout: a line per view and a closing line with the run's time and how
 // much of it went to waiting for the GPU lock (with --check: PASS or FAIL).
 //
 // GPU lock and browser: it takes the GPU lock itself, shared (docs/reference/gpu-lock.md), leased per
@@ -285,7 +287,9 @@ async function shoot( page, view, ready, extra ) {
 	await page.screenshot( { path: file, timeout } );
 	const diag = await page.evaluate( () => ( { ...window.__THREE_GAME_DIAGNOSTICS__ } ) );
 	const crops = await page.evaluate( () => window.__PONLAI_CROPS__ ?? null );
-	await writeFile( path.join( outDir, `${ view }${ suffix }.json` ), JSON.stringify( { browser, viewport: { width: W, height: H }, ...extra, ready, diag, ...( crops ? { crops } : {} ) }, null, 1 ) );
+	// where the shot is compared within the held tolerance (tools/kit/tolerance.py)
+	const held = await page.evaluate( () => window.__PONLAI__.heldRegion?.() ?? null );
+	await writeFile( path.join( outDir, `${ view }${ suffix }.json` ), JSON.stringify( { browser, viewport: { width: W, height: H }, ...extra, ready, diag, ...( crops ? { crops } : {} ), ...( held ? { held } : {} ) }, null, 1 ) );
 
 }
 
@@ -444,7 +448,7 @@ async function check() {
 
 	// diff-set.py, its table also in <outDir>/diff.txt (not `python -I`: it imports tolerance.py beside it)
 	const temporal = [ 'taa', 'taau', 'fsr3', 'gt' ].includes( options.aa );
-	const diffArgs = temporal ? [ '--temporal' ] : [ '--aa-floor' ];
+	const diffArgs = temporal ? [ '--temporal' ] : [ '--aa-floor', '--held' ];
 	const diff = await new Promise( ( resolve ) => {
 
 		const child = spawn( 'uv', [ 'run', '--with', 'numpy', '--with', 'pillow', 'python', path.join( repo, 'tools/kit/diff-set.py' ),

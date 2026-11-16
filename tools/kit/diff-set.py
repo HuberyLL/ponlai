@@ -17,6 +17,7 @@ Options:
     --crop <px>          their size; default 256
     --aa-floor           judge by each view's own repeatability (both sets captured with --repeat)
     --temporal           judge temporal AA captures by the tolerance (not with --aa-floor)
+    --held               MSAA sets: two captures also count as equal within the held tolerance (below)
     --flip               with --temporal: add the mean NVIDIA FLIP, reported only (--with flip-evaluator)
     --crops-from <src>   cut the named crop anchors: ref, test, a directory or a JSON file
     --md <file.md>       the table as Markdown too
@@ -47,6 +48,15 @@ measurement / threshold ratio of the best pairing (pass: at most 1). The crops a
 --crops-from, else of the test side's JSON. FLIP is reported only: a frame's mean hides a missing
 flower entirely. MSAA sets stay pixel-exact (the default and --aa-floor).
 
+--held: MSAA paused frames repeat pixel for pixel, but for the region a held history-dependent
+effect reaches (the sea's reflection: packages/render/debug/HeldRegion.ts), which each capture of a
+set records in its JSON (`held`). With --held, two captures count as equal (in the exact rule and in
+every comparison --aa-floor makes) when they are identical, or identical outside the union of the
+two sides' regions and within tools/kit/tolerance.py's HELD inside it; a view with no region on
+either side stays exact. Rows say `(held)` where a pair passed so, and the report keeps each such
+pair's `use` and measurements under `held`. capture-set.mjs and verify-scene-jump.mjs pass it for
+every MSAA comparison.
+
 --crops-from: `ref` or `test` reads <view>.json on that side, a directory reads <view>.json there,
 and a JSON file holds either one capture's `crops` (used for every view) or { view: crops }.
 
@@ -68,7 +78,7 @@ Cost: seconds for a set; views run in parallel threads. The output does not depe
 table prints in view order and every mean is an exact integer sum divided once.
 
 Exit codes: 0 every view passes; 1 a view fails or is missing; 2 a usage error (--temporal with
---aa-floor).
+--aa-floor or --held).
 """
 import sys
 from pathlib import Path
@@ -121,12 +131,15 @@ ap.add_argument("--md", default=None)
 ap.add_argument("--crops-from", default=None)
 ap.add_argument("--temporal", action="store_true")
 ap.add_argument("--flip", action="store_true")
+ap.add_argument("--held", action="store_true")
 # views compared at once: 4, or half the cores when the CPU has fewer than 8, since captures and
 # world generation share the CPU
 ap.add_argument("--jobs", type=int, default=min(4, max(1, (os.cpu_count() or 2) // 2)))
 a = ap.parse_args()
 if a.temporal and a.aa_floor:
     ap.error("--temporal and --aa-floor are two different rules: pick one")
+if a.held and a.temporal:
+    ap.error("--held is for MSAA sets (exact or --aa-floor), not --temporal")
 
 ref, test = Path(a.ref), Path(a.test)
 out = Path(a.out) if a.out else test / "diff"
@@ -197,14 +210,61 @@ def named_crops(v, A, B, D, r):
     im.save(out / f"{v}.anchors.png")
 
 
-def aa_pair(fs, d, v):
+def view_crops(v):
+    """The named crops the tolerances judge: --crops-from's, else the test side's JSON's."""
+    if a.crops_from:
+        return crops_for(v)
+    f = test / f"{v}.json"
+    return json.loads(f.read_text()).get("crops", {}) if f.exists() else {}
+
+
+def helds(v):
+    """The `held` records of the view's captures on both sides (tools/kit/tolerance.py held_region)."""
+    out = []
+    for d in (ref, test):
+        for f in (d / f"{v}.json", d / f"{v}.repeat.json"):
+            try:
+                out.append(json.loads(f.read_text()).get("held") if f.exists() else None)
+            except ValueError:
+                pass
+    return out
+
+
+class Held:
+    """--held: two MSAA captures count as equal when identical, or identical outside the view's held
+    region and within the held tolerance inside it (tools/kit/tolerance.py HELD)."""
+
+    def __init__(self, fs, v):
+        self.fs, self.v, self.region, self.crops, self.seen = fs, v, False, None, []
+
+    def equal(self, p, q):
+        fs = self.fs
+        if fs.same(p, q):
+            return True
+        if not a.held:
+            return False
+        A, B = fs.load(p), fs.load(q)
+        if A.shape != B.shape:
+            return False
+        if self.region is False:
+            self.region, self.crops = tolerance.held_region(helds(self.v), A.shape), view_crops(self.v)
+        if self.region is None:
+            return False
+        m = tolerance.measure(A, B, self.crops, tolerance.HELD, self.region)
+        ok, use, why = tolerance.judge(m, tolerance.HELD)
+        self.seen.append({"files": [str(p), str(q)], "pass": ok, "use": use, "why": why, "outside": m["outside"], "max": m["frame"]["max"], "off": m["frame"]["off"]})
+        return ok
+
+
+def aa_pair(held, d, v):
     fa, fb = d / f"{v}.png", d / f"{v}.repeat.png"
     if not fa.exists() or not fb.exists():
         return None
-    if fs.same(fa, fb):
-        return {"identical": True, "max": 0, "over": {str(l): 0 for l in LEVELS}}
-    _, _, st = stats(fs.load(fa), fs.load(fb))
+    if held.fs.same(fa, fb):
+        return {"identical": True, "equal": True, "max": 0, "over": {str(l): 0 for l in LEVELS}}
+    _, _, st = stats(held.fs.load(fa), held.fs.load(fb))
     st["identical"] = False
+    st["equal"] = held.equal(fa, fb)
     return st
 
 
@@ -213,14 +273,14 @@ def fmt(st):
         return "no repeat"
     if st.get("identical"):
         return "identical"
-    return f"max {st['max']}, {st['over']['1']} px>1, {st['over']['2']} px>2"
+    return f"max {st['max']}, {st['over']['1']} px>1, {st['over']['2']} px>2" + (" (held)" if st.get("equal") else "")
 
 
 def temporal(fs, v):
     """The tolerance on the best pairing of the two sides' captures (one recapture before a failure counts)."""
     same = ref.resolve() == test.resolve()
     sides = [("", ".repeat")] if same else [(s, t) for s in ("", ".repeat") for t in ("", ".repeat")]
-    crops = crops_for(v) if a.crops_from else (json.loads((test / f"{v}.json").read_text()).get("crops", {}) if (test / f"{v}.json").exists() else {})
+    crops = view_crops(v)
     best = None
     for s, t in sides:
         p, q = ref / f"{v}{s}.png", test / f"{v}{t}.png"
@@ -263,14 +323,17 @@ def compare(v):
         return [f"{v:24} size {A.shape} vs {B.shape}"], {"sizeMismatch": [A.shape, B.shape]}, (v, "size mismatch", "", "", "FAIL"), False
     D, M, r = stats(A, B)
     r["identical"] = ident
+    held = Held(fs, v)
     if a.aa_floor:
-        ra, ta = aa_pair(fs, ref, v), aa_pair(fs, test, v)
+        ra, ta = aa_pair(held, ref, v), aa_pair(held, test, v)
         r["refAA"], r["testAA"] = ra, ta
         # the cross difference: the closest of the four pairings of the two sides' captures
         cross = r
         pairs = [(ref / f"{v}{s}.png", test / f"{v}{t}.png") for s in ("", ".repeat") for t in ("", ".repeat")]
         if any(p.exists() and q.exists() and fs.same(p, q) for p, q in pairs):
             cross, note = {"identical": True, "max": 0, "over": {str(l): 0 for l in LEVELS}}, "identical"
+        elif any(p.exists() and q.exists() and held.equal(p, q) for p, q in pairs):
+            cross, note = {"identical": True, "held": True, "max": 0, "over": {str(l): 0 for l in LEVELS}}, "within the held tolerance"
         elif ra is None or ta is None:
             note, ok = "a side has no repeat capture", False
         else:
@@ -280,16 +343,16 @@ def compare(v):
                     if (st["max"], st["over"]["1"]) < (cross["max"], cross["over"]["1"]):
                         cross = st
         if cross.get("identical"):
-            ok = not (ra and ra["identical"] and ta and not ta["identical"])
-            note = "identical" if ok else "test does not repeat where the reference does"
+            ok = not (ra and ra["equal"] and ta and not ta["equal"])
+            note = ("within the held tolerance" if cross.get("held") else "identical") if ok else "test does not repeat where the reference does"
         elif ra is not None and ta is not None:
-            if ra["identical"]:
+            if ra["equal"]:
                 ok, note = False, "differs where the reference repeats"
             else:
                 floor = {k: max(ra[k] if k == "max" else ra["over"][k], ta[k] if k == "max" else ta["over"][k]) for k in ("max", "1", "2")}
                 ok = cross["max"] <= floor["max"] and cross["over"]["1"] <= floor["1"] and cross["over"]["2"] <= floor["2"]
                 note = "within the A/A floor" if ok else f"over the A/A floor (max {floor['max']}, {floor['1']} px>1, {floor['2']} px>2)"
-                if ta["identical"]:
+                if ta["equal"]:
                     note += "; test repeats, the reference does not"
         r["cross"] = {k: cross[k] for k in ("max", "over") if k in cross} | {"identical": bool(cross.get("identical"))}
         r["note"] = note
@@ -305,7 +368,9 @@ def compare(v):
         if a.flip:
             r["flip"] = tolerance.flip_mean(A, B)
     else:
-        ok = r["over"]["1"] < a.max_px1 and r["over"]["2"] == 0 if a.max_px1 > 0 else ident
+        ok = r["over"]["1"] < a.max_px1 and r["over"]["2"] == 0 if a.max_px1 > 0 else (ident or held.equal(fa, fb))
+    if held.seen:
+        r["held"] = held.seen
     r["pass"] = bool(ok)
     if r["max"] > 0:
         Image.fromarray(X8[M]).save(out / f"{v}.diff.png")
@@ -324,8 +389,9 @@ def compare(v):
         row = (v, t["pair"], str(mx), off, f"{t['use']:.3f}" if t["use"] is not None else "", verdict)
         lines = [f"{v:24} {t['pair']:15} {mx:4} {off:>8} {row[4]:>6}  {verdict}"]
     else:
-        row = (v, "yes" if ident else "no", str(r["max"]), f"{r['mean']:.4f}", " ".join(str(r["over"][str(l)]) for l in LEVELS), "ok" if ok else "FAIL")
-        lines = [f"{v:24} {('yes' if ident else 'no'):5} {r['max']:4} {r['mean']:8.4f} " + " ".join(f"{r['over'][str(l)]:9}" for l in LEVELS) + ("  ok" if ok else "  FAIL")]
+        verdict = ("ok" + (" (held)" if ok and not ident and a.max_px1 == 0 else "")) if ok else "FAIL"
+        row = (v, "yes" if ident else "no", str(r["max"]), f"{r['mean']:.4f}", " ".join(str(r["over"][str(l)]) for l in LEVELS), verdict)
+        lines = [f"{v:24} {('yes' if ident else 'no'):5} {r['max']:4} {r['mean']:8.4f} " + " ".join(f"{r['over'][str(l)]:9}" for l in LEVELS) + "  " + verdict]
     if a.crops_from:
         for name, c in r["anchors"].items():
             lines.append(f"    {name:20} " + (f"missing ({c['missing']})" if "missing" in c else f"max {c['max']:3}  >1 {c['over']['1']:6}  >2 {c['over']['2']:6}  {c['file']}"))

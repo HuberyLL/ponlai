@@ -1,8 +1,9 @@
 # Test mode
 
-The test mode is how a page is loaded so that a frame repeats exactly: the same query gives the
-same bytes on every load, in every scene jump and after every growth swap. The byte-for-byte checks
-of the capture, parity and verify tools rely on it. The rule behind it is `ARCHITECTURE.md`, rule 4
+The test mode is how a page is loaded so that a frame repeats: the same query gives the same bytes
+on every load, in every scene jump and after every growth swap, but for the pixels the sea's held
+reflection reaches, which repeat within a tolerance (below). The byte-for-byte checks of the
+capture, parity and verify tools rely on it. The rule behind it is `ARCHITECTURE.md`, rule 4
 ([its full text](architecture-rules.md#rule-4-determinism-and-path-independence)).
 
 ## What the test mode is
@@ -27,6 +28,7 @@ settle on its own on a still scene reads the switch, and is frozen or off under 
 | The temporal resolve (`aa=taa`, `taau`, `fsr3`, `gt`) | Frozen by its rest image (`TemporalRest.ts`) and compared within the temporal tolerance (`tools/kit/tolerance.py`). |
 | The clouds' view, the sky's bakes, the refracted sun's map | Settle on their own on a still scene; `settled` waits for them. |
 | The haze's shadow (`packages/render/weather/VolumetricHaze.ts`) | Averages a fixed sequence of jitters from nothing on a still scene and holds it; `settled` waits for it. |
+| The sea's reflection (`packages/render/ocean/SeaReflection.ts`) | Averages a fixed 32-frame sequence from cleared histories and holds it; `settled` waits for it, and a scene jump clears it. A few of the opaque frames it averages can differ in their last bits from load to load, so the pixels it reaches (`__PONLAI__.heldRegion()`, `packages/render/debug/HeldRegion.ts`) are compared within the held tolerance (`HELD` in `tools/kit/tolerance.py`; `diff-set.py --held`) and the rest of the frame byte for byte. |
 | The exposure's adaptation (`packages/render/post/Exposure.ts`) | Takes its target at once while the scene clock does not step, so the pause freezes it; it keeps `settled` false until it has reached its target. |
 | The pre-exposure (`packages/render/post/PreExposure.ts`) | A whole-stop scale of the stored radiance, taken from the exposure read back. A scene jump resets it, and it reaches the same value on a still scene whatever came before. It keeps `settled` false until the scale a frame used is the one its own exposure asks for, read from a frame drawn the settle frames into a quiet run of the view. Under MSAA the scale does not change under a settled page; under the temporal modes an exposure close to a half stop can still move it, and `settled` then turns false. |
 | The wenyao's schools (`packages/island/life/Wenyao.ts`) | Step only with the scene clock's step, from a layout the land gives. A page loaded paused never steps them; `establishScene` returns them to that layout, and so does a Grow while they have not stepped. They need no switch. |

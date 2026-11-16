@@ -74,8 +74,9 @@
 // tools/kit/reference.mjs. Repeats that differ are recorded in the manifest, not an error. --check
 // does the same for the reference (captured only from --ref-url), captures the test side with the
 // same options and runs `uv run tools/kit/diff-set.py <ref> <testDir> --views <the views>` with
-// --diff's options, by default `--temporal` for taa, taau, fsr3 and gt, else `--aa-floor` with
-// --repeat, else `--max-px1 0`.
+// --diff's options, by default `--temporal` for taa, taau, fsr3 and gt, else `--aa-floor --held`
+// with --repeat, else `--max-px1 0 --held` (--held: the region a held effect reaches, which each shot
+// records in its JSON as `held`, is compared within tools/kit/tolerance.py's HELD).
 //
 // A failed view (a timeout, a page or console error, a crash) ends its page; it is retried on a
 // fresh page and the views still to come go on there. A page silent for three times --timeout plus
@@ -513,7 +514,7 @@ if ( mode === 'plain' ) {
 	} else {
 
 		const temporal = [ 'taa', 'taau', 'fsr3', 'gt' ].includes( options.aa );
-		const diffArgs = options.diff ? options.diff.split( /\s+/ ).filter( Boolean ) : temporal ? [ '--temporal' ] : options.repeat ? [ '--aa-floor' ] : [ '--max-px1', '0' ];
+		const diffArgs = options.diff ? options.diff.split( /\s+/ ).filter( Boolean ) : temporal ? [ '--temporal' ] : options.repeat ? [ '--aa-floor', '--held' ] : [ '--max-px1', '0', '--held' ];
 		// (not `python -I`: diff-set.py imports tolerance.py from its own directory)
 		const { code, out } = await run( 'uv', [ 'run', '--with', 'numpy', '--with', 'pillow', 'python', path.join( REPO, 'tools/kit/diff-set.py' ),
 			ref.dir, outDir, '--views', views.join( ',' ), '--out', path.join( outDir, 'diff' ), ...diffArgs ], path.join( outDir, 'diff.txt' ) );

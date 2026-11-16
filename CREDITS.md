@@ -13,8 +13,9 @@ Papers, talks and techniques are credited in a comment where they are used.
 
 ## Adapted code
 
-All MIT ([`LICENSES/MIT.txt`](LICENSES/MIT.txt)); each adapted file names its source and carries
-the notice.
+All MIT ([`LICENSES/MIT.txt`](LICENSES/MIT.txt)) but pbrt-v3, BSD-2-Clause
+([`LICENSES/BSD-2-Clause.txt`](LICENSES/BSD-2-Clause.txt)); each adapted file names its source and
+carries the notice.
 
 - [tidewater](https://github.com/dgreenheck/tidewater), by Daniel Greenheck: © 2026 DRG Software
   Solutions LLC. The ocean, the water, the sky, the clouds, the post-processing and the fish, in
@@ -48,6 +49,15 @@ the notice.
 - [AMD FidelityFX SDK](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK) 2.3.0, FSR 3
   upscaler: © 2026 Advanced Micro Devices, Inc. (the MIT section of the SDK's licence).
   `packages/render/post/fsr3/` and `packages/render/post/TemporalHistory.ts`.
+- [AMD FidelityFX SDK](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK) 1.1.4,
+  Stochastic Screen-Space Reflections and the reflection denoiser: © 2024 Advanced Micro Devices,
+  Inc. The sea's reflection (`packages/render/ocean/SeaReflection.ts`,
+  `packages/render/ocean/ScreenReflection.ts`).
+- [temporal](https://github.com/playdeadgames/temporal), by Playdead: © 2015 Playdead. The clip of
+  a history to a box, as the FidelityFX denoiser takes it (`packages/render/ocean/SeaReflection.ts`).
+- [pbrt-v3](https://github.com/mmp/pbrt-v3), by Matt Pharr, Greg Humphreys and Wenzel Jakob:
+  © 1998-2015 Matt Pharr, Greg Humphreys and Wenzel Jakob (BSD-2-Clause). The sampling of
+  Beckmann's visible normals (`packages/render/ocean/ScreenReflection.ts`).
 - [meshoptimizer](https://github.com/zeux/meshoptimizer), by Arseny Kapoulkine, bundled from three's
   `examples/jsm/libs/meshopt_simplifier.module.js`: © 2016-2026 Arseny Kapoulkine. Its notice
   ships in the bundle through `packages/island/world/IslandSimplify.ts`.

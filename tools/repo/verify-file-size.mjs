@@ -39,7 +39,6 @@ const CODE = /\.(ts|mts|js|mjs)$/;
 const KNOWN = {
 	'packages/render/weather/VolumetricHaze.ts': 1809,
 	'packages/island/world/Grass.ts': 1605,
-	'packages/render/ocean/Water.ts': 1645,
 	'packages/render/post/graph/FrameGraph.ts': 1525,
 };
 

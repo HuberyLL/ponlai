@@ -47,7 +47,7 @@ reading means. Read them there, never by starting the tool to see. Every wait go
   explains the flag's naming once the change ships.
 - A/B of a quality knob inside one build: the load-time override `tier.<knob>=<value>`
   (`docs/reference/url-options.md`), so the two sides are two URLs of one production build, for
-  example `--compare "<url>?tier.water.ssrSteps=20" "<url>?tier.water.ssrSteps=16"`; an A/A
+  example `--compare "<url>?tier.water.ssrIterations=48" "<url>?tier.water.ssrIterations=32"`; an A/A
   passes the default value on both sides.
 - Switching a part off for its cost (step 4) or an upper bound (step 5): `--toggle` with an
   expression on the page's handle, for example `--toggle "s.water.mesh.visible = !on"`, or

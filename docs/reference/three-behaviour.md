@@ -179,8 +179,9 @@ Check: the lint rule `ponlai/vegetation-tag`.
 
 ### The water's textures
 
-The water's fragment stage already samples 14 of the 16 textures WebGPU guarantees, so the water
-samples neither the target it draws into nor a history or a reactive input: what the resolve needs
+The water's fragment stage already samples 15 of the 16 textures WebGPU guarantees. Besides the sea
+reflection's result, a history read by `textureLoad` at the water's own pixel, the water samples
+neither the target it draws into nor another history or a reactive input: what the resolve needs
 from it goes out through its velocity. A new mesh under the water, a swimmer, or a tall or offshore
 opaque object tells the water (`ocean/Water.ts`;
 [Materials](../bindings/building-cinematic-stylised-realism.md#materials)).

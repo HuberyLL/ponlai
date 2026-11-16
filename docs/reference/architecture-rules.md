@@ -99,9 +99,11 @@ Its per-frame update reads the scene clock's step, never the wall clock, so a st
 (rule 17 names the three cadences that follow the wall clock's step). The test mode is a paused page
 under MSAA, with every history-dependent effect frozen or off, shot once the page's `settled` signal
 holds ([Test mode](test-mode.md)). There a paused frame repeats exactly and equals a fresh
-load's, and refactors are checked byte for byte. Under the temporal modes a paused page shows its
-rest image, compared within the tolerance. A new history-dependent effect follows
-the [verifying-rendering-changes binding](../bindings/verifying-rendering-changes.md), History.
+load's, and refactors are checked byte for byte, but for the pixels the sea's held reflection
+reaches, compared within the held tolerance (`HELD` in `tools/kit/tolerance.py`). Under the
+temporal modes a paused page shows its rest image, compared within the tolerance. A new
+history-dependent effect follows the
+[verifying-rendering-changes binding](../bindings/verifying-rendering-changes.md), History.
 
 **Why:** a save must play on as the original; a grown page must hold the world a fresh load
 holds; a headless run must repeat byte for byte, so that a change to the rules shows as a

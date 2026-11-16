@@ -56,6 +56,9 @@ export interface SeaLook {
 	detail: { gust: number; slick: number; streak: number };
 	/** The distant swell under the weather's own sea. */
 	swell: Readonly<SwellParams>;
+	/** The share of Cox and Munk's mean square slope held below every pixel, as waves finer than any
+	 * read of the cascades (0 to below 1; ocean/OceanFFT.ts `slopeBudget`). */
+	subPixelSlope: number;
 }
 
 // ---- the day (DayLook.ts `createDayWindows` and ExposureLook.ts `createExposure`, from the stage
