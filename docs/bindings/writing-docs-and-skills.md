@@ -86,7 +86,9 @@ homes in this repository:
   the model for the layout.
 - Loading: a tracked link `.claude/skills/<name>` pointing to `../../skills/<name>`, and a line
   `!.claude/skills/<name>` in `.gitignore`; a skill without that line stays private.
-  `tools/repo/verify-skill-links.mjs` checks the links. `.claude-plugin/plugin.json` declares the
-  same `skills/` as a plugin.
+  `tools/repo/verify-skill-links.mjs` checks the links. The same `skills/` ships as a Claude Code
+  plugin: `.claude-plugin/marketplace.json` lists `plugins/ponlai/`, whose `skills` is a link to
+  `skills/`, so an install copies the skills and nothing else (a plugin at the root would also get
+  the root's npm packages installed).
 - Binding: `docs/bindings/<name>.md`, opening with the paragraph above, a section per step that
   needs one, named after it.
