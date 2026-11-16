@@ -16,7 +16,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, float, ivec2, vec2, vec3, vec4, mat4, uniform, texture, textureLoad, screenCoordinate, outputStruct, mrt, output,
-	floor, fract, mix, min, max, abs, sqrt, exp, exp2, log2, trunc, clamp, step, pow, dot, length, normalize, select,
+	floor, fract, mix, min, max, abs, sqrt, exp, exp2, log, log2, trunc, clamp, step, pow, dot, length, normalize, select,
 } from 'three/tsl';
 import type { FrameGraph, ResourceHandle } from '../post/graph/FrameGraph.ts';
 import { blueNoiseTexture, BLUE_NOISE } from '../post/BlueNoise.ts';
@@ -47,15 +47,16 @@ type Histories = Pick<FrameGraph<never>, 'color' | 'previous' | 'texture' | 'cop
 //   scene's copy it reflects, so it is drawn once more ahead of it. Copied at the frame's end into
 //   `seaSurfacePrev`, the reprojection's history of the surface.
 // - seaReflectionTrace: one reflected direction per pixel, a normal drawn from Beckmann's visible
-//   normals (ScreenReflection.ts `sampleBeckmannVisible`) for the pixel's two blue-noise numbers,
+//   normals (ScreenReflection.ts `sampleBeckmannVisible`) for two of the pixel's three blue-noise
+//   numbers, and the free path it runs hidden among the plants for the third (`setPlants`),
 //   traced over the depth pyramid (ScreenReflection.ts) into `seaRay`: the hit's colour times its
 //   confidence, and the confidence (premultiplied: a miss is 0 and the water keeps its sky there),
 //   and `seaRayLength`, the distance along the ray to where the trace ended. A ray drawn down
 //   into the sea meets the next wave's face and leaves it upward again: it is traced mirrored
 //   about the horizontal (its y made positive), so the water under a cliff keeps the cliff in
 //   those directions instead of the sky's model, which would light it. FidelityFX's
-//   Sobol-scrambled table (about 330 000 numbers) is replaced by the blue-noise tile read at two
-//   offsets, moved each frame by the R2 sequence (Roberts, "The Unreasonable Effectiveness of
+//   Sobol-scrambled table (about 330 000 numbers) is replaced by the blue-noise tile read at three
+//   offsets, moved each frame by the R3 sequence (Roberts, "The Unreasonable Effectiveness of
 //   Quasirandom Sequences", 2018).
 // - seaReflectionMoments: the 9 x 9 Gaussian moments (`exp( -3 i^2 / 25 )` per axis) FidelityFX
 //   takes in shared memory, here separable: a pass sums the rows, and the passes that read the
@@ -128,8 +129,8 @@ const TEMPORAL_STABILITY = 0.7;
 const MAX_SAMPLES = 32;
 // FidelityFX's prefilter taps: the first 15 of Halton( 2, 3 ) stretched to [ -3, 3 ], the centre left out
 const PREFILTER_TAPS = [ [ 0, 1 ], [ - 2, 1 ], [ 2, - 3 ], [ - 3, 0 ], [ 1, 2 ], [ - 1, - 2 ], [ 3, 0 ], [ - 3, 3 ], [ 0, - 3 ], [ - 1, - 1 ], [ 2, 1 ], [ - 2, - 2 ], [ 1, 0 ], [ 0, 2 ], [ 3, - 1 ] ] as const;
-// the R2 sequence's steps (the plastic number's inverse powers)
-const R2 = [ 0.7548776662466927, 0.5698402909980532 ] as const;
+// the R3 sequence's steps (the inverse powers of the root of x^4 = x + 1)
+const R3 = [ 0.8191725133961645, 0.6710436067037893, 0.5497004779019703 ] as const;
 
 const RENDER = { of: 'render' } as const;
 const TILES = { of: 'render', divisor: 8 } as const;
@@ -203,6 +204,10 @@ export class SeaReflection {
 	/** The reflection's box (world space), which the water sets each frame (Water.ts `prepare`). */
 	readonly boxMin = uniform( new THREE.Vector3() );
 	readonly boxMax = uniform( new THREE.Vector3() );
+	/** The plants' volume (world space) and its mean free path (m, 0 with none): `setPlants`. */
+	readonly plantsMin = uniform( new THREE.Vector3() );
+	readonly plantsMax = uniform( new THREE.Vector3() );
+	readonly freePath = uniform( 0 );
 	/** The resolved reflection, premultiplied by its confidence, at the signal's scale: what the water
 	 * reads at its pixel (`shown`, then `sceneUnits`). Bound to the history written last. */
 	readonly result: THREE.TextureNode;
@@ -217,7 +222,7 @@ export class SeaReflection {
 	private readonly graph: Histories;
 	private readonly camera: { [ K in keyof ReflectionCamera ]: THREE.UniformNode<'mat4', THREE.Matrix4> };
 	private readonly previousViewProjection = uniform( new THREE.Matrix4() );
-	private readonly noise = uniform( new THREE.Vector2() );
+	private readonly noise = uniform( new THREE.Vector3() );
 	private readonly historyValid = uniform( 0 );
 	private readonly historyScale = uniform( 1 );
 	private readonly key: number[] = [];
@@ -349,6 +354,7 @@ export class SeaReflection {
 		const trace = screenReflection( {
 			depth: texture( T( inputs.linearDepth ) ), color: texture( T( inputs.opaqueColor ) ), pyramid: inputs.pyramid, iterations: inputs.iterations,
 			box: { min: this.boxMin, max: this.boxMax, cull: debugFlags.ssrCull !== false, clip: debugFlags.ssrClip !== false },
+			plants: { min: this.plantsMin, max: this.plantsMax },
 			waterLevel: shared.waterLevel, gale: shared.wind.gale, camera: C, size,
 		} );
 		const blue = blueNoiseTexture();
@@ -361,14 +367,18 @@ export class SeaReflection {
 			If( traced( s ), () => {
 
 				const posV = viewPoint( p.add( 0.5 ), s.w ).toVar();
+				// the pixel's three numbers: the tile at three offsets, moved by the frame's R3 step
+				const tile = ( dx: number, dy: number ) => ( textureLoad( blue, ivec2( p.add( vec2( dx, dy ) ) ).mod( ivec2( BLUE_NOISE ) ) ) as unknown as V4 ).x;
+				const xi = fract( vec3( tile( 0, 0 ), tile( 23, 41 ), tile( 47, 13 ) ).add( this.noise ) ).toVar();
+				// how far the ray runs hidden in the plants before it meets one: a free path drawn
+				// from the exponential distribution of mean `freePath`
+				const reach = this.freePath.mul( log( float( 1 ).sub( min( xi.z, 0.9999 ) ) ).negate() ).toVar();
 				const V = normalize( C.world.mul( vec4( posV.negate(), 0 ) ).xyz ).toVar();
 				const N = normalOf( s ).toVar();
 				const H = N.toVar();
 				If( s.z.greaterThanEqual( 1e-4 ), () => {
 
-					// the pixel's two numbers: the tile at two offsets, moved by the frame's R2 step
-					const tile = ( dx: number, dy: number ) => ( textureLoad( blue, ivec2( p.add( vec2( dx, dy ) ) ).mod( ivec2( BLUE_NOISE ) ) ) as unknown as V4 ).x;
-					const u = fract( vec2( tile( 0, 0 ), tile( 23, 41 ) ).add( this.noise ) ).toVar();
+					const u = xi.xy;
 					// Duff et al., "Building an Orthonormal Basis, Revisited", JCGT 6:1, 2017 (z the normal)
 					const n = vec3( N.x, N.z, N.y ).toVar();
 					const sgn = select( n.z.greaterThanEqual( 0 ), float( 1 ), float( - 1 ) );
@@ -388,7 +398,7 @@ export class SeaReflection {
 				const R = vec3( Rs.x, abs( Rs.y ), Rs.z ).toVar();
 				If( R.y.greaterThan( 1e-4 ), () => {
 
-					const hit = trace( posV, normalize( C.view.mul( vec4( R, 0 ) ).xyz ) );
+					const hit = trace( posV, normalize( C.view.mul( vec4( R, 0 ) ).xyz ), reach );
 					const c = hit.colour.toVar();
 					colour.assign( vec4( min( c.rgb.mul( SIGNAL ), vec3( SIGNAL_CEILING ) ).mul( c.a ), c.a ) );
 					travelled.assign( hit.length );
@@ -838,13 +848,14 @@ export class SeaReflection {
 		const key = this.key;
 		key.length = 0;
 		key.push( ...camera.matrixWorld.elements, ...projection.elements, frame.time, width, height, restEpoch.scene, preExposure.stops,
-			...frame.signature, ...this.boxMin.value.toArray(), ...this.boxMax.value.toArray() );
+			...frame.signature, ...this.boxMin.value.toArray(), ...this.boxMax.value.toArray(),
+			...this.plantsMin.value.toArray(), ...this.plantsMax.value.toArray(), this.freePath.value );
 		this.rest.observe( key, frame.stable );
 		const index = this.rest.index;
 		this.due = ! this.rest.converged || index !== null;
 		if ( index === 0 ) this.clearHistory();
 		const k = index ?? ( this.frame = ( this.frame + 1 ) % 1024 );
-		this.noise.value.set( ( k * R2[ 0 ] ) % 1, ( k * R2[ 1 ] ) % 1 );
+		this.noise.value.set( ( k * R3[ 0 ] ) % 1, ( k * R3[ 1 ] ) % 1, ( k * R3[ 2 ] ) % 1 );
 		this.historyScale.value = 2 ** ( preExposure.stops - this.historyStops );
 
 	}
@@ -871,6 +882,17 @@ export class SeaReflection {
 	get pending(): boolean {
 
 		return ! this.rest.converged;
+
+	}
+
+	/** The plants' volume (world space), which a ray hidden behind a surface inside it crosses as a
+	 * medium of mean free path `freePath` (m: ScreenReflection.ts, The plants), or none (an empty box). */
+	setPlants( box: THREE.Box3, freePath: number ): void {
+
+		const none = box.isEmpty();
+		this.plantsMin.value.copy( none ? new THREE.Vector3() : box.min );
+		this.plantsMax.value.copy( none ? new THREE.Vector3() : box.max );
+		this.freePath.value = none ? 0 : freePath;
 
 	}
 

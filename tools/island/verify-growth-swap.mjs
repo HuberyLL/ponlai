@@ -47,11 +47,16 @@
 // changing (capture-browser's waitForStable); it is shot, two more frames are drawn and it is shot
 // again. A paused page leaves its settled image for single frames now and then (capture-browser's
 // header), so a view passes when its first shots on G and F, or its second shots, are the same
-// pixels: a real difference shows in both pairs, the frame noise in one at most. Views whose
+// pixels: a real difference shows in both pairs, the frame noise in one at most. The pixels the sea's
+// held reflection reaches repeat from load to load only within a tolerance (docs/reference/test-mode.md),
+// so each shot also records that region (`__PONLAI__.heldRegion()`), and a pair that is not the same
+// pixels still passes when tools/kit/diff-set.py `--held` finds it identical outside the two pages'
+// regions and within tools/kit/tolerance.py's HELD inside them. Views whose
 // load-time options differ cannot share a page (establishScene refuses them).
 //
 // The verdicts (report.json `verdicts`, each pass or fail):
-//   views      each view's first shots on G and F the same pixels, or its second shots (decoded)
+//   views      each view's first shots on G and F the same pixels, or its second shots (decoded), or
+//              either pair within the held rule (above)
 //   hashes     the same chunks with the same hashes
 //   rain       the rain map's size and xform equal and 0 texels differing (all four half-float channels)
 //   ground     the ground grid's lattice equal and every height equal, cell by cell over the union of
@@ -69,7 +74,8 @@
 // anything missing from the drawing shows in the views. The other columns are recorded only.
 //
 // Output: in --out, report.json (the query, the options, per page its record, `compare` and
-// `verdicts`), the shots (G-<view>.png, G-<view>-b.png, F-...); stdout: progress lines with the time
+// `verdicts`), the shots (G-<view>.png, G-<view>-b.png, F-...), and for a view judged by the held rule
+// held/<pair>/{G,F}/<view>.{png,json} with diff-set's output in held/<pair>/diff/; stdout: progress lines with the time
 // of day (for tools/kit/job.mjs wait) and a summary. The rain maps and ground grids are not kept
 // (megabytes per page); their comparison is in the report.
 //
@@ -86,6 +92,7 @@
 import '../kit/help.mjs';
 import '../kit/qos.mjs'; // first: the PNG decodes and the map comparisons run here
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { launchCapture, waitForStable, pngShooter, stopLoop, startLoop, decodePng, compareFrames, samePixels } from '../kit/capture-browser.mjs';
 import { leaseGpuLock, releaseGpuLock } from '../kit/gpu-lock.mjs';
@@ -334,9 +341,11 @@ async function shoot( page, side, view, jump ) {
 		const b = await shooter.shoot();
 		writeFileSync( path.join( out, `${ side }-${ view }.png` ), a );
 		writeFileSync( path.join( out, `${ side }-${ view }-b.png` ), b );
+		// the region the held reflection reaches, for the held rule (the header)
+		const held = await page.evaluate( () => window.__PONLAI__.heldRegion?.() ?? null );
 		const stable = samePixels( a, b ) ? 0 : compareFrames( decodePng( a ), decodePng( b ) ).over[ 0 ];
 		log( side, view, `ready ${ settle.status } after ${ settle.framesWaited ?? 0 } frames, ${ stable === 0 ? 'stable' : `${ stable } px changed in two frames` } (${ ( ( Date.now() - t ) / 1000 ).toFixed( 0 ) } s)` );
-		return { png: [ a, b ], record: { jump, ready: settle.status, framesWaited: settle.framesWaited, stable: stable === 0, changedPixels: stable } };
+		return { png: [ a, b ], held, record: { jump, ready: settle.status, framesWaited: settle.framesWaited, stable: stable === 0, changedPixels: stable } };
 
 	} finally {
 
@@ -350,6 +359,7 @@ async function shoot( page, side, view, jump ) {
 
 const report = { base, steps, freshGrow, views, query: viewQuery( views[ 0 ] ), memoryTolerance: MEMORY_TOLERANCE, pages: {} };
 const shots = { G: {}, F: {} };
+const helds = { G: {}, F: {} };
 const measured = {};
 let failure = null;
 const capture = await launchCapture( { viewport: { width: W, height: H }, deviceScaleFactor: 1, url: base } );
@@ -442,6 +452,7 @@ try {
 
 				const s = await shoot( page, side, view, i > 0 );
 				shots[ side ][ view ] = s.png;
+				helds[ side ][ view ] = s.held;
 				rec.shots[ view ] = s.record;
 
 			}
@@ -471,6 +482,27 @@ try {
 // ------------------------------------------------------------------ comparison
 
 const half = ( u ) => { const e = ( u >> 10 ) & 31, m = u & 1023, s = u >> 15 ? - 1 : 1; return e === 0 ? s * m * 2 ** - 24 : e === 31 ? NaN : s * ( 1 + m / 1024 ) * 2 ** ( e - 15 ); };
+
+/** Whether shot pair `k` of `view` (0 the first shots, 1 the second) holds within the held rule:
+ * diff-set.py --held, exact outside the two pages' held regions (the header). */
+function withinHeld( view, k ) {
+
+	if ( ! helds.G[ view ] && ! helds.F[ view ] ) return false;
+	const dir = path.join( out, 'held', String( k + 1 ) );
+	for ( const side of [ 'G', 'F' ] ) {
+
+		mkdirSync( path.join( dir, side ), { recursive: true } );
+		writeFileSync( path.join( dir, side, `${ view }.png` ), shots[ side ][ view ][ k ] );
+		writeFileSync( path.join( dir, side, `${ view }.json` ), JSON.stringify( { held: helds[ side ][ view ] } ) );
+
+	}
+	// not `python -I`: diff-set.py imports tolerance.py beside it
+	const r = spawnSync( 'uv', [ 'run', '--with', 'numpy', '--with', 'pillow', 'python', path.join( ROOT, 'tools/kit/diff-set.py' ),
+		path.join( dir, 'G' ), path.join( dir, 'F' ), '--views', view, '--max-px1', '0', '--held', '--out', path.join( dir, 'diff' ) ], { cwd: ROOT, encoding: 'utf8' } );
+	writeFileSync( path.join( dir, `${ view }.txt` ), `${ r.stdout ?? '' }${ r.stderr ?? '' }` );
+	return r.status === 0;
+
+}
 
 function compareRain( a, b ) {
 
@@ -536,7 +568,8 @@ if ( failure ) {
 		};
 		const first = pair( 0 );
 		const c = { ...first, second: pair( 1 ).identical, changedPixels: { G: pg.shots[ view ].changedPixels, F: pf.shots[ view ].changedPixels } };
-		c.pass = c.identical || c.second;
+		if ( ! c.identical && ! c.second ) c.held = [ 0, 1 ].some( ( k ) => withinHeld( view, k ) );
+		c.pass = c.identical || c.second || c.held === true;
 		compare.views[ view ] = c;
 		viewsOk &&= c.pass;
 
@@ -575,7 +608,8 @@ if ( ! failure ) {
 	const viewText = ( v ) => {
 
 		const x = c.views[ v ], noise = x.changedPixels.G + x.changedPixels.F;
-		const text = x.identical ? 'identical' : x.second ? 'second shots identical' : `${ x.over[ 0 ] } px differ (max ${ x.max })`;
+		const text = x.identical ? 'identical' : x.second ? 'second shots identical'
+			: `${ x.over[ 0 ] } px differ (max ${ x.max })${ x.held ? ', within the held tolerance' : '' }`;
 		return `${ v } ${ text }${ noise ? ` (${ x.changedPixels.G } / ${ x.changedPixels.F } px changed between shots)` : '' }`;
 
 	};

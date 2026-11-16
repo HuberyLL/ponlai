@@ -78,6 +78,18 @@ export function loadBambooLook( option: string | null ): void {
 
 }
 
+/** The mean free path (m) of a level ray through a grove: how far it runs, on average, before it
+ * meets a culm. A ray meets every culm whose axis passes within half a diameter of it, so the path
+ * is one over the culms' density ( GROVES.dense a cell ) times their diameter (a culm of the grove's
+ * mean height, at its foot: about 10 m). The culms' taper lengthens it; the branches and the leaves,
+ * left out, shorten it far more in the crowns, so it is the longest path the grove gives. */
+export function groveFreePath(): number {
+
+	const diameter = 0.95 * GROVES.height / GROVES.slender;
+	return GROVES.cell * GROVES.cell / ( GROVES.dense * diameter );
+
+}
+
 /** A culm's place and build: its foot, height (m), foot radius (m), age (0 new to 1 old), the
  * level way it leans ( outX, outZ ), its lean (rad) and bow (m), the groves' density at its foot
  * and the seed of its form and its leaves' colour. */

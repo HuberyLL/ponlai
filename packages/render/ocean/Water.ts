@@ -1421,6 +1421,15 @@ export class Water {
 
 	}
 
+	/** The plants' volume (a box of plants, held too: `hold`) and their mean free path (m): a
+	 * reflected ray hidden behind a surface inside it meets the plants within a free path
+	 * (ScreenReflection.ts, The plants). Again when the plants grow. */
+	setPlants( box: THREE.Box3, freePath: number ): void {
+
+		this.inputs.reflection.setPlants( box, freePath );
+
+	}
+
 	// the reflection box's floor: REFLECTION_FLOOR under the sea level, whatever is held
 	private get reflectionFloor(): number {
 

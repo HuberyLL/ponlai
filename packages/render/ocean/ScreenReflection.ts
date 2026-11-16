@@ -61,6 +61,17 @@ type M4 = THREE.Node<'mat4'>;
 // screen's border (a twentieth of its height). On top of that, rays toward the camera fade out (what
 // they meet is the back of things) and hits fade out from 120 m to FARTHEST.
 //
+// The plants (`plants`, the box SeaReflection.ts `setPlants` sets): the depth buffer holds only a
+// grove's nearest culms and leaves, and a ray among them passes behind those by metres where it runs
+// through the grove unseen, far more than a solid's THICKNESS. Taken as a miss, it fell back to the
+// sky, so most of a grove's reflection was the sky's, the more so the steeper the ray. Inside the
+// plants' box, what a ray crosses unseen is taken as a medium of the plants' mean free path: each ray
+// draws how far it runs hidden before it meets a plant (`reach`, exponential of that mean, from the
+// pixel's third blue-noise number), and a surface it passes behind by no more than that depth is met
+// at full confidence, in the colour of the plant in front. Over the rays the denoiser gathers, the
+// share that meets the plants after running a depth x hidden is the medium's, 1 - exp( -x / mean ).
+// Outside the box, and where the drawn path is shorter, a surface is a solid's, THICKNESS deep.
+//
 // The box (Water.ts `reflectionBounds`), in two switches: cull, a ray that never meets the box within
 // its stretch misses without tracing (most of the sea away from the island); clip, the trace covers
 // only the stretch inside the box. The stretch before the box crosses the screen over the seabed and
@@ -84,8 +95,8 @@ type M4 = THREE.Node<'mat4'>;
 export const FARTHEST = 260;
 // How far behind a surface the trace takes the surface to reach (m): a share of its distance, at
 // least `least`. The depth buffer holds only the front of things; a ray that passes behind a surface
-// by less than this meets it, by more goes on past it. The share keeps a distant cliff, whose depth a
-// pixel spans by metres, solid.
+// by less than this meets it, by more goes on past it (among the plants, by their free path: the
+// header, The plants). The share keeps a distant cliff, whose depth a pixel spans by metres, solid.
 const THICKNESS = { least: 0.35, share: 0.02 } as const;
 // FidelityFX's border fade: a twentieth of the screen's height on every side.
 const BORDER = 0.05;
@@ -225,6 +236,7 @@ export interface ScreenReflectionInputs {
 	pyramid: DepthPyramid; // the depth's pyramid
 	iterations: number; // the most steps of the trace (WaterQuality `ssrIterations`), compiled in
 	box: { min: V3; max: V3; cull: boolean; clip: boolean }; // what the sea can reflect (world space)
+	plants: { min: V3; max: V3 }; // the plants' volume (world space; the header, The plants)
 	waterLevel: F;
 	gale: F; // the wind's gale share (shared.ts), which lowers the lifted rock at the waterline
 	camera: ReflectionCamera;
@@ -235,11 +247,12 @@ export interface ScreenReflectionInputs {
  * and the distance along the ray to where the trace ended (m). */
 export interface ReflectionHit { colour: V4; length: F }
 
-/** The trace, built into the calling shader: `trace( posV, Rv )` for the view-space ray from `posV`
- * along unit `Rv`. */
-export function screenReflection( inputs: ScreenReflectionInputs ): ( posV: V3, Rv: V3 ) => ReflectionHit {
+/** The trace, built into the calling shader: `trace( posV, Rv, reach )` for the view-space ray from
+ * `posV` along unit `Rv`, which runs `reach` (m) hidden in the plants before it meets one (the
+ * header, The plants). */
+export function screenReflection( inputs: ScreenReflectionInputs ): ( posV: V3, Rv: V3, reach: F ) => ReflectionHit {
 
-	const { depth, color, pyramid, iterations, box, waterLevel, gale, camera, size } = inputs;
+	const { depth, color, pyramid, iterations, box, plants, waterLevel, gale, camera, size } = inputs;
 	const lastPixel = ivec2( size ).sub( int( 1 ) );
 	const cells = pyramid.reader();
 	const levels = pyramid.levels;
@@ -277,23 +290,26 @@ export function screenReflection( inputs: ScreenReflectionInputs ): ( posV: V3, 
 	const thicknessAt = ( z: F ) => max( abs( z ).mul( THICKNESS.share ), THICKNESS.least );
 
 	// FidelityFX's check of a hit at pixel `p`, view-space point `hv`, from the ray's start at pixel
-	// `start` (the header, The hit): the confidence the surface there is what the ray met
-	const validate = ( p: V2, hv: V3, start: V2 ) => {
+	// `start` (the header, The hit): the confidence the surface there is what the ray met; `reach`,
+	// how far behind it the ray may run hidden among the plants and still meet them there
+	const validate = ( p: V2, hv: V3, start: V2, reach: F ) => {
 
 		const zs = viewZAt( p ).toVar();
 		const r = pixelRay( p ).xyz.toVar();
 		const distance = length( r.mul( zs.div( r.z ) ).sub( hv ) );
-		const meets = float( 1 ).sub( smoothstep( 0, thicknessAt( zs ), distance ) ).toVar();
+		const solid = float( 1 ).sub( smoothstep( 0, thicknessAt( zs ), distance ) ).toVar();
+		const behind = zs.sub( hv.z ).toVar();
+		const meets = max( solid.mul( solid ), select( behind.greaterThanEqual( 0 ).and( behind.lessThanEqual( reach ) ), float( 1 ), float( 0 ) ) );
 		const q = p.div( size ).toVar();
 		const fov = vec2( size.y.div( size.x ), 1 ).mul( BORDER ).toVar();
 		const border = smoothstep( vec2( 0 ), fov, q ).mul( float( 1 ).sub( smoothstep( vec2( 1 ).sub( fov ), vec2( 1 ), q ) ) );
 		const moved = abs( p.sub( start ) ).greaterThanEqual( vec2( 2 ) );
 		const kept = moved.x.or( moved.y ).and( zs.greaterThanEqual( SKY_Z ) );
-		return select( kept, meets.mul( meets ).mul( border.x ).mul( border.y ), float( 0 ) );
+		return select( kept, meets.mul( border.x ).mul( border.y ), float( 0 ) );
 
 	};
 
-	return ( posV: V3, Rv: V3 ) => {
+	return ( posV: V3, Rv: V3, reach: F ) => {
 
 		const res = vec4( 0 ).toVar();
 		const travelled = float( FARTHEST ).toVar();
@@ -309,11 +325,17 @@ export function screenReflection( inputs: ScreenReflectionInputs ): ( posV: V3, 
 
 		} );
 		let traces = Rv.z.lessThanEqual( 0.6 ).and( directionWeight.greaterThan( 0 ) );
-		// where the ray is inside the box (in world space: the view is rigid, so distances along the
-		// ray are the same)
+		// the ray in world space (the view is rigid, so distances along the ray are the same)
+		const origin = camera.world.mul( vec4( posV, 1 ) ).xyz.toVar(), direction = camera.world.mul( vec4( Rv, 0 ) ).xyz.toVar();
+		// where it runs among the plants, and how far it runs there hidden before it meets one (none
+		// where it misses their volume)
+		const amid = rayBoxSpan( origin, direction, plants.min, plants.max ).toVar();
+		const hidden = select( amid.y.greaterThanEqual( amid.x ), reach, float( 0 ) ).toVar();
+		const amidAt = ( t: F ) => select( t.greaterThanEqual( amid.x ).and( t.lessThanEqual( amid.y ) ), hidden, float( 0 ) );
+		// where the ray is inside the box
 		if ( box.cull || box.clip ) {
 
-			const span = rayBoxSpan( camera.world.mul( vec4( posV, 1 ) ).xyz, camera.world.mul( vec4( Rv, 0 ) ).xyz, box.min, box.max ).toVar();
+			const span = rayBoxSpan( origin, direction, box.min, box.max ).toVar();
 			if ( box.cull ) traces = traces.and( span.y.greaterThanEqual( max( span.x, tIn ) ) ).and( span.x.lessThanEqual( tOut ) );
 			if ( box.clip ) {
 
@@ -367,9 +389,12 @@ export function screenReflection( inputs: ScreenReflectionInputs ): ( posV: V3, 
 				// where the ray leaves the cell (pushed a hundredth of a pixel into the next)
 				const exits = cell.add( toward ).mul( cellSize ).add( forward.mul( 0.01 ) ).sub( sa ).div( dSafe );
 				const sExit = min( min( exits.x, exits.y ), s1 ).toVar();
-				const z0 = mix( a.z, b.z, along( s ) ).toVar(), z1 = mix( a.z, b.z, along( sExit ) ).toVar();
+				const u0 = along( s ).toVar(), u1 = along( sExit ).toVar();
+				const z0 = mix( a.z, b.z, u0 ).toVar(), z1 = mix( a.z, b.z, u1 ).toVar();
 				const range = cellRange( level, ivec2( cell ) ).toVar();
-				const back = range.y.sub( thicknessAt( range.y ) ).toVar();
+				// (among the plants where the ray's stretch over the cell meets their span)
+				const among = mix( tIn, tOut, u1 ).greaterThanEqual( amid.x ).and( mix( tIn, tOut, u0 ).lessThanEqual( amid.y ) );
+				const back = range.y.sub( max( thicknessAt( range.y ), select( among, hidden, float( 0 ) ) ) ).toVar();
 				const meets = min( z0, z1 ).lessThanEqual( range.x ).and( max( z0, z1 ).greaterThanEqual( back ) );
 				If( meets.not(), () => {
 
@@ -408,7 +433,7 @@ export function screenReflection( inputs: ScreenReflectionInputs ): ( posV: V3, 
 				const t = travelled;
 				const hw = camera.world.mul( vec4( hv, 1 ) ).xyz.toVar();
 				const base = directionWeight.mul( smoothstep( FARTHEST, 120, t ) ).toVar();
-				const direct = base.mul( validate( p, hv, start ) ).toVar();
+				const direct = base.mul( validate( p, hv, start, amidAt( t ) ) ).toVar();
 				const seen = colourAt( p ).toVar();
 				res.assign( vec4( seen, direct ) );
 				// the waterline (the header): the hit lifted to the waterline, if rock is there

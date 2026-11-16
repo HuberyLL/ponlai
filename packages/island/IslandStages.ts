@@ -40,7 +40,7 @@ import { landBounds, islandSurfaceHeight } from './world/WorldShapes.ts';
 import { GROWTH, LandLattice } from './world/IslandGrowth.ts';
 import { walkPoints } from './world/WalkPath.ts';
 import { buildBamboo, bambooKinds } from './world/Bamboo.ts';
-import { loadBambooLook } from './world/BambooGroves.ts';
+import { groveFreePath, loadBambooLook } from './world/BambooGroves.ts';
 import { singleLeaf, leafAtlas as bambooAtlas } from './world/BambooMaterials.ts';
 import { loadVillager, type Villagers } from './characters/Villagers.ts';
 import { Trample } from './world/Trample.ts';
@@ -110,6 +110,9 @@ export interface IslandParts {
 	yunpeng: Yunpeng;
 	bamboo: Bamboo;
 	heldOpaque: THREE.Box3[];
+	/** the bamboo's box and its groves' mean free path: the volume the sea's reflection crosses as
+	 * a medium (Water.ts `setPlants`) */
+	plants: { box: THREE.Box3; freePath: number };
 	islandMaxDistance: number;
 	SCENE_LOOK: Look;
 	GAME_LOOKS: readonly Look[];
@@ -434,6 +437,7 @@ export function createVegetation( render: RenderParts, island: IslandParts, { fr
 	staged( island ).holdPlants = holdPlants;
 	holdPlants();
 	heldOpaque.push( bambooBox, yunpengBox );
+	island.plants = { box: bambooBox, freePath: groveFreePath() };
 	function setSunCasters(): void {
 
 		vegetationCasters( vegetation, { ground: [ world.group ], box: sunCasters } );
@@ -507,7 +511,7 @@ export function holdOpaque( render: RenderParts, island: IslandParts, box: THREE
 export function createGrowth( render: RenderParts, island: IslandParts, { landOptions, game, framing }: { landOptions: { worldSeed: number; step: number }; game: GrowthGame | null; framing: IslandFraming } ) {
 
 	const { renderer, scene, groundBounce, shoreWaves, ambient, refractedSun } = render;
-	const { controls, worldCache, data, fields, world, wenyao, chunkView, showChunkBorders, heldOpaque } = island;
+	const { controls, worldCache, data, fields, world, wenyao, chunkView, showChunkBorders, heldOpaque, plants } = island;
 	const { t0, measureLand, setLand, showWindArrows, vegetation, setLocalSources, holdPlants, setSunCasters } = staged( island );
 	const { poseIslandView, holdsFraming, followFraming } = framing;
 
@@ -534,6 +538,7 @@ export function createGrowth( render: RenderParts, island: IslandParts, { landOp
 			holdPlants();
 			setLocalSources();
 			for ( const box of heldOpaque ) render.water!.hold( box );
+			render.water!.setPlants( plants.box, plants.freePath );
 			setSunCasters();
 			groundBounce.invalidate();
 			// (asked before the pose changes: whether the camera holds the island view)

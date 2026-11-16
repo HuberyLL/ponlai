@@ -984,7 +984,7 @@ export function bakeRainCollision<L>( render: RenderParts, vegetation: Vegetatio
 }
 
 /** The water's surface, over the land's box and what the game holds above it. */
-export function createWater( render: RenderParts, { fields, landBox, seaShape, heldOpaque }: { fields: SceneFields; landBox: Bounds; seaShape: { readonly openSea: { readonly from: number; readonly to: number }; readonly reflectorTop: number }; heldOpaque: THREE.Box3[] } ) {
+export function createWater( render: RenderParts, { fields, landBox, seaShape, heldOpaque, plants }: { fields: SceneFields; landBox: Bounds; seaShape: { readonly openSea: { readonly from: number; readonly to: number }; readonly reflectorTop: number }; heldOpaque: THREE.Box3[]; plants?: { box: THREE.Box3; freePath: number } } ) {
 
 	const { quality, renderer, waterScene, rainScene, afterScene, sky, sunShadow, applySkyFill, fft, waveMaps, seaDetail, pipeline, shoreWaves } = render;
 
@@ -1005,6 +1005,8 @@ export function createWater( render: RenderParts, { fields, landBox, seaShape, h
 	pipeline.seaLevel.value = shared.waterLevel.value;
 	// the boxes held so far (the plants', a game's props shown before the sea was made)
 	for ( const box of heldOpaque ) render.water.hold( box );
+	// the plants' volume, which a reflected ray crosses as a medium (Water.ts `setPlants`)
+	if ( plants ) render.water.setPlants( plants.box, plants.freePath );
 	// the light under the water follows the long waves the sea's surface shows (WaveMaps.ts)
 	waveMaps.attachWaves( { fft, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves } );
 	applySkyFill();
