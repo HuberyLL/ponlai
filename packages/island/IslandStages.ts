@@ -102,7 +102,7 @@ export interface IslandParts {
 	fields: WorldFields;
 	walk: [ number, number ][];
 	world: WorldMeshes;
-	wenyao: Wenyao;
+	wenyao: Wenyao | null;
 	chunkView: { borders: boolean; lines: THREE.LineSegments | null };
 	shownData: WorldData;
 	showChunkBorders: ( on: boolean ) => void;
@@ -323,7 +323,7 @@ export function createLand( render: RenderParts, island: IslandParts, { landOpti
 
 }
 
-/** The world's meshes, and the wenyao over the sea. */
+/** The world's meshes, and the wenyao over the sea (under ?wenyao). */
 export function createWorld( render: RenderParts, island: IslandParts ) {
 
 	const { scene, wind, fft, waveMaps } = render;
@@ -333,10 +333,10 @@ export function createWorld( render: RenderParts, island: IslandParts ) {
 	island.world = world;
 	scene.add( world.group );
 	// The wenyao's schools off the island (life/Wenyao.ts): swimmers (Refraction.ts markSwimmer), which
-	// the opaque pass draws where the eye sees them through the waves (Water.ts swimmerSway).
-	const wenyao = new Wenyao( data, shared, waveMaps, fft );
-	island.wenyao = wenyao;
-	scene.add( wenyao.mesh );
+	// the opaque pass draws where the eye sees them through the waves (Water.ts swimmerSway). Parked:
+	// built only under ?wenyao.
+	island.wenyao = params.has( 'wenyao' ) ? new Wenyao( data, shared, waveMaps, fft ) : null;
+	if ( island.wenyao ) scene.add( island.wenyao.mesh );
 	island.fallingLeaves = TEST_MODE ? null : new FallingLeaves( { shared, fields, soil: textures.soil, wind, atlas: singleLeaf() } );
 
 }
@@ -548,7 +548,7 @@ export function createGrowth( render: RenderParts, island: IslandParts, { landOp
 			poseIslandView( framing.viewOptions, island.islandTurned, island.islandZoom );
 			if ( follow ) followFraming();
 			island.shownData = version;
-			wenyao.setWorld( version );
+			wenyao?.setWorld( version );
 			islandEvent( 'world swap' );
 
 		},
@@ -659,7 +659,7 @@ export function createIslandFrame( render: RenderParts, island: IslandParts, { f
 		advanceLife( dt ) {
 
 			// (their schools take flight more often by night)
-			wenyao.update( render.paused ? 0 : dt, sky.grade.night );
+			wenyao?.update( render.paused ? 0 : dt, sky.grade.night );
 			island.fallingLeaves?.update( render.simTime, freeControls.enabled ? camera.position : controls.target, camera.position );
 
 		},
@@ -687,7 +687,7 @@ export function registerIslandHistories( render: RenderParts, island: IslandPart
 
 	const { wenyao } = island;
 	render.history.onJump( 'islanders', () => island.characters?.reset() );
-	render.history.onJump( 'wenyao', () => wenyao.reset() );
+	render.history.onJump( 'wenyao', () => wenyao?.reset() );
 	render.history.onJump( 'falling leaves', () => island.fallingLeaves?.reset() );
 
 }
