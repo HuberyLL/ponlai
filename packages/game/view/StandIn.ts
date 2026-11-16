@@ -11,7 +11,7 @@ import { GroundBounceLightingModel, writeMeter } from '../../render/index.ts';
 // colours, baked into vertex colours, under one rough material in the island's own light.
 
 // Painted colours are authored as they read in sunlight; the island's turf and stone sit near a
-// tenth albedo, so the palette scales down into that range like the figures' (characterLook).
+// tenth albedo, so the palette scales down into that range.
 const ALBEDO = 0.42;
 
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler();

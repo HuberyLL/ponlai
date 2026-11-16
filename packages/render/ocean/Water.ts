@@ -58,7 +58,7 @@ import { settings } from '../Settings.ts';
 //     (`sunLight`), the foam raised (`foamLight`), the water body in part (`bodyLight`), and the
 //     floor keeps its own sharp shadow; the moon's glint is grey (`keyChroma`), so its path on the
 //     sea stays pale rather than a sheet of the moon's saturated blue, which the water body keeps.
-//     The sea's key is the land's (Sky.ts `seaKeyVisibility`, lighting/KeyCloud.ts): the sky's
+//     The sea's key is the land's (Sky.ts `seaKeyVisibility`): the sky's
 //     (shared.sunColor) through the clouds' own transmittance over the land's floor, the cumulus'
 //     and under a closed deck the deck's floor with its gain, the air's. The sunlight the deck
 //     passes down reaches the sea's surface as it reaches the land, so the water body, its

@@ -1,7 +1,6 @@
 // tools/render/wgsl-build.mjs's entry for the lit materials that read the ambient volume
 // (packages/render/lighting/AmbientSample.ts): a game prop (degree 2) twice, as two materials of one model, to
-// check that the second's code names its own bindings; the islanders' lit figure and the cel
-// material's vertex-colour figure (characters/, which no look draws); the bamboo's culms and leaves (degree 1, as the page draws
+// check that the second's code names its own bindings; the islanders' lit figure (characters/); the bamboo's culms and leaves (degree 1, as the page draws
 // them: wgsl-build/plants.mjs); a surface with the
 // meadow's reading (degree 1, straight above the point); and a surface with an under-water share
 // at degree 1 (the terrain's and the stones' reading, without the terrain's own inputs). The
@@ -20,7 +19,6 @@ import { PROBE_STRIDE } from '../../../packages/render/lighting/ProbeFormat.ts';
 import { GroundBounceLightingModel } from '../../../packages/render/lighting/GroundBounce.ts';
 import { propMaterial } from '../../../packages/game/view/Props.ts';
 import { makeLitFigureMaterial } from '../../../packages/island/characters/FigureSurfaces.ts';
-import { makeVertexColourCharacterMaterial } from '../../../packages/island/characters/CharacterMaterial.ts';
 import { plantDraws, standInBamboo } from './plants.mjs';
 import { vegetationMaterial } from '../../../packages/render/vegetation/Material.ts';
 import { shared } from '../../../packages/render/shared.ts';
@@ -87,12 +85,10 @@ export default async function ( { renderer } ) {
 
 	};
 	const atlas = { map: atlasTexture( 'leafMap' ), alpha: atlasTexture( 'leafAlpha' ), ids: atlasTexture( 'leafIds' ) };
-	const vertexColour = makeVertexColourCharacterMaterial( shared );
 	return [
 		[ 'prop-a', draw( propMaterial( 'prop a' ) ) ],
 		[ 'prop-b', draw( propMaterial( 'prop b' ) ) ],
 		[ 'figure', draw( makeLitFigureMaterial() ) ],
-		[ 'figure-vertex-colour', draw( vertexColour ) ],
 		...plantDraws( standInBamboo( atlas ) ).map( ( [ name, mesh ] ) => [ name, { material: mesh.material, object: mesh, scene, camera } ] ),
 		[ 'meadow-reading', draw( meadow ) ],
 		[ 'terrain-reading', draw( surface( 'terrain reading', () => new GroundBounceLightingModel( { bands: 1, weight: depth } ) ) ) ],

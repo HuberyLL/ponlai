@@ -12,11 +12,10 @@ import type { PartSpec } from './Villagers.ts';
 /** A look's colours: its parts are painted in them, and a stand-in figure wears them when the parts are missing. */
 export interface LookColours { skin: string; hair: string; brows: string; shirt: string; trousers: string; shoes: string; soles: string }
 
-/** A rig file (its skeleton and animation clips) and the parts dressed on it; `lit` figures take the
- * island's own light (FigureSurfaces.ts) instead of the cel steps (CharacterMaterial.ts), `build` their
+/** A rig file (its skeleton and animation clips) and the parts dressed on it; `build` their
  * proportions unless the `islander` URL option names others; `ages`: its file holds the shape keys
  * of sex and age, so its figures take a body (FigureAge.ts), the build that of its adult man. */
-export interface Look { base: string; parts: PartSpec[]; colours: LookColours; lit?: boolean; build?: ProportionName; ages?: boolean }
+export interface Look { base: string; parts: PartSpec[]; colours: LookColours; build?: ProportionName; ages?: boolean }
 
 // The Hanming islanders: the people of 含明, west of Penglai, who "stitch birds' feathers into
 // clothes, drink the dew and climb high all day for water" (拾遗记 卷十). A woven bamboo hat over
@@ -38,7 +37,7 @@ export const hanming = ( name: string ) => assetUrl( `characters/hanming/${ name
 function hanmingLook( c: LookColours, hat: 'Dou' | 'Ruo' ): Look {
 
 	const from = hanming( 'Hanming' );
-	return { base: from, colours: c, lit: true, build: 'real', ages: true, parts: [
+	return { base: from, colours: c, build: 'real', ages: true, parts: [
 		{ from, part: 'Hanming_Head', paint: { Skin: [ c.skin, KIND.skin ], Brows: [ c.brows, KIND.hair ], Eye: [ '#2a1d18', KIND.cloth ] } },
 		{ from, part: 'Hanming_Body', paint: { Skin: [ c.skin, KIND.skin ] } },
 		{ from, part: 'Hanming_Chest', paint: { Skin: [ c.skin, KIND.skin ] }, sex: 'male' },

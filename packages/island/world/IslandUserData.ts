@@ -52,8 +52,4 @@ export const ISLAND_USER_DATA = {
 		on: 'material', sets: 'world/Grass.ts', reads: 'nothing now',
 		means: 'the blades\' material: the wind\'s direction uniform',
 	},
-	casterOfCharacterShadow: {
-		on: 'material', sets: 'characters/CharacterMaterial.ts', reads: 'characters/CharacterShadow.ts',
-		means: 'an islander\'s material, which casts into the figures\' own shadow map',
-	},
 } as const satisfies Record<string, UserDataKey> & { [ K in UserDataName ]?: never };

@@ -26,7 +26,7 @@ type V3 = THREE.Node<'vec3'>;
 // direct term (GroundBounceLightingModel `direct`: the diffuse, the specular with its Fresnel and
 // the disk's representative point, lighting/SurfaceBRDF.ts), the vegetation's wrap and light
 // through to the far side (VegetationLighting), the feathers' (characters/FigureSurfaces.ts), the
-// cel light (characters/CharacterMaterial.ts), the terrain's terminator
+// terrain's terminator
 // (lighting/Underwater.ts), and the shadows that bound them: the sun's map is drawn along the
 // lifted direction (main.ts passes it to SunShadow, and the figures' map follows that map:
 // characters/CharacterShadow.ts), and the meadow's layer shades its blades and the ground under

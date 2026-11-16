@@ -448,7 +448,7 @@ const MOON_HUE = { red: 0.93, blue: 1.16 };
 // layer leaves less, and where the clouds thin to a gap the key goes back to the sky's own, so a
 // gap's lit ground is never brighter than a clear day's under the same sun. The sea keeps the same
 // floor (`seaKeyVisibility`; its glint only the direct beam, `cloudDirectVisibility`), and under a
-// closed sky the air does (`deckKeyFloor`, by overcast's share; lighting/KeyCloud.ts). The floor
+// closed sky the air does (`deckKeyFloor`, by overcast's share). The floor
 // rides on whichever light keys the scene, the moon's by night as the sun's by day; under a closed
 // sky the sun's part of it leaves over the last 2.5 degrees before the horizon (Weather.ts
 // `overcastFloorSun`), so the land there keeps the layer's diffuse light through sunset, with no

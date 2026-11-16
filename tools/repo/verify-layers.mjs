@@ -138,7 +138,6 @@ const PAGE_NEEDS = {
 const STATE = {
 	'packages/render/debug/DebugFlags.ts:debugFlags': [ 'packages/render/post/SubmitBatch.ts', 'packages/render/vegetation/VegetationPrepass.ts' ],
 	'packages/render/lighting/AmbientGrade.ts:ambient': [ 'packages/render/lighting/AmbientRelight.ts' ],
-	'packages/render/lighting/KeyCloud.ts:keyDeckShare': [ 'packages/render/RenderStages.ts' ],
 	'packages/render/lighting/SurfaceBRDF.ts:keyGlint': [ 'packages/render/RenderStages.ts' ],
 	'packages/render/ocean/Water.ts:keyChroma': [ 'packages/render/RenderStages.ts' ],
 	'packages/render/post/GTAO.ts:gtaoMap': [ 'packages/render/post/Pipeline.ts' ],

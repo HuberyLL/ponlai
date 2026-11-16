@@ -77,8 +77,8 @@ import { onSceneDispose } from '../SceneDispose.ts';
 //
 // Receivers: every lit material through its lighting model root (lighting/GroundBounce.ts
 // GroundBounceLightingModel: the terrain and the cliffs above and under the water, the stones, every
-// vegetation kind with the meadow, the bamboo and the yunpeng, the game's props; and the islanders'
-// CharacterLighting). A yunpeng clump takes its own light too: the stalks of a glowing clump do light
+// vegetation kind with the meadow, the bamboo and the yunpeng, the game's props and the islanders'
+// figures). A yunpeng clump takes its own light too: the stalks of a glowing clump do light
 // each other, and the near field's SOFT keeps that below the glow's own radiance. The water, the sky,
 // the clouds and the haze take none (the haze could later, in its froxels' light).
 //

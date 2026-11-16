@@ -27,7 +27,6 @@ import type { KeyLiftShading } from '../look/AmbientLook.ts';
 import type { SkyTables } from '../look/SkyLook.ts';
 import type { DayCycleSnapshot } from './DayCycle.ts';
 import type { WeatherState } from './Weather.ts';
-import { setKeyCloud } from '../lighting/KeyCloud.ts';
 import { bakeColour, dirToEquirect, discCloudTransmittance, domeColour, equirectToDir, lendLand } from './SkyDome.ts';
 import { abortSlices, bake, finishSlices, runSlices, startSlices, type Slice } from './SkyBake.ts';
 import { trackSky } from './SkyTrack.ts';
@@ -495,7 +494,6 @@ export class Sky {
 		this.atmosphere = new Atmosphere( renderer );
 		this.equirect = this.endpoints[ 0 ].equirect;
 		this.clouds = new Clouds( this.atmosphere );
-		setKeyCloud( ( position ) => this.clouds.shadow( position ), this.keyCloudFloor );
 		this.cloudLayer = texture( this.endpoints[ 0 ].clouds.texture );
 		// No panorama holds the stars: the dome and the water draw them themselves, and the light the
 		// sky lends takes none.
@@ -1173,8 +1171,7 @@ export class Sky {
 	 * scene, the moon's by night: `track`), so the land keeps a
 	 * directional light through the sun's map under the thickest deck, and in a gap, where the
 	 * clouds' own is 1, the sky's own key. The sea takes it too (`seaKeyVisibility`), the air the
-	 * deck's floor alone (`deckKeyFloor`); the lit code without a sky reads both through
-	 * lighting/KeyCloud.ts. */
+	 * deck's floor alone (`deckKeyFloor`). */
 	keyDirectVisibility( worldPosition: V3 ): F {
 
 		return mix( this.keyCloudFloor, float( 1 ), this.clouds.shadow( worldPosition ) );

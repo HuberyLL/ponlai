@@ -474,7 +474,7 @@ export function createVegetation( render: RenderParts, island: IslandParts, { fr
 	island.islanderBuild = { proportions: ( PROPORTION_NAMES as string[] ).includes( params.get( 'islander' ) ?? '' ) ? params.get( 'islander' ) as ProportionName : SCENE_LOOK.build ?? 'medium' };
 	const sceneBody: Body = { ...parseBodies( params.get( 'body' ) )[ 0 ] ?? { sex: 'male', age: 30 } };
 	island.sceneBody = sceneBody;
-	island.buildIslander = ( name: ProportionName ) => loadVillager( SCENE_LOOK.base, SCENE_LOOK.parts, shared, PROPORTIONS[ name ], SCENE_LOOK.lit, SCENE_LOOK.ages ? sceneBody : undefined );
+	island.buildIslander = ( name: ProportionName ) => loadVillager( SCENE_LOOK.base, SCENE_LOOK.parts, PROPORTIONS[ name ], SCENE_LOOK.ages ? sceneBody : undefined );
 	// Compiles what `objects` draw in the frame's passes ahead, off the frame: the scene's pass (a latent
 	// of the frame graph's opaque pass, under its target and MRT: the temporal modes' velocity output is
 	// part of its pipelines' keys) and then the sun's map, one draw at a time and in the order a frame
