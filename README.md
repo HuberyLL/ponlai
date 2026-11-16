@@ -293,6 +293,13 @@ The code is in layers, lowest first: the render pipeline (`packages/render/`), t
 the layers below it. [Architecture](ARCHITECTURE.md) describes the layers, the flows and the rules
 across them, and [the docs' index](docs/README.md) lists every page.
 
+## Contribute
+
+Questions and ideas go to [Discussions](https://github.com/HuberyLL/ponlai/discussions), bugs and
+requests to the issues. [Contributing](.github/CONTRIBUTING.md) says how to send a change, and
+everyone who takes part follows the [Code of Conduct](.github/CODE_OF_CONDUCT.md). Report a
+security issue as [Security](.github/SECURITY.md) says.
+
 ## Licence
 
 Ponlai is released under the [MIT License](LICENSE). [Credits](CREDITS.md) lists the third-party

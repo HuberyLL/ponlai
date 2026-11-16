@@ -106,4 +106,10 @@ From npm, shipped with their licence texts.
   `@fontsource/ma-shan-zheng`), OFL-1.1:
   [`packages/game/ui/fonts/MaShanZheng.OFL.txt`](packages/game/ui/fonts/MaShanZheng.OFL.txt).
 
+## Documents
+
+- The [Code of Conduct](.github/CODE_OF_CONDUCT.md) is the
+  [Contributor Covenant](https://www.contributor-covenant.org), version 2.1, CC-BY-4.0
+  ([`LICENSES/CC-BY-4.0.txt`](LICENSES/CC-BY-4.0.txt)).
+
 <!-- REUSE-IgnoreEnd -->

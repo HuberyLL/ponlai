@@ -1,0 +1,32 @@
+name: Bug
+description: Something is wrong on screen, in a tool or in the build.
+labels: [ bug ]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: input
+    id: address
+    attributes:
+      label: Page address
+      description: The address with its options, such as `/?weather=fair&preset=sunset`, or the command you ran.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+  - type: input
+    id: system
+    attributes:
+      label: Browser, GPU and operating system
+      description: With versions, such as Chrome 148, an integrated GPU, Windows 11.
+    validations:
+      required: true
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshots or logs
+      description: A screenshot of the fault, or the browser console's output.

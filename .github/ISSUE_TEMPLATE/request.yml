@@ -1,0 +1,22 @@
+name: Request
+description: A concrete change or addition to the island, the render pipeline, the tools or the docs.
+labels: [ enhancement ]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What you would like
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: The problem it solves, or what it makes possible.
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: How it could work
+      description: Optional. An approach, a reference or a technique you have in mind.
