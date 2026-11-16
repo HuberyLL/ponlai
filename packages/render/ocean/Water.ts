@@ -147,9 +147,10 @@ import { settings } from '../Settings.ts';
 //
 // Limits to keep in mind:
 // - WebGPU guarantees 16 sampled textures per stage (a texture past them fails pipeline creation),
-//   and the fragment stage samples 14: the FFT's fields are array textures, a layer per cascade,
+//   and the fragment stage samples 15: the FFT's fields are array textures, a layer per cascade,
 //   and the storm foam is a storage buffer. The sun's two shadow steps, one array texture, bind in
-//   the vertex stage. So the water samples neither the target it draws into nor a history or a
+//   the vertex stage. Besides the sea reflection's result, a history read by `textureLoad` at the
+//   water's own pixel, the water samples neither the target it draws into nor another history or a
 //   reactive input: what the resolve needs from it goes out through its velocity.
 // - The reflection only finds what lies inside `reflectionBounds` (see below): anything opaque
 //   placed off the island or above 3 m (REFLECTOR_HEIGHT; a tree, a boat, a hut, a mast) must grow

@@ -105,9 +105,10 @@ The page's agreements, the only ways a tool meets it:
   a node tool that loads the modules installs them as the page does (`installSettings(
   parseSettings( query ) )`, `tools/render/wgsl-build.mjs` `--q`).
 - The handles the page mounts on `window` on debug pages: `__PONLAI__` (the page's parts and its
-  controls), `__PONLAI_WORLD__` (`ready` and `ms`, set as the world starts: `app/WorldBoot.ts`) and,
-  with `?profile`, `__PONLAI_PROFILE__` (the frame profiler's readings). The scene page mounts the
-  same handles (`app/scenes/ScenePage.ts`).
+  controls; `heldRegion()`, the cells a paused frame is compared in within the held tolerance:
+  `packages/render/debug/HeldRegion.ts`), `__PONLAI_WORLD__` (`ready` and `ms`, set as the world
+  starts: `app/WorldBoot.ts`) and, with `?profile`, `__PONLAI_PROFILE__` (the frame profiler's
+  readings). The scene page mounts the same handles (`app/scenes/ScenePage.ts`).
 - `__THREE_GAME_DIAGNOSTICS__.settled`, true once a paused frame is final
   (`packages/render/post/Settled.ts`; `docs/reference/page.md`).
 

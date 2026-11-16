@@ -87,10 +87,12 @@ Split draws) and the order materials first build in (Build order).
 
 - The island's views: `capture-set.mjs --check` runs `uv run tools/kit/diff-set.py` with
   `--max-px1 0` under MSAA, `--aa-floor` on sets shot with `--repeat` (each view against its own
-  A/A) and `--temporal` for `taa`, `taau`, `fsr3` and `gt`. Its table, crops and PASS or FAIL land
-  in the test folder.
-- The temporal tolerance, its thresholds and its calibration: `tools/kit/tolerance.py`. What
-  repeats and what does not in this render pipeline: `tools/kit/parity/README.md`.
+  A/A) and `--temporal` for `taa`, `taau`, `fsr3` and `gt`; under MSAA with `--held` too, which
+  compares the pixels the sea's held reflection reaches within the held tolerance and the rest
+  exactly. Its table, crops and PASS or FAIL land in the test folder.
+- The temporal and held tolerances, their thresholds and their calibration:
+  `tools/kit/tolerance.py`. What repeats and what does not in this render pipeline:
+  `tools/kit/parity/README.md`.
 - The test scenes: `scenes.mjs <url> <out> --verify --check`. The `sea` scene gives readings, not a
   pixel check: run `--scenes sea` before and after and read the two `readings.tsv` side by side.
 - Stills of one's own: `uv run tools/kit/img.py diff|crop|sheet|stats` (counts over thresholds, a

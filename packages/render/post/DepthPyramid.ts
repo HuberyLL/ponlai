@@ -31,10 +31,10 @@ type V4 = THREE.Node<'vec4'>;
 //   past its parent level's edge reads the edge child again. At 4K's render (3840 x 2160) the top
 //   level's cells are 1024 pixels wide, 4 x 3 of them.
 // - Storage: one buffer of vec2 ( nearest, farthest ) per cell, the levels one after the other, a
-//   storage buffer rather than a texture: the water's fragment stage samples 14 of the 16 textures
-//   WebGPU guarantees (docs/reference/three-behaviour.md, The water's textures), and reads the
-//   buffer through a read-only storage node (`reader`). `levels` holds each level's ( offset in
-//   cells, width, height, 0 ), level 0's offset unused, set on the CPU from the render's size.
+//   storage buffer rather than a texture, which the sea reflection's trace
+//   (ocean/ScreenReflection.ts) reads through a read-only storage node (`reader`). `levels` holds
+//   each level's ( offset in cells, width, height, 0 ), level 0's offset unused, set on the CPU
+//   from the render's size.
 // - The kernels: one per level, each reading the level under it (level 1 the linear depth), in
 //   8 x 8 workgroups dispatched by the level's size at run time (`renderer.compute( kernel, [ x, y,
 //   1 ] )`), so a step of high's dynamic scale changes the dispatch, not the pipeline (three-behaviour,
