@@ -1,0 +1,7 @@
+{
+	"name": "ponlai",
+	"description": "Skills for building a stylised-realism picture, fitting it to your own reference images, and verifying, measuring and diagnosing a renderer's frames; each reads its project binding in docs/bindings/.",
+	"author": { "name": "Hubery", "url": "https://github.com/HuberyLL" },
+	"homepage": "https://github.com/HuberyLL/ponlai",
+	"license": "MIT"
+}

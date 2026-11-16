@@ -308,9 +308,20 @@ values per weather and hour, and the image;
 [fitting a look to reference images](skills/fitting-a-look-to-reference-images/SKILL.md) finds the
 light, air and image values that bring a frame to your own reference images. The others verify a
 change, measure frame time, find the cause of a defect or of a frame that does not repeat, and write
-shaders, tools and docs ([the docs' index](docs/README.md), Skills). To use one, copy its folder
-into your agent's skills folder (for Claude Code, `.claude/skills/`), and write a binding page of
-your own with the same sections as this repository's.
+shaders, tools and docs ([the docs' index](docs/README.md), Skills).
+
+In Claude Code, install the skills as a plugin. The `--sparse` option downloads only the folders the
+plugin needs, not the whole repository:
+
+```bash
+claude plugin marketplace add HuberyLL/ponlai --sparse .claude-plugin plugins skills
+claude plugin install ponlai@ponlai
+```
+
+The skills then carry the plugin's name, such as `ponlai:verifying-rendering-changes`, and update
+with `claude plugin marketplace update ponlai`. With another agent, copy a skill's folder into the
+agent's skills folder. Either way, write a binding page of your own with the same sections as this
+repository's; the plugin brings the skills, not the tools above, which you copy as the steps say.
 
 ## Structure
 

@@ -1,0 +1,14 @@
+{
+	"name": "ponlai",
+	"description": "Ponlai's agent skills: methods for making and checking a physically based picture in a browser renderer.",
+	"owner": {
+		"name": "Hubery",
+		"url": "https://github.com/HuberyLL"
+	},
+	"plugins": [
+		{
+			"name": "ponlai",
+			"source": "./plugins/ponlai"
+		}
+	]
+}
