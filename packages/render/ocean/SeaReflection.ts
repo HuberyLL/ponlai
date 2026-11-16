@@ -15,7 +15,7 @@
 
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, Loop, float, int, ivec2, vec2, vec3, vec4, mat4, uniform, texture, textureLoad, screenCoordinate, outputStruct, mrt, output,
+	Fn, If, float, ivec2, vec2, vec3, vec4, mat4, uniform, texture, textureLoad, screenCoordinate, outputStruct, mrt, output,
 	floor, fract, mix, min, max, abs, sqrt, exp, exp2, log2, trunc, clamp, step, pow, dot, length, normalize, select,
 } from 'three/tsl';
 import type { FrameGraph, ResourceHandle } from '../post/graph/FrameGraph.ts';
@@ -69,7 +69,9 @@ type Histories = Pick<FrameGraph<never>, 'color' | 'previous' | 'texture' | 'cop
 //   history, the variance, the samples (`seaSamples`, a history of its own) and the radiance the
 //   average takes.
 // - seaReflectionAverage: the radiance averaged over 8 x 8 tiles, weighted toward the dark
-//   (`max( exp( -0.3 L ), 0.01 )`), which FidelityFX gathers in shared memory in the same pass.
+//   (`max( exp( -0.3 L ), 0.01 )`), which FidelityFX gathers in shared memory in the same pass;
+//   here in two passes, the weighted sums of 2 x 2 pixels at half the size, then of 4 x 4 of those
+//   per tile (a tile's 64 loads in one fragment left the pass waiting on its loads).
 // - seaReflectionPrefilter: FidelityFX's 15 taps (Halton 2, 3 within 3 pixels), weighted by the
 //   normals, the depths, the radiance against the tile's average and the variance.
 // - seaReflectionMoments again, of the prefiltered radiance.
@@ -624,30 +626,56 @@ export class SeaReflection {
 
 		} );
 
-		// ---- the 8 x 8 average, weighted toward the dark
+		// ---- the 8 x 8 average, weighted toward the dark, in two stages: the weighted sums of 2 x 2
+		// pixels at half the size (in float), then of 4 x 4 of those
+		const HALF = { of: 'render', divisor: 2 } as const;
+		const halfSize = g.extent( HALF );
+		let sums = g.color( 'seaAverageSum', { size: HALF, format: THREE.RGBAFormat, type: THREE.FloatType, filter: 'nearest' } );
+		let weights = g.color( 'seaAverageWeight', { size: HALF, format: THREE.RedFormat, type: THREE.FloatType, filter: 'nearest' } );
+		const sumColumns = Fn( () => {
+
+			const base = pixel().mul( 2 ).toVar();
+			const sum = vec4( 0 ).toVar(), weight = float( 0 ).toVar();
+			for ( let i = 0; i < 4; i ++ ) {
+
+				const q = base.add( vec2( i % 2, Math.floor( i / 2 ) ) ).toVar();
+				const c = load( T( mixed ), q ).toVar();
+				const w = max( exp( luminance( c ).mul( - AVG_RADIANCE_LUMINANCE_WEIGHT ) ), 0.01 ).mul( select( inside( q ), float( 1 ), float( 0 ) ) ).toVar();
+				sum.addAssign( c.mul( w ) );
+				weight.addAssign( w );
+
+			}
+			return mat4( sum, vec4( weight, 0, 0, 0 ), vec4( 0 ), vec4( 0 ) );
+
+		} )() as unknown as Columns;
+		const sumQuad = quad( 'SeaReflection.AverageSum', outputStruct( sumColumns.element( 0 ), sumColumns.element( 1 ) ) as unknown as V4 );
+		g.addPass( 'seaReflectionAverageSum', 'quad', ( b ) => {
+
+			b.readOptional( mixed );
+			sums = b.write( sums );
+			weights = b.write( weights );
+			return { label: 'sea reflection', jittered, when, whenLabel: 'sea reflection due', quad: sumQuad, mrt: mrt( {} ) };
+
+		} );
 		const averageQuad = quad( 'SeaReflection.Average', Fn( () => {
 
-			const base = pixel().mul( 8 ).toVar();
-			const sum = vec4( 0 ).toVar(), weights = float( 0 ).toVar();
-			Loop( 64, ( { i } ) => {
+			const base = pixel().mul( 4 ).toVar();
+			const sum = vec4( 0 ).toVar(), weight = float( 0 ).toVar();
+			for ( let i = 0; i < 16; i ++ ) {
 
-				const q = base.add( vec2( float( int( i ).mod( int( 8 ) ) ), float( int( i ).div( int( 8 ) ) ) ) ).toVar();
-				If( inside( q ), () => {
+				const q = base.add( vec2( i % 4, Math.floor( i / 4 ) ) ).toVar();
+				const keep = q.x.lessThan( halfSize.x ).and( q.y.lessThan( halfSize.y ) );
+				sum.addAssign( select( keep, textureLoad( T( sums ), ivec2( q ) ) as unknown as V4, vec4( 0 ) ) );
+				weight.addAssign( select( keep, ( textureLoad( T( weights ), ivec2( q ) ) as unknown as V4 ).x, float( 0 ) ) );
 
-					const c = textureLoad( T( mixed ), ivec2( q ) ).toVar() as unknown as V4;
-					const w = max( exp( luminance( c ).mul( - AVG_RADIANCE_LUMINANCE_WEIGHT ) ), 0.01 ).toVar();
-					sum.addAssign( c.mul( w ) );
-					weights.addAssign( w );
-
-				} );
-
-			} );
-			return sum.div( max( weights, 1e-3 ) );
+			}
+			return sum.div( max( weight, 1e-3 ) );
 
 		} )() as unknown as V4 );
 		g.addPass( 'seaReflectionAverage', 'quad', ( b ) => {
 
-			b.readOptional( mixed );
+			b.readOptional( sums );
+			b.readOptional( weights );
 			average = b.write( average );
 			return { label: 'sea reflection', jittered, when, whenLabel: 'sea reflection due', quad: averageQuad };
 
