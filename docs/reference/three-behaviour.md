@@ -61,6 +61,14 @@ Implicitly filtered texture samples and derivatives need uniform control flow. T
 `textureLoad`. Keep filters that take `dFdx` / `dFdy` out of `select()` and `If` branches
 (`lighting/SolarShadow.ts`).
 
+**r186.** A `.toVar()` read by nothing but a sample's `.grad()` is declared where it is first
+read, not where it was made: the texture node keeps its two gradients as a plain array, so the
+build's analysis never records them as readers, and the stack skips a variable whose only reader
+is the stack (a rule meant for variables read only by `toVarying`). A derivative read only by a
+gradient sample inside a branch moves into that branch. Assign it before the branch instead
+(`vec2( 0 ).toVar().assign( dFdx( q ) )`): an assignment is emitted where it is made
+(`ocean/Water.ts`, the refracted end's footprint).
+
 Check: none; judgement.
 
 ### Nested loops

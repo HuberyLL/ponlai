@@ -1212,13 +1212,12 @@ export class Water {
 			const endV = cameraViewMatrix.mul( vec4( wp.add( Tv.mul( Lend ) ), 1 ) ).xyz.toVar();
 			const uvR = projectView( endV, cameraProjectionMatrix ).toVar();
 			const onScreen = uvR.x.greaterThan( 0 ).and( uvR.x.lessThan( 1 ) ).and( uvR.y.greaterThan( 0 ) ).and( uvR.y.lessThan( 1 ) );
-			// The footprint of the pixel at the refracted end, for the underwater pyramid's filtered
-			// read (taken here, before any branch): how the end moves to the neighbouring pixels, each
-			// step widened by the blur of the slopes the pixel cannot resolve. Those tilt the
-			// refracted ray by about a quarter of their slope (1 - 1 / IOR), so along the path through
-			// the water they spread the end over 0.25 sigma L metres (one standard deviation), which
-			// the end's distance turns into pixels. Near the eye the pixel resolves the slopes and the
-			// floor keeps its full sharpness.
+			// The footprint of the pixel at the refracted end, for the underwater pyramid's filtered read: how the end
+			// moves to the neighbouring pixels (assigned before any branch: a derivative read only by a sample's gradients
+			// moves into the branch that reads it; three-behaviour.md, Uniform control flow), each step widened by the blur
+			// of the slopes the pixel cannot resolve. Those tilt the refracted ray by about a quarter of their slope (1 - 1 /
+			// IOR), so along the path through the water they spread the end over 0.25 sigma L metres (one standard deviation),
+			// which the end's distance turns into pixels. Near the eye the pixel resolves the slopes and the floor stays sharp.
 			const p11 = ( cameraProjectionMatrix as unknown as { element( i: number ): { element( i: number ): F } } ).element( 1 ).element( 1 );
 			const blur = sigmaUnresolved.mul( 0.25 ).mul( Lend ).mul( p11 ).mul( depthSize.y.mul( 0.5 ) ).div( max( endV.z.negate(), 0.1 ) ).toVar();
 			const widen = ( g: V2 ) => {
@@ -1227,7 +1226,8 @@ export class Water {
 				return g.mul( sqrt( px.mul( px ).add( blur.mul( blur ) ) ).div( px ) ).toVar();
 
 			};
-			const endDx = widen( dFdx( uvR ) ), endDy = widen( dFdy( uvR ) );
+			const uvRdx = vec2( 0 ).toVar().assign( dFdx( uvR ) ), uvRdy = vec2( 0 ).toVar().assign( dFdy( uvR ) );
+			const endDx = widen( uvRdx ), endDy = widen( uvRdy );
 			// The floor's forward-scattered image (WATER_BODY, the floor's image): the same footprint widened by the
 			// spread the particles' small-angle scattering gives the floor over the path, sigma^2 =
 			// b_f theta^2 L^3 / ( 3 ( 1 - exp( - b_f L ) ) ) metres along one axis, in pixels at the end
@@ -1241,7 +1241,7 @@ export class Water {
 				return g.mul( sqrt( px.mul( px ).add( blur.mul( blur ) ).add( blurScatter.mul( blurScatter ) ) ).div( px ) ).toVar();
 
 			};
-			const scatDx = widenScattered( dFdx( uvR ) ), scatDy = widenScattered( dFdy( uvR ) );
+			const scatDx = widenScattered( uvRdx ), scatDy = widenScattered( uvRdy );
 			const behind = ( z: F ) => z.lessThan( posV.z.sub( WATER_BEHIND ) );
 			const sceneCol = vec3( 0 ).toVar();
 			const sceneBlur = vec3( 0 ).toVar(); // the floor's forward-scattered image (WATER_BODY)
