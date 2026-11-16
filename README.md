@@ -1,9 +1,16 @@
 # Ponlai
 
-Ponlai is a small island in an open sea, rendered in the browser with three.js and WebGPU: a visual
-sample for a game, with the game growing behind the `?game` option. The island is lit as the sun and
-the sky light it, on a physically based renderer, with deep clear water, chunky stone and a meadow
-that moves in the wind. The look is inspired by the eastern aesthetic of Ghost of Tsushima.
+Ponlai is a physically based render pipeline for the browser, built on three.js WebGPU, for
+cinematic game visuals. It draws an FFT ocean with shore waves, foam and refraction; a physical sky
+with volumetric clouds, weather and a night sky; soft sun shadows, ambient occlusion and ambient
+light probes; vegetation that moves in the wind; and a post chain with physical bloom, tone mapping
+and FSR upscaling. With it come agent skills for making the look: building a stylised-realism
+picture on physically plausible materials and light, and fitting the light, air and image values to
+your own reference images; and the tools and skills that verify, measure and diagnose its frames.
+
+The repository shows it on a small island in an open sea, lit as the sun and the sky light it, with
+deep clear water, chunky stone and a meadow that moves in the wind.
+The look is inspired by the eastern aesthetic of Ghost of Tsushima.
 
 <!-- SCREENSHOT: replace the next line with the image's GitHub attachment link. -->
 *Screenshot to come.*
@@ -11,6 +18,20 @@ that moves in the wind. The look is inspired by the eastern aesthetic of Ghost o
 The render pipeline (`packages/render/`) is built without the island, so you can copy it into a
 project of your own, together with the capture and measuring tools (`tools/kit/`) and the agent
 skills (`skills/`).
+
+## Why Ponlai
+
+Ponlai's aim is that anyone working with an AI coding agent can make game visuals of the quality of
+AAA games and film. The render pipeline gives the agent a physically based ground to build on, the
+skills give it the methods a lighting artist and a graphics engineer work by, and the tools let it
+see, compare and measure what it made, so it can check its own work.
+
+## Status
+
+The high quality tier at 4K output (1920x1080 CSS pixels at a device pixel ratio of 2), in the clear
+and fair weathers, is the one kept up to date. The other quality tiers (`medium`, `low`) and
+weathers (`cloudy`, `overcast`, `rain`, `storm`, `fog`) are parked: they are still in the code, but
+their look and cost are not maintained. `?game` opens an early game prototype on the island.
 
 ## Requirements
 
@@ -34,7 +55,7 @@ Some pages to try:
 
 - <http://127.0.0.1:5190/?weather=fair&preset=sunset>: the island at sunset on a fair day.
 - <http://127.0.0.1:5190/?paused&t=12>: the scene paused at 12 seconds, the way the tools shoot it.
-- <http://127.0.0.1:5190/?game>: the island as a game.
+- <http://127.0.0.1:5190/?game>: the game prototype.
 - <http://127.0.0.1:5190/scenes.html?scene=ball>: one of the render pipeline's test scenes, without
   the island (`ball`, `empty`, `sea` or `plants`).
 
@@ -221,9 +242,7 @@ Run `npx vite`, then open the page. The render pipeline's own URL options work o
 
 - One page holds one render pipeline at a time. To show another scene, call `dispose()` on the
   running scene first; the next `startScene` then draws as a fresh load does.
-- Only the `high` quality tier and the `clear` and `fair` weathers are kept up to date, judged at 4K
-  output (1920x1080 CSS pixels at a device pixel ratio of 2). The other tiers and weathers still
-  load by name.
+- Only what [Status](#status) names is kept up to date.
 - The render pipeline is not an npm package: you copy it and update it by copying again.
 
 ## Use the tools and skills
@@ -282,9 +301,16 @@ kit's own environment variables start with the configuration's `machine.envPrefi
 this repository, as in `PONLAI_GPU_SLOTS`); set a prefix of your own there.
 
 The skills in `skills/` are written for any project: each is a method, and the project's facts are in
-a binding page in `docs/bindings/`. To use one, copy its folder into your agent's skills folder (for
-Claude Code, `.claude/skills/`), and write a binding page of your own with the same sections as
-this repository's.
+a binding page in `docs/bindings/`. Two of them make the look:
+[building a stylised-realism picture](skills/building-cinematic-stylised-realism/SKILL.md) keeps
+materials and light physically plausible and puts the style in the content, a few global light
+values per weather and hour, and the image;
+[fitting a look to reference images](skills/fitting-a-look-to-reference-images/SKILL.md) finds the
+light, air and image values that bring a frame to your own reference images. The others verify a
+change, measure frame time, find the cause of a defect or of a frame that does not repeat, and write
+shaders, tools and docs ([the docs' index](docs/README.md), Skills). To use one, copy its folder
+into your agent's skills folder (for Claude Code, `.claude/skills/`), and write a binding page of
+your own with the same sections as this repository's.
 
 ## Structure
 
@@ -292,6 +318,13 @@ The code is in layers, lowest first: the render pipeline (`packages/render/`), t
 (`packages/island/`), the game (`packages/game/`) and the page (`app/`). Each layer imports only from
 the layers below it. [Architecture](ARCHITECTURE.md) describes the layers, the flows and the rules
 across them, and [the docs' index](docs/README.md) lists every page.
+
+## Contribute
+
+Questions and ideas go to [Discussions](https://github.com/HuberyLL/ponlai/discussions), bugs and
+requests to the issues. [Contributing](.github/CONTRIBUTING.md) says how to send a change, and
+everyone who takes part follows the [Code of Conduct](.github/CODE_OF_CONDUCT.md). Report a
+security issue as [Security](.github/SECURITY.md) says.
 
 ## Licence
 

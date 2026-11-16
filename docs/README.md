@@ -13,6 +13,9 @@ The rules an agent or a contributor follows, loaded as the work reaches their fo
   `packages/render/` alone, and its checks run by hand.
 - [The island's rules](../packages/island/AGENTS.md): the world in chunks and the growth in place.
 - [The tools' rules](../tools/AGENTS.md): what a new tool in `tools/` does first.
+- [Contributing](../.github/CONTRIBUTING.md): questions, bug reports and how to send a change.
+- [Code of Conduct](../.github/CODE_OF_CONDUCT.md): the Contributor Covenant 2.1.
+- [Security](../.github/SECURITY.md): how to report a vulnerability privately.
 
 ## Skills
 
