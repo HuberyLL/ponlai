@@ -16,6 +16,13 @@
 // uniform array holds (`fillSlopeEntries`) and the reader that mirrors the shader's
 // (`readSlopeEntries`). The table's total must equal the field's.
 //
+// The budget (OceanFFT.ts `slopeBudget`): at each wind level, with the island's distant swell, and
+// with the share of the slope held below every pixel at 0, 0.2, 0.35, 0.5 and 0.8, what the cascades
+// and the near ripples hold plus what no read holds must be Cox and Munk's mean square slope, what no
+// read holds at least the share while the finest cascade holds any slope (within a thousandth of
+// the budget: the scale is solved from the spectrum's integral, the table sums its own grid), and the
+// finest cascade's scale must not grow with the share.
+//
 // What it does not cover: the shader's own indexing of the uniform array and its footprint's axes
 // (UnresolvedSlopes.ts `slopeReader` and Water.ts `surface`, TSL that this check does not run;
 // `readSlopeEntries` restates the indexing); the ratios between the columns (the shader interpolates them, the reads here are whole); and
@@ -53,7 +60,9 @@ import '../kit/help.mjs';
 import { assert, assertions } from '../kit/assert-count.mjs';
 import { slopeDensity, seaState } from '../../packages/render/ocean/OceanSpectrum.ts';
 import { SLOPE_ENTRIES, slopeTable, fillSlopeEntries, readSlopeEntries, cascadeLevel } from '../../packages/render/ocean/UnresolvedSlopes.ts';
-import { CASCADE_SIZES, FFT_SIZE, cascadeBands } from '../../packages/render/ocean/OceanFFT.ts';
+import { CASCADE_SIZES, FFT_SIZE, cascadeBands, slopeBudget } from '../../packages/render/ocean/OceanFFT.ts';
+import { WIND_LEVELS } from '../../packages/render/sky/Weather.ts';
+import { SEA } from '../../packages/island/look/Sea.ts';
 
 const N = FFT_SIZE;
 const SYSTEM = { windSpeed: 3.8, windDirection: 0, fetch: seaState( 3.8 ).fetch, spread: 0.85, swell: 0.05, peakEnhancement: 3.3, shortWavesFade: 0.01 };
@@ -270,6 +279,31 @@ BANDS.forEach( ( band, c ) => {
 
 } );
 
+// ---- the budget (OceanFFT.ts `slopeBudget`)
+
+const SHARES = [ 0, 0.2, 0.35, 0.5, 0.8 ];
+for ( const [ level, { windSpeed } ] of Object.entries( WIND_LEVELS ) ) {
+
+	const sea = seaState( windSpeed );
+	const systems = [
+		{ ...SYSTEM, windSpeed, fetch: sea.fetch },
+		{ ...SEA.swell, scale: sea.swell, windDirection: SEA.swell.directionOffset },
+	];
+	let scale = Infinity;
+	for ( const share of SHARES ) {
+
+		const b = slopeBudget( systems, DEPTH, CASCADE_SIZES, 1, windSpeed, share );
+		const at = `at the ${ level } wind with a share of ${ share } below the pixel`;
+		if ( process.env.SLOPE_VERBOSE ) console.log( level, share, b.fineScale.toFixed( 4 ), ( b.held / b.budget ).toFixed( 4 ), ( b.residual / b.budget ).toFixed( 4 ) );
+		assert.ok( b.fineScale <= scale, `the finest cascade's scale ${ b.fineScale } grows with the share ${ at }` );
+		scale = b.fineScale;
+		if ( b.held <= b.budget ) assert.ok( Math.abs( b.held + b.residual - b.budget ) < 1e-9 * b.budget, `held ${ b.held } and lost ${ b.residual } make ${ b.held + b.residual }, not Cox and Munk's ${ b.budget }, ${ at }` );
+		if ( b.fineScale > 0 ) assert.ok( b.residual >= ( share - 1e-3 ) * b.budget, `no read holds ${ b.residual }, under the share's ${ share * b.budget }, ${ at }` );
+
+	}
+
+}
+
 // ---- the means over the distribution (SlopeLobe.ts `reflectionLobe`)
 
 const IOR = 1.333;
@@ -352,4 +386,4 @@ for ( const s of [ 0.03, 0.06, 0.1, 0.13 ] ) for ( const c of [ 0.02, 0.05, 0.1,
 }
 
 const pct = ( x ) => `${ ( x * 100 ).toFixed( 1 ) } %`;
-console.log( `Slope variance: the table's lost variance and the reads' kept variance make each cascade's own (worst ${ pct( worstKept ) } of an axis's variance; totals within ${ pct( worstTotal ) }), and the lobe's means hold against integration (mean cosine ${ pct( worstCos ) }, mean Fresnel ${ pct( worstFresnel ) }, share over the horizon ${ worstShare.toFixed( 3 ) }, shadowing ${ worstShadow.toFixed( 3 ) }) (${ assertions() } assertions).` );
+console.log( `Slope variance: the table's lost variance and the reads' kept variance make each cascade's own (worst ${ pct( worstKept ) } of an axis's variance; totals within ${ pct( worstTotal ) }), the slope held and lost make Cox and Munk's at every wind and share below the pixel, and the lobe's means hold against integration (mean cosine ${ pct( worstCos ) }, mean Fresnel ${ pct( worstFresnel ) }, share over the horizon ${ worstShare.toFixed( 3 ) }, shadowing ${ worstShadow.toFixed( 3 ) }) (${ assertions() } assertions).` );

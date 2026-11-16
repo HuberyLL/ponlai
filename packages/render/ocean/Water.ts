@@ -79,8 +79,9 @@ import { settings } from '../Settings.ts';
 //   - one distribution of the slopes no pixel resolves, which every term below that depends on them
 //     reads: a Gaussian about the pixel's resolved normal, its variance what the cascades' filtered
 //     reads leave out at the pixel's footprint (a table built from the spectrum, UnresolvedSlopes.ts),
-//     the near ripples' filtered share and the slope the spectrum falls short of Cox and Munk's
-//     (OceanFFT.ts `slopeTotals`), scaled by the gusts and slicks; the reflection reads it as the
+//     the near ripples' filtered share and the slope of Cox and Munk's no read holds (the share the
+//     sea look holds below every pixel and what the spectrum falls short of: OceanFFT.ts
+//     `slopeTotals`, `slopeBudget`), scaled by the gusts and slicks; the reflection reads it as the
 //     mean surface's, along the view and before the waves' damping, the glints and the refraction's
 //     blur damped as the waves are (`surface`)
 //   - exact dielectric Fresnel, its mean over those slopes (a mirror's grazing reflectance is too
@@ -818,9 +819,8 @@ export class Water {
 			// filtered reads leave out at this footprint, read from the table by the footprint's axes as
 			// the sampler takes them (its level from the short axis or a quarter of the long one, its
 			// reads along the long one), along the long axis and across it; the near ripples' share that
-			// their explicit level filters out, all of it where they are not added; the slope the
-			// spectrum falls short of Cox and Munk's, which no read holds; scaled by the gusts and
-			// slicks. Three readings of that one distribution:
+			// their explicit level filters out, all of it where they are not added; the slope of Cox and
+			// Munk's no read holds (OceanFFT.ts `slopeBudget`); scaled by the gusts and slicks. Three readings of that one distribution:
 			// - `viewVar`, the slopes' variance along the view (one axis) of the mean surface, before the
 			//   waves' damping: the reflection's lobe and its prepass, so a lee stands level with the sea
 			//   round it. The table's two axes are weighed by the long axis's alignment with the view;
@@ -829,9 +829,10 @@ export class Water {
 			//   slopes' damped as the waves are (WaveDamping.ts: the depth, the lee and the rock): the
 			//   sun's and the moon's glints, whose lobe narrows where the fine waves are damped. An
 			//   isotropic lobe, so the two axes are summed.
-			// - `refractVar`, the same damped slopes less what the reads lose at the finest cascade's
-			//   texel, a ratio of 1 (OceanFFT.ts `slopeBaseline` and `slopeTotals.z`): the refracted
-			//   floor's blur, so the floor near the eye stays as sharp as a pixel resolves it.
+			// - `refractVar`, the same damped slopes less what is lost at the finest cascade's texel, a
+			//   ratio of 1 (OceanFFT.ts `slopeBaseline` and `slopeTotals.z`, and the slope no read holds,
+			//   lost at every footprint): the refracted floor's blur, so the floor near the eye stays as
+			//   sharp as a pixel resolves it.
 			const axisX = length( lagDx ), axisY = length( lagDy );
 			const major = max( max( axisX, axisY ), 1e-6 ), minor = max( min( axisX, axisY ), 1e-6 );
 			const levelFootprint = max( minor, major.div( fft.anisotropy ) ).toVar();

@@ -77,7 +77,7 @@ import { keyGlint } from './lighting/SurfaceBRDF.ts';
 import { AmbientVolume, type AmbientView } from './lighting/AmbientVolume.ts';
 import { installAmbientVolume, installEnvironmentHarmonics } from './lighting/AmbientSample.ts';
 import { lowSunSkyLift, AmbientSky, AmbientRelight } from './lighting/AmbientRelight.ts';
-import { type TuneOptions, tune } from './debug/Tune.ts';
+import { type TuneOptions, tune, tuneApply } from './debug/Tune.ts';
 import { markSkyRetune, skyRetune } from './sky/SkyRetune.ts';
 import { TEMPORAL, AFTER_RESOLVE } from './post/Antialiasing.ts';
 import type { ExtraPass, SceneLatents } from './post/ExtraPass.ts';
@@ -783,8 +783,10 @@ export function createSeaAndPipeline( render: RenderParts, { rainCeiling, extraP
 	const sea = seaState( wind.spectrumWind.windSpeed );
 	const fft = new OceanFFT( renderer, {
 		...wind.spectrumWind, fetch: sea.fetch, choppiness: sea.choppiness, distantSwell: { ...look.sea.swell, scale: sea.swell },
-		anisotropy: quality.water.fftAnisotropy,
+		anisotropy: quality.water.fftAnisotropy, subPixelShare: look.sea.subPixelSlope,
 	} );
+	// (a debug page's `?tune=` value applies here, before the first update builds the spectrum)
+	tuneApply( 'sea.slopes.subPixelShare', look.sea.subPixelSlope, { min: 0, max: 0.9 }, ( share ) => fft.setSubPixelShare( share ) );
 	render.fft = fft;
 	const waveMaps = new WaveMaps( renderer, fft );
 	render.waveMaps = waveMaps;

@@ -48,6 +48,8 @@ export const NEUTRAL_LOOK: Look = {
 		// no distant swell (scale 0); the rest only has to be a valid spectrum: a fully developed
 		// sea's shape (peak enhancement 1) under a light wind, along the local sea's heading
 		swell: { scale: 0, windSpeed: 1, fetch: 100e3, directionOffset: 0, spread: 1, swell: 0, peakEnhancement: 1, shortWavesFade: 0 },
+		// the cascades hold all of Cox and Munk's slope they can
+		subPixelSlope: 0,
 	},
 
 	day: {

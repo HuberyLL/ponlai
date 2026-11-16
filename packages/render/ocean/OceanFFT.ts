@@ -65,6 +65,11 @@ import { MAX_ANISOTROPY, SLOPE_ENTRIES, fillSlopeEntries, readSlopeEntries, slop
 // 6 m/s, where the spectrum falls short of their slope. What a pixel does not resolve of all this, by
 // its footprint, is a table built with the spectrum (UnresolvedSlopes.ts, `unresolved`), with the
 // slope the spectrum falls short of Cox and Munk's (`slopeTotals`), which no read holds.
+// A share of Cox and Munk's slope (`subPixelShare`, the sea look's `subPixelSlope`) can be held below
+// every pixel instead, as waves finer than any read: the finest cascade then holds that much less
+// (`slopeBudget`), and the share joins the slope no read holds, so the distribution every term of the
+// sea's light reads keeps Cox and Munk's total. While the coarser cascades alone hold more than the
+// rest, the finest one holds nothing and the share is what is left.
 //
 // The spectrum follows the weather's wind as tidewater's sea states follow its wind (`setWind`: the
 // fetch, choppiness and the swell's scale of OceanSpectrum.ts `seaState` at that speed, and its
@@ -106,6 +111,26 @@ export function cascadeBands( sizes: readonly number[], amplitude2: number, fine
 	} ) );
 
 }
+/** How Cox and Munk's mean square slope at `windSpeed` is held (see the note at the top): the finest
+ * cascade's amplitude scale, the table of what the reads lose, the slope the cascades and the near
+ * ripples hold, and the rest, which no read holds (the share held below every pixel and what the
+ * spectrum falls short of). `held + residual` is the budget unless the cascades alone hold more. */
+export function slopeBudget( systems: WaveSpectrumSettings[], depth: number, sizes: readonly number[], amplitude2: number, windSpeed: number, share: number ) {
+
+	const C = sizes.length, fundamental = ( c: number ) => 2 * Math.PI / sizes[ c ];
+	const band = ( k0: number, k1: number, square = false ) => systems.reduce( ( sum, system ) => sum + slopeVariance( system, depth, k0, k1, square ), 0 ) * amplitude2;
+	const ripples = NEAR_RIPPLES.reduce( ( sum, r ) => sum + r.weight ** 2, 0 );
+	// the coarser cascades' bands as rings, the finest one's out to its square of modes
+	const coarse = band( fundamental( 0 ), BAND_FUNDAMENTALS * fundamental( C - 1 ) );
+	const fine = band( BAND_FUNDAMENTALS * fundamental( C - 1 ), ( FFT_N / 2 - 1 ) * fundamental( C - 1 ), true ) * ( 1 + ripples );
+	const budget = COX_MUNK.base + COX_MUNK.perWind * windSpeed;
+	const fineScale = Math.sqrt( Math.min( Math.max( ( ( 1 - share ) * budget - coarse ) / fine, 0 ), 1 ) );
+	const table = slopeTable( systems, depth, cascadeBands( sizes, amplitude2, fineScale ), FFT_N );
+	const held = table.total.reduce( ( sum, v ) => sum + v, 0 ) + ripples * table.total[ C - 1 ];
+	return { budget, fineScale, table, held, residual: Math.max( budget - held, 0 ) };
+
+}
+
 // The water's near ripples (Water.ts): up close the finest cascade read again at tiles this many
 // times smaller, turned by an angle (radians) and weighted. Their slope counts in the finest
 // cascade's budget (see the note at the top).
@@ -218,12 +243,15 @@ export class OceanFFT {
 	 * (UnresolvedSlopes.ts `fillSlopeEntries`): [ row ][ delta ][ along, across ], the four cascades
 	 * in a vec4. */
 	readonly unresolved = uniformArray( Array.from( { length: SLOPE_ENTRIES }, () => new THREE.Vector4() ), 'vec4' );
-	/** ( the finest cascade's slope variance, the slope of Cox and Munk's the spectrum falls short of,
+	/** ( the finest cascade's slope variance, the slope of Cox and Munk's no read holds (`slopeBudget`),
 	 * the near ripples' loss at the finest cascade's texel, 0 ), both axes. */
 	readonly slopeTotals = uniform( new THREE.Vector4() );
 	/** What each cascade's reads lose, both axes, at the finest cascade's texel and a ratio of 1: the
 	 * bilinear reads' own loss, which the refracted floor's blur leaves out (Water.ts). */
 	readonly slopeBaseline = uniform( new THREE.Vector4() );
+	/** The share of Cox and Munk's slope held below every pixel (see the note at the top); set through
+	 * `setSubPixelShare`. */
+	private subPixelShare: number;
 	/** The derivatives' sampler's most anisotropic reads, whose rule the table models. */
 	readonly anisotropy: typeof MAX_ANISOTROPY;
 	// the two wave systems' terms (OceanSpectrum.ts waveSystemTerms): ( alpha, peak omega, heading,
@@ -256,7 +284,8 @@ export class OceanFFT {
 		seed = 1234,
 		anisotropy = MAX_ANISOTROPY,
 		distantSwell,
-	}: Pick<OceanParams, 'windSpeed' | 'windDirection'> & Partial<OceanParams> & { swellHeading?: number; sizes?: number[]; distantSwell: Readonly<SwellParams>; anisotropy?: typeof MAX_ANISOTROPY } ) {
+		subPixelShare = 0,
+	}: Pick<OceanParams, 'windSpeed' | 'windDirection'> & Partial<OceanParams> & { swellHeading?: number; sizes?: number[]; distantSwell: Readonly<SwellParams>; anisotropy?: typeof MAX_ANISOTROPY; subPixelShare?: number } ) {
 
 		this.renderer = renderer;
 		this.sizes = sizes;
@@ -265,6 +294,7 @@ export class OceanFFT {
 		this.swell = { ...distantSwell };
 		this.swellHeading = swellHeading;
 		this.anisotropy = anisotropy;
+		this.subPixelShare = subPixelShare;
 
 		const N = FFT_N, NN = N * N, C = sizes.length, count = NN * C;
 		this.h0Attr = new THREE.StorageBufferAttribute( new Float32Array( count * 4 ), 4 );
@@ -530,6 +560,16 @@ export class OceanFFT {
 
 	}
 
+	/** Takes the share of Cox and Munk's slope held below every pixel (0 to below 1), rebuilt in the
+	 * next update when it changes. */
+	setSubPixelShare( share: number ): void {
+
+		if ( share === this.subPixelShare ) return;
+		this.subPixelShare = share;
+		this.rebuildSpectrum();
+
+	}
+
 	/** Takes `params` and `swell` as they are now; the spectrum is rebuilt in the next update. */
 	rebuildSpectrum(): void {
 
@@ -540,21 +580,13 @@ export class OceanFFT {
 			{ scale: S.scale, windSpeed: S.windSpeed, windDirection: this.swellDirection,
 				fetch: S.fetch, spread: S.spread, swell: S.swell, peakEnhancement: S.peakEnhancement, shortWavesFade: S.shortWavesFade },
 		];
-		// The finest cascade's share of Cox and Munk's slope (see the note at the top): the coarser
-		// cascades' bands as rings, the finest one's out to its square of modes.
-		const amplitude2 = this.params.amplitude ** 2, sizes = this.sizes, C = sizes.length;
-		const band = ( k0: number, k1: number, square = false ) => systems.reduce( ( sum, system ) => sum + slopeVariance( system, depth, k0, k1, square ), 0 ) * amplitude2;
-		const fundamental = ( c: number ) => 2 * Math.PI / sizes[ c ];
-		const coarse = band( fundamental( 0 ), BAND_FUNDAMENTALS * fundamental( C - 1 ) );
-		const fine = band( BAND_FUNDAMENTALS * fundamental( C - 1 ), ( FFT_N / 2 - 1 ) * fundamental( C - 1 ), true )
-			* ( 1 + NEAR_RIPPLES.reduce( ( sum, r ) => sum + r.weight ** 2, 0 ) );
-		const budget = COX_MUNK.base + COX_MUNK.perWind * windSpeed;
-		this.fineScale.value = Math.sqrt( Math.min( Math.max( ( budget - coarse ) / fine, 0 ), 1 ) );
-		// what the water's reads leave out, by the footprint, and what no read holds
-		const table = slopeTable( systems, depth, cascadeBands( sizes, amplitude2, this.fineScale.value ), FFT_N );
+		// The finest cascade's share of Cox and Munk's slope, what the water's reads leave out by the
+		// footprint, and what no read holds (see the note at the top).
+		const sizes = this.sizes, C = sizes.length;
+		const { fineScale, table, residual } = slopeBudget( systems, depth, sizes, this.params.amplitude ** 2, windSpeed, this.subPixelShare );
+		this.fineScale.value = fineScale;
 		fillSlopeEntries( table, this.unresolved.array as THREE.Vector4[] );
-		const fineTotal = table.total[ C - 1 ], ripples = NEAR_RIPPLES.reduce( ( sum, r ) => sum + r.weight ** 2, 0 );
-		const held = table.total.reduce( ( sum, v ) => sum + v, 0 ) + ripples * fineTotal;
+		const fineTotal = table.total[ C - 1 ];
 		// the losses at the finest cascade's texel, as the water reads them (Water.ts `surface`)
 		const entries = this.unresolved.array as THREE.Vector4[], texel = Math.log2( sizes[ C - 1 ] / FFT_N );
 		const both = ( row: number ) => {
@@ -565,7 +597,7 @@ export class OceanFFT {
 		};
 		const base = both( texel ), shown = rippleShown( 2 ** texel ) ** 2;
 		const rippleBase = NEAR_RIPPLES.reduce( ( sum, r ) => sum + ( fineTotal - shown * ( fineTotal - both( texel + Math.log2( r.scale ) )[ C - 1 ] ) ) * r.weight ** 2, 0 );
-		this.slopeTotals.value.set( fineTotal, Math.max( budget - held, 0 ), rippleBase, 0 );
+		this.slopeTotals.value.set( fineTotal, residual, rippleBase, 0 );
 		this.slopeBaseline.value.set( base[ 0 ], base[ 1 ], base[ 2 ], base[ 3 ] );
 		systems.map( waveSystemTerms ).forEach( ( t, n ) => {
 

@@ -370,7 +370,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   the sea's mean reflection over the slopes no pixel resolves, the spread of those slopes
   `sea.reflection.slopeScale` and the lift of its sky lobe `sea.reflection.lobeLift`
   (`packages/render/ocean/SlopeLobe.ts` `REFLECTION_LOBE`), and the share of a white card's light the
-  sea writes into the exposure's meter, `sea.meter.share`; and the dusk's shares, forced to take the
+  sea writes into the exposure's meter, `sea.meter.share`; the share of the sea's mean square slope
+  held below every pixel, `sea.slopes.subPixelShare` (the sea look's `subPixelSlope`,
+  `packages/render/ocean/OceanFFT.ts` `slopeBudget`); and the dusk's shares, forced to take the
   twilight's light and the night's apart, `sky.dusk.force.<name>` (-1, the default, leaves a share
   as the code makes it, 0 to 1 forces it to that value; the twilight's are weights on the sun's
   light; the names and what each one forces: `packages/render/sky/DayCycle.ts` DUSK_FORCES, the
