@@ -25,8 +25,9 @@ type V2 = THREE.Node<'vec2'>;
 // rock's foam follows them. An island casts a wave shadow: the short wind waves (1 to 5 m)
 // and the ripples are cut off, as waves much shorter than the island are, and a cove or the water
 // behind the island lies nearly smooth, with only a low swell bending in. So the lee leaves the
-// short waves a tenth, the ripples under a third (the water shades smoother there too, Water.ts)
-// and the long waves an eighth.
+// short waves a tenth, the ripples under a third and the long waves an eighth. The slopes no pixel
+// resolves are damped with them in the glints, which narrow there (Water.ts `surface`); the sky's
+// reflection keeps the open sea's spread, so the lee stands level with the sea round it.
 export const LEE = { long: 0.12, medium: 0.08, fine: 0.3 };
 
 // the share of a long wave's height over LONG_KEEP_DEPTH that it keeps on the shelf, at least

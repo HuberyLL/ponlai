@@ -22,9 +22,9 @@
 // the index), verify-licences (REUSE and the notices' SPDX tags; it needs uv) and
 // verify-skill-links (tools/repo/), the game's verify-game, verify-i18n and verify-ink
 // (tools/game/), the render pipeline's verify-framegraph, verify-day-cycle, verify-weather-state,
-// verify-wind, verify-local-lights, verify-extensions and verify-look-params (tools/render/), then
-// tools/repo/verify-lint.mjs, and the docs' lint (`npm run lint:docs`) when a Markdown file is
-// staged. Each check runs to its end even after another failed, so one run lists every failure.
+// verify-wind, verify-local-lights, verify-extensions, verify-look-params and verify-slope-variance
+// (tools/render/), then tools/repo/verify-lint.mjs, and the docs' lint (`npm run lint:docs`) when a
+// Markdown file is staged. Each check runs to its end even after another failed, so one run lists every failure.
 //
 // Output: each check's own output on the terminal as it comes, under a `[check] <name>` line;
 // then a summary line (passed, failed, total seconds) and a line per check with pass or FAIL, its
@@ -95,6 +95,7 @@ const checks = [
 	[ 'verify-local-lights', node( 'render/verify-local-lights.mjs' ) ],
 	[ 'verify-extensions', node( 'render/verify-extensions.mjs' ) ],
 	[ 'verify-look-params', node( 'render/verify-look-params.mjs' ) ],
+	[ 'verify-slope-variance', node( 'render/verify-slope-variance.mjs' ) ],
 	[ 'verify-lint', node( 'repo/verify-lint.mjs' ) ],
 ];
 if ( full || markdownStaged() ) checks.push( [ 'lint:docs', npm( 'lint:docs' ) ] );

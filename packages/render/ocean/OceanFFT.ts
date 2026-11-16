@@ -6,12 +6,13 @@
 
 import * as THREE from 'three/webgpu';
 import {
-	Fn, uniform, storage, instanceIndex, float, vec2, vec4, uint, sqrt, tanh, min, max, cos, sin, abs, exp, pow, atan, length, select, mix, smoothstep,
+	Fn, uniform, uniformArray, storage, instanceIndex, float, vec2, vec4, uint, sqrt, tanh, min, max, cos, sin, abs, exp, pow, atan, length, select, mix, smoothstep,
 	screenCoordinate, ivec2, workgroupArray, workgroupBarrier, workgroupId, localId,
 } from 'three/tsl';
 import { mulberry32 } from '../util/noise.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { COX_MUNK, seaState, slopeVariance, waveSystemTerms, type SwellParams, type WaveSpectrumSettings } from './OceanSpectrum.ts';
+import { MAX_ANISOTROPY, SLOPE_ENTRIES, fillSlopeEntries, readSlopeEntries, slopeTable, type CascadeBand } from './UnresolvedSlopes.ts';
 
 // The multi-cascade FFT ocean on WebGPU compute: four cascades of a local sea and a swell.
 //
@@ -61,7 +62,9 @@ import { COX_MUNK, seaState, slopeVariance, waveSystemTerms, type SwellParams, t
 // surface folded the floor seen through a metre or two of water into crumbs. The cascade's amplitude
 // is scaled (`fineScale`, never above 1) so that the four cascades and the near ripples together hold
 // Cox and Munk's slope for the wind: about 0.78 at the gentle wind, 0.5 at the light one, 1 from about
-// 6 m/s, where the spectrum falls short of their slope.
+// 6 m/s, where the spectrum falls short of their slope. What a pixel does not resolve of all this, by
+// its footprint, is a table built with the spectrum (UnresolvedSlopes.ts, `unresolved`), with the
+// slope the spectrum falls short of Cox and Munk's (`slopeTotals`), which no read holds.
 //
 // The spectrum follows the weather's wind as tidewater's sea states follow its wind (`setWind`: the
 // fetch, choppiness and the swell's scale of OceanSpectrum.ts `seaState` at that speed, and its
@@ -89,10 +92,34 @@ const G = 9.81;
 export const CASCADE_SIZES = [ 733, 157, 33.3, 7.1 ];
 // a cascade's band starts this many fundamentals of its own tile above the next larger one's
 const BAND_FUNDAMENTALS = 6;
+
+/** The cascades' bands as the spectrum fills them, for the slope table (UnresolvedSlopes.ts): the
+ * coarser cascades' rings, the finest one's square of modes; `amplitude2` the spectrum's amplitude
+ * squared, `fineScale` the finest cascade's. */
+export function cascadeBands( sizes: readonly number[], amplitude2: number, fineScale: number ): CascadeBand[] {
+
+	const C = sizes.length, fundamental = ( c: number ) => 2 * Math.PI / sizes[ c ];
+	return sizes.map( ( size, c ) => ( {
+		size, k0: c === 0 ? fundamental( 0 ) : BAND_FUNDAMENTALS * fundamental( c ),
+		k1: c === C - 1 ? ( FFT_N / 2 - 1 ) * fundamental( c ) : BAND_FUNDAMENTALS * fundamental( c + 1 ),
+		square: c === C - 1, gain: amplitude2 * ( c === C - 1 ? fineScale ** 2 : 1 ),
+	} ) );
+
+}
 // The water's near ripples (Water.ts): up close the finest cascade read again at tiles this many
 // times smaller, turned by an angle (radians) and weighted. Their slope counts in the finest
 // cascade's budget (see the note at the top).
 export const NEAR_RIPPLES = [ { scale: 7.3, angle: 0.63, weight: 0.55 }, { scale: 3.1, angle: 2.14, weight: 0.35 } ] as const;
+// The footprints (m) over which the near ripples fade in, from none to all: smoothstep( from, to, F ).
+export const NEAR_RIPPLE_FADE = { from: 0.04, to: 0.01 } as const;
+
+// the near ripples' share shown at footprint F (m), smoothstep( from, to, F ) as the shader takes it
+function rippleShown( F: number ): number {
+
+	const t = Math.min( Math.max( ( F - NEAR_RIPPLE_FADE.from ) / ( NEAR_RIPPLE_FADE.to - NEAR_RIPPLE_FADE.from ), 0 ), 1 );
+	return t * t * ( 3 - 2 * t );
+
+}
 
 // A wave system's energy at wavenumber k (OceanSpectrum.ts createWaveSpectrum on the GPU, as
 // tidewater's init kernel): TMA-corrected JONSWAP times the directional spreading and the short
@@ -187,6 +214,18 @@ export class OceanFFT {
 	/** The finest cascade's amplitude against the spectrum's, so that the surface holds Cox and Munk's
 	 * slope (see the note at the top). */
 	readonly fineScale = uniform( 1 );
+	/** The slope variance the water's filtered reads of the cascades leave out, by the footprint
+	 * (UnresolvedSlopes.ts `fillSlopeEntries`): [ row ][ delta ][ along, across ], the four cascades
+	 * in a vec4. */
+	readonly unresolved = uniformArray( Array.from( { length: SLOPE_ENTRIES }, () => new THREE.Vector4() ), 'vec4' );
+	/** ( the finest cascade's slope variance, the slope of Cox and Munk's the spectrum falls short of,
+	 * the near ripples' loss at the finest cascade's texel, 0 ), both axes. */
+	readonly slopeTotals = uniform( new THREE.Vector4() );
+	/** What each cascade's reads lose, both axes, at the finest cascade's texel and a ratio of 1: the
+	 * bilinear reads' own loss, which the refracted floor's blur leaves out (Water.ts). */
+	readonly slopeBaseline = uniform( new THREE.Vector4() );
+	/** The derivatives' sampler's most anisotropic reads, whose rule the table models. */
+	readonly anisotropy: typeof MAX_ANISOTROPY;
 	// the two wave systems' terms (OceanSpectrum.ts waveSystemTerms): ( alpha, peak omega, heading,
 	// spread ) and ( concentration, gamma, squared fade, 0 )
 	private systems = [ 0, 1 ].map( () => ( { a: uniform( new THREE.Vector4() ), b: uniform( new THREE.Vector4() ) } ) );
@@ -215,9 +254,9 @@ export class OceanFFT {
 		peakEnhancement = 3.3,
 		shortWavesFade = 0.01,
 		seed = 1234,
+		anisotropy = MAX_ANISOTROPY,
 		distantSwell,
-		anisotropy = 4,
-	}: Pick<OceanParams, 'windSpeed' | 'windDirection'> & Partial<OceanParams> & { swellHeading?: number; sizes?: number[]; distantSwell: Readonly<SwellParams>; anisotropy?: number } ) {
+	}: Pick<OceanParams, 'windSpeed' | 'windDirection'> & Partial<OceanParams> & { swellHeading?: number; sizes?: number[]; distantSwell: Readonly<SwellParams>; anisotropy?: typeof MAX_ANISOTROPY } ) {
 
 		this.renderer = renderer;
 		this.sizes = sizes;
@@ -225,6 +264,7 @@ export class OceanFFT {
 		this.params = { windSpeed, windDirection, fetch, amplitude, choppiness, depth, spread, swell, peakEnhancement, shortWavesFade, seed };
 		this.swell = { ...distantSwell };
 		this.swellHeading = swellHeading;
+		this.anisotropy = anisotropy;
 
 		const N = FFT_N, NN = N * N, C = sizes.length, count = NN * C;
 		this.h0Attr = new THREE.StorageBufferAttribute( new Float32Array( count * 4 ), 4 );
@@ -510,6 +550,23 @@ export class OceanFFT {
 			* ( 1 + NEAR_RIPPLES.reduce( ( sum, r ) => sum + r.weight ** 2, 0 ) );
 		const budget = COX_MUNK.base + COX_MUNK.perWind * windSpeed;
 		this.fineScale.value = Math.sqrt( Math.min( Math.max( ( budget - coarse ) / fine, 0 ), 1 ) );
+		// what the water's reads leave out, by the footprint, and what no read holds
+		const table = slopeTable( systems, depth, cascadeBands( sizes, amplitude2, this.fineScale.value ), FFT_N );
+		fillSlopeEntries( table, this.unresolved.array as THREE.Vector4[] );
+		const fineTotal = table.total[ C - 1 ], ripples = NEAR_RIPPLES.reduce( ( sum, r ) => sum + r.weight ** 2, 0 );
+		const held = table.total.reduce( ( sum, v ) => sum + v, 0 ) + ripples * fineTotal;
+		// the losses at the finest cascade's texel, as the water reads them (Water.ts `surface`)
+		const entries = this.unresolved.array as THREE.Vector4[], texel = Math.log2( sizes[ C - 1 ] / FFT_N );
+		const both = ( row: number ) => {
+
+			const lost = readSlopeEntries( entries, row, 0 );
+			return lost.along.map( ( a, c ) => a + lost.across[ c ] );
+
+		};
+		const base = both( texel ), shown = rippleShown( 2 ** texel ) ** 2;
+		const rippleBase = NEAR_RIPPLES.reduce( ( sum, r ) => sum + ( fineTotal - shown * ( fineTotal - both( texel + Math.log2( r.scale ) )[ C - 1 ] ) ) * r.weight ** 2, 0 );
+		this.slopeTotals.value.set( fineTotal, Math.max( budget - held, 0 ), rippleBase, 0 );
+		this.slopeBaseline.value.set( base[ 0 ], base[ 1 ], base[ 2 ], base[ 3 ] );
 		systems.map( waveSystemTerms ).forEach( ( t, n ) => {
 
 			this.systems[ n ].a.value.set( t.alpha, t.peakOmega, t.angle, t.spread );

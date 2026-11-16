@@ -84,6 +84,7 @@ Contents:
 | The weather's state, transitions, wind and auto chain, on the CPU | `tools/render/verify-weather-state.mjs` |
 | The wind's state and clocks and the plants' and sea's readings of it, on the CPU | `tools/render/verify-wind.mjs` |
 | The local lights' clusters against a replica of the kernel, on the CPU | `tools/render/verify-local-lights.mjs` |
+| The sea's unresolved slopes: the table of what the cascades' reads lose, and the water's means over that distribution, on the CPU | `tools/render/verify-slope-variance.mjs` |
 | Whether the weathers drive the sky, the light, the air and the scene coherently on a page | `tools/render/verify-weather.mjs` |
 | The rain's wet surfaces, rings and streaks (a parked weather's check) | `tools/render/verify-weather-effects.mjs` |
 | Whether the rendered sun disk gives the sun's direct light | `tools/render/verify-radiometry.mjs` |

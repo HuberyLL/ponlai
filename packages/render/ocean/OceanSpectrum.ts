@@ -158,13 +158,30 @@ export function createWaveSpectrum( settings: WaveSpectrumSettings, depth: numbe
  * capillaries. */
 export const COX_MUNK = { base: 0.003, perWind: 0.00512 } as const;
 
+/** The share of the circle of radius k inside the square of half width k1 (the directions taken as
+ * even there): 1 within the square's inscribed circle, falling to 0 at its corners. */
+export function squareShare( k: number, k1: number ): number {
+
+	return 1 - 4 / Math.PI * Math.acos( Math.min( k1 / k, 1 ) );
+
+}
+
+/** A wave system's slope spectrum: the mean square slope per unit wavenumber at k (rad/m), its energy
+ * times k squared over the ring, every direction summed. */
+export function slopeDensity( settings: WaveSpectrumSettings, depth: number ): ( k: number ) => number {
+
+	const terms = waveSystemTerms( settings );
+	return ( k ) => radialEnergy( k, depth, terms ) * k * k;
+
+}
+
 /** The mean square slope a wave system holds between the wavenumbers k0 and k1 (rad/m): its energy
  * times k squared over that ring. With `square`, k1 is the half width of a square of modes (a
  * cascade's last mode before its Nyquist) and the square's corners are counted too, each ring of
- * them by the share of its circle inside the square (the directions taken as even there). */
+ * them by the share of its circle inside the square (`squareShare`). */
 export function slopeVariance( settings: WaveSpectrumSettings, depth: number, k0: number, k1: number, square = false ): number {
 
-	const terms = waveSystemTerms( settings );
+	const density = slopeDensity( settings, depth );
 	const integrate = ( a: number, b: number, share: ( k: number ) => number ) => {
 
 		// over log k, where the slope spectrum is nearly flat (Simpson's rule, 96 intervals)
@@ -174,13 +191,13 @@ export function slopeVariance( settings: WaveSpectrumSettings, depth: number, k0
 
 			const k = a * Math.exp( span * i / n );
 			const w = i === 0 || i === n ? 1 : i % 2 ? 4 : 2;
-			sum += w * radialEnergy( k, depth, terms ) * k * k * k * share( k );
+			sum += w * density( k ) * k * share( k );
 
 		}
 		return sum * span / ( 3 * n );
 
 	};
 	const ring = integrate( k0, k1, () => 1 );
-	return square ? ring + integrate( k1, k1 * Math.SQRT2, ( k ) => 1 - 4 / Math.PI * Math.acos( Math.min( k1 / k, 1 ) ) ) : ring;
+	return square ? ring + integrate( k1, k1 * Math.SQRT2, ( k ) => squareShare( k, k1 ) ) : ring;
 
 }
