@@ -25,7 +25,7 @@ import { onSceneDispose } from '../SceneDispose.ts';
 //   second-order harmonics throughout ("Real-Time Samurai Cinema", p. 16): at degree 1 the
 //   relight's directionality boost turns light that comes from below (the lit meadow's bounce)
 //   against a face turned up, which degree 2's quadratic band gives back (AmbientRelight.ts, known
-//   limits). The kit look's cel fill keeps degree 1 (characters/CharacterMaterial.ts).
+//   limits). The cel material's fill keeps degree 1 (characters/CharacterMaterial.ts; no look draws it).
 // - The seam: outside the box in x or z every point reads the open sea's probe of its level (the
 //   output's last column). Over the cell beyond the box's border probes the coefficients blend
 //   from the border's to the sea's, so the light does not step at the box's edge; each side's
@@ -60,7 +60,7 @@ import { onSceneDispose } from '../SceneDispose.ts';
 // - The receivers (`AmbientReceiver`), through the one place each lighting model takes its ambient
 //   diffuse: GroundBounceLightingModel and every model built on it hand theirs to the ambient grade
 //   (AmbientGrade.ts `useAmbientGrade`), which replaces three's environment irradiance with
-//   `ambientEnvironment`'s; the islanders' own model reads `ambientField` (characters/
+//   `ambientEnvironment`'s; the cel material's own model reads `ambientField` (characters/
 //   CharacterMaterial.ts). The cliffs and the stones keep the volume under the water, carried down
 //   the column (lighting/Underwater.ts); the sea floor takes the environment's light. The
 //   flying fish (life/FishMaterial.ts) read the volume through UnderwaterLightingModel's default,

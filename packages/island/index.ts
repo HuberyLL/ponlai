@@ -11,7 +11,6 @@ export type { IslandFraming, IslandParts } from './IslandStages.ts';
 export { isCameraInputTarget } from './camera/FreeCameraControls.ts';
 export { CLICK_SLOP, IslandCameraControls } from './camera/IslandCameraControls.ts';
 export { frameIsland, landFitDistance } from './camera/IslandFraming.ts';
-export { characterLook } from './characters/CharacterMaterial.ts';
 export { CharacterShadow } from './characters/CharacterShadow.ts';
 export { PROPORTIONS, PROPORTION_NAMES } from './characters/Proportions.ts';
 export type { ProportionName } from './characters/Proportions.ts';

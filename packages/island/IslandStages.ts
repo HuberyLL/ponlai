@@ -48,7 +48,7 @@ import { PROPORTION_NAMES, type ProportionName, PROPORTIONS } from './characters
 import { type Body, parseBodies } from './characters/Ages.ts';
 import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { registerIslandClasses } from './world/IslandClasses.ts';
-import { ISLANDER, HANMING, ISLANDER_LOOKS, HANMING_LOOKS } from './characters/looks.ts';
+import { HANMING, HANMING_LOOKS } from './characters/looks.ts';
 import type { GroundTextures } from './materials/GroundTextures.ts';
 import type { LoadedWorld } from './world/WorldChunks.ts';
 import type { Bounds } from '../render/data.ts';
@@ -460,19 +460,17 @@ export function createVegetation( render: RenderParts, island: IslandParts, { fr
 	mark( 'meshes' );
 	setStatus( 'Waking the villagers…' );
 	// The islanders are the Hanming people (packages/island/characters/looks.ts HANMING: a woven bamboo hat, a
-	// short-sleeved feather top worn open and feather shorts, lit as the island is); `look=kit` brings
-	// back the kit-dressed islander (bare head, so the pointed ears read, linen shirt, plain trousers,
-	// leather shoes, in cel steps). The game dresses its islanders in the look's variants.
+	// short-sleeved feather top worn open and feather shorts, lit as the island is). The game dresses
+	// its islanders in the look's variants.
 	// Their proportions (`islander` URL option, GUI Islander folder) are the look's build of
-	// Proportions.ts by default (the Hanming's realistic `real`, the kit figure's chunkier `medium`);
-	// the kit's own (`stock`) and the other builds stay selectable for comparison. A Hanming islander
+	// Proportions.ts by default (the Hanming's realistic `real`); the character kit's own (`stock`)
+	// and the other builds stay selectable for comparison. A Hanming islander
 	// has a sex and an age (characters/Ages.ts, FigureAge.ts), the build that of its adult man: the
 	// scene's walker the `body` URL option's (`F6`: a girl of six; a man of 30 by default, GUI
 	// Islander folder), the game's from the game (Game.ts).
-	const KIT_LOOK = params.get( 'look' ) === 'kit';
-	const SCENE_LOOK = KIT_LOOK ? ISLANDER : HANMING;
+	const SCENE_LOOK = HANMING;
 	island.SCENE_LOOK = SCENE_LOOK;
-	island.GAME_LOOKS = KIT_LOOK ? ISLANDER_LOOKS : HANMING_LOOKS;
+	island.GAME_LOOKS = HANMING_LOOKS;
 	island.islanderBuild = { proportions: ( PROPORTION_NAMES as string[] ).includes( params.get( 'islander' ) ?? '' ) ? params.get( 'islander' ) as ProportionName : SCENE_LOOK.build ?? 'medium' };
 	const sceneBody: Body = { ...parseBodies( params.get( 'body' ) )[ 0 ] ?? { sex: 'male', age: 30 } };
 	island.sceneBody = sceneBody;

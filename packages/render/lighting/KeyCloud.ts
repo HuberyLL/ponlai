@@ -16,8 +16,8 @@ type V3 = THREE.Node<'vec3'>;
 // the sunlight the clouds pass down reaches the sea's surface as it reaches the land, so the water drawn, the seabed seen
 // through it and the light under it (lighting/Underwater.ts, through three's sun) are lit by the
 // land's key (the air under a deck keeps the deck's floor alone: Sky.ts `deckKeyFloor`).
-// - The islanders (characters/CharacterMaterial.ts) read their cast shadow as the ratio of the key
-//   their shadow maps let through to the key in the open. Under a deck the open key is the land's
+// - The cel material (characters/CharacterMaterial.ts) reads its cast shadow as the ratio of the key
+//   its shadow maps let through to the key in the open. Under a deck the open key is the land's
 //   K, so a figure under the floor's light reads lit and its cast shadow as a shadow: the open key
 //   moves from the sky's key to it by the deck's light (`keyDeckShare`, RenderStages.ts publishLighting:
 //   Weather.ts `deckLight`, 0 under a clear or a fair sky, whole under a deck by day).

@@ -10,7 +10,7 @@ import { numberSetting, type QualityTier, ACTIVE_QUALITY } from '../packages/ren
 import { settings as params } from './AppSettings.ts';
 import GUI from 'lil-gui';
 import { qualityLines } from './QualityDetect.ts';
-import { soilUniforms, setSoilStrength, groundGains, PROPORTION_NAMES, type ProportionName, characterLook, type IslandParts } from '../packages/island/index.ts';
+import { soilUniforms, setSoilStrength, groundGains, PROPORTION_NAMES, type ProportionName, type IslandParts } from '../packages/island/index.ts';
 import type { Sex } from '../packages/island/land.ts';
 import type { PageParts } from './Page.ts';
 
@@ -241,7 +241,6 @@ export function createGui( render: RenderParts, island: IslandParts, page: PageP
 	waveF.add( fft.params, 'amplitude', 0, 3, 0.01 ).onFinishChange( rebuild );
 	waveF.add( fft.params, 'choppiness', 0, 1.5, 0.01 ).onFinishChange( rebuild );
 	const islanderF = gui.addFolder( 'Islander' );
-	page.islanderF = islanderF;
 	const proportionsControl = islanderF.add( islanderBuild, 'proportions', PROPORTION_NAMES ).onChange( async ( name: ProportionName ) => island.characters?.setWalker( await buildIslander( name ) ) );
 	// the scene walker's body: a new sex dresses it again, a new age builds it again in place
 	// (FigureAge.ts); the game's islanders take their build and bodies as they load
@@ -261,15 +260,7 @@ export function createGui( render: RenderParts, island: IslandParts, page: PageP
 export function addLookFolders( render: RenderParts, page: PageParts ) {
 
 	const { pipeline, groundBounce } = render;
-	const { gui, S, islanderF } = page;
-	islanderF.add( characterLook.albedo, 'value', 0.05, 1, 0.01 ).name( 'palette exposure' );
-	islanderF.add( characterLook.sunGain, 'value', 0, 2, 0.01 ).name( 'sun' );
-	islanderF.add( characterLook.fillGain, 'value', 0, 10, 0.05 ).name( 'shade fill' );
-	islanderF.add( characterLook.formFloor, 'value', 0, 1, 0.01 ).name( 'lit form floor' );
-	islanderF.add( characterLook.softCloth, 'value', 0.005, 0.4, 0.005 ).name( 'cloth edge' );
-	islanderF.add( characterLook.softSkin, 'value', 0.005, 0.4, 0.005 ).name( 'skin edge' );
-	islanderF.add( characterLook.skyRimGain, 'value', 0, 4, 0.01 ).name( 'sky rim' );
-	islanderF.add( characterLook.shadowSaturation, 'value', 0.5, 2, 0.01 ).name( 'shade saturation' );
+	const { gui, S } = page;
 	// the display chain (Pipeline.ts): tidewater's grade (its display tables' `strengths`), its exposure from the clock
 	// and the weather, the white balance, the local tone mapping and the grade's tables
 	const postF = gui.addFolder( 'Post' );

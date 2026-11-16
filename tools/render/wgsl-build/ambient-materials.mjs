@@ -1,7 +1,7 @@
 // tools/render/wgsl-build.mjs's entry for the lit materials that read the ambient volume
 // (packages/render/lighting/AmbientSample.ts): a game prop (degree 2) twice, as two materials of one model, to
-// check that the second's code names its own bindings; the islanders' lit figure and their
-// vertex-colour figure (characters/); the bamboo's culms and leaves (degree 1, as the page draws
+// check that the second's code names its own bindings; the islanders' lit figure and the cel
+// material's vertex-colour figure (characters/, which no look draws); the bamboo's culms and leaves (degree 1, as the page draws
 // them: wgsl-build/plants.mjs); a surface with the
 // meadow's reading (degree 1, straight above the point); and a surface with an under-water share
 // at degree 1 (the terrain's and the stones' reading, without the terrain's own inputs). The

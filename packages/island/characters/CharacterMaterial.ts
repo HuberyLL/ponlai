@@ -13,6 +13,11 @@ type Reflected = { directDiffuse: V3; directSpecular: V3; indirectDiffuse: V3; i
 
 // The characters' cel material: stepped sunlight, the island's ambient fill and a thin rim.
 //
+// A figure loaded without `lit` (looks.ts) is drawn in this cel light; no look draws it now (the
+// Hanming islanders take the island's light: FigureSurfaces.ts), and wgsl-build's
+// ambient-materials still builds it. The figures' motion vectors (`addSkinnedMotion`) and the
+// shading channels (`KIND`) here serve every figure.
+//
 // Characters are drawn rather than rendered: sunlight steps from light to shade over a narrow
 // band, the shade is filled by the same sky and sunlit ground that light the island, and a
 // thin rim catches the sun along the silhouette. The light's colour, the sky's irradiance and

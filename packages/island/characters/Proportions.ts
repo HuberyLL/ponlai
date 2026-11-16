@@ -2,8 +2,8 @@ import * as THREE from 'three/webgpu';
 
 // The islanders' stylised proportions, applied once to the assembled figure's bind pose.
 //
-// The islanders are the stylised layer of the art: friendlier, chunkier proportions than the
-// kit's slender stock figure (a larger head, shorter legs and neck, a broader torso, thicker
+// The builds move the kit's slender stock figure toward a realistic figure (`real`) or toward
+// friendlier, chunkier proportions (a larger head, shorter legs and neck, a broader torso, thicker
 // limbs, larger hands and feet), in the spirit of Alba, Sky and Tchia. Rather than editing
 // each part, the assembled figure is re-proportioned once at build time, on its bind pose:
 //
@@ -23,9 +23,9 @@ import * as THREE from 'three/webgpu';
 // takes the same proportions, and the ears (bound wholly to the head) grow with the head. Per-frame
 // skinning stays plain (bone matrices only).
 //
-// The kit-dressed islanders use the medium build (about 4.7 heads tall, against the kit's 5.5),
-// the build chosen of four; the feather-robed Hanming islanders the realistic `real`
-// build (about 6.5 heads); `stock` (the kit's own) stays selectable for comparison (`?islander`).
+// The feather-robed Hanming islanders use the realistic `real` build (about 6.5 heads, against
+// the kit's 5.5); `stock` (the kit's own) and the stylised builds (`medium`, about 4.7 heads, and
+// `subtle`, `strong`) stay selectable for comparison (`?islander`).
 // A figure drawn as several meshes on one skeleton (a painted body, its textured parts) is
 // re-proportioned as one: the bones and clips once, every mesh's geometry alike.
 // The work comes in three parts: the plan on the bind pose (`planProportions`), the vertices
