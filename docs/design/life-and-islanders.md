@@ -2,8 +2,8 @@
 
 What the island's creatures and its people look like and why, and what to avoid. What every subject
 shares (the light, the exposure, the image) is in [Art direction](art-direction.md). Of the
-creatures below, only the wenyao is built (`packages/island/life/Wenyao.ts`); the others are
-designed.
+creatures below, only the wenyao is built (`packages/island/life/Wenyao.ts`), and it is parked:
+the scene leaves it out unless the `wenyao` URL option is given. The others are designed.
 
 Contents:
 

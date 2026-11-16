@@ -13,6 +13,9 @@ import { makeFishMaterial, type Skin } from './FishMaterial.ts';
 
 // The wenyao: schools of flying fish off the island that swim, take flight and glide.
 //
+// Parked: the scene builds them only under the `wenyao` URL option (IslandStages.ts createWorld),
+// since their look no longer sits with the rest of the scene.
+//
 // The wenyao: the Shanhaijing's flying fish ("shaped like a carp, a fish's body with a bird's
 // wings, blue-grey markings, a white head and a red beak ... it flies by night"), in schools off
 // the island (docs/design/life-and-islanders.md, The cast). The body and the ways are a real flying fish's
