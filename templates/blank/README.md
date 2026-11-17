@@ -45,6 +45,7 @@ For the agent skills, install Ponlai's Claude Code plugin (the README's
 | `src/main.ts` | Installs the page's settings, then loads the scene: the render pipeline's modules read the settings as they load |
 | `src/scene.ts` | The scene: a rock, its ground and its water, given to `startScene` |
 | `src/render/` | The render pipeline |
+| `src/looks/ponlai/` | Ponlai's look: the light, air and image values the island is drawn with |
 | `public/` | The clouds' shape noise, the star catalogue, the Milky Way and the moon ([Credits](../../CREDITS.md), Assets) |
 | `tools/kit/` | The tools ([their README](../../tools/kit/README.md)) |
 | `tools/project.mjs` | The tools' configuration for this project |
@@ -57,6 +58,18 @@ floor or level ground for a scene without a world of its own. The camera (`rende
 vertical field of view of 27 degrees; place it in `afterSky`. The slots and options are documented
 in `packages/render/assemble/StartScene.ts`, and the test scenes in `app/scenes/` are fuller
 examples. To load the assets from another address, pass `assetBase` to `startScene`.
+
+## Choose a look
+
+The scene starts from one of two looks, chosen by `LOOK` at the top of `src/scene.ts`:
+
+- `PONLAI_LOOK` (recommended, the default): Ponlai's own values for the exposure, the haze, the
+  ambient light, bloom and the grade, by weather and hour of the day, as the island is drawn.
+- `NEUTRAL_LOOK`: every gain 1, no haze, no bloom and no grade. A plain start for a look of your
+  own, made with the skills that build a look and fit it to your reference images.
+
+The sky, the sun and the sea are physically based in both; a look sets only the values around
+them.
 
 ## Capture and compare
 

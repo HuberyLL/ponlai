@@ -2,6 +2,12 @@ import * as THREE from 'three/webgpu';
 import { startScene, neutralFields, neutralBounceGround, neutralSeaLattice, OPEN_SEA_SHORE } from './render/index.ts';
 import { browserHost } from './render/browser.ts';
 import { NEUTRAL_LOOK } from './render/setup.ts';
+import { ISLAND_LOOK as PONLAI_LOOK } from './looks/ponlai/IslandLook.ts';
+
+// The look the scene starts from, one of two:
+// - PONLAI_LOOK (recommended): Ponlai's own light, air and image values, as the island is drawn.
+// - NEUTRAL_LOOK: every gain 1, no haze, bloom or grade: a plain start for a look of your own.
+const LOOK = PONLAI_LOOK;
 
 export async function startProject() {
 
@@ -11,7 +17,7 @@ export async function startProject() {
   world.add( rock );
   let fields!: ReturnType<typeof neutralFields>;
 
-  return startScene( host, { look: NEUTRAL_LOOK, defaults: { hour: 15, dayLength: 2880 } }, {
+  return startScene( host, { look: LOOK, defaults: { hour: 15, dayLength: 2880 } }, {
     afterSky( { render } ) {
 
       render.camera.position.set( 8, 3, 10 );
