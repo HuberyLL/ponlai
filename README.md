@@ -21,7 +21,7 @@
 Ponlai is a physically based render pipeline for the browser, built on three.js and WebGPU. This
 repository shows it on a small island in an open sea, with deep clear water, chunky stone and a
 meadow that moves in the wind, lit by the sun and the sky.
-The look is inspired by the eastern aesthetic of Ghost of Tsushima.
+Its look draws on an eastern aesthetic, inspired by Ghost of Tsushima.
 
 ## Features
 

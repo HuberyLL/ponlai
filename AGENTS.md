@@ -2,8 +2,8 @@
 
 A physically based render pipeline for the browser, on three.js WebGPU, shown on a small island in
 an open sea (what it offers and how to use it: `README.md`). The island is calm and painterly,
-inspired by the eastern aesthetic of Ghost of Tsushima, lit as the sun and the sky give it (deep
-clear water, chunky stone, a lush meadow that moves in the wind); `?game` opens a game prototype.
+lit as the sun and the sky give it (deep clear water, chunky stone, a lush meadow that moves in the
+wind); `?game` opens a game prototype.
 
 ## Where things are written
 

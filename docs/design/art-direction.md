@@ -28,7 +28,7 @@ Contents of this page:
 ## The look
 
 - A small island in an open sea, a visual sample for a game,
-  inspired by the eastern aesthetic of Ghost of Tsushima: realistic with a touch of fantasy, a
+  with an eastern aesthetic inspired by Ghost of Tsushima: realistic with a touch of fantasy, a
   calm, painterly light, restrained colour, and wide fields of grass that move together in the
   wind.
 - The fantasy lives in the world: the island, its bamboo, its yunpeng and its creatures from the
