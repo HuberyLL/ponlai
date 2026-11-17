@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD033 MD041 -->
 <div align="center">
 
-<!-- HEADER IMAGE: the header image's GitHub attachment link goes here. -->
+<img src="https://github.com/user-attachments/assets/3e5ff102-f817-4f03-9ffe-b141263a4218" alt="小岛的下午、日落和午夜" width="100%">
 
 # Ponlai
 
@@ -20,6 +20,9 @@
 
 Ponlai 是一套基于物理的 Web 渲染管线，基于 three.js 和 WebGPU 开发。本仓库用它渲染了一座大海中的小岛：清澈的深水、嶙峋的礁石、随风起伏的草甸，全部由基于物理的太阳和天空照明。
 画面追求东方美学的意境，灵感来自《对马岛之魂》。
+
+<!-- markdownlint-disable-next-line MD034 -->
+https://github.com/user-attachments/assets/3d383d7f-1f63-4c0b-93e5-de34c9e9061d
 
 ## 功能
 

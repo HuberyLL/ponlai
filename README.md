@@ -1,7 +1,8 @@
 <!-- markdownlint-disable MD033 MD041 -->
 <div align="center">
 
-<!-- HEADER IMAGE: the header image's GitHub attachment link goes here. -->
+<img src="https://github.com/user-attachments/assets/3e5ff102-f817-4f03-9ffe-b141263a4218"
+  alt="The island in the afternoon, at sunset and at midnight" width="100%">
 
 # Ponlai
 
@@ -22,6 +23,9 @@ Ponlai is a physically based render pipeline for the web, built on three.js and 
 repository uses it to render a small island in the open sea: deep, clear water, rugged rocks and a
 meadow swaying in the wind, all lit by a physically based sun and sky.
 Its look draws on an eastern aesthetic, inspired by Ghost of Tsushima.
+
+<!-- markdownlint-disable-next-line MD034 -->
+https://github.com/user-attachments/assets/3d383d7f-1f63-4c0b-93e5-de34c9e9061d
 
 ## Features
 
