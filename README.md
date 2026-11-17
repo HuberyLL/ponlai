@@ -37,22 +37,24 @@ Its look draws on an eastern aesthetic, inspired by Ghost of Tsushima.
 - **Post-processing**: auto exposure with the Purkinje shift, local tone mapping, LUT colour
   grading, physically based bloom, TAA or MSAA, FSR upscaling, dynamic resolution
 
-### Made for AI-assisted development
+### Built for AI agents to iterate on their own
 
 - **Reproducible frames**: a paused page renders the same frame on every load, within a measured
-  tolerance, so a change can be verified by comparing screenshots.
-- **Tools**: capture and compare screenshots, measure frame time, and break down GPU time by render
-  pass.
-- **Skills**: written workflows that teach an AI agent how lighting artists and graphics engineers
-  work, from building a look to verifying a change.
-- **Frame graph**: every render pass declares the render targets it reads and writes.
+  tolerance, so an agent can prove a change did what it meant, and nothing else, by comparing
+  screenshots.
+- **Tools**: the agent captures and compares screenshots, measures frame time and breaks down GPU
+  time by render pass itself, without a person looking at the screen.
+- **Skills**: written workflows for the agent, from building a look and matching it to reference
+  images to verifying, profiling and debugging a change.
+- **Frame graph**: every render pass declares the render targets it reads and writes, so the agent
+  can add or change a pass without breaking the others.
 
 ## Why Ponlai
 
 Ponlai aims to let anyone working with an AI coding agent create game visuals on par with AAA games
-and film. The render pipeline gives the agent a physically based foundation, the skills teach it
-how lighting artists and graphics engineers work, and the tools let it see, compare and measure its
-results, so it can check its own work.
+and film. The render pipeline gives the agent a physically based foundation, the skills teach it the
+craft of making game visuals, from art to engineering, and the tools let it see, compare and measure
+its results, so it can check its own work.
 
 ## Status
 
