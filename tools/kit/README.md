@@ -1,10 +1,10 @@
 # The kit
 
 The tools in this folder capture paused frames of a page, compare them byte for byte, read values
-from the page and measure frame time. They work in any project whose page is assembled by the
-render pipeline's `startScene`. A project started from
-[the blank project](../../templates/blank/README.md) has them already, configured; its Capture and
-compare shows them at work.
+from the page and measure frame time. They work in any project whose page is assembled by the render
+pipeline's `startScene`. A project started from [the blank
+project](https://github.com/HuberyLL/ponlai/blob/main/templates/blank/README.md) has them already,
+configured; its Capture and compare shows them at work.
 
 ## Add the kit to a project of your own
 
@@ -28,8 +28,8 @@ compare shows them at work.
 ## Manuals and other systems
 
 Each tool's manual is its header: `node tools/kit/<tool>.mjs --help`. The tools are indexed by
-question in [Tools](../../docs/reference/tools.md). The kit was written on macOS. Elsewhere, the
-scheduling policy (`qos.mjs`) does nothing, the GPU lock does not see other programs' GPU use, and
-`display-gate.mjs` posts no notices. `CHROME_PATH` names another Chromium build to capture with. The
-kit's own environment variables start with the configuration's `machine.envPrefix` (`PONLAI_` in
-this repository, as in `PONLAI_GPU_SLOTS`).
+question in [Tools](https://github.com/HuberyLL/ponlai/blob/main/docs/reference/tools.md). The kit
+was written on macOS. Elsewhere, the scheduling policy (`qos.mjs`) does nothing, the GPU lock does
+not see other programs' GPU use, and `display-gate.mjs` posts no notices. `CHROME_PATH` names
+another Chromium build to capture with. The kit's own environment variables start with the
+configuration's `machine.envPrefix` (`PONLAI_` in this repository, as in `PONLAI_GPU_SLOTS`).

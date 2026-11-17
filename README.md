@@ -30,8 +30,8 @@ physically based:
 - **Image**: automatic exposure with the Purkinje shift in low light, local tone mapping, a
   colour-grading LUT, physical bloom, TAA or MSAA, FSR upscaling and dynamic resolution.
 - **Frame graph**: every pass declares the targets it reads and writes.
-- **Repeatable frames**: a paused page draws the same frame on every load, so a change can be
-  checked by comparing captures.
+- **Repeatable frames**: a paused page draws the same frame on every load, within a measured
+  tolerance, so a change can be checked by comparing captures.
 
 With it come agent skills for making the look, and tools that capture, compare and measure its
 frames.
@@ -49,10 +49,11 @@ see, compare and measure what it made, so it can check its own work.
 
 ## Status
 
-The high quality tier at 4K output (1920x1080 CSS pixels at a device pixel ratio of 2), in the clear
-and fair weathers, is the one kept up to date. The other quality tiers (`medium`, `low`) and
-weathers (`cloudy`, `overcast`, `rain`, `storm`, `fog`) are parked: they are still in the code, but
-their look and cost are not maintained. `?game` opens an early game prototype on the island.
+Ponlai is tuned and checked at the high quality tier at 4K output (1920x1080 CSS pixels at a device
+pixel ratio of 2), in the clear and fair weathers. The other quality tiers (`medium`, `low`) and
+weathers (`cloudy`, `overcast`, `rain`, `storm`, `fog`) are in the code and still load, but have not
+been tuned recently, so their look and cost may lag behind. `?game` opens an early game prototype
+on the island.
 
 ## Quick start
 
@@ -81,11 +82,24 @@ Some pages to try:
 
 ## Use Ponlai in your own project
 
-- **Start a project**: copy [the blank project](templates/blank/README.md). It brings the render
-  pipeline, the tools (already configured) and the assets, and installs and runs on its own.
-- **Add the tools to a project you have**: follow [the kit's README](tools/kit/README.md).
-- **Use the agent skills**: install them as a Claude Code plugin ([below](#agent-skills)). They work
-  in any project.
+To start a project, copy [the blank project](templates/blank/README.md): the render pipeline's sky,
+sea, light and post-processing around one rock to replace, with the tools (already configured) and
+the assets. In the clone from the quick start:
+
+```bash
+node tools/repo/assets.mjs pull
+cp -RL templates/blank ~/my-project
+cd ~/my-project
+npm install
+npm run dev
+```
+
+The copy follows the template's links, so it takes the render pipeline, the tools and the assets
+with it, and installs and runs on its own. Its README says what each file does, how to choose its
+look and how to set up the tools.
+
+To add the tools to a project you already have, follow [the kit's README](tools/kit/README.md). The
+agent skills work in any project ([below](#agent-skills)).
 
 To work on Ponlai itself, [Contributing](.github/CONTRIBUTING.md) lists the programs the checks and
 tools need beyond the quick start.
@@ -111,11 +125,9 @@ claude plugin marketplace add HuberyLL/ponlai --sparse .claude-plugin plugins sk
 claude plugin install ponlai@ponlai
 ```
 
-The `--sparse` option downloads only the folders the plugin needs. The skills then carry the
-plugin's name, such as `ponlai:verifying-rendering-changes`; update them with
-`claude plugin marketplace update ponlai`. With another agent, copy a skill's folder into the
-agent's skills folder. Either way, write a binding page of your own with the same sections as this
-repository's. The plugin brings only the skills; the tools come with the blank project.
+Update them with `claude plugin marketplace update ponlai`. With another agent, copy a skill's
+folder into the agent's skills folder. Either way, write a binding page of your own with the same
+sections as this repository's.
 
 ## Structure
 

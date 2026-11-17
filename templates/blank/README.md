@@ -2,25 +2,13 @@
 
 The starting point for a project of your own on Ponlai's render pipeline: the render pipeline's sky,
 sea, light and post-processing, one rock in the open sea to replace with your own content, and the
-tools that capture, compare and measure its frames. Copy it to start a project.
+tools that capture, compare and measure its frames. Copy it to start a project, as the repository's
+[README](https://github.com/HuberyLL/ponlai#use-ponlai-in-your-own-project) shows.
 
-## Copy it
+## Run it
 
-In a clone of this repository, fetch the assets once, then copy the template. The copy follows the
-template's links, so it takes the render pipeline (`src/render/`), the tools (`tools/kit/`) and the
-assets the page loads (`public/`) with it:
-
-```bash
-npm ci
-node tools/repo/assets.mjs pull
-cp -RL templates/blank ~/my-scene
-cd ~/my-scene
-npm install
-npm run dev
-```
-
-Then open the address Vite prints. The render pipeline's URL options work on the page, for example
-`?paused&t=12` or `?weather=fair&hour=7`.
+After `npm install`, `npm run dev` serves the page; open the address Vite prints. The render
+pipeline's URL options work on the page, for example `?paused&t=12` or `?weather=fair&hour=7`.
 
 To use the tools as well, install Playwright's browser and [uv](https://docs.astral.sh/uv/), which
 runs the Python tools, and keep the project in git with at least one commit (the tools read it):
@@ -32,7 +20,7 @@ git init && git add -A && git commit -m "Start from Ponlai's blank project"
 ```
 
 For the agent skills, install Ponlai's Claude Code plugin (the README's
-[Agent skills](../../README.md#agent-skills)).
+[Agent skills](https://github.com/HuberyLL/ponlai#agent-skills)).
 
 ## What is in it
 
@@ -46,8 +34,8 @@ For the agent skills, install Ponlai's Claude Code plugin (the README's
 | `src/scene.ts` | The scene: a rock, its ground and its water, given to `startScene` |
 | `src/render/` | The render pipeline |
 | `src/looks/ponlai/` | Ponlai's look: the light, air and image values the island is drawn with |
-| `public/` | The clouds' shape noise, the star catalogue, the Milky Way and the moon ([Credits](../../CREDITS.md), Assets) |
-| `tools/kit/` | The tools ([their README](../../tools/kit/README.md)) |
+| `public/` | The clouds' shape noise, the star catalogue, the Milky Way and the moon ([Credits](https://github.com/HuberyLL/ponlai/blob/main/CREDITS.md), Assets) |
+| `tools/kit/` | The tools ([their README](https://github.com/HuberyLL/ponlai/blob/main/tools/kit/README.md)) |
 | `tools/project.mjs` | The tools' configuration for this project |
 
 `startScene( host, options, content )` runs the render pipeline's stages in their fixed order and
@@ -90,6 +78,7 @@ The two captures match byte for byte. Each tool's manual is its `--help`.
 
 - One page holds one render pipeline at a time. To show another scene, call `dispose()` on the
   running scene first; the next `startScene` then draws as a fresh load does.
-- Only what the README's [Status](../../README.md#status) names is kept up to date.
+- Ponlai is tuned and checked in the quality tier and weathers the README's
+  [Status](https://github.com/HuberyLL/ponlai#status) names.
 - The render pipeline and the tools are not npm packages: you copy them, and update them by copying
   them again.
