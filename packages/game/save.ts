@@ -11,7 +11,7 @@ import type { GameSettingsQuery } from './GameSettings.ts';
 // plain TypeScript, so node's checks read saves (tools/game/verify-game.mjs).
 //
 // What is not saved: what the page holds rather than the game (the weather, the camera, which page
-// of the record is open), a brain's thought in flight (the islander is asked again once it has
+// of the record is open), an agent's thought in flight (the islander is asked again once it has
 // nothing under way, and still holds what it noticed, which only an answer acted on takes) and the
 // player's words no thought has taken yet. Events (sim/events.ts) are not saved: the session hands
 // them on before it saves.

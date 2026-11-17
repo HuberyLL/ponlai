@@ -15,7 +15,7 @@ import type { BuildingState, SimState, Vec2 } from './types.ts';
 // open main ground with a clear ring round its footprint (CLEAR_RING, so it can never cut the main
 // ground in two) and no body standing on it; any number of a kind may stand. Each building's id is
 // its kind's name and a count of that kind ever placed (SimState.placed): chest1, chest2. An id is
-// never reused, so it stays the same across saves and the brain names the place by it (`go`,
+// never reused, so it stays the same across saves and the agent names the place by it (`go`,
 // `do`).
 //
 // The player plans, the islanders build (docs/design/game-design.md, "Building"). A placed building is a

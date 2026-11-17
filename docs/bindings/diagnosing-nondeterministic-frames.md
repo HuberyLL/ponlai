@@ -1,7 +1,7 @@
 # Binding: diagnosing non-repeating frames
 
 This project's facts for the skill
-[`diagnosing-nonrepeating-frames`](../../skills/diagnosing-nonrepeating-frames/SKILL.md). Each
+[`diagnosing-nondeterministic-frames`](../../skills/diagnosing-nondeterministic-frames/SKILL.md). Each
 section is named after the step of the skill that reads it. A project of your own copies the
 section names and fills in its own facts.
 
@@ -57,7 +57,7 @@ node tools/kit/job.mjs start --wait -- node tools/kit/gpu-lock.mjs run --shared 
   --w 1920 --h 1080 --scale 2 --timeout 120000 \
   --until "D.settled" --eval "P.scenePage.setView('high')" --frames 4 --until "D.settled" \
   --eval "globalThis.HASH_TARGETS = { roots: P, renderer: P.renderer }; await P.loop.stop(); return 1" \
-  --eval @skills/diagnosing-nonrepeating-frames/scripts/hash-targets.js > <out>/run-<i>.json
+  --eval @skills/diagnosing-nondeterministic-frames/scripts/hash-targets.js > <out>/run-<i>.json
 ```
 
 - The island page takes the same steps on `<url>` with the view's query in `--q`, without

@@ -105,7 +105,7 @@ Contents:
 - One view: `tools/kit/capture.mjs`. Views on one warm page: `tools/kit/parity/capture-set.mjs`.
   Diffs, crops, sheets and region statistics: `uv run tools/kit/img.py`.
 - What colour each kind of surface shows by kind of light, before and after:
-  `tools/island/colour-rows.mjs`. The whole day under each kept weather:
+  `tools/island/region-colours.mjs`. The whole day under each kept weather:
   `tools/island/day-sweep.mjs` with `--compare`.
 
 ## Record

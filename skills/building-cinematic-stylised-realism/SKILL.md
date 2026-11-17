@@ -45,7 +45,7 @@ skill's own, not a published standard; it rests on two established practices, ph
 rendering with materials kept apart from the light, and film look development in a neutral light
 before shot lighting. The look is built over many rounds in this order, never once from zero.
 Why, and the sources: [background.md](background.md). The knobs of this renderer, layer by layer:
-[renderer-knobs.md](renderer-knobs.md).
+[look-parameters.md](look-parameters.md).
 
 ## The project's facts: the binding
 
@@ -128,13 +128,13 @@ Content is chosen, not fitted to a number.
 Set the light's knobs per weather and hour: the key against the ambient light, the sky's
 brightness and colour, the ground's bounce, the occlusion's strength; then the air: haze and fog
 density, height and colour. Each knob moves every material together. The knobs of this
-renderer: [renderer-knobs.md](renderer-knobs.md), Light and Air.
+renderer: [look-parameters.md](look-parameters.md), Light and Air.
 
 ### 5. Exposure, tone and grade (binding: Image)
 
 Set the exposure (what it meters and where the key lands), then the tone mapping (curve, local
 tone), then the grade (white balance, look-up tables, hue bands), then the night's treatment.
-The knobs: [renderer-knobs.md](renderer-knobs.md), Image.
+The knobs: [look-parameters.md](look-parameters.md), Image.
 
 When the question becomes "what value should this light, air or image knob have" and you have
 reference images, go to the skill `fitting-a-look-to-reference-images`. Material values never go

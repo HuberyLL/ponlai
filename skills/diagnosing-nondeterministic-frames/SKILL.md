@@ -1,5 +1,5 @@
 ---
-name: diagnosing-nonrepeating-frames
+name: diagnosing-nondeterministic-frames
 description: Diagnoses a rendered frame that should repeat exactly but does not, such as a paused, test-mode or golden-image screenshot that differs between runs or fresh loads of the same build by a few pixels, a flaky visual or byte-for-byte test, or a render target that differs between loads. Finds the GPU result and the operation that vary, fixes the cause at its source and proves the fix with a run count. Use with WebGPU or WebGL renderers (three.js first) whenever the same inputs give different pixels.
 ---
 
@@ -31,7 +31,7 @@ Steps marked "(binding: X)" need facts about the project: how to open a still fr
 final, how to capture and compare, how to run code in the page and reach the renderer, the rules for
 using the GPU, earlier causes, and who accepts new reference images. Read them when you reach that
 step, not before, from section X of the project's binding for this skill:
-`docs/bindings/diagnosing-nonrepeating-frames.md`. If the project's `AGENTS.md` or `CLAUDE.md`
+`docs/bindings/diagnosing-nondeterministic-frames.md`. If the project's `AGENTS.md` or `CLAUDE.md`
 names another file for this skill, that file wins.
 
 No binding: find each fact in the project (README, package scripts, test configuration, the debug

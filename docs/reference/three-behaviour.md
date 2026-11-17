@@ -105,7 +105,7 @@ reason).
 
 Check: `tools/render/wgsl-build.mjs` reports a stage over WebGPU's limits.
 
-### Several attachments
+### Multiple render targets
 
 A `fragmentNode` that writes several attachments must be the `outputStruct( ... )` itself. One
 returned from inside an `Fn` is emitted with a single output (`struct member m0 not found`). Build
@@ -198,7 +198,7 @@ never an `rtt()` inside another pass's material, and never a call around the gra
 Check: the lint rule `ponlai/pass-on-graph` (`rtt()`, `convertToTexture()`);
 `tools/render/verify-framegraph.mjs` (the declarations); the reads need judgement.
 
-### The frame before
+### Previous-frame data
 
 What a frame reads from the frame before (a history, the previous depth, an object's previous
 matrix, a clock's step) advances once per rendered frame, not per draw or per tick. A texture's
@@ -246,7 +246,7 @@ Check: none; judgement.
 
 ## Compiling and pipelines
 
-### Compiling ahead
+### Pipeline precompilation
 
 **r186.** `renderer.compileAsync` alone does not compile what a render draws (its target, MRT,
 side, call depth, a render context shared by targets of the same attachments). Compile ahead

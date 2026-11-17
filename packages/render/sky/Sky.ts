@@ -811,13 +811,13 @@ export class Sky {
 	 * to report (main.ts awaits it before the loop); the bakes waiting on it go ahead. */
 	warm( r: THREE.WebGPURenderer = this.renderer ): Promise<void> {
 
-		const compiled = this.compileAhead( r );
+		const compiled = this.precompile( r );
 		this.warmed = compiled.catch( () => undefined );
 		return compiled;
 
 	}
 
-	private async compileAhead( r: THREE.WebGPURenderer ): Promise<void> {
+	private async precompile( r: THREE.WebGPURenderer ): Promise<void> {
 
 		await r.init();
 		await this.clouds.warm( r );

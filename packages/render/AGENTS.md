@@ -10,8 +10,8 @@ Shaders and GPU work the ones the island shares.
 Each rule names its section of `docs/reference/three-behaviour.md`, which holds its detail.
 
 - A texture's history is declared on the graph; what a frame reads from the one before advances
-  once per frame (The frame before; partly: `ponlai/history-on-graph`, `verify-framegraph`).
-- Several attachments: the `outputStruct` itself (Several attachments).
+  once per frame (Previous-frame data; partly: `ponlai/history-on-graph`, `verify-framegraph`).
+- Multiple render targets: the `outputStruct` itself (Multiple render targets).
 - Bit-identical depth takes `@invariant` (Bit-identical depth).
 - A full-screen pass takes the scene camera as uniforms (A full-screen pass's camera).
 - Multisampled depth by `textureLoad` (Multisampled depth).

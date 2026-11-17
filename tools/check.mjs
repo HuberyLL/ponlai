@@ -18,7 +18,7 @@
 //
 // The commit-time list, in order (cheap and wide first, so a broken type fails before the rest):
 // the type check (`npm run typecheck`), the code lint (`npm run lint`, tools/repo/lint/plugin.mjs),
-// verify-layers, verify-exits, verify-settings, verify-file-size, verify-headers (the modules'
+// verify-layers, verify-entry-points, verify-settings, verify-file-size, verify-headers (the modules'
 // header first lines), verify-tool-manuals (the tools' manuals and `--help`),
 // verify-three-internals and verify-kit (tools/repo/), tools/verify-no-binaries.mjs (every file in
 // the index), verify-licences (REUSE and the notices' SPDX tags; it needs uv), verify-skill-links
@@ -77,7 +77,7 @@ const checks = [
 	[ 'typecheck', npm( 'typecheck' ) ],
 	[ 'lint', npm( 'lint' ) ],
 	[ 'verify-layers', node( 'repo/verify-layers.mjs' ) ],
-	[ 'verify-exits', node( 'repo/verify-exits.mjs' ) ],
+	[ 'verify-entry-points', node( 'repo/verify-entry-points.mjs' ) ],
 	[ 'verify-settings', node( 'repo/verify-settings.mjs' ) ],
 	[ 'verify-file-size', node( 'repo/verify-file-size.mjs' ) ],
 	[ 'verify-headers', node( 'repo/verify-headers.mjs' ) ],

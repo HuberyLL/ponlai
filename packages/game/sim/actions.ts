@@ -7,9 +7,9 @@ import type { ArgsOf, Schema } from './schema.ts';
 import type { Sim } from './Sim.ts';
 import type { ActionCall, ActionResult, ActionState, EntityId, Items, Outcome, Vec2, Villager } from './types.ts';
 
-// The five actions an islander acts through, registered as the brain's tools.
+// The five actions an islander acts through, registered as the agent's tools.
 //
-// The five actions an islander acts through, registered as the brain's tools (ACTIONS), each with
+// The five actions an islander acts through, registered as the agent's tools (ACTIONS), each with
 // the arguments it takes (schema.ts: the entrance, agent.ts `act`, checks them before any rule
 // here runs, so the rules take them as given):
 //
@@ -43,7 +43,7 @@ import type { ActionCall, ActionResult, ActionState, EntityId, Items, Outcome, V
 // its `finish` when its time is up; one without an end (`follow`) runs until a new action replaces
 // it, its `during` ends it, or its condition fails.
 
-/** An action as a brain's tool. */
+/** An action as an agent's tool. */
 export interface Tool<S extends Schema = Schema> {
 	/** the arguments it takes, checked at the entrance before it begins (schema.ts) */
 	readonly args: S;
@@ -64,7 +64,7 @@ export interface Tool<S extends Schema = Schema> {
 	step?( sim: Sim, body: Villager, args: ArgsOf<S>, action: ActionState ): ActionResult | null;
 }
 
-/** Tool name to tool (the brain's tools: ACTIONS). */
+/** Tool name to tool (the agent's tools: ACTIONS). */
 export type ToolRegistry = ReadonlyMap<string, Tool>;
 
 /** What a call that began with duration answers: its outcome comes when it ends. */
@@ -245,7 +245,7 @@ const doAction: Tool<typeof DO> = {
 	},
 };
 
-/** The five actions as the brain's tools. */
+/** The five actions as the agent's tools. */
 export const ACTIONS: ToolRegistry = new Map<string, Tool>( [
 	[ 'go', go as unknown as Tool ],
 	[ 'say', say as unknown as Tool ],

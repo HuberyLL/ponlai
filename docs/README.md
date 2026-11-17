@@ -24,9 +24,9 @@ Methods for one kind of task, each with this project's facts in its binding (`do
 - [Building a stylised-realism picture](../skills/building-cinematic-stylised-realism/SKILL.md)
   ([binding](bindings/building-cinematic-stylised-realism.md)): where a change to the look goes,
   and a new material.
-- [Diagnosing frames that do not repeat](../skills/diagnosing-nonrepeating-frames/SKILL.md)
-  ([binding](bindings/diagnosing-nonrepeating-frames.md)): a frame that differs between runs of the
-  same build.
+- [Diagnosing frames that do not repeat](../skills/diagnosing-nondeterministic-frames/SKILL.md)
+  ([binding](bindings/diagnosing-nondeterministic-frames.md)): a frame that differs between runs of
+  the same build.
 - [Diagnosing visual defects](../skills/diagnosing-visual-defects/SKILL.md)
   ([binding](bindings/diagnosing-visual-defects.md)): the cause of something wrong on screen.
 - [Fitting a look to reference images](../skills/fitting-a-look-to-reference-images/SKILL.md)
@@ -74,8 +74,8 @@ Facts to look up.
   the `settled` signal.
 - [GPU lock](reference/gpu-lock.md): the lock every tool that renders takes, long jobs and waiting,
   process priority and headed runs.
-- [The page's handles and keys](reference/page.md): the debug handles the tools drive, the keys, the
-  island camera's controls and the performance readout.
+- [The page's handles and keys](reference/debug-handles-and-keys.md): the debug handles the tools
+  drive, the keys, the island camera's controls and the performance readout.
 - [Frame profiler](reference/profile-frame.md): what `tools/render/profile-frame.mjs` measures and
   how to read its results.
 - [Extension points](reference/extension-points.md): where a plant kind, a kind of local light, an
@@ -91,5 +91,7 @@ Facts to look up.
   comparison is byte-exact, how a tolerance is set and how the stored references are used.
 - [Ponlai's tools](../tools/kit/README.md): adding the screenshot and measuring tools to a project.
 - [Blank project](../templates/blank/README.md): the template to copy for a project of your own.
-- [Reaching into three.js](../packages/render/three/README.md): the reaches and how to upgrade three.
-- [Game content](../packages/game/sim/content/README.md): adding a need, an item, a place, a building.
+- [Reaching into three.js](../packages/render/three/README.md): the reaches and how to upgrade
+  three.
+- [Game content](../packages/game/sim/content/README.md): adding a need, an item, a place, a
+  building.

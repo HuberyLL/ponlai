@@ -24,7 +24,7 @@ type M4 = THREE.UniformNode<'mat4', THREE.Matrix4>;
 // its shade, the tips over it stay lit, and the meadow shows where the light comes from. It stands
 // in for the canopy's mean shade on the blades (Grass.ts): the mean gave every blade at one depth
 // the same share of the key, so no blade was lit and none shaded. The ground under the sward runs
-// a march of its own from its own point (`meadowGroundShade`, TerrainMaterial.ts), as it is not in
+// a march of its own from its own point (`meadowGroundShadow`, TerrainMaterial.ts), as it is not in
 // the vegetation's depth: a close look at a sunlit sward shows the blades' shadows on the soil
 // between them, which the crowns' cast (MeadowCanopy.ts), a field of a quarter-metre texels, cannot.
 // The ground's march is the same response as the blades', run apart only because under MSAA in a
@@ -35,9 +35,9 @@ type M4 = THREE.UniformNode<'mat4', THREE.Matrix4>;
 //
 // The frame (Pipeline.ts): the vegetation's depth copies draw first, in a scene and a pass of their
 // own (VegetationPrepass.ts `prepassScene`), into the scene's multisampled depth; that depth's
-// nearest sample per pixel is resolved (`meadowDepthMaterial`), marched (`meadowShadeMaterial`),
+// nearest sample per pixel is resolved (`meadowDepthMaterial`), marched (`meadowShadowMaterial`),
 // and the opaque pass then loads the depth, its shaded vegetation drawing to the copies' samples
-// as before, and the blades take the shade into their sun visibility (Grass.ts, `meadowShadeAt`)
+// as before, and the blades take the shade into their sun visibility (Grass.ts, `meadowShadowAt`)
 // while the ground marches over the resolved depth itself (`meadowDepthMap`; over the whole scene
 // the shade's own second and third channels, half-float copies of that view z and its surface's
 // thickness, so the ground binds one texture for all: the terrain's fragment stage holds sixteen,
@@ -46,7 +46,7 @@ type M4 = THREE.UniformNode<'mat4', THREE.Matrix4>;
 // leaves them out and the shade sees the vegetation's depth alone.
 // It is a function of the frame's depth alone: no noise, so a paused frame repeats.
 // At 4x outside the temporal modes (the prepass draws the coverage there; the temporal modes keep
-// it in the opaque pass); off with `flags=meadowShade:false` at load.
+// it in the opaque pass); off with `flags=meadowShadows:false` at load.
 //
 // Over the whole scene (`SS_SHADOW`): the resolve takes the nearer of the vegetation's depth and
 // the opaque scene's (post/OpaquePrepass.ts, its half-resolution copies' distance along the view,
@@ -76,8 +76,8 @@ type M4 = THREE.UniformNode<'mat4', THREE.Matrix4>;
 // at load (then nothing here differs from the meadow's shade alone); at run time
 // `flags.ssShadow = false` keeps the opaque depth out of the resolve and the receivers read 1, so
 // tools/render/profile-frame.mjs --toggle "s.flags.ssShadow = on" times it.
-export const MEADOW_SHADE = SCENE_SAMPLES === 4 && ! TEMPORAL && debugFlags.meadowShade !== false;
-export const SS_SHADOW = MEADOW_SHADE && debugFlags.ssShadow !== false;
+export const MEADOW_SHADOWS = SCENE_SAMPLES === 4 && ! TEMPORAL && debugFlags.meadowShadows !== false;
+export const SS_SHADOW = MEADOW_SHADOWS && debugFlags.ssShadow !== false;
 
 // The march: STEPS lookups over REACH (m) toward the light. Step j occludes by
 // c_j = saturate( ( D_j K / z )^2 ) / STEPS, D_j how far the depth there lies in front of the ray
@@ -96,25 +96,25 @@ const STEPS = 16, REACH = 0.8, THICK = 0.3, K = 500, O0 = 0.1, DELTA = 0.1;
  * `thick` m no wall. */
 type MarchTerms = { readonly steps: number; readonly reach: number; readonly thick: number };
 const MARCH: MarchTerms = { steps: STEPS, reach: REACH, thick: THICK };
-// The shade's floor on a translucent receiver (`meadowShadeFloor`): F t, t the receiver's
+// The shade's floor on a translucent receiver (`meadowShadowFloor`): F t, t the receiver's
 // translucency; an opaque receiver (t 0, the ground) takes its shade whole. A blade in the shade of
 // the blades between it and the sun still takes the light they let through, t of their diffuse
 // (world/Grass.ts TRANSLUCENCY), their t taken as the receiver's own (one sward): F is the blades'
 // albedo, 0.08 (their mean over the meadow in our views, `flags=albedoOnly`). That light
 // comes along the sun whatever the view; what a sun ahead of the view adds is the receiver's own
 // light through (vegetation/Material.ts `transmission`), not its shade's. Tunable
-// (`post.meadowShade.floor`), a uniform.
-const F0 = /*@__PURE__*/ tuneUniform( 'post.meadowShade.floor', 0.08, { min: 0, max: 0.5 } );
+// (`post.meadowShadows.floor`), a uniform.
+const F0 = /*@__PURE__*/ tuneUniform( 'post.meadowShadows.floor', 0.08, { min: 0, max: 0.5 } );
 
 /** The base node the blades load the shade through, at their pixel: the frame graph's texture
  * (Pipeline.ts sets it); over the whole scene its second and third channels hold the resolved
  * view z and thickness the ground marches over. */
-export const meadowShade = texture( new THREE.DataTexture( new Uint8Array( [ 255, 255, 255, 255 ] ), 1, 1 ) );
+export const meadowShadows = texture( new THREE.DataTexture( new Uint8Array( [ 255, 255, 255, 255 ] ), 1, 1 ) );
 
 /** The shade at the fragment's pixel (1 lit). */
-export function meadowShadeAt(): F {
+export function meadowShadowAt(): F {
 
-	return ( textureLoad( meadowShade, ivec2( screenCoordinate.xy ) ) as unknown as THREE.Node<'vec4'> ).x;
+	return ( textureLoad( meadowShadows, ivec2( screenCoordinate.xy ) ) as unknown as THREE.Node<'vec4'> ).x;
 
 }
 
@@ -156,7 +156,7 @@ export function screenShadowAt(): F {
 
 	const own = positionView.z;
 	const coord = screenCoordinate.xy;
-	const load = ( dx: number, dy: number ) => textureLoad( meadowShade, ivec2( dx === 0 && dy === 0 ? coord : max( min( coord.add( vec2( dx, dy ) ), meadowGroundView.size.sub( 1 ) ), vec2( 0 ) ) ) ) as unknown as THREE.Node<'vec4'>;
+	const load = ( dx: number, dy: number ) => textureLoad( meadowShadows, ivec2( dx === 0 && dy === 0 ? coord : max( min( coord.add( vec2( dx, dy ) ), meadowGroundView.size.sub( 1 ) ), vec2( 0 ) ) ) ) as unknown as THREE.Node<'vec4'>;
 	const best = load( 0, 0 ).toVar();
 	If( abs( best.y.sub( own ) ).greaterThan( THICK ), () => {
 
@@ -177,7 +177,7 @@ export function screenShadowAt(): F {
 }
 
 /** The least shade of a receiver of translucency `t` (F0 above). */
-export function meadowShadeFloor( t: F ): F {
+export function meadowShadowFloor( t: F ): F {
 
 	return F0.mul( t );
 
@@ -214,14 +214,14 @@ function meadowGroundNear( z: F ): F {
 /** The blades' shade on the ground at the view-space point `p` (1 lit): the same march from the
  * ground's own point, as the ground under the blades is not the depth's nearest, on its own terms
  * (GROUND); beyond GROUND_FADE none, or over the whole scene (`SS_SHADOW`) the pixel's shade. */
-export function meadowGroundShade( p: V3 ): F {
+export function meadowGroundShadow( p: V3 ): F {
 
 	const far = SS_SHADOW ? screenShadowAt() : float( 1 );
 	const shade = far.toVar();
 	If( p.z.greaterThan( - GROUND_FADE[ 1 ] ), () => {
 
 		const lit = SS_SHADOW
-			? march( meadowShade, p, p.z, meadowGroundView.size, meadowGroundView.proj, meadowGroundView.key, 'y', 'z', GROUND )
+			? march( meadowShadows, p, p.z, meadowGroundView.size, meadowGroundView.proj, meadowGroundView.key, 'y', 'z', GROUND )
 			: march( meadowDepthMap, p, p.z, meadowGroundView.size, meadowGroundView.proj, meadowGroundView.key, 'x', null, GROUND );
 		shade.assign( mix( far, lit, meadowGroundNear( p.z ) ) );
 
@@ -302,7 +302,7 @@ function march( zMap: THREE.TextureNode, p: V3, z: F, size: V2, proj: THREE.Node
 
 /** The march over the resolved view z `depth` toward `key` (view space, unit); over the whole
  * scene the view z is written beside the shade, held to the half float's range. */
-export function meadowShadeMaterial( depth: THREE.Texture, size: V2, proj: M4, projInv: M4, key: V3 ): THREE.NodeMaterial {
+export function meadowShadowMaterial( depth: THREE.Texture, size: V2, proj: M4, projInv: M4, key: V3 ): THREE.NodeMaterial {
 
 	const zMap = texture( depth );
 	const m = new THREE.NodeMaterial();
@@ -324,7 +324,7 @@ export function meadowShadeMaterial( depth: THREE.Texture, size: V2, proj: M4, p
 		return SS_SHADOW ? vec4( shade, max( z, - 6e4 ), resolved.y, 1 ) : vec4( shade, 0, 0, 1 );
 
 	} )();
-	m.name = 'meadowShade';
+	m.name = 'meadowShadows';
 	return m;
 
 }

@@ -28,14 +28,14 @@ sections for what the change touches:
 | --- | --- |
 | TSL in a material | The displaced position; Method forms of mix, step and smoothstep; select() of large operands; Uniform control flow; Nested loops |
 | A helper used in several places, a varying | Shader functions; Inline functions and varyings |
-| Several attachments, velocity, the temporal modes | Several attachments; Temporal modes |
+| Multiple render targets, velocity, the temporal modes | Multiple render targets; Temporal modes |
 | A full-screen pass, a new pass of the frame | Screen conventions; A full-screen pass's camera; Frame work on the graph; Multisampled depth; Sample counts |
 | A render target, a depth texture | Depth textures; Multisampled depth; Sample counts |
-| What reads the frame before | The frame before; Temporal modes |
+| What reads the frame before | Previous-frame data; Temporal modes |
 | A compute kernel | Compute kernels; Shader functions |
 | Vegetation, shadows, equal-depth passes | Shadow passes; Vegetation's cut-outs; Bit-identical depth |
 | A mesh under the sea, or tall or offshore | The water's textures |
-| Draws that show at times, bakes, warm-up | Compiling ahead; Build order; Draws skipped while compiling |
+| Draws that show at times, bakes, warm-up | Pipeline precompilation; Build order; Draws skipped while compiling |
 | Storage, instance, index or attribute buffers | Storage buffers; Instance matrices; Index buffers; Attribute usage |
 | Raw WebGPU, the queue, timestamps | Submits and encoders; Timestamps |
 | Splitting or merging draws | Split draws |

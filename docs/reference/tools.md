@@ -23,8 +23,8 @@ The concepts several tools share have reference pages of their own:
 - [GPU lock](gpu-lock.md): the lock every tool that renders takes, long jobs and waiting, process
   priority and headed runs.
 - [Test mode](test-mode.md): how a page is loaded so that a frame repeats exactly, and `settled`.
-- [The page's handles and keys](page.md): the debug handles the tools drive, the keys and the
-  island camera's controls.
+- [The page's handles and keys](debug-handles-and-keys.md): the debug handles the tools drive, the
+  keys and the island camera's controls.
 - [URL options](url-options.md): the page's query options.
 - [Frame profiler](profile-frame.md): the long part of the profiler's manual.
 - The parity method (when a comparison is byte-exact, how a tolerance is set, how the reference
@@ -39,7 +39,8 @@ Contents:
   (`tools/render/`)](#render-the-render-pipelines-tools-toolsrender)
 - [Island: the island's tools (`tools/island/`)](#island-the-islands-tools-toolsisland)
 - [Game: the game's tools (`tools/game/`)](#game-the-games-tools-toolsgame)
-- [Repo: the repository's checks (`tools/repo/`, `tools/`)](#repo-the-repositorys-checks-toolsrepo-tools)
+- [Repo: the repository's checks (`tools/repo/`,
+  `tools/`)](#repo-the-repositorys-checks-toolsrepo-tools)
 - [Parked weathers and quality tiers](#parked-weathers-and-quality-tiers)
 
 ## Kit: generic tools (`tools/kit/`)
@@ -111,7 +112,7 @@ not give: automation, A/B statistics and our own pass names.
 
 | Question | Tool |
 | --- | --- |
-| What colour a surface shows on screen, by kind and by light, before and after a change | `tools/island/colour-rows.mjs` |
+| What colour a surface shows on screen, by kind and by light, before and after a change | `tools/island/region-colours.mjs` |
 | How the island's light, colour and exposure run through the day under each kept weather, and whether anything jumps at one hour | `tools/island/day-sweep.mjs` |
 | The day sweep's curves as plots | `tools/island/day-sweep-plot.py` |
 | Whether anything brightens as the sun goes down or comes up, and which of the dusk's shares does it | `tools/island/dusk-grid.mjs` |
@@ -149,7 +150,7 @@ not give: automation, A/B statistics and our own pass names.
 | No asset and no binary file in git | `tools/verify-no-binaries.mjs` |
 | Every file's copyright and licence (REUSE), and the SPDX tags in each third-party notice | `tools/repo/verify-licences.mjs` |
 | The direction of imports between the layers | `tools/repo/verify-layers.mjs` |
-| The packages' exits load without doing work or reading the page | `tools/repo/verify-exits.mjs` |
+| The packages' exits load without doing work or reading the page | `tools/repo/verify-entry-points.mjs` |
 | The page's settings against their docs and the tools' addresses | `tools/repo/verify-settings.mjs` |
 | The three.js internals the code depends on, against the installed three | `tools/repo/verify-three-internals.mjs` |
 | The code lint's own rules (the rules themselves: `tools/repo/lint/plugin.mjs`) | `tools/repo/verify-lint.mjs` |

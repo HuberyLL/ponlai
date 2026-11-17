@@ -12,7 +12,7 @@ import { TEMPORAL } from './Antialiasing.ts';
 import { overlayMRT, sceneMRT } from './Motion.ts';
 import { preExposedRGBA } from './PreExposure.ts';
 import { afterMRT } from './AfterResolve.ts';
-import { SS_SHADOW, screenShadowView } from './MeadowShade.ts';
+import { SS_SHADOW, screenShadowView } from './MeadowShadows.ts';
 import { GTAO, gtaoView } from './GTAO.ts';
 import { FrameGraph, type ResourceHandle } from './graph/FrameGraph.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
@@ -104,10 +104,10 @@ export function declarePasses( p: Pipeline ): void {
 	else {
 
 		// the vegetation's depth first, the opaque scene's copies (post/OpaquePrepass.ts), the
-		// shade over both (MeadowShade.ts), then the opaque scene over the vegetation's depth
-		let { meadowCoverage, meadowDepth, meadowShade: shade } = p.resources;
+		// shade over both (MeadowShadows.ts), then the opaque scene over the vegetation's depth
+		let { meadowCoverage, meadowDepth, meadowShadows: shade } = p.resources;
 		let { gtaoOpaque, gtaoOpaqueDepth, gtaoDepth, gtaoRaw, gtaoBlur, gtao } = p.resources;
-		const depthQuad = p.meadowDepthQuad, shadeQuad = p.meadowShadeQuad;
+		const depthQuad = p.meadowDepthQuad, shadeQuad = p.meadowShadowQuad;
 		const gtaoOn = () => GTAO && debugFlags.gtao !== false;
 		const ssOn = () => SS_SHADOW && debugFlags.ssShadow !== false;
 		if ( meadowCoverage && meadowDepth && shade && depthQuad && shadeQuad ) {
@@ -137,7 +137,7 @@ export function declarePasses( p: Pipeline ): void {
 				return { label: 'meadow shade', quad: depthQuad };
 
 			} );
-			g.addPass( 'meadowShade', 'quad', ( b ) => {
+			g.addPass( 'meadowShadows', 'quad', ( b ) => {
 
 				b.read( meadowDepth! );
 				shade = b.write( shade! );

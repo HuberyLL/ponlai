@@ -188,7 +188,7 @@ export interface QualityProfile {
 	post: Pick<PostOptions, 'hazeGrid'>;
 	// the screen-space ambient occlusion and the opaque depth prepass it reads (post/GTAO.ts; built
 	// only where the meadow's shade runs, at 4x outside the temporal modes; `flags=gtao` overrides it;
-	// the screen-space shade over the whole scene builds that prepass too, post/MeadowShade.ts)
+	// the screen-space shade over the whole scene builds that prepass too, post/MeadowShadows.ts)
 	// read by: post/GTAO.ts as it loads (`GTAO`)
 	ao: boolean;
 	// the rain veil's shells and the sea's ripple layers

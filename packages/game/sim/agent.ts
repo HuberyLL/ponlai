@@ -7,15 +7,15 @@ import { checkArgs } from './schema.ts';
 import type { Sim } from './Sim.ts';
 import type { ActionCall, ActionOutcome, ActionResult, EntityId, Items, Villager } from './types.ts';
 
-// The agent loop's frame: a brain's tool calls checked at one entrance and run on the body.
+// The agent loop's frame: an agent's tool calls checked at one entrance and run on the body.
 //
-// The agent loop's frame: a brain thinks from what an islander perceives and answers with tool
+// The agent loop's frame: an agent thinks from what an islander perceives and answers with tool
 // calls, which run on the islander's body. The tools are the five actions (actions.ts).
 //
-// The answer is outside input, and `act` is its one entrance: whatever a brain (or the game's own
+// The answer is outside input, and `act` is its one entrance: whatever an agent (or the game's own
 // controls) hands it, a list of calls each naming a tool of ACTIONS with arguments its schema
 // takes (schema.ts), it checks here before any rule runs, and refuses the rest with the reason
-// (events.ts: refused). It checks the islander too, when the answer comes: a brain may answer late
+// (events.ts: refused). It checks the islander too, when the answer comes: an agent may answer late
 // (Sim.think), and an islander who died meanwhile is no longer on the island, so the answer is
 // refused for them rather than acted on. A refused call is kept with its tool alone, never with
 // arguments it was refused for, so nothing unchecked reaches the state or the save.
@@ -72,16 +72,16 @@ export interface Perception {
 	last: ActionOutcome | null;
 }
 
-/** What decides for the islanders (Sim.brain): tool calls now, or later through a Promise. It is
- * told whom it thinks for (the islander's id: a brain keeps a memory per islander). */
-export interface Brain {
+/** What decides for the islanders (Sim.agent): tool calls now, or later through a Promise. It is
+ * told whom it thinks for (the islander's id: an agent keeps a memory per islander). */
+export interface Agent {
 	think( perception: Perception, who: EntityId ): ToolCall[] | Promise<ToolCall[]>;
 	/** whether it hears the player's words: the game asks it for a thought as they are said
 	 * (Session.speak, Session.takeHeard); the stand-in does not */
 	readonly hears?: boolean;
 }
 
-/** The perception hook: what an islander perceives now (copies: the brain cannot touch the state). */
+/** The perception hook: what an islander perceives now (copies: the agent cannot touch the state). */
 export function perceive( sim: Sim, body: Villager ): Perception {
 
 	const places = placesFor( sim, body );
@@ -121,7 +121,7 @@ function perceivedNeeds( body: Villager ): Record<string, number> {
 
 }
 
-/** The entrance: a brain's answer for an islander (by id), checked and run call by call, in
+/** The entrance: an agent's answer for an islander (by id), checked and run call by call, in
  * order; each refused call gets its reason. */
 export function act( sim: Sim, who: EntityId, calls: unknown ): ToolResult[] {
 

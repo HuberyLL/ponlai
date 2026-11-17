@@ -94,7 +94,7 @@ import '../kit/qos.mjs'; // first: the PNG decodes and the map comparisons run h
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { launchCapture, waitForStable, pngShooter, stopLoop, startLoop, decodePng, compareFrames, samePixels } from '../kit/capture-browser.mjs';
+import { launchCapture, waitForStable, pngCapturer, stopLoop, startLoop, decodePng, compareFrames, samePixels } from '../kit/capture-browser.mjs';
 import { leaseGpuLock, releaseGpuLock } from '../kit/gpu-lock.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
 import { ROOT } from '../kit/root.mjs';
@@ -312,7 +312,7 @@ async function measure( page ) {
 
 /** Brings the page to `view` (`jump`: by the scene jump; otherwise as loaded), waits until it is
  * ready and shoots it twice, two frames apart. */
-async function shoot( page, side, view, jump ) {
+async function captureView( page, side, view, jump ) {
 
 	const t = Date.now();
 	await lock();
@@ -329,16 +329,16 @@ async function shoot( page, side, view, jump ) {
 		return waitForStable( page, { timeout } );
 
 	} );
-	const shooter = await pngShooter( page, { timeout } );
+	const capturer = await pngCapturer( page, { timeout } );
 	try {
 
 		// two shots two frames apart: the 12-step check saw 1 and 2 pixels change between the shots of
 		// two views of G, and G's first shots equal F's, so the pair that agrees is the verdict
-		const a = await shooter.shoot();
+		const a = await capturer.capture();
 		await startLoop( page );
 		await frames( page, 2 );
 		await stopLoop( page );
-		const b = await shooter.shoot();
+		const b = await capturer.capture();
 		writeFileSync( path.join( out, `${ side }-${ view }.png` ), a );
 		writeFileSync( path.join( out, `${ side }-${ view }-b.png` ), b );
 		// the region the held reflection reaches, for the held rule (the header)
@@ -349,7 +349,7 @@ async function shoot( page, side, view, jump ) {
 
 	} finally {
 
-		await shooter.close();
+		await capturer.close();
 
 	}
 
@@ -450,7 +450,7 @@ try {
 			rec.shots = {};
 			for ( const [ i, view ] of views.entries() ) {
 
-				const s = await shoot( page, side, view, i > 0 );
+				const s = await captureView( page, side, view, i > 0 );
 				shots[ side ][ view ] = s.png;
 				helds[ side ][ view ] = s.held;
 				rec.shots[ view ] = s.record;

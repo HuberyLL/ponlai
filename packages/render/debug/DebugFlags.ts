@@ -63,8 +63,8 @@
 // Read at load: `tone` (a number, 0 unless set) and `filmNight = true` bring back the grade's tone
 // and the film's night (post/Pipeline.ts TONE, post/PipelineDisplay.ts NIGHT); `localTone = false`
 // builds the display chain without its local tone mapping (post/LocalTone.ts).
-// The meadow's light, each on unless false: `meadowShade` (its screen-space shade and the
-// vegetation's depth pass, post/MeadowShade.ts), `groundCast` (the crowns' shade on the turf,
+// The meadow's light, each on unless false: `meadowShadows` (its screen-space shade and the
+// vegetation's depth pass, post/MeadowShadows.ts), `groundCast` (the crowns' shade on the turf,
 // materials/TerrainMaterial.ts), `groundShade` (the blades' screen-space shade on the turf, the
 // same), `grassClumps` (the blades' clumps, world/Grass.ts CLUMP);
 // `grassShadow = false` (at load) turns off the shade of the meadow's layer on its blades and the
@@ -105,7 +105,7 @@
 // builds; `gtao = true` builds them on a tier whose knob is off. At run time `gtao = false` skips
 // their passes and the receivers read 1, so --toggle "s.flags.gtao = on" times it.
 // `ssShadow = false` (at load) builds the meadow's screen-space shade over the vegetation's depth
-// alone, as before it reached the whole scene (post/MeadowShade.ts `SS_SHADOW`; on unless false);
+// alone, as before it reached the whole scene (post/MeadowShadows.ts `SS_SHADOW`; on unless false);
 // at run time it keeps the opaque scene's depth out of the shade, its prepass skipped unless the
 // occlusion runs, and the receivers other than the meadow read 1, so
 // --toggle "s.flags.ssShadow = on" times it.

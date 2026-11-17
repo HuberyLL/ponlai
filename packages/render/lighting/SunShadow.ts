@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import { Fn, uniform, uniformArray, texture, vec4, int, float, clamp, floor, dot, max, select, mix, positionLocal, positionView, normalWorld, modelWorldMatrixInverse } from 'three/tsl';
 import { compileByRendering, compileLatentInto } from '../post/graph/Compile.ts';
 import { solarSteppedShadowVisibility, solarVolumeVisibility, solarPCFVisibility, solarDiscVisibility } from './SolarShadow.ts';
-import { screenShadowAt } from '../post/MeadowShade.ts';
+import { screenShadowAt } from '../post/MeadowShadows.ts';
 import type { CasterColumns } from './CasterFormat.ts';
 import { shadowWindOn } from '../vegetation/VegetationShadow.ts';
 import { leafThrough } from '../vegetation/LeafLight.ts';
@@ -40,7 +40,7 @@ type FilterInput = { shadowCoord: V3 };
 // the meadow's layer shades the blades and the ground under and beside it where they read the map
 // (Grass.ts `meadowLayerLight`, through a material's `userData.sunShade`). Both stepped
 // maps are filtered alike, each on its own, so the cross-fade stays continuous across a redraw.
-// A receiver's screen-space shade (post/MeadowShade.ts) multiplies the filter's visibility: its own
+// A receiver's screen-space shade (post/MeadowShadows.ts) multiplies the filter's visibility: its own
 // (`userData.sunShade`, the meadow's blades) or the whole scene's at its pixel (`receiveScreenShadow`).
 // A tree's leaves, marked `userData.keyThrough`, take the two's product on a floor (`leafThrough`,
 // vegetation/LeafLight.ts): the map draws every leaf as black, where a crown's leaves pass on
@@ -260,7 +260,7 @@ export class SunShadow {
 			// Vegetation is told by its tag, not by alphaToCoverage, which is off without multisampling.
 			const visibility = this.surfaceVisibility( shadowCoord );
 			// A receiver's own shade on top of the map's (the meadow's blades: their screen-space
-			// shade, post/MeadowShade.ts; they and the ground under and beside them: the meadow's
+			// shade, post/MeadowShadows.ts; they and the ground under and beside them: the meadow's
 			// layer, Grass.ts `meadowLayerLight`), or the whole scene's screen-space shade at its
 			// pixel for one marked for it (`receiveScreenShadow`: the bamboo, the yunpeng)
 			const shade = ( material?.userData.sunShade as F | undefined ) ?? ( material?.userData.screenShadow === true ? screenShadowAt() : undefined );

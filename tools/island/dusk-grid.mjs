@@ -103,7 +103,7 @@
 import '../kit/help.mjs';
 import '../kit/qos.mjs'; // first: the summary's CPU work runs with the application policy
 import { acquireGpuLock, leaseGpuLock, releaseGpuLock } from '../kit/gpu-lock.mjs';
-import { launchCapture, pngShooter, stopLoop, waitForScene, waitForSettled } from '../kit/capture-browser.mjs';
+import { launchCapture, pngCapturer, stopLoop, waitForScene, waitForSettled } from '../kit/capture-browser.mjs';
 import { WAIT_FRAMES, runInPage } from '../kit/page-eval.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
 import { fitDusk } from './dusk-fit.mjs';
@@ -797,9 +797,9 @@ async function measure( point, query, how ) {
 	point.weights = q.weights;
 	if ( options.frames ) {
 
-		const shooter = await pngShooter( page, { timeout: options.timeout } );
-		const png = await shooter.shoot();
-		await shooter.close();
+		const capturer = await pngCapturer( page, { timeout: options.timeout } );
+		const png = await capturer.capture();
+		await capturer.close();
 		const file = path.join( options.out, 'frames', `${ point.weather }-${ point.side }-${ point.key }.png` );
 		mkdirSync( path.dirname( file ), { recursive: true } );
 		writeFileSync( file, png );

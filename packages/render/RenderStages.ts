@@ -104,7 +104,7 @@ import type { SettleFrame } from './post/Settled.ts';
 import type { HazeFrame } from './weather/VolumetricHaze.ts';
 import { installWindMotionFlag } from './vegetation/WindMotion.ts';
 import { GTAO } from './post/GTAO.ts';
-import { SS_SHADOW } from './post/MeadowShade.ts';
+import { SS_SHADOW } from './post/MeadowShadows.ts';
 import type { Vegetation } from './vegetation/Registry.ts';
 
 /** A scene as the query names it: what a load and a scene jump both establish (`sceneOptions`). */
@@ -945,7 +945,7 @@ export function placeVegetation<L>( render: RenderParts, vegetation: Vegetation<
 	installWindMotionFlag( scene );
 	installVegetationPrepass( scene, vegetation.roots( ( kind ) => kind.prepass ) );
 	// the opaque scene's depth for the ambient occlusion (post/GTAO.ts, high's `ao` knob) and the
-	// screen-space shade over the whole scene (post/MeadowShade.ts `SS_SHADOW`): the ground, and the
+	// screen-space shade over the whole scene (post/MeadowShadows.ts `SS_SHADOW`): the ground, and the
 	// plants without a prepass of their own
 	if ( GTAO || SS_SHADOW ) installOpaquePrepass( [ ...ground, ...vegetation.roots( ( kind ) => ! kind.prepass ) ] );
 	vegetation.close( 'placeVegetation has placed the kinds in the scene and its prepasses' );

@@ -65,7 +65,7 @@
 // `pipelines.since` lists each pipeline's kind, label, material, object, target, frame and the
 // first 6 app frames of its stack; it sees only pipelines built after the first `mark()`.
 // `D.settled` never turns true on a running page. For an A/B frame time use
-// tools/render/profile-frame.mjs. The page's handles: docs/reference/page.md.
+// tools/render/profile-frame.mjs. The page's handles: docs/reference/debug-handles-and-keys.md.
 //
 // Output (stdout, JSON): the url, the browser, the profile slot, the lock and its wait, and per
 // query its `mode` (load or jump), `readyMs` (until up), `ms` (the whole query), `steps` (`{ eval,

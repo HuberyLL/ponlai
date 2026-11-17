@@ -4,7 +4,7 @@
 // the grade) go wrong at one hour under one sky, which the few frames a tuning session looks at miss.
 // Run it before handing back a change to anything keyed by the sun's elevation or the weather, and
 // again with `--compare` on the run from before. It only combines tools that exist:
-// tools/island/colour-rows.mjs shoots the frames (shoot --warm: one warm page, a scene jump per frame)
+// tools/island/region-colours.mjs captures the frames (capture --warm: one warm page, a scene jump per frame)
 // and reads them (rows --own), `tools/kit/img.py sheet` and `thumb` lay them out and shrink them, and
 // tools/island/day-sweep-plot.py draws the curves. `report` runs the second half again on the frames
 // already in <outDir> (new thresholds, a comparison, a sheet that failed).
@@ -32,7 +32,7 @@
 //   --turn-deg d       a pair the camera turned more than d degrees over is not scanned (15)
 //   --sky-mask-deg d   leaves the sky within d degrees of the sun or the moon out of the sky's row (5)
 //   --size WxH@dpr     the frames' size (2560x1440@1)
-//   --jobs n           colour-rows's page count (1)
+//   --jobs n           region-colours's page count (1)
 //   --q query          extra query options for every frame
 //   --thin             report: thins a run already made to thumbnails (as a shoot does)
 //
@@ -60,7 +60,7 @@
 //   all     hourly, midday, dense and key together: the default, 61 frames a camera and weather
 // Each frame is `weather=<w>&hour=<h>` on the camera's pose; its label's elevation is the page's own.
 //
-// The regions, read per frame by colour-rows rows --own, each frame sorted by its own depth read:
+// The regions, read per frame by region-colours measure --own, each frame sorted by its own depth read:
 // `sky` and `sea` (cells more than 0.99 sky or sea; the sky without the cells within --sky-mask-deg of
 // the sun or the moon), `land` (no sky and no sea at all) and `floor` (the land's darkest 5 % by
 // luminance). A row is the final pixel's mean linear colour over its cells, as log2 luminance and
@@ -90,11 +90,11 @@
 // overview-<camera>.png (the weathers by the key moments), rows.json, curves-<camera>-<weather>.png
 // (the regions' readings, the sun's elevation and the EV over the day, the steps circled),
 // jumps-<camera>.txt and jumps.txt, compare/, compare.txt and compare.json (with --compare),
-// transitions.txt and sheet-transitions.png (with --transitions), colour/ (colour-rows's own shoot and
+// transitions.txt and sheet-transitions.png (with --transitions), colour/ (region-colours's own shoot and
 // rows), plan.json, timing.json (wall, lock-wait and busy time per part) and gaps.txt. A thinned run's
 // `report` redoes the numbers only; the sheets need the whole frames.
 //
-// GPU lock and browser: colour-rows takes the GPU lock shared (docs/reference/gpu-lock.md) in the
+// GPU lock and browser: region-colours takes the GPU lock shared (docs/reference/gpu-lock.md) in the
 // capture tools' headless browser; a short probe reads the default view's pose first. `report`: neither.
 //
 // Cost: a scene jump per frame on a warm page, a fraction of a page load each; a routine run of the
@@ -163,7 +163,7 @@ function usage( message ) {
 
 const SHARED = [ 'compare', 'thr-stops', 'thr-de', 'turn-deg', 'sky-mask-deg' ];
 const MODES = {
-	shoot: { flags: [ 'transitions', 'keep-frames' ], values: [ ...SHARED, 'scope', 'views', 'times', 'weathers', 'size', 'jobs', 'q' ], lists: [ 'view' ] },
+	capture: { flags: [ 'transitions', 'keep-frames' ], values: [ ...SHARED, 'scope', 'views', 'times', 'weathers', 'size', 'jobs', 'q' ], lists: [ 'view' ] },
 	report: { flags: [ 'thin' ], values: SHARED, lists: [] },
 };
 
@@ -306,12 +306,12 @@ for ( const signal of [ 'SIGTERM', 'SIGINT' ] ) {
 
 }
 
-// runs colour-rows with its output on ours, and adds up the GPU lock's waits it reports
+// runs region-colours with its output on ours, and adds up the GPU lock's waits it reports
 function runColour( args ) {
 
 	return new Promise( ( resolve ) => {
 
-		const child = spawn( process.execPath, [ 'tools/island/colour-rows.mjs', ...args ], { cwd: REPO, stdio: [ 'ignore', 'inherit', 'pipe' ] } );
+		const child = spawn( process.execPath, [ 'tools/island/region-colours.mjs', ...args ], { cwd: REPO, stdio: [ 'ignore', 'inherit', 'pipe' ] } );
 		children.add( child );
 		let waited = 0, tail = '';
 		child.stderr.on( 'data', ( d ) => {
@@ -450,7 +450,7 @@ function pageCosts( out, views ) {
 
 }
 
-async function shoot( plan, out, options ) {
+async function captureDay( plan, out, options ) {
 
 	const colour = path.join( out, 'colour' );
 	mkdirSync( colour, { recursive: true } );
@@ -468,10 +468,10 @@ async function shoot( plan, out, options ) {
 
 		console.log( `day-sweep: ${ name }: ${ list.length } views` );
 		const started = Date.now();
-		const { code, waited } = await runColour( [ 'shoot', plan.url, colour, '--views-file', file, '--pages', 'normal', ...common ] );
+		const { code, waited } = await runColour( [ 'capture', plan.url, colour, '--views-file', file, '--pages', 'normal', ...common ] );
 		if ( code !== 0 ) {
 
-			console.error( `day-sweep: shooting the ${ name } views failed (exit ${ code })` );
+			console.error( `day-sweep: capturing the ${ name } views failed (exit ${ code })` );
 			process.exit( 1 );
 
 		}
@@ -488,8 +488,8 @@ async function shoot( plan, out, options ) {
 const lum = ( [ r, g, b ] ) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
 const degrees = ( x ) => x.toFixed( 1 ).replace( /^-0\.0$/, '0.0' );
 
-// a region's numbers from a colour-rows row, or null when it holds none. Each frame is sorted on its
-// own (colour-rows rows --own) because the turned cameras share no cells from one frame to the next:
+// a region's numbers from a region-colours row, or null when it holds none. Each frame is sorted on its
+// own (region-colours measure --own) because the turned cameras share no cells from one frame to the next:
 // a sort fixed on one frame read sea where the island had stood, and a sort of the sunlit and the
 // shaded land fixed at noon read noon's shadow at every hour (a jump of three stops there). The land
 // is taken whole and its dark end by rank, so the shade that moves with the sun moves no curve. The
@@ -652,23 +652,23 @@ function thin( plan, out, keep ) {
 
 }
 
-// colour-rows's rows of this run's frames, each sorted by its own depth read (--own: a turned
+// region-colours's rows of this run's frames, each sorted by its own depth read (--own: a turned
 // camera's frames share no cells), into colour/rows.json once all of them are there
 function readRows( out, plan, skyMaskDeg ) {
 
 	const colour = path.join( out, 'colour' );
 	const file = path.join( colour, 'rows.json' ), temporary = path.join( colour, 'rows.tmp.json' );
 	const views = [ ...plan.frames, ...plan.transitions ].map( ( f ) => f.view );
-	const r = spawnSync( process.execPath, [ 'tools/island/colour-rows.mjs', 'rows', colour, '--own', '--sky-mask-deg', String( skyMaskDeg ), '--views', views.join( ',' ), '--out', temporary ],
+	const r = spawnSync( process.execPath, [ 'tools/island/region-colours.mjs', 'measure', colour, '--own', '--sky-mask-deg', String( skyMaskDeg ), '--views', views.join( ',' ), '--out', temporary ],
 		{ cwd: REPO, stdio: [ 'ignore', 'ignore', 'inherit' ], maxBuffer: 1 << 30 } );
 	if ( r.status !== 0 ) {
 
-		console.error( `day-sweep: colour-rows rows failed (exit ${ r.status })` );
+		console.error( `day-sweep: region-colours measure failed (exit ${ r.status })` );
 		process.exit( 1 );
 
 	}
 	const doc = JSON.parse( readFileSync( temporary, 'utf8' ) );
-	if ( views.some( ( v ) => ! doc.views[ v ] ) ) { console.error( 'day-sweep: colour-rows rows left frames out' ); process.exit( 1 ); }
+	if ( views.some( ( v ) => ! doc.views[ v ] ) ) { console.error( 'day-sweep: region-colours measure left frames out' ); process.exit( 1 ); }
 	renameSync( temporary, file );
 	return doc;
 
@@ -996,7 +996,7 @@ function compare( plan, doc, cameras, out, earlier, thr, keep ) {
 
 const argv = process.argv.slice( 2 );
 const reportOnly = argv[ 0 ] === 'report';
-const { positional, options } = parse( reportOnly ? argv.slice( 1 ) : argv, reportOnly ? 'report' : 'shoot' );
+const { positional, options } = parse( reportOnly ? argv.slice( 1 ) : argv, reportOnly ? 'report' : 'capture' );
 if ( positional.length !== ( reportOnly ? 1 : 2 ) ) usage( reportOnly ? 'report needs <outDir>' : 'needs <url> <outDir>' );
 const out = path.resolve( positional[ reportOnly ? 0 : 1 ] );
 try {
@@ -1010,7 +1010,7 @@ try {
 		const plan = await planOf( options, url );
 		console.log( `day-sweep: ${ plan.cameras.map( ( c ) => c.name ).join( ', ' ) } x ${ plan.weathers.join( ', ' ) }: ${ plan.frames.length } frames${ plan.transitions.length ? ` and ${ plan.transitions.length } transitions` : '' }` );
 		for ( const note of plan.notes ) console.log( `day-sweep: ${ note }` );
-		const timing = await shoot( plan, out, options );
+		const timing = await captureDay( plan, out, options );
 		const reported = Date.now();
 		report( out, options, ! options[ 'keep-frames' ] );
 		timing.reportS = Math.round( ( Date.now() - reported ) / 1000 );

@@ -572,7 +572,7 @@ function material( shared: Shared, plants: PlantInstances, lift: number ): THREE
 	( m as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new GroundBounceLightingModel();
 	writeMeter( m );
 	receiveScreenAO( m );
-	// the whole scene's screen-space shade on the key (post/MeadowShade.ts)
+	// the whole scene's screen-space shade on the key (post/MeadowShadows.ts)
 	receiveScreenShadow( m );
 	return m;
 

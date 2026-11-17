@@ -1,6 +1,6 @@
 ---
 name: diagnosing-visual-defects
-description: Finds the cause of something wrong on screen in a real-time renderer, such as a band, a seam, specks, a flicker, a dark patch, a halo or something that vanishes for a frame, by switching parts off one at a time and bisecting before anything is changed. Reproduces the defect in the cheapest still view, records its fingerprint, ablates the parts that draw there until the one that makes it is found, confirms it with a sweep of its parameter, checks the suspect quantity against a physical or published range, judges temporal defects on clips against a many-sample reference, then fixes at the source. Use with three.js WebGPU renderers, or any real-time renderer, whenever a visible artefact's cause is not yet known; it hands frames that do not repeat to diagnosing-nonrepeating-frames and pictures that are technically right but look wrong to building-cinematic-stylised-realism.
+description: Finds the cause of something wrong on screen in a real-time renderer, such as a band, a seam, specks, a flicker, a dark patch, a halo or something that vanishes for a frame, by switching parts off one at a time and bisecting before anything is changed. Reproduces the defect in the cheapest still view, records its fingerprint, ablates the parts that draw there until the one that makes it is found, confirms it with a sweep of its parameter, checks the suspect quantity against a physical or published range, judges temporal defects on clips against a many-sample reference, then fixes at the source. Use with three.js WebGPU renderers, or any real-time renderer, whenever a visible artefact's cause is not yet known; it hands frames that do not repeat to diagnosing-nondeterministic-frames and pictures that are technically right but look wrong to building-cinematic-stylised-realism.
 ---
 
 # Diagnosing visual defects
@@ -26,7 +26,7 @@ the defect by experiment, confirms it, and only then changes code.
 - A temporal defect (flicker, shimmer, ghosting, a one-frame drop) is judged on a clip of frames
   against a many-sample reference of the same motion, never on stills, and on the whole frame as
   well as on crops.
-- Same inputs, different pixels between runs: stop and use `diagnosing-nonrepeating-frames`.
+- Same inputs, different pixels between runs: stop and use `diagnosing-nondeterministic-frames`.
   Technically correct but the look is wrong (too dark, flat, a cast): use
   `building-cinematic-stylised-realism`.
 
@@ -63,7 +63,7 @@ Copy this checklist and keep it up to date:
    one camera, the project's still or test mode for a still defect. Capture it: this is the
    "before" every later shot is compared with.
 3. Shoot the same view twice from fresh loads. If the two differ where the defect is, the frame
-   does not repeat: hand over to `diagnosing-nonrepeating-frames`.
+   does not repeat: hand over to `diagnosing-nondeterministic-frames`.
 4. A defect that came with a recent change: bisect the commits with this one shot before
    ablating, and read the change that brought it.
 

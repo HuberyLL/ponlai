@@ -280,7 +280,7 @@ async function retune( page ) {
 
 }
 
-async function shoot( page, view, ready, extra ) {
+async function captureView( page, view, ready, extra ) {
 
 	if ( ready.status === 'capped' ) console.log( `${ view }${ suffix } unstable: still changing after ${ ready.framesWaited } frames (max ${ ready.maxSeen } levels), captured at the cap` );
 	const file = path.join( outDir, `${ view }${ suffix }.png` );
@@ -306,7 +306,7 @@ try {
 			try {
 
 				const ready = await settle( page, s.eval );
-				await shoot( page, v, ready, { mode: 'fresh', query: s.q, errors } );
+				await captureView( page, v, ready, { mode: 'fresh', query: s.q, errors } );
 				console.log( `${ v }${ suffix } fresh ${ ready.status ?? ready.rule } ${ ( ( Date.now() - t0 ) / 1000 ).toFixed( 1 ) } s${ errors.length ? ' ERRORS ' + errors.slice( 0, 3 ).join( ' | ' ) : '' }` );
 				if ( errors.length ) failed ++;
 
@@ -357,7 +357,7 @@ try {
 
 			}
 			const ready = await settle( page, s.eval );
-			if ( capture ) await shoot( page, v, ready, { mode: i > 0 ? 'jump' : 'load', query: s.q, from: previous, errors: errors.splice( 0 ) } );
+			if ( capture ) await captureView( page, v, ready, { mode: i > 0 ? 'jump' : 'load', query: s.q, from: previous, errors: errors.splice( 0 ) } );
 			console.log( `${ v }${ capture ? suffix : ' (not captured)' } ${ ready.status ?? ready.rule } ${ i > 0 ? `jump from ${ previous }` : 'load' } ${ ( ( Date.now() - t1 ) / 1000 ).toFixed( 1 ) } s` );
 			previous = v;
 

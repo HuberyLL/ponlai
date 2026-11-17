@@ -161,7 +161,7 @@ Work from the symptom; change nothing until you know which it is.
 | A few pixels change between equivalent builds | Derivatives or implicit samples in non-uniform control flow; build order; draws split differently |
 | Something vanishes for one frame after a resize or scale step | A target re-created and cleared, or its depth cleared before a pass that loads it |
 | Equal-depth tests fail on a few samples | Two programs that place vertices differently: the clip position needs `@invariant` |
-| The frame differs between runs of the same build | Not this skill: `diagnosing-nonrepeating-frames` |
+| The frame differs between runs of the same build | Not this skill: `diagnosing-nondeterministic-frames` |
 | A defect on screen whose part is not yet known | Not this skill: `diagnosing-visual-defects` |
 
 ### 7. Record what you found (binding: Record)

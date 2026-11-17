@@ -30,7 +30,7 @@ wind); `?game` opens a game prototype.
   5191), `lint` (the code lint). `npm run check`: what every commit passes, in seconds, without a
   GPU (`tools/check.mjs`); `-- --full` adds the build and the world's chunks. `npm run lint:docs`:
   Markdown, offline links, docs paths, the rules files' shape; `lint:links` adds web links. In-page
-  keys: `docs/reference/page.md`.
+  keys: `docs/reference/debug-handles-and-keys.md`.
 
 ## Tools
 
@@ -54,11 +54,12 @@ wind); `?game` opens a game prototype.
 ## Skills
 
 Each is `skills/<name>/SKILL.md`, with this project's facts in `docs/bindings/<name>.md`:
-building-cinematic-stylised-realism (the look, materials), diagnosing-nonrepeating-frames (frames that
-differ by run), diagnosing-visual-defects (on-screen faults), fitting-a-look-to-reference-images
-(light, air, image values), measuring-performance-changes (speed, frame time),
-verifying-rendering-changes (rendering changes), writing-docs-and-skills (docs, rules, skills),
-writing-tools-and-checks (tools and checks), writing-tsl-and-passes (TSL, passes, GPU buffers).
+building-cinematic-stylised-realism (the look, materials), diagnosing-nondeterministic-frames
+(frames that differ by run), diagnosing-visual-defects (on-screen faults),
+fitting-a-look-to-reference-images (light, air, image values), measuring-performance-changes (speed,
+frame time), verifying-rendering-changes (rendering changes), writing-docs-and-skills (docs, rules,
+skills), writing-tools-and-checks (tools and checks), writing-tsl-and-passes (TSL, passes, GPU
+buffers).
 
 ## Rules for every change
 
@@ -92,9 +93,9 @@ writing-tools-and-checks (tools and checks), writing-tsl-and-passes (TSL, passes
   render pipeline, the island and the game's rules never touch the browser's globals; they are given
   what they need (rule 13).
 - Licences follow REUSE: third-party code opens with a `/*! ... */` notice (source, SPDX copyright
-  and licence tags), each licence's text in `LICENSES/`. `CREDITS.md` lists the sources whose licence
-  asks for a notice or credit, assets included; a technique, a paper or public-domain code is
-  credited in a comment where used. No reference images in git, no unlicensed third-party art.
+  and licence tags), each licence's text in `LICENSES/`. `CREDITS.md` lists the sources whose
+  licence asks for a notice or credit, assets included; a technique, a paper or public-domain code
+  is credited in a comment where used. No reference images in git, no unlicensed third-party art.
 - No asset in git: what the page loads lives in the git-ignored `public/`, loads through
   `import.meta.env.BASE_URL`, ships in a GitHub release (`assets-<date>`, fixed once
   published) pinned by `assets.lock.json`, the new lock in the commit whose code needs it
@@ -158,10 +159,10 @@ notice; `npm run lint:docs` before a commit that changes Markdown.
 | --- | --- | --- |
 | The growth, what depends on the land's shape, instancing, an index rewritten in place | `island/verify-growth-swap` | A grown page draws a fresh load's frame; a swap never builds a pipeline; instanced kinds keep a fixed capacity (Instance matrices); an index rewritten in place is a `Uint32Array` (Index buffers) |
 | A scene event, a history, the scene jump, the build order | `island/verify-scene-jump`, parity captures | A jump draws a fresh load's frame; the order materials first build in is part of the image (Build order) |
-| A draw, a material, a pass, a one-time render | `render/verify-first-use`; a pass, `render/verify-frame-graph-gpu` too | Draws compile ahead through the graph's warm-up (Compiling ahead); a one-time render waits for it (Draws skipped while compiling) |
+| A draw, a material, a pass, a one-time render | `render/verify-first-use`; a pass, `render/verify-frame-graph-gpu` too | Draws compile ahead through the graph's warm-up (Pipeline precompilation); a one-time render waits for it (Draws skipped while compiling) |
 | A storage buffer that grows | `render/verify-storage-realloc` | It grows by a new attribute (Storage buffers) |
 | The sun's shadow | `render/verify-solar-shadows` | One penumbra width at any caster distance; receivers clear at a low sun |
-| What a frame costs | `render/profile-frame` | High's standard, above |
+| What a frame costs | `render/profile-frame` | The high tier's performance target, above |
 
 ## Adding a rule
 

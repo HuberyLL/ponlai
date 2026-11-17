@@ -60,7 +60,7 @@
 //   frames after the floor (median 4, about 1.4 s of grabbing), every one on the frame most loads
 //   of the earlier tools agreed on: no A/A difference, where the fixed waits left 15-17 % of loads
 //   off it.
-// - The grab is the compositor's image through CDP (pngShooter, below: `Page.captureScreenshot`,
+// - The grab is the compositor's image through CDP (pngCapturer, below: `Page.captureScreenshot`,
 //   PNG optimised for speed, at the page's pixel ratio): about 0.27 s at 3456x2234, its pixels
 //   equal to Playwright's screenshot's (which spends 1.3 s on its PNG), and taking it does not
 //   change the next shot. Equal PNG bytes are equal pixels; only a changed frame is decoded (about
@@ -71,7 +71,7 @@
 //   none, so Playwright's override (its deviceScaleFactor) is gone and `window.devicePixelRatio`
 //   reads 1. The frames drawn stay the same (the page follows the ratio only on a resize, and
 //   none fires), but anything reading the ratio afterwards is wrong, such as views.mjs's crop
-//   anchors in capture-clip. So the shooter's close() (waitForStable ends with it) takes a
+//   anchors in capture-clip. So the capturer's close() (waitForStable ends with it) takes a
 //   Playwright screenshot of one pixel (whose own clip emulation is restored to Playwright's
 //   metrics) and waits until the page reads the ratio it had before the grabs: about 35 ms per
 //   capture. Sending the same metrics again (`setViewportSize` with the same size) does nothing,
@@ -111,7 +111,7 @@
 //   is not a scene bump, so the haze's rest is kept.
 //
 // The shot. The PNGs a capture writes (capture.mjs's frames, capture-clip's crops and full frames)
-// are taken by the same shooter as the grab, not by Playwright's `page.screenshot`: the same pixels
+// are taken by the same capturer as the grab, not by Playwright's `page.screenshot`: the same pixels
 // (the compositor's image at the page's ratio, the clip trimmed to the viewport as Playwright trims
 // it), only Chrome's fast PNG encoder instead of its default one. At 3456x2234 the shot takes
 // about 0.26 s instead of 1.3 s (1600x900: 0.07 s instead of 0.27 s), plus 35 ms for close(),
@@ -474,13 +474,13 @@ export function compareFrames( a, b, level = 0 ) {
 
 }
 
-/** A PNG shooter on a CDP session of its own (see "The shot" in the header): `shoot( clip )`
+/** A PNG capturer on a CDP session of its own (see "The shot" in the header): `capture( clip )`
  * returns the PNG of the viewport, or of `clip` ({ x, y, width, height } in CSS px, trimmed to the
  * viewport as Playwright trims it), at the page's pixel ratio, encoded by Chrome's fast PNG
  * encoder: the pixels of Playwright's `page.screenshot` with the same clip. `close()` detaches and
  * gives the page its device metrics back (the shots dropped them); call it before anything reads
  * `devicePixelRatio`. */
-export async function pngShooter( page, { timeout = 60000 } = {} ) {
+export async function pngCapturer( page, { timeout = 60000 } = {} ) {
 
 	const cdp = await page.context().newCDPSession( page );
 	// (a CDP session of its own has no device metrics override: its scale 1 is CSS pixels, so the
@@ -489,7 +489,7 @@ export async function pngShooter( page, { timeout = 60000 } = {} ) {
 	const scale = await page.evaluate( () => devicePixelRatio );
 	return {
 		scale,
-		async shoot( clip = null ) {
+		async capture( clip = null ) {
 
 			let c = { x: 0, y: 0, width, height };
 			if ( clip ) {
@@ -581,7 +581,7 @@ export async function waitForStable( page, { every = STABLE.every, repeats = STA
 
 	}, PAGE );
 	if ( temporal ) return waitForRest( page, { timeout } );
-	const shooter = await pngShooter( page, { timeout } );
+	const capturer = await pngCapturer( page, { timeout } );
 	const ms = { cycle: 0, grab: 0, decode: 0, compare: 0 };
 	let decodes = 0;
 	// the page's current image as the compositor shows it (the loop is stopped: the frame a screenshot
@@ -589,7 +589,7 @@ export async function waitForStable( page, { every = STABLE.every, repeats = STA
 	const grab = async () => {
 
 		const t = performance.now();
-		const png = await shooter.shoot();
+		const png = await capturer.capture();
 		ms.grab += performance.now() - t;
 		return { png, pixels: null };
 
@@ -683,7 +683,7 @@ export async function waitForStable( page, { every = STABLE.every, repeats = STA
 	} finally {
 
 		// (the grabs dropped Playwright's device metrics: see the header)
-		await shooter.close();
+		await capturer.close();
 
 	}
 

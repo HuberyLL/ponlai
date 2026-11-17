@@ -1,26 +1,26 @@
-// Checks that the packages' exits load without doing work or reading the page, the headless ones in plain node.
+// Checks that the packages' entry points load without doing work or reading the page, the headless ones in plain node.
 //
-// An exit is a file of re-exports through which another package imports a package
-// (tools/repo/layers.json `exits`; tools/repo/verify-layers.mjs checks that every import across
-// packages goes through one). Loading an exit loads its whole package, so a module that did work as
+// An entry point is a file of re-exports through which another package imports a package
+// (tools/repo/layers.json `entryPoints`; tools/repo/verify-layers.mjs checks that every import across
+// packages goes through one). Loading an entry point loads its whole package, so a module that did work as
 // it loaded would make the order of the imports part of the program, and a package that read the
-// page at load could not be loaded anywhere else. Run it after a change to what an exit loads; it
+// page at load could not be loaded anywhere else. Run it after a change to what an entry point loads; it
 // is part of `npm run check`.
 //
 // Usage:
-//   node tools/repo/verify-exits.mjs
+//   node tools/repo/verify-entry-points.mjs
 //
 // Options: none.
 //
 // What it checks, each a failure when broken:
-// - Each headless exit (packages/render/data.ts, packages/island/land.ts,
-//   packages/game/sim/index.ts) and the setup exit (packages/render/setup.ts, which the headless game
+// - Each headless entry point (packages/render/data.ts, packages/island/land.ts,
+//   packages/game/sim/index.ts) and the setup entry point (packages/render/setup.ts, which the headless game
 //   loads for its settings) loads in plain node, with its types stripped and nothing installed first,
 //   without throwing, and every value name it re-exports is defined once it has loaded. The page
-//   exits do not load in node, nor need to: modules of theirs read `import.meta.env`, which the
+//   entry points do not load in node, nor need to: modules of theirs read `import.meta.env`, which the
 //   bundler provides.
-// - Every file a page exit (packages/render/index.ts, packages/island/index.ts,
-//   packages/game/index.ts) or the setup exit loads, followed through its static imports and
+// - Every file a main entry point (packages/render/index.ts, packages/island/index.ts,
+//   packages/game/index.ts) or the setup entry point loads, followed through its static imports and
 //   re-exports with `import type` left out, has no `await` at module scope and names none of the
 //   page's globals in PAGE (the address, the storage, the document, window, the browser's
 //   description, the frame callbacks, workers, IndexedDB, fetch) at module scope. Module scope is
@@ -30,7 +30,7 @@
 //   read. A name counts unless it is a property's name (`x.document`, `{ window: ... }`) or the file
 //   declares it at its top level; type positions are not code and pass.
 //
-// Output: a line per exit, then the failures.
+// Output: a line per entry point, then the failures.
 //
 // GPU lock and browser: neither. Cost: about a second, CPU only.
 //
@@ -43,7 +43,7 @@ import ts from 'typescript';
 import { ROOT } from '../kit/root.mjs';
 
 const SRC = ROOT;
-const { exits } = JSON.parse( readFileSync( path.join( ROOT, 'tools', 'repo', 'layers.json' ), 'utf8' ) );
+const { entryPoints } = JSON.parse( readFileSync( path.join( ROOT, 'tools', 'repo', 'layers.json' ), 'utf8' ) );
 
 // The page's globals a module must not read as it loads: the address, the storage, the document,
 // window, the browser's description, the frame callbacks, workers, IndexedDB and fetch.
@@ -51,7 +51,7 @@ const PAGE = new Set( [ 'location', 'localStorage', 'sessionStorage', 'document'
 
 for ( const a of process.argv.slice( 2 ) ) {
 
-	console.error( `verify-exits: unknown option '${ a }'` );
+	console.error( `verify-entry-points: unknown option '${ a }'` );
 	process.exit( 1 );
 
 }
@@ -92,7 +92,7 @@ function loadClosure( entry ) {
 
 }
 
-/** The value names an exit re-exports (`export { a, b as c } from`, not `export type`). */
+/** The value names an entry re-exports (`export { a, b as c } from`, not `export type`). */
 function valueNames( file ) {
 
 	const names = [];
@@ -171,25 +171,25 @@ function atLoad( file ) {
 
 const lines = [];
 const read = new Set();
-for ( const [ pkg, sides ] of Object.entries( exits ) ) for ( const [ side, exit ] of Object.entries( sides ) ) {
+for ( const [ pkg, sides ] of Object.entries( entryPoints ) ) for ( const [ side, entry ] of Object.entries( sides ) ) {
 
-	// a headless or setup exit, loaded in plain node
-	if ( side !== 'page' ) try {
+	// a headless or setup entry point, loaded in plain node
+	if ( side !== 'main' ) try {
 
-		const module = await import( pathToFileURL( path.join( SRC, exit ) ).href );
-		const missing = valueNames( exit ).filter( ( name ) => module[ name ] === undefined );
-		for ( const name of missing ) failures.push( `${ exit }: \`${ name }\` is undefined once loaded in node` );
-		lines.push( `${ pkg }: ${ exit } loads in node (${ Object.keys( module ).length } values)` );
+		const module = await import( pathToFileURL( path.join( SRC, entry ) ).href );
+		const missing = valueNames( entry ).filter( ( name ) => module[ name ] === undefined );
+		for ( const name of missing ) failures.push( `${ entry }: \`${ name }\` is undefined once loaded in node` );
+		lines.push( `${ pkg }: ${ entry } loads in node (${ Object.keys( module ).length } values)` );
 
 	} catch ( e ) {
 
-		failures.push( `${ exit }: does not load in plain node: ${ e.message.split( '\n' )[ 0 ] }` );
+		failures.push( `${ entry }: does not load in plain node: ${ e.message.split( '\n' )[ 0 ] }` );
 
 	}
 
-	// a page or setup exit, read
+	// a main or setup entry point, read
 	if ( side === 'headless' ) continue;
-	const files = loadClosure( exit );
+	const files = loadClosure( entry );
 	for ( const file of files ) {
 
 		if ( read.has( file ) ) continue;
@@ -197,11 +197,11 @@ for ( const [ pkg, sides ] of Object.entries( exits ) ) for ( const [ side, exit
 		failures.push( ...atLoad( file ) );
 
 	}
-	lines.push( `${ pkg }: ${ exit } loads ${ files.size } files, none awaits or reads the page at load` );
+	lines.push( `${ pkg }: ${ entry } loads ${ files.size } files, none awaits or reads the page at load` );
 
 }
 
-for ( const line of lines ) console.log( `verify-exits: ${ line }` );
+for ( const line of lines ) console.log( `verify-entry-points: ${ line }` );
 if ( failures.length ) {
 
 	console.log( `FAIL (${ failures.length })` );

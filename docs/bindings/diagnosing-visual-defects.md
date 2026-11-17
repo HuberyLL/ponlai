@@ -40,7 +40,7 @@ Check a fingerprint against these first (the commits give the measurements):
   loads it (the frame graph, `a693f742`).
 - A NaN bounding box from zero matrices in the meadow pool's padding (`96facdae`).
 - Pixels that differ between fresh loads over the water (the caustics): not this skill's; see the
-  binding of `diagnosing-nonrepeating-frames`.
+  binding of `diagnosing-nondeterministic-frames`.
 - three.js and WebGPU behaviours that show as defects: `docs/reference/three-behaviour.md` (Split
   draws, Build order, Uniform control flow, Draws skipped while compiling).
 

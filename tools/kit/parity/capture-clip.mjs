@@ -99,7 +99,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { acquireGpuLock, releaseGpuLock, gpuUtilisation } from '../gpu-lock.mjs';
 import { viewTable, clipTable } from './tables.mjs';
-import { launchCapture, waitForScene, waitForStable, stableOptions, decodePng, compareFrames, pngShooter } from '../capture-browser.mjs';
+import { launchCapture, waitForScene, waitForStable, stableOptions, decodePng, compareFrames, pngCapturer } from '../capture-browser.mjs';
 import PROJECT from '../../project.mjs';
 import { ROOT, outputDir } from '../root.mjs';
 
@@ -317,17 +317,17 @@ try {
 	// device metrics come back once the clip is stepped (nothing reads the ratio while stepping)
 	// The shots drop the page's device metrics until the clip has been stepped: the page reads its
 	// ratio only on a resize, and none fires, so the frames are the same.
-	const shooter = await pngShooter( page, { timeout } );
-	const shoot = async ( clipRect ) => {
+	const capturer = await pngCapturer( page, { timeout } );
+	const captureRect = async ( clipRect ) => {
 
-		const png = await shooter.shoot( clipRect );
+		const png = await capturer.capture( clipRect );
 		return gt ? encodePng( downsample2( decodePng( png ) ) ) : png;
 
 	};
-	const shootCrops = async ( frameBoxes ) => {
+	const captureCrops = async ( frameBoxes ) => {
 
 		const out = {};
-		for ( const [ n, b ] of Object.entries( frameBoxes ) ) if ( ! b.missing ) out[ n ] = await shoot( { x: b.x, y: b.y, width: b.w, height: b.h } );
+		for ( const [ n, b ] of Object.entries( frameBoxes ) ) if ( ! b.missing ) out[ n ] = await captureRect( { x: b.x, y: b.y, width: b.w, height: b.h } );
 		return out;
 
 	};
@@ -340,15 +340,15 @@ try {
 	await page.exposeFunction( '__clipFrame', async ( i, frameBoxes, time, state ) => {
 
 		boxes.push( { i, time, ...state, boxes: { ...frameBoxes } } );
-		const crops = await shootCrops( frameBoxes );
+		const crops = await captureCrops( frameBoxes );
 		if ( recheck ) {
 
-			restShots.push( { raw: await shooter.shoot( null ), crops, frame: state.frame } );
+			restShots.push( { raw: await capturer.capture( null ), crops, frame: state.frame } );
 			return;
 
 		}
 		for ( const [ n, png ] of Object.entries( crops ) ) await writeFile( path.join( outDir, n, `${ i }.png` ), png );
-		if ( full.has( i ) ) await writeFile( path.join( outDir, 'full', `${ i }.png` ), await shoot( null ) );
+		if ( full.has( i ) ) await writeFile( path.join( outDir, 'full', `${ i }.png` ), await captureRect( null ) );
 
 	} );
 	const stepped = await page.evaluate( async ( { tracked, every, dense, box, cssScale, fullFrames, gtRest, fault, g } ) => {
@@ -428,13 +428,13 @@ try {
 		};
 		await page.exposeFunction( '__clipAgain', async ( frame ) => {
 
-			const shot = { raw: await shooter.shoot( null ), crops: null, frame };
+			const shot = { raw: await capturer.capture( null ), crops: null, frame };
 			for ( let j = 0; j < restShots.length && ! accepted; j ++ ) {
 
 				if ( ! agree( j, shot ) ) continue;
 				// the earlier shot's crops, or this frame's (it agrees with a shot taken without crops)
 				accepted = restShots[ j ].crops ? restShots[ j ] : shot;
-				accepted.crops ??= await shootCrops( boxes[ 0 ].boxes );
+				accepted.crops ??= await captureCrops( boxes[ 0 ].boxes );
 
 			}
 			restShots.push( shot );
@@ -460,7 +460,7 @@ try {
 		if ( accepted !== restShots[ 0 ] || restShots.length > 2 ) console.log( `rest: shot ${ restShots.length } times, kept shot ${ recheckRecord.accepted } (${ history.map( ( h ) => `${ h[ 0 ] } vs ${ h[ 1 ] }: ${ h[ 3 ] } px, max ${ h[ 2 ] }` ).join( '; ' ) })` );
 
 	}
-	await shooter.close();
+	await capturer.close();
 	const diagAfter = await page.evaluate( ( n ) => ( { ...window[ n ] } ), PAGE.diagnostics );
 	await writeFile( path.join( outDir, 'clip.json' ), JSON.stringify( {
 		name, url, clip: options.clip, clipDef: { ...clip, at: undefined, setup: undefined }, ...( options.setup ? { setup: options.setup } : {} ), view: viewName, aa, quality, ...( gtRest ? { gtJitters } : {} ),

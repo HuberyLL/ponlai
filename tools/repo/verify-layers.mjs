@@ -1,10 +1,10 @@
 // Checks the direction of the imports between the code's layers and the other rules of the layers.
 //
-// It also checks that a package is imported only through its exits, that the world's chunk worker
-// and the headless exits import only plain code, that the render pipeline and the island keep off
+// It also checks that a package is imported only through its entry points, that the world's chunk worker
+// and the headless entry points import only plain code, that the render pipeline and the island keep off
 // the page, which files write another module's state and that each layer names only the userData
 // keys declared for it. Run it after adding a file or an import across folders, or a userData key;
-// it is part of `npm run check`. The exits' own loading is checked by tools/repo/verify-exits.mjs.
+// it is part of `npm run check`. The entry points' own loading is checked by tools/repo/verify-entry-points.mjs.
 //
 // Usage:
 //   node tools/repo/verify-layers.mjs
@@ -18,14 +18,14 @@
 // layers below it, never one above: a lower layer defines an interface and the higher one fills it.
 // A file's folder is its layer: the three lower layers are packages, each a folder of `packages/`
 // (`packages/render/`, `packages/island/`, `packages/game/`), and the app layer is `app/`. Each
-// package offers two exits (`tools/repo/layers.json`, `exits`), files of re-exports only: one for
+// package offers two entry points (`tools/repo/layers.json`, `entryPoints`), files of re-exports only: one for
 // the page (render/index.ts, island/index.ts, game/index.ts) and a headless one for the code that
 // loads without three.js, in the chunk worker and in node (render/data.ts, island/land.ts,
-// game/sim/index.ts). The render pipeline has a third, its setup exit (render/setup.ts): what the
+// game/sim/index.ts). The render pipeline has a third, its setup entry point (render/setup.ts): what the
 // page needs before the render pipeline's other modules load (the settings, the look, the quality
-// tiers and the render scale they set), which loads in node too, and a fourth, its browser exit
+// tiers and the render scale they set), which loads in node too, and a fourth, its browser entry point
 // (render/browser.ts): the host a running scene takes from a browser page, which only the app layer
-// imports. The modules the page loads on demand are lazy exits (`lazy`): the page exits leave them
+// imports. The modules the page loads on demand are lazy entry points (`lazy`): the main entry points leave them
 // out, so they keep chunks of their own.
 //
 // Guarantees, each a failure (exit 1) when broken:
@@ -37,22 +37,22 @@
 //   (static imports, `import type`, re-exports, side-effect and dynamic imports) plus workers'
 //   `new URL( '<path>', import.meta.url )`. Package imports are not layered; imports of data files
 //   (JSON, CSS) are not checked.
-// - The exits: each one `tools/repo/layers.json` names exists in its package's layer and holds only
+// - The entry points: each one `tools/repo/layers.json` names exists in its package's layer and holds only
 //   re-exports of its own package's files. An import from one package into another (or from the
-//   app layer into a package) names an exit of that package or a lazy exit. A lazy exit is imported
+//   app layer into a package) names an entry point of that package or a lazy entry point. A lazy entry point is imported
 //   dynamically or with `import type` only, from anywhere, so it stays out of the page's chunks.
-//   Every name an exit exports (by TypeScript's checker) is taken from it by a file of another
+//   Every name an entry point exports (by TypeScript's checker) is taken from it by a file of another
 //   package or of the app layer, through an import, a re-export or a dynamic import that names it
-//   (a namespace import takes them all); a lazy exit that is not one of its package's exits is a
+//   (a namespace import takes them all); a lazy entry point that is not one of its package's entry points is a
 //   module of the package as well, and its names need only some other file that takes them. No
-//   name is exported by two exits.
-//   The exits' own tests (the headless and setup ones load in node, the page ones neither await
-//   nor read the page at load) are tools/repo/verify-exits.mjs.
+//   name is exported by two entry points.
+//   The entry points' own tests (the headless and setup ones load in node, the page ones neither await
+//   nor read the page at load) are tools/repo/verify-entry-points.mjs.
 // - The test scenes: a file under `app/scenes/` (the scene page and the scenes it shows) imports
-//   only the render pipeline's exits, the render pipeline's lazy exits and the files beside it, by
+//   only the render pipeline's entry points, the render pipeline's lazy entry points and the files beside it, by
 //   any kind of import: a scene is built from the render pipeline alone, and the island's numbers
 //   reach its page only through the entry (app/ScenesBoot.ts).
-// - Each headless exit, the setup exit and every file they load (static imports and re-exports,
+// - Each headless entry point, the setup entry point and every file they load (static imports and re-exports,
 //   `import type` left out) import relative paths only: no package, three.js least of all, so node
 //   and a worker load them as they are.
 // - The chunk worker (packages/island/world/chunkWorker.ts) and everything it imports, followed through
@@ -143,10 +143,10 @@ const STATE = {
 	'packages/render/post/GTAO.ts:gtaoMap': [ 'packages/render/post/Pipeline.ts' ],
 	'packages/render/post/GTAO.ts:gtaoView': [ 'packages/render/post/Pipeline.ts', 'packages/render/post/PipelinePasses.ts' ],
 	'packages/render/post/Jitter.ts:jitter': [ 'packages/render/post/Pipeline.ts', 'packages/render/post/TemporalAA.ts', 'packages/render/post/fsr3/Fsr3Upscaler.ts' ],
-	'packages/render/post/MeadowShade.ts:meadowDepthMap': [ 'packages/render/post/Pipeline.ts' ],
-	'packages/render/post/MeadowShade.ts:meadowGroundView': [ 'packages/render/post/Pipeline.ts' ],
-	'packages/render/post/MeadowShade.ts:meadowShade': [ 'packages/render/post/Pipeline.ts' ],
-	'packages/render/post/MeadowShade.ts:screenShadowView': [ 'packages/render/post/Pipeline.ts', 'packages/render/post/PipelinePasses.ts' ],
+	'packages/render/post/MeadowShadows.ts:meadowDepthMap': [ 'packages/render/post/Pipeline.ts' ],
+	'packages/render/post/MeadowShadows.ts:meadowGroundView': [ 'packages/render/post/Pipeline.ts' ],
+	'packages/render/post/MeadowShadows.ts:meadowShadows': [ 'packages/render/post/Pipeline.ts' ],
+	'packages/render/post/MeadowShadows.ts:screenShadowView': [ 'packages/render/post/Pipeline.ts', 'packages/render/post/PipelinePasses.ts' ],
 	'packages/render/post/Motion.ts:reactiveUniforms': [ 'packages/render/post/TemporalAA.ts', 'packages/render/weather/Lightning.ts' ],
 	'packages/render/post/fsr3/MipBias.ts:fsr3MipBiasScale': [ 'packages/render/post/fsr3/Fsr3Upscaler.ts' ],
 	'packages/render/shared.ts:shared': [ 'packages/render/RenderStages.ts', 'packages/render/sky/SkyTrack.ts', 'packages/render/weather/RainCollision.ts' ],
@@ -494,25 +494,25 @@ const known = new Set( KNOWN );
 for ( const [ key, pair ] of upward ) if ( ! known.has( key ) ) failures.push( `upward import (${ pair }): ${ key }` );
 for ( const key of KNOWN ) if ( ! upward.has( key ) ) failures.push( `KNOWN lists ${ key }, which no longer imports upward: remove the entry` );
 
-// the exits
-const exits = new Map(); // file -> { layer, side: 'page' | 'headless' | 'setup' | 'browser' }
-for ( const [ layer, sides ] of Object.entries( layers.exits ) ) for ( const [ side, file ] of Object.entries( sides ) ) exits.set( file, { layer, side } );
+// the entry points
+const entryPoints = new Map(); // file -> { layer, side: 'main' | 'headless' | 'setup' | 'browser' }
+for ( const [ layer, sides ] of Object.entries( layers.entryPoints ) ) for ( const [ side, file ] of Object.entries( sides ) ) entryPoints.set( file, { layer, side } );
 const lazy = new Set( layers.lazy );
-for ( const layer of Object.keys( RANK ).filter( ( l ) => l !== 'app' ) ) if ( ! layers.exits[ layer ]?.page || ! layers.exits[ layer ]?.headless ) failures.push( `tools/repo/layers.json: the ${ layer } package has no page or no headless exit` );
-for ( const [ file, { layer } ] of exits ) {
+for ( const layer of Object.keys( RANK ).filter( ( l ) => l !== 'app' ) ) if ( ! layers.entryPoints[ layer ]?.main || ! layers.entryPoints[ layer ]?.headless ) failures.push( `tools/repo/layers.json: the ${ layer } package has no main or no headless entry point` );
+for ( const [ file, { layer } ] of entryPoints ) {
 
-	if ( table[ file ] !== layer ) { failures.push( `tools/repo/layers.json: the exit ${ file } is not in the ${ layer } layer` ); continue; }
+	if ( table[ file ] !== layer ) { failures.push( `tools/repo/layers.json: the entry point ${ file } is not in the ${ layer } layer` ); continue; }
 	const source = ts.createSourceFile( file, readFileSync( path.join( SRC, file ), 'utf8' ), ts.ScriptTarget.Latest, false );
 	for ( const statement of source.statements ) {
 
 		const to = ts.isExportDeclaration( statement ) && statement.moduleSpecifier && resolve( file, statement.moduleSpecifier.text );
-		if ( ! to ) failures.push( `${ file }: an exit holds re-exports only (\`export { ... } from './...'\`)` );
+		if ( ! to ) failures.push( `${ file }: an entry point holds re-exports only (\`export { ... } from './...'\`)` );
 		else if ( table[ to ] !== layer ) failures.push( `${ file }: re-exports ${ to }, which is not in its package (${ layer })` );
 
 	}
 
 }
-for ( const file of lazy ) if ( ! ( table[ file ] in RANK ) || table[ file ] === 'app' ) failures.push( `tools/repo/layers.json: the lazy exit ${ file } is not a file of a package` );
+for ( const file of lazy ) if ( ! ( table[ file ] in RANK ) || table[ file ] === 'app' ) failures.push( `tools/repo/layers.json: the lazy entry point ${ file } is not a file of a package` );
 let across = 0;
 for ( const from of files ) {
 
@@ -520,20 +520,20 @@ for ( const from of files ) {
 
 		const to = resolve( from, spec );
 		if ( ! to || ! ( to in table ) ) continue;
-		if ( lazy.has( to ) && kind === 'static' ) failures.push( `${ from }: imports ${ to } statically, a lazy exit the page loads on demand: \`import( ... )\` it, or \`import type\`` );
+		if ( lazy.has( to ) && kind === 'static' ) failures.push( `${ from }: imports ${ to } statically, a lazy entry point the page loads on demand: \`import( ... )\` it, or \`import type\`` );
 		if ( table[ from ] === table[ to ] || table[ to ] === 'app' ) continue;
 		across ++;
-		const exit = exits.get( to );
-		// the render pipeline's browser exit (render/browser.ts) is the page's alone
-		if ( exit?.side === 'browser' && table[ from ] !== 'app' ) failures.push( `${ from }: imports ${ to }, the browser's host, which only the page (app/) takes: a package is handed what it needs of the browser` );
-		if ( exit || lazy.has( to ) ) continue;
-		failures.push( `${ from }: imports ${ to } across packages: import it from ${ Object.values( layers.exits[ table[ to ] ] ).join( ' or ' ) }, the ${ table[ to ] } package's exits` );
+		const entryPoint = entryPoints.get( to );
+		// the render pipeline's browser entry point (render/browser.ts) is the page's alone
+		if ( entryPoint?.side === 'browser' && table[ from ] !== 'app' ) failures.push( `${ from }: imports ${ to }, the browser's host, which only the page (app/) takes: a package is handed what it needs of the browser` );
+		if ( entryPoint || lazy.has( to ) ) continue;
+		failures.push( `${ from }: imports ${ to } across packages: import it from ${ Object.values( layers.entryPoints[ table[ to ] ] ).join( ' or ' ) }, the ${ table[ to ] } package's entry points` );
 
 	}
 
 }
 
-// the test scenes: under app/scenes/ a file imports the render pipeline's exits, its lazy exits and
+// the test scenes: under app/scenes/ a file imports the render pipeline's entry points, its lazy entry points and
 // its neighbours only, whatever the kind of import
 const SCENES_DIR = 'app/scenes/';
 const sceneFiles = files.filter( ( f ) => f.startsWith( SCENES_DIR ) );
@@ -544,22 +544,22 @@ for ( const from of sceneFiles ) {
 
 		const to = resolve( from, spec );
 		if ( ! to || ! ( to in table ) || to.startsWith( SCENES_DIR ) ) continue;
-		if ( exits.get( to )?.layer === 'render' || ( lazy.has( to ) && table[ to ] === 'render' ) ) continue;
-		failures.push( `${ from }: imports ${ to }: a test scene imports only the render pipeline's exits (${ Object.values( layers.exits.render ).join( ', ' ) }), its lazy exits and the files beside it` );
+		if ( entryPoints.get( to )?.layer === 'render' || ( lazy.has( to ) && table[ to ] === 'render' ) ) continue;
+		failures.push( `${ from }: imports ${ to }: a test scene imports only the render pipeline's entry points (${ Object.values( layers.entryPoints.render ).join( ', ' ) }), its lazy entry points and the files beside it` );
 
 	}
 
 }
 
-// the headless and setup exits' reach: relative imports only
+// the headless and setup entry points' reach: relative imports only
 const headlessFiles = new Set();
-for ( const [ file, { side } ] of exits ) {
+for ( const [ file, { side } ] of entryPoints ) {
 
-	if ( side === 'page' ) continue;
+	if ( side === 'main' ) continue;
 	for ( const f of loadClosure( file ) ) {
 
 		headlessFiles.add( f );
-		for ( const { spec } of importKinds( f ) ) if ( ! spec.startsWith( '.' ) ) failures.push( `${ f }: imports '${ spec }', and the headless exit ${ file } loads it: a headless exit's files import relative paths only` );
+		for ( const { spec } of importKinds( f ) ) if ( ! spec.startsWith( '.' ) ) failures.push( `${ f }: imports '${ spec }', and the headless entry point ${ file } loads it: a headless entry point's files import relative paths only` );
 
 	}
 
@@ -615,30 +615,30 @@ for ( const pair of ACROSS ) {
 
 }
 
-// the exits' names: each taken by another package, each from one exit
+// the entry points' names: each taken by another package, each from one entry point
 const taken = takenNames( program );
-const exitNames = new Map(); // name -> the exits that export it
+const entryPointNames = new Map(); // name -> the entry points that export it
 let exitNameCount = 0;
-for ( const file of new Set( [ ...exits.keys(), ...lazy ] ) ) {
+for ( const file of new Set( [ ...entryPoints.keys(), ...lazy ] ) ) {
 
-	// a lazy exit that is not one of its package's exits is a module of the package as well, whose
+	// a lazy entry point that is not one of its package's entry points is a module of the package as well, whose
 	// names the package's own files may take too
-	const layer = table[ file ], module = ! exits.has( file );
+	const layer = table[ file ], module = ! entryPoints.has( file );
 	const takers = taken.get( file ) ?? new Map();
 	const takenBy = ( name ) => [ ...( takers.get( name ) ?? [] ), ...( takers.get( '*' ) ?? [] ) ].some( ( f ) => module ? f !== file : table[ f ] !== layer );
 	for ( const name of exportedNames( program, file ) ) {
 
 		exitNameCount ++;
-		if ( ! exitNames.has( name ) ) exitNames.set( name, [] );
-		exitNames.get( name ).push( file );
+		if ( ! entryPointNames.has( name ) ) entryPointNames.set( name, [] );
+		entryPointNames.get( name ).push( file );
 		if ( takenBy( name ) ) continue;
 		if ( module ) failures.push( `${ file }: exports ${ name }, which no other file takes from it: do not export it` );
-		else failures.push( `${ file }: exports ${ name }, which no file outside the ${ layer } package takes from it: leave it out of the exit` );
+		else failures.push( `${ file }: exports ${ name }, which no file outside the ${ layer } package takes from it: leave it out of the entry point` );
 
 	}
 
 }
-for ( const [ name, from ] of exitNames ) if ( from.length > 1 ) failures.push( `${ name }: exported by ${ from.join( ' and ' ) }: a name leaves its package through one exit` );
+for ( const [ name, from ] of entryPointNames ) if ( from.length > 1 ) failures.push( `${ name }: exported by ${ from.join( ' and ' ) }: a name leaves its package through one entry point` );
 
 // the userData check: the render pipeline's keys, and each upper layer's own
 const userLists = {};
@@ -672,7 +672,7 @@ for ( const [ layer, { file, keys } ] of Object.entries( userLists ) ) {
 
 }
 
-console.log( `verify-layers: ${ files.length } files, ${ edges } imports, ${ upward.size } upward (${ KNOWN.length } known), ${ across } across packages, ${ exits.size } exits and ${ lazy.size } lazy, ${ sceneFiles.length } test scene files, the headless and setup exits' ${ headlessFiles.size } files, chunk worker ${ workerFiles } files, ${ pageHits.length } page globals named (${ Object.keys( PAGE_NEEDS ).length } files allowed), ${ statePairs } writes of another file's state (${ ACROSS.length } across layers), ${ Object.entries( userLists ).map( ( [ l, { keys } ] ) => `${ Object.keys( keys ).length } ${ l }` ).join( ' and ' ) } userData keys declared and ${ exitNameCount } names in the exits` );
+console.log( `verify-layers: ${ files.length } files, ${ edges } imports, ${ upward.size } upward (${ KNOWN.length } known), ${ across } across packages, ${ entryPoints.size } entry points and ${ lazy.size } lazy, ${ sceneFiles.length } test scene files, the headless and setup entry points' ${ headlessFiles.size } files, chunk worker ${ workerFiles } files, ${ pageHits.length } page globals named (${ Object.keys( PAGE_NEEDS ).length } files allowed), ${ statePairs } writes of another file's state (${ ACROSS.length } across layers), ${ Object.entries( userLists ).map( ( [ l, { keys } ] ) => `${ Object.keys( keys ).length } ${ l }` ).join( ' and ' ) } userData keys declared and ${ exitNameCount } names in the entry points` );
 for ( const [ key, pair ] of [ ...upward ].sort() ) console.log( `  ${ known.has( key ) ? 'known' : 'NEW  ' } ${ pair }: ${ key }` );
 if ( failures.length ) {
 

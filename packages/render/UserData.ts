@@ -93,11 +93,11 @@ export const USER_DATA = {
 		means: 'a node that replaces the sun\'s map for the material',
 	},
 	screenShadow: {
-		on: 'material', sets: 'MeadowShade.ts receiveScreenShadow', reads: 'SunShadow.ts',
+		on: 'material', sets: 'MeadowShadows.ts receiveScreenShadow', reads: 'SunShadow.ts',
 		means: 'the material takes the key\'s screen-space shade',
 	},
 	screenThickness: {
-		on: 'material', sets: 'MeadowShade.ts screenThickness', reads: 'OpaquePrepass.ts',
+		on: 'material', sets: 'MeadowShadows.ts screenThickness', reads: 'OpaquePrepass.ts',
 		means: 'the thickness (m) the screen-space shade gives the material\'s depth copy',
 	},
 	screenAO: {

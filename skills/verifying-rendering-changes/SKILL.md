@@ -1,6 +1,6 @@
 ---
 name: verifying-rendering-changes
-description: Proves that a change to a renderer did what was meant and nothing else, when a refactor or a speed-up must not move a pixel, a change is meant to move the picture, a history-dependent or temporal effect is added, a screenshot or golden-image check fails, or "did this change anything on screen?" is asked. Names the kind of change, shoots the same views before it, compares decoded pixels byte for byte where frames repeat and within a tolerance measured from the build's own repeatability where they cannot, keys stored references by everything their pixels depend on, shoots only paused, settled frames, and reports measured differences with crops. Use with three.js WebGPU renderers, or any renderer with screenshot comparisons, whenever rendering code, a shader, a pass, a material, the light or a capture tool is changed; it hands a build that disagrees with itself to diagnosing-nonrepeating-frames, a new defect's cause to diagnosing-visual-defects and frame time to measuring-performance-changes.
+description: Proves that a change to a renderer did what was meant and nothing else, when a refactor or a speed-up must not move a pixel, a change is meant to move the picture, a history-dependent or temporal effect is added, a screenshot or golden-image check fails, or "did this change anything on screen?" is asked. Names the kind of change, shoots the same views before it, compares decoded pixels byte for byte where frames repeat and within a tolerance measured from the build's own repeatability where they cannot, keys stored references by everything their pixels depend on, shoots only paused, settled frames, and reports measured differences with crops. Use with three.js WebGPU renderers, or any renderer with screenshot comparisons, whenever rendering code, a shader, a pass, a material, the light or a capture tool is changed; it hands a build that disagrees with itself to diagnosing-nondeterministic-frames, a new defect's cause to diagnosing-visual-defects and frame time to measuring-performance-changes.
 ---
 
 # Verifying rendering changes
@@ -32,7 +32,7 @@ fixes what the comparison means before the change is made, so its answer can be 
   hold what the change touches.
 - Report numbers: pixels over each level, the largest difference, where, per view and crop.
 - The same build disagreeing with itself is not this skill's problem: stop and use
-  `diagnosing-nonrepeating-frames`.
+  `diagnosing-nondeterministic-frames`.
 
 ## The project's facts: the binding
 
@@ -121,7 +121,7 @@ these cases; measure and report them rather than calling them identical.
 5. Read each differing view: pixel counts over levels, the largest difference, the boxes where it
    lies, crops side by side.
 6. A change that must not move a pixel moved some: rerun "before" against itself. If it disagrees
-   with itself, use `diagnosing-nonrepeating-frames`. If it repeats, the change moved the pixels:
+   with itself, use `diagnosing-nondeterministic-frames`. If it repeats, the change moved the pixels:
    find which part of the change by reverting halves of it and comparing generated shader text; a
    visible defect whose cause is not known goes to `diagnosing-visual-defects`.
 

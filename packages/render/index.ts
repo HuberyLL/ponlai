@@ -6,7 +6,7 @@
 // before the render pipeline loads), never one of its modules by its path
 // (tools/repo/verify-layers.mjs). It holds re-exports only, so loading it loads the whole renderer,
 // whose modules declare and register as they load and do nothing else: no top-level await and no
-// page global read at load (tools/repo/verify-exits.mjs). The debug modules the page loads on
+// page global read at load (tools/repo/verify-entry-points.mjs). The debug modules the page loads on
 // demand are not here: they are lazy exits (tools/repo/layers.json), imported dynamically or for
 // their types only.
 export { placeVegetation, vegetationCasters, bakeRainCollision } from './RenderStages.ts';
@@ -60,7 +60,7 @@ export type { ExtraPass } from './post/ExtraPass.ts';
 export { nextFrame } from './post/FramePacer.ts';
 export { GTAO, floorOcclusion, receiveScreenAO, screenAOAt } from './post/GTAO.ts';
 export { LOCAL_TONE } from './post/LocalTone.ts';
-export { MEADOW_SHADE, SS_SHADOW, meadowGroundShade, meadowShadeAt, meadowShadeFloor, receiveScreenShadow, screenShadowAt, screenThickness } from './post/MeadowShade.ts';
+export { MEADOW_SHADOWS, SS_SHADOW, meadowGroundShadow, meadowShadowAt, meadowShadowFloor, receiveScreenShadow, screenShadowAt, screenThickness } from './post/MeadowShadows.ts';
 export { motionNode, motionState, velocityOutput } from './post/Motion.ts';
 export type { PipelineSettings } from './post/Pipeline.ts';
 export { declareSceneEvents, renderEvent } from './post/SceneEvents.ts';

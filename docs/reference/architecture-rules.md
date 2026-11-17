@@ -9,24 +9,37 @@ Contents:
 
 - [Rule 1: An action's condition holds every tick](#rule-1-an-actions-condition-holds-every-tick)
 - [Rule 2: What happened is told once, as events](#rule-2-what-happened-is-told-once-as-events)
-- [Rule 3: Outside input is checked once, at the entrance](#rule-3-outside-input-is-checked-once-at-the-entrance)
+- [Rule 3: Outside input is checked once, at the
+  entrance](#rule-3-outside-input-is-checked-once-at-the-entrance)
 - [Rule 4: Determinism and path independence](#rule-4-determinism-and-path-independence)
 - [Rule 5: Generic generation](#rule-5-generic-generation)
 - [Rule 6: The game stays headless](#rule-6-the-game-stays-headless)
-- [Rule 7: Content is registered definitions; the core names none](#rule-7-content-is-registered-definitions-the-core-names-none)
-- [Rule 8: Systems talk through events and the state they own](#rule-8-systems-talk-through-events-and-the-state-they-own)
-- [Rule 9: Presentation by outcome and event category, with a default](#rule-9-presentation-by-outcome-and-event-category-with-a-default)
+- [Rule 7: Content is registered definitions; the core names
+  none](#rule-7-content-is-registered-definitions-the-core-names-none)
+- [Rule 8: Systems talk through events and the state they
+  own](#rule-8-systems-talk-through-events-and-the-state-they-own)
+- [Rule 9: Presentation by outcome and event category, with a
+  default](#rule-9-presentation-by-outcome-and-event-category-with-a-default)
 - [Rule 10: Four layers, one direction](#rule-10-four-layers-one-direction)
-- [Rule 11: A package is imported through its exits](#rule-11-a-package-is-imported-through-its-exits)
-- [Rule 12: One place assembles; each state has one owner](#rule-12-one-place-assembles-each-state-has-one-owner)
-- [Rule 13: Only the page touches the browser's page](#rule-13-only-the-page-touches-the-browsers-page)
-- [Rule 14: Outside settings are checked once, at one entrance](#rule-14-outside-settings-are-checked-once-at-one-entrance)
-- [Rule 15: A change of the scene is announced once, and whoever keeps something of it follows](#rule-15-a-change-of-the-scene-is-announced-once-and-whoever-keeps-something-of-it-follows)
-- [Rule 16: Materials give surfaces; the light is computed in one place; the look is passed in](#rule-16-materials-give-surfaces-the-light-is-computed-in-one-place-the-look-is-passed-in)
-- [Rule 17: One convention for distance, light, exposure and time](#rule-17-one-convention-for-distance-light-exposure-and-time)
-- [Rule 18: One registered definition adds one thing](#rule-18-one-registered-definition-adds-one-thing)
+- [Rule 11: A package is imported through its entry
+  points](#rule-11-a-package-is-imported-through-its-entry-points)
+- [Rule 12: One place assembles; each state has one
+  owner](#rule-12-one-place-assembles-each-state-has-one-owner)
+- [Rule 13: Only the app layer touches browser
+  globals](#rule-13-only-the-app-layer-touches-browser-globals)
+- [Rule 14: Outside settings are checked once, at one
+  entrance](#rule-14-outside-settings-are-checked-once-at-one-entrance)
+- [Rule 15: A change of the scene is announced once, and whoever keeps something of it
+  follows](#rule-15-a-change-of-the-scene-is-announced-once-and-whoever-keeps-something-of-it-follows)
+- [Rule 16: Materials give surfaces; the light is computed in one place; the look is passed
+  in](#rule-16-materials-give-surfaces-the-light-is-computed-in-one-place-the-look-is-passed-in)
+- [Rule 17: One convention for distance, light, exposure and
+  time](#rule-17-one-convention-for-distance-light-exposure-and-time)
+- [Rule 18: One registered definition adds one
+  thing](#rule-18-one-registered-definition-adds-one-thing)
 - [Rule 19: A source file stays under 1500 lines](#rule-19-a-source-file-stays-under-1500-lines)
-- [Rule 23: three's internals are reached in one place](#rule-23-threes-internals-are-reached-in-one-place)
+- [Rule 23: three.js internals are used in one
+  place](#rule-23-threejs-internals-are-used-in-one-place)
 
 ## Rule 1: An action's condition holds every tick
 
@@ -145,8 +158,8 @@ The game's rules and its session reach neither three.js nor the DOM, and the pag
 them, and a brain can be judged offline against what the page would have played.
 
 **Enforced by:** [verify-layers.mjs](../../tools/repo/verify-layers.mjs) (the game's headless exit
-is free of three.js) and [verify-exits.mjs](../../tools/repo/verify-exits.mjs), which loads it in
-node.
+is free of three.js) and [verify-entry-points.mjs](../../tools/repo/verify-entry-points.mjs), which
+loads it in node.
 
 **Came from:** none on record.
 
@@ -259,7 +272,7 @@ list declares. It does not see a key reached through an alias of the bag or by a
 
 **Came from:** none on record.
 
-## Rule 11: A package is imported through its exits
+## Rule 11: A package is imported through its entry points
 
 The render pipeline, the island and the game are packages, and each offers two exits, files of
 re-exports only:
@@ -292,9 +305,9 @@ package cannot break another.
 
 **Enforced by:** [verify-layers.mjs](../../tools/repo/verify-layers.mjs) for the imports and the
 lazy exits ([tools/repo/layers.json](../../tools/repo/layers.json));
-[verify-exits.mjs](../../tools/repo/verify-exits.mjs) for what a module does as it loads, and it
-loads the headless and setup exits in node; [scenes.mjs](../../tools/render/scenes.mjs) `--rebuild`
-for a scene started after another's dispose.
+[verify-entry-points.mjs](../../tools/repo/verify-entry-points.mjs) for what a module does as it
+loads, and it loads the headless and setup exits in node;
+[scenes.mjs](../../tools/render/scenes.mjs) `--rebuild` for a scene started after another's dispose.
 
 **Came from:** a module that worked as it loaded made the order of the imports part of the
 program.
@@ -339,7 +352,7 @@ GUI bound to a field or a write to a field of a stage's object.
 **Came from:** parts that found each other through module-level objects kept a test scene from
 building the render pipeline alone.
 
-## Rule 13: Only the page touches the browser's page
+## Rule 13: Only the app layer touches browser globals
 
 The render pipeline, the island and the game's rules never reach the address, the storage, the
 document or the window through the page's globals. What they need of the browser they are given: the
@@ -357,7 +370,8 @@ A few needs have one module each, and no other file may use them:
 - the frame's pacing ([FramePacer.ts](../../packages/render/post/FramePacer.ts));
 - the asset fetches ([FetchAsset.ts](../../packages/render/FetchAsset.ts));
 - the world's cache in IndexedDB ([WorldCache.ts](../../packages/island/world/WorldCache.ts));
-- a canvas used to draw a texture ([LeafTexture.ts](../../packages/render/vegetation/LeafTexture.ts));
+- a canvas used to draw a texture
+  ([LeafTexture.ts](../../packages/render/vegetation/LeafTexture.ts));
 - the parsing of the address's query ([Settings.ts](../../packages/render/Settings.ts));
 - the workers' start, in the module that names each worker's script, because the build bundles a
   worker only from a literal URL beside it: the chunk workers in
@@ -426,9 +440,9 @@ weather, a new scene, the page shown again), and the land grows.
   functions in that order ([SceneJump.ts](../../packages/render/assemble/SceneJump.ts)), the
   island's through the page's jump content ([app/Scene.ts](../../app/Scene.ts)).
 - The land's growth has no such table yet. The growth
-  ([Growth.ts](../../packages/island/world/Growth.ts)) takes its followers as the named fields of one
-  interface (`GrowthPage`), and only the plant kinds follow it through a registry (rule 18). A new
-  follower of the land is a new field there and a line in the island's growth stage.
+  ([Growth.ts](../../packages/island/world/Growth.ts)) takes its followers as the named fields of
+  one interface (`GrowthPage`), and only the plant kinds follow it through a registry (rule 18). A
+  new follower of the land is a new field there and a line in the island's growth stage.
 
 An ordinary event bus would not do: a swap lands in one frame, never builds a pipeline, and the
 order of its followers is part of the image (rule 4), which a table walked in order keeps.
@@ -481,8 +495,8 @@ and its [binding](../bindings/building-cinematic-stylised-realism.md#materials).
 - Light is scene-linear, in the Rec. 709 primaries
   ([ToneSpace.ts](../../packages/render/post/ToneSpace.ts)), in one relative unit: the sun above the
   atmosphere has the illuminance `SUN_ILLUMINANCE`
-  ([Atmosphere.ts](../../packages/render/sky/Atmosphere.ts)), and every radiance and irradiance is in
-  the same scale, so the sun, the sky and their reflections keep their true ratios. One factor
+  ([Atmosphere.ts](../../packages/render/sky/Atmosphere.ts)), and every radiance and irradiance is
+  in the same scale, so the sun, the sky and their reflections keep their true ratios. One factor
   (`SCENE_RADIANCE_SCALE`, [Radiometry.ts](../../packages/render/lighting/Radiometry.ts)) brings
   that unit into a half float's range; it is applied where the light enters and undone where the
   exposure reads.
@@ -493,7 +507,8 @@ and its [binding](../bindings/building-cinematic-stylised-realism.md#materials).
   [PreExposure.ts](../../packages/render/post/PreExposure.ts)), which every writer multiplies by and
   every reader in scene units divides out; the sky's bakes store at a power of two of their own.
 - The metering light a material writes is the luminance a white diffuse surface would show there:
-  the luminance of the irradiance over pi ([MeterLight.ts](../../packages/render/lighting/MeterLight.ts)).
+  the luminance of the irradiance over pi
+  ([MeterLight.ts](../../packages/render/lighting/MeterLight.ts)).
 - Time is the scene clock's, in seconds. The hour of the day is derived from it by one function, and
   a per-frame update reads the clock's step, never the wall clock. Three cadences are the exception:
   the sky's cross-fade between two bakes, the interval between periodic sky bakes and the interval
@@ -572,7 +587,7 @@ grew; the tools are not counted.
 **Came from:** files had grown past 2000 lines, each holding three or four things that changed for
 different reasons.
 
-## Rule 23: three's internals are reached in one place
+## Rule 23: three.js internals are used in one place
 
 The render pipeline depends on parts of three.js that are not its public interface: private members
 of the renderer and of its helpers, the WebGPU backend and its device, methods it replaces or

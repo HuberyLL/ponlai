@@ -2,7 +2,7 @@
 //
 // A frame that creates a pipeline stalls on it, so once the page has loaded (its warm-up and first
 // frames behind it) no step a player or the GUI may take should create one (docs/reference/three-behaviour.md,
-// Compiling ahead). Run it after a change that adds a material, a pass or a kernel, or changes
+// Pipeline precompilation). Run it after a change that adds a material, a pass or a kernel, or changes
 // when one is built. The frame time itself is measured by tools/render/profile-frame.mjs.
 //
 // Usage:

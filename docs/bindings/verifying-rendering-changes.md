@@ -99,7 +99,7 @@ Split draws) and the order materials first build in (Build order).
   heat map, region statistics with `--box`).
 - Different content (growth steps, seeds, a regenerated island): `tools/island/capture-growth.mjs`
   and region statistics, judged by eye.
-- A same-build disagreement: `diagnosing-nonrepeating-frames` and its binding.
+- A same-build disagreement: `diagnosing-nondeterministic-frames` and its binding.
 
 ## References
 

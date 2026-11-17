@@ -6,7 +6,7 @@
 // neutral set, which the page picks from and hands to the render pipeline's stages. The page's
 // first module (PageSettings.ts) installs the settings through it. Every file it loads imports
 // relative paths only, and it loads in plain node, where the headless game reads the settings
-// through it (tools/repo/verify-exits.mjs). A name is in one exit only: these are not in
+// through it (tools/repo/verify-entry-points.mjs). A name is in one exit only: these are not in
 // render/index.ts.
 export { ACTIVE_QUALITY, DEFAULT_QUALITY, QUALITY, QUALITY_TIERS, isQualityTier } from './Quality.ts';
 export type { QualityTier } from './Quality.ts';

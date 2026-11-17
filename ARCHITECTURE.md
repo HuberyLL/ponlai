@@ -92,10 +92,10 @@ offers is a list that can be read and reviewed.
   the actions under way go on (rule 1), and what happened is emitted once, as events, which the
   session hands to the record, the interface and the play tool (rule 2).
 - **A growth swap.** Everything placed on the island derives from the land, per world-anchored
-  chunk (rule 5), so a new piece rebuilds only the chunks it reaches. The growth prepares the changed
-  chunks and every dependent of the land's shape ahead, in idle time, then swaps them in one frame
-  without building a pipeline (rule 15). In the game, the population sets the island's size: the
-  session asks its host to grow, and the new land opens the game's ground.
+  chunk (rule 5), so a new piece rebuilds only the chunks it reaches. The growth prepares the
+  changed chunks and every dependent of the land's shape ahead, in idle time, then swaps them in one
+  frame without building a pipeline (rule 15). In the game, the population sets the island's size:
+  the session asks its host to grow, and the new land opens the game's ground.
 - **A scene jump.** A scene event cuts the temporal history when the scene changes in a way its
   frames do not show. A scene jump (`establishScene`) clears what the scenes before left behind,
   through the table of histories, so that the page holds what a fresh load of the same query holds
@@ -174,12 +174,12 @@ to 22 are not in use.
   category, so new content shows with defaults until art gives it its own.
 - **10. Four layers, one direction:** a layer imports only from itself and the layers below, and a
   lower layer declares the interface an upper one fills.
-- **11. A package is imported through its exits:** another package takes a package's names only from
-  its exits, and a module does nothing as it loads but declare and register.
+- **11. A package is imported through its entry points:** another package takes a package's names
+  only from its exits, and a module does nothing as it loads but declare and register.
 - **12. One place assembles; each state has one owner:** only the page builds across packages,
   through the render pipeline's assembly, by stages in one fixed order, and a state that changes has
   one writer.
-- **13. Only the page touches the browser's page:** the render pipeline, the island and the game's
+- **13. Only the app layer touches browser globals:** the render pipeline, the island and the game's
   rules are given what they need of the browser and never reach for its globals; a running scene is
   given a host, which the page takes from the render pipeline's browser exit.
 - **14. Outside settings are checked once, at one entrance:** every URL option is declared in the
@@ -197,5 +197,5 @@ to 22 are not in use.
   test-mode stand and its growth.
 - **19. A source file stays under 1500 lines:** a file over the limit is split by what its parts
   are.
-- **23. three's internals are reached in one place:** every reach into three.js beyond its public
+- **23. three.js internals are used in one place:** every reach into three.js beyond its public
   interface is in `packages/render/three/`, on a checked list.

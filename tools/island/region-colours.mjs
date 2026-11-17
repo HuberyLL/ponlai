@@ -8,37 +8,37 @@
 // tools/island/day-sweep.mjs (which runs this tool).
 //
 // Usage:
-//   node tools/island/colour-rows.mjs shoot <url> <dir> --views-file f.json [--pages normal,light,ambient,classes]
+//   node tools/island/region-colours.mjs capture <url> <dir> --views-file f.json [--pages normal,light,ambient,classes]
 //       [--size 2560x1440@1] [--q "extra&query"] [--warm] [--jobs 1] [--scene]
-//   node tools/island/colour-rows.mjs rows <dir> [--sort <dir> | --own [--sky-mask-deg N]] [--boxes f.json] [--views a,b]
+//   node tools/island/region-colours.mjs measure <dir> [--sort <dir> | --own [--sky-mask-deg N]] [--boxes f.json] [--views a,b]
 //       [--sky-bands 0,5,15,30] [--out f.json] [--json]
 //
 // Options:
-//   shoot:
+//   capture:
 //     --views-file f.json  the views, in tools/kit/parity/capture-set.mjs's views file form (required)
-//     --pages a,b          the pages to shoot, of those below (all four)
+//     --pages a,b          the pages to capture, of those below (all four)
 //     --size WxH@dpr       the frame's size (2560x1440@1)
 //     --q query            extra query options for every page
 //     --warm               the views of a page reach each other by the scene jump instead of a load each
 //     --jobs n             capture-set's page count (1)
 //     --scene              the normal page also reads the scene's radiance, normals and camera
-//   rows:
+//   measure:
 //     --sort <dir>         the directory whose classes and light pages give the sort (<dir>)
 //     --own                sorts each view by its own depth read instead (with neither --sort nor --sky-bands)
 //     --sky-mask-deg N     with --own: leaves the sky cells within N degrees of the sun or the moon out (0)
 //     --boxes f.json       boxes to read: { "<base view>": { "<name>": [ x, y, w, h ] } } in the PNG's pixels
-//     --views a,b          only these views (every view shot)
-//     --sky-bands e0,e1,.. a row `sky <a>-<b>` per pair of rising elevations in degrees (frames shot with --scene)
+//     --views a,b          only these views (every view captured)
+//     --sky-bands e0,e1,.. a row `sky <a>-<b>` per pair of rising elevations in degrees (frames captured with --scene)
 //     --out f.json         the output file (<dir>/rows.json)
 //     --json               prints the JSON instead of the table
 //
-// shoot takes the frames: one tools/kit/parity/capture-set.mjs run per page, on one page each, into
+// capture takes the frames: one tools/kit/parity/capture-set.mjs run per page, on one page each, into
 // `<dir>/<page>/`. A view's `eval` sets its variant up; each view ends with this tool's read of the
 // page. Without `--warm` a page takes a fresh load per view, since an `--eval-ready` runs on every
 // view and capture-set cannot tell it only reads. `--warm` says so (capture.mjs `--ready-reads`): a
 // view is then a scene jump, a fraction of a page load, with the same frames and readings byte for
 // byte. A view with an eval of its own still ends its page. Paths are taken from the directory the
-// tool is called in. rows is plain node over that output.
+// tool is called in. measure is plain node over that output.
 //
 // The pages:
 //   normal    the frame itself: the PNG, the exposure, the depth's sky and sea shares
@@ -72,7 +72,7 @@
 // of its pixels' L, C, h (as `img.py stats --oklab`), p5 and p90 of L, and the rows `mean`, `dark`
 // and `lit` (the pixels under and over its median L: a crown's two halves).
 //
-// With `shoot --scene`, rows adds to every row `scene` { Y, med, hdr } (the cells' luminance in scene
+// With `capture --scene`, measure adds to every row `scene` { Y, med, hdr } (the cells' luminance in scene
 // units before the display chain, packages/render/debug/Radiance.ts) and the rows that need the cells'
 // direction: `sky band`, `sea away`, `<kind> flat`, `<kind> sun flat`, `land flat` and `land sun
 // flat`; the view's record adds `E`, pi times the sky's irradiance (the probe's: on a clear or fair
@@ -86,13 +86,13 @@
 // shade, penumbra } of the land, and `note`, whatever the view's eval left in
 // `__PONLAI__.colourNote` (a script reads tune.set's report that way).
 //
-// Output: shoot writes `<dir>/<page>/` (capture-set's PNGs and JSON per view). rows writes
+// Output: capture writes `<dir>/<page>/` (capture-set's PNGs and JSON per view). measure writes
 // `<dir>/rows.json` (or `--out`) and prints a table per view, or the JSON with `--json`.
 //
-// GPU lock and browser: shoot runs each page's capture-set under `tools/kit/gpu-lock.mjs run
-// --shared` (docs/reference/gpu-lock.md) in the capture tools' headless browser; rows neither.
+// GPU lock and browser: capture runs each page's capture-set under `tools/kit/gpu-lock.mjs run
+// --shared` (docs/reference/gpu-lock.md) in the capture tools' headless browser; measure neither.
 //
-// Cost: shoot, a page load per page and view (a scene jump per view with `--warm`); rows, seconds of
+// Cost: capture, a page load per page and view (a scene jump per view with `--warm`); measure, seconds of
 // CPU (it starts under the QoS policy, tools/kit/qos.mjs).
 //
 // Exit codes: 0 done; 1 a page that failed, a missing page or view, or a page's failed read; 2 bad usage.
@@ -158,7 +158,7 @@ const pageRead = ( scene ) => `async () => {
 function usage( message ) {
 
 	console.error( message );
-	console.error( 'usage: colour-rows.mjs shoot <url> <dir> --views-file f.json [options] | rows <dir> [options] (see the file header)' );
+	console.error( 'usage: region-colours.mjs capture <url> <dir> --views-file f.json [options] | measure <dir> [options] (see the file header)' );
 	process.exit( 2 );
 
 }
@@ -201,23 +201,23 @@ function runChild( file, args ) {
 
 }
 
-async function shoot( list ) {
+async function capture( list ) {
 
 	const { positional, options } = parse( list, [ 'views-file', 'pages', 'size', 'q', 'jobs', 'warm', 'scene' ] );
-	if ( positional.length !== 2 || ! options[ 'views-file' ] ) usage( 'shoot needs <url> <dir> --views-file f.json' );
+	if ( positional.length !== 2 || ! options[ 'views-file' ] ) usage( 'capture needs <url> <dir> --views-file f.json' );
 	const url = positional[ 0 ], dir = path.resolve( positional[ 1 ] ), viewsFile = path.resolve( options[ 'views-file' ] );
 	const pages = ( options.pages ?? Object.keys( PAGES ).join( ',' ) ).split( ',' );
 	for ( const page of pages ) if ( PAGES[ page ] === undefined ) usage( `no page ${ page } (of ${ Object.keys( PAGES ).join( ', ' ) })` );
 	for ( const page of pages ) {
 
 		const q = [ PAGES[ page ], options.q ].filter( Boolean ).join( '&' );
-		console.log( `colour-rows: page ${ page }` );
+		console.log( `region-colours: page ${ page }` );
 		const status = await runChild( 'tools/kit/gpu-lock.mjs', [ 'run', '--shared', '--',
 			process.execPath, 'tools/kit/parity/capture-set.mjs', url, path.join( dir, page ), '--size', options.size ?? '2560x1440@1', '--jobs', options.jobs ?? '1',
 			'--views-file', viewsFile, ...( q ? [ '--q', q ] : [] ), '--', ...( options.warm ? [ '--ready-reads' ] : [] ), '--eval-ready', pageRead( options.scene === true ) ] );
 		if ( status !== 0 ) {
 
-			console.error( `colour-rows: page ${ page } failed` );
+			console.error( `region-colours: page ${ page } failed` );
 			return 1;
 
 		}
@@ -276,7 +276,7 @@ const median = ( values ) => rank( Float64Array.from( values ).sort(), 0.5 );
 function pageValue( dir, page, view ) {
 
 	const file = path.join( dir, page, `${ view }.json` );
-	if ( ! existsSync( file ) ) throw new Error( `no ${ file }: run shoot with --pages ${ page }` );
+	if ( ! existsSync( file ) ) throw new Error( `no ${ file }: run capture with --pages ${ page }` );
 	const read = JSON.parse( readFileSync( file, 'utf8' ) ).readyEvals?.[ 0 ];
 	if ( ! read || 'error' in read ) throw new Error( `${ file }: the page's read failed: ${ read?.error ?? 'none recorded' }` );
 	return read.value;
@@ -327,7 +327,7 @@ function cellRays( camera ) {
 
 }
 
-// The sky's bands (rows --sky-bands e0,e1,...): a row `sky <a>-<b>` per pair of neighbouring edges,
+// The sky's bands (measure --sky-bands e0,e1,...): a row `sky <a>-<b>` per pair of neighbouring edges,
 // the sky cells whose ray stands at least a and under b degrees up (half open, [a, b)) and turns more
 // than 90 degrees in azimuth from the key light's, as `sky band` takes them. Each cell's elevation
 // is its centre's ray through the camera's matrices as the scene page read them, between frames:
@@ -335,7 +335,7 @@ function cellRays( camera ) {
 // jitter). These are not `sky band` (4 to 15 degrees), which stays as it is.
 const skyBandRow = ( a, b ) => `sky ${ a }-${ b }`;
 
-// The rows that need the cells' direction (frames shot with --scene): `sky band`, the sky cells
+// The rows that need the cells' direction (frames captured with --scene): `sky band`, the sky cells
 // whose ray stands 4 to 15 degrees up and turns more than 90 degrees in azimuth from the key
 // light's (the sun's, by night the moon's); `sea away`, the sea cells whose ray lies 0 to 5 degrees
 // under the horizon on that side; `<kind> flat`, `<kind> sun flat`, `land flat` and `land sun
@@ -491,7 +491,7 @@ function boxRow( { width, height, data }, [ x0, y0, w, h ] ) {
 // that the sky is.
 function nearLight( read, deg ) {
 
-	if ( ! read.view || ! read.lights ) throw new Error( 'the pages hold no read of the lights and the camera (shot by an older colour-rows): shoot again' );
+	if ( ! read.view || ! read.lights ) throw new Error( 'the pages hold no read of the lights and the camera (captured by an older region-colours): capture again' );
 	const { world: e, proj } = read.view;
 	const lights = Object.values( read.lights ).filter( ( d ) => d[ 1 ] > - Math.sin( Math.PI / 180 ) )
 		.map( ( d ) => [ e[ 0 ] * d[ 0 ] + e[ 4 ] * d[ 1 ] + e[ 8 ] * d[ 2 ], e[ 1 ] * d[ 0 ] + e[ 5 ] * d[ 1 ] + e[ 9 ] * d[ 2 ], e[ 2 ] * d[ 0 ] + e[ 6 ] * d[ 1 ] + e[ 10 ] * d[ 2 ] ] );
@@ -529,7 +529,7 @@ function ownSortOf( read, maskDeg ) {
 
 }
 
-function rows( list ) {
+function measure( list ) {
 
 	const { positional, options } = parse( list, [ 'sort', 'own', 'sky-mask-deg', 'boxes', 'views', 'out', 'json', 'sky-bands' ] );
 	if ( options.own && options.sort ) usage( '--own and --sort do not mix' );
@@ -537,14 +537,14 @@ function rows( list ) {
 	if ( options[ 'sky-bands' ] !== undefined && options.own ) usage( '--sky-bands goes with the classes page\'s sort, not --own' );
 	const maskDeg = Number( options[ 'sky-mask-deg' ] ?? 0 );
 	if ( ! ( maskDeg >= 0 ) ) usage( `bad --sky-mask-deg ${ options[ 'sky-mask-deg' ] }` );
-	if ( positional.length !== 1 ) usage( 'rows needs <dir>' );
+	if ( positional.length !== 1 ) usage( 'measure needs <dir>' );
 	const skyBands = options[ 'sky-bands' ] ? options[ 'sky-bands' ].split( ',' ).map( Number ) : [];
 	if ( skyBands.some( ( e ) => ! Number.isFinite( e ) ) || skyBands.some( ( e, k ) => k && e <= skyBands[ k - 1 ] ) || skyBands.length === 1 ) usage( '--sky-bands: rising elevations in degrees, at least two' );
 	const bandRows = new Set( skyBands.slice( 1 ).map( ( b, k ) => skyBandRow( skyBands[ k ], b ) ) );
 	const dir = positional[ 0 ], sortDir = options.sort ?? dir;
 	const boxes = options.boxes ? JSON.parse( readFileSync( options.boxes, 'utf8' ) ) : {};
 	const normal = path.join( dir, 'normal' );
-	if ( ! existsSync( normal ) ) throw new Error( `no ${ normal }: run shoot first` );
+	if ( ! existsSync( normal ) ) throw new Error( `no ${ normal }: run capture first` );
 	const shot = readdirSync( normal ).filter( ( f ) => f.endsWith( '.png' ) && ! f.endsWith( '.repeat.png' ) ).map( ( f ) => f.slice( 0, - 4 ) ).sort();
 	const names = options.views ? options.views.split( ',' ) : shot;
 	for ( const name of names ) if ( ! shot.includes( name ) ) throw new Error( `no view ${ name } in ${ normal }` );
@@ -609,14 +609,14 @@ function rows( list ) {
 }
 
 const [ command, ...rest ] = process.argv.slice( 2 );
-if ( command !== 'shoot' && command !== 'rows' ) usage( `no command ${ command ?? '' }` );
+if ( command !== 'capture' && command !== 'measure' ) usage( `no command ${ command ?? '' }` );
 try {
 
-	process.exit( command === 'shoot' ? await shoot( rest ) : rows( rest ) );
+	process.exit( command === 'capture' ? await capture( rest ) : measure( rest ) );
 
 } catch ( error ) {
 
-	console.error( `colour-rows: ${ error.message }` );
+	console.error( `region-colours: ${ error.message }` );
 	process.exit( 1 );
 
 }

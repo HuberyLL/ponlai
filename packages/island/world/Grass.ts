@@ -6,7 +6,7 @@ import {
 	positionWorld, specularColor, specularColorBlended, specularF90, vertexIndex, workgroupArray, workgroupBarrier, workgroupId,
 } from 'three/tsl';
 import { LAWN_GAIN, MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_SIZE, groundGains } from '../materials/Meadow.ts';
-import { GUST_MEAN, gustAt, gustJitter, wave, windStrength, type WindState, RESPONSE, displacementAt, runSteps, CANOPY_SHADE, transmission, vegetationMaterial, unjitteredPadded, TEMPORAL, debugFlags, MEADOW_SHADE, meadowShadeAt, meadowShadeFloor, receiveScreenAO, textureSteps, type VegetationKind, type Shared, tune, tuneApply, tuneUniform, liftKeyWorld } from '../../render/index.ts';
+import { GUST_MEAN, gustAt, gustJitter, wave, windStrength, type WindState, RESPONSE, displacementAt, runSteps, CANOPY_SHADE, transmission, vegetationMaterial, unjitteredPadded, TEMPORAL, debugFlags, MEADOW_SHADOWS, meadowShadowAt, meadowShadowFloor, receiveScreenAO, textureSteps, type VegetationKind, type Shared, tune, tuneApply, tuneUniform, liftKeyWorld } from '../../render/index.ts';
 import type { WorldData } from './types.ts';
 import { GROUND_A, HEIGHT_MAP, LIP, SINK, SWARD_DEPTH, grassSteps, type GrassPlan } from './GrassGround.ts';
 import { GROVES } from './BambooGroves.ts';
@@ -63,8 +63,8 @@ import { canopySteps, crownSteps, setCanopyTop, setSwardField, swardSteps } from
 //   ground beside it where the light comes over it) takes exp( -l / s ) of the key, l its ray's
 //   length under the top (`LAYER`), the ray running along the lifted key (lighting/KeyLift.ts,
 //   the direction the sun's map is cast along). The finer shade of blade on blade is the
-//   screen-space shade (post/MeadowShade.ts, `sunShade`), held above the shade's floor by translucency
-//   (`meadowShadeFloor`); the floor does not raise the layer's.
+//   screen-space shade (post/MeadowShadows.ts, `sunShade`), held above the shade's floor by translucency
+//   (`meadowShadowFloor`); the floor does not raise the layer's.
 // - The ground under the blades (TerrainMaterial.ts, `GRASS_ROOTS`): brown soil at every distance,
 //   seen through the gaps between the blades; darker on screen by the shade alone.
 //
@@ -1148,7 +1148,7 @@ const aoCanopy = /*@__PURE__*/ tuneUniform( 'grass.ao.canopy', GROVES.shade, { m
  * from root to tip; through it (`light.extra`, Material.ts `transmission`: from behind the blade's
  * face, its forward lobe weighted by saturate( 2 t - 1 ), 0.11 at the root and 0.66 at the tip) t of
  * the diffuse, tinted `tint` (light through a leaf comes out yellower). The same t floors the
- * blades' screen-space shade (post/MeadowShade.ts `meadowShadeFloor`) and weights the ambient
+ * blades' screen-space shade (post/MeadowShadows.ts `meadowShadowFloor`) and weights the ambient
  * volume's light (lighting/AmbientSample.ts): toward the tip it flattens, brightens and turns a
  * little toward the light from behind. */
 const TRANSLUCENCY = { mask: 0.922, root: 0.6, tip: 0.9, tint: [ 1.15, 1, 0.55 ] };
@@ -1247,7 +1247,7 @@ function grassMaterial( shared: Shared, blades: MeadowBlades, low = false ): THR
 	receiveScreenAO( mat );
 	// on the sun's map, the blades' screen-space shade (floored) and their layer's (`meadowLayerLight`)
 	const shades: F[] = [];
-	if ( MEADOW_SHADE ) shades.push( max( meadowShadeAt(), meadowShadeFloor( translucency ) ) );
+	if ( MEADOW_SHADOWS ) shades.push( max( meadowShadowAt(), meadowShadowFloor( translucency ) ) );
 	if ( GRASS_SHADOW ) shades.push( meadowLayerLight( meadowLayerDepth( positionWorld, liftKeyWorld( shared.sunDir ) ) ) );
 	if ( shades.length ) mat.userData.sunShade = shades.reduce( ( a, b ) => a.mul( b ) );
 	// `flags=grassSunMap:false`: the blades keep their own shades but read nothing from the sun's map
@@ -1329,7 +1329,7 @@ function bladeGeometry( verts = VERTS ): THREE.BufferGeometry {
 // proxy of the ground raised to the layer's top whose depths are pushed down by exponentially
 // distributed lengths along the light, as a filtered shadow map would give it, multiplied into the
 // whole key (wrap, light through, highlight); the translucency's floor raises the screen-space
-// shade only (post/MeadowShade.ts), never this one, and the two multiply: the layer is the sward's
+// shade only (post/MeadowShadows.ts), never this one, and the two multiply: the layer is the sward's
 // mean depth, the screen-space march the shade of blade on blade. (A shadow proxy of the terrain
 // raised to the grass's height, whose filtered shadow gives the grass's shadow density, and
 // screen-space shadows for the fine detail: Wohllaib 21:14-21:47; working it out where it is

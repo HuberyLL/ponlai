@@ -18,7 +18,7 @@ import { settings } from '../../GameSettings.ts';
 //
 // What is content rather than the interface's words stays out of the catalogues: the islanders'
 // names (sim/Sim.ts) and what people say (the player's lines, the islanders' answers, the debug
-// panel's placeholder days and hearing brain).
+// panel's placeholder days and hearing agent).
 //
 // Writing text:
 // - A new string is a key in zh-CN.json, read through `t( 'part.key' )`; the keys are typed from

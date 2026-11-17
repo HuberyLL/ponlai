@@ -4,7 +4,7 @@ import {
 	cameraPosition, specularColor, specularColorBlended, specularF90,
 	normalize, abs, pow, sqrt, max, min, dot, sign, mix, smoothstep, clamp, fract, floor, sin, cos, exp, log2, select, dFdx, dFdy, length, varying,
 } from 'three/tsl';
-import { type Shared, DETAIL_SIZE, GTAO, floorOcclusion, receiveScreenAO, screenAOAt, type WaveMaps, underwaterLight, UnderwaterLightingModel, type UnderwaterLight, type UnderwaterModelOptions, TURF_CANOPY_DEPTH, meadowCanopyLight, meadowGroundLight, puddleField, puddleRipples, DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness, hexReadScan, heightBlend, type HexScan, debugFlags, FSR3, fsr3MipBiasScale, MEADOW_SHADE, SS_SHADOW, meadowGroundShade, screenShadowAt, writeMeter, liftKeyWorld } from '../../render/index.ts';
+import { type Shared, DETAIL_SIZE, GTAO, floorOcclusion, receiveScreenAO, screenAOAt, type WaveMaps, underwaterLight, UnderwaterLightingModel, type UnderwaterLight, type UnderwaterModelOptions, TURF_CANOPY_DEPTH, meadowCanopyLight, meadowGroundLight, puddleField, puddleRipples, DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness, hexReadScan, heightBlend, type HexScan, debugFlags, FSR3, fsr3MipBiasScale, MEADOW_SHADOWS, SS_SHADOW, meadowGroundShadow, screenShadowAt, writeMeter, liftKeyWorld } from '../../render/index.ts';
 import { settings } from '../IslandSettings.ts';
 import { SCAN_LAYER, type GroundTextures } from './GroundTextures.ts';
 import { MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_MAX_DROP, groundGains } from './Meadow.ts';
@@ -21,7 +21,7 @@ import { FLOOR_ALBEDO } from '../world/SeabedTile.ts';
 // `flags=groundCast:false` at load (the canopy's mean depth instead).
 const GROUND_CAST = debugFlags.groundCast !== false;
 // The blades' own shade on it, marched from its point over the vegetation's depth as the blades'
-// is (post/MeadowShade.ts `meadowGroundShade`), so the ground under a sunlit sward carries the
+// is (post/MeadowShadows.ts `meadowGroundShadow`), so the ground under a sunlit sward carries the
 // blade-shaped shadows a close look shows, within some 20 m of the eye; the fade beyond only
 // changes where the screen-space shade comes from (the ground's own march, then the pixel's), never
 // the layer's shade or the occlusion; off with `flags=groundShade:false` at load. With the screen-space shade
@@ -29,7 +29,7 @@ const GROUND_CAST = debugFlags.groundCast !== false;
 // into the pixel's shade beyond it, and the ground and stones elsewhere take the pixel's shade on
 // the key (the culms' and the stones' contact shade, a rock's seams); the sea floor, lit by the
 // refracted sun, does not.
-const GROUND_SHADE = MEADOW_SHADE && debugFlags.groundShade !== false;
+const GROUND_SHADE = MEADOW_SHADOWS && debugFlags.groundShade !== false;
 
 // PBR materials for the rock and the sea floor: MeshStandardNodeMaterial (lights, shadows, IBL)
 // with the surface built procedurally in world space (triplanar baked detail, moss, wet band,
@@ -586,7 +586,7 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 				else canopy.assign( meadowCanopyLight( turfCover.mul( shade ).mul( TURF_CANOPY_DEPTH ), shared.sunDir ).mul( mix( float( 1 ), float( GRASS_ROOTS.key ), rootLight ) ) );
 				if ( GROUND_SHADE && ! BARE_GROUND ) {
 
-					canopy.mulAssign( meadowGroundShade( cameraViewMatrix.mul( vec4( p, 1 ) ).xyz ) );
+					canopy.mulAssign( meadowGroundShadow( cameraViewMatrix.mul( vec4( p, 1 ) ).xyz ) );
 					marched.assign( 1 );
 
 				}
@@ -712,7 +712,7 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 
 		}
 		// the whole scene's screen-space shade at the pixel, where the ground did not march its own
-		// (post/MeadowShade.ts `SS_SHADOW`)
+		// (post/MeadowShadows.ts `SS_SHADOW`)
 		if ( SS_SHADOW ) canopy.mulAssign( mix( screenShadowAt(), float( 1 ), marched ) );
 
 		// --- rain: wet materials after Lagarde (see Wetness.ts). The mask starts above the highest

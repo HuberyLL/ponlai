@@ -21,25 +21,25 @@ import type { QualityProfile } from './Quality.ts';
 
 /** The quality knob that governs a definition's cost: a field of the quality table (Quality.ts,
  * which is closed: a new knob is a new field there), or 'none' when no tier changes it. */
-export type CostKnob = keyof QualityProfile | 'none';
+export type CostSetting = keyof QualityProfile | 'none';
 
 /** How a definition stands in the test mode (debug/TestMode.ts: a paused page whose frame repeats
  * exactly): 'stateless' when what it draws is a function of the scene alone, with no history;
  * otherwise whether the test mode freezes it or turns it off, by what (`by`: the switch or the
  * site), and when it is settled (`settled`: what the page's settled signal waits for, or that it
  * waits for nothing). */
-export type TestModeStand = 'stateless' | { held: 'frozen' | 'off'; by: string; settled: string };
+export type TestModeBehaviour = 'stateless' | { held: 'frozen' | 'off'; by: string; settled: string };
 
 /** How a definition follows the land's growth: 'independent' when it does not depend on the land,
  * otherwise the follower that carries it through a growth (`follower`: what prepares its next
  * version and swaps it in, in the swap's frame). */
-export type LandStand = 'independent' | { follower: string };
+export type LandDependence = 'independent' | { follower: string };
 
 /** The three declarations of a registered definition. */
 export interface Declarations {
-	cost: CostKnob;
-	testMode: TestModeStand;
-	land: LandStand;
+	cost: CostSetting;
+	testMode: TestModeBehaviour;
+	land: LandDependence;
 }
 
 const text = ( value: unknown ): value is string => typeof value === 'string' && value !== '';
@@ -49,7 +49,7 @@ const text = ( value: unknown ): value is string => typeof value === 'string' &&
 export function checkDeclarations( point: string, name: string, definition: Partial<Declarations> ): void {
 
 	const missing: string[] = [];
-	if ( ! text( definition.cost ) ) missing.push( 'cost (a quality knob, or \'none\')' );
+	if ( ! text( definition.cost ) ) missing.push( 'cost (a quality setting, or \'none\')' );
 	const t = definition.testMode;
 	if ( t !== 'stateless' && ! ( typeof t === 'object' && t !== null && ( t.held === 'frozen' || t.held === 'off' ) && text( t.by ) && text( t.settled ) ) ) missing.push( 'testMode (\'stateless\', or { held, by, settled })' );
 	const l = definition.land;

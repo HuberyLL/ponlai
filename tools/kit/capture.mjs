@@ -81,7 +81,7 @@
 // - Evals the jump does not undo: the jump resets the scene's options and camera, not GUI or console
 //   changes, so a view whose message says `last` ends its page after its shot. --eval takes a page
 //   per view, and so does --eval-ready unless `--ready-reads` says those steps only read the frame
-//   (tools/island/colour-rows.mjs `shoot --warm`).
+//   (tools/island/region-colours.mjs `capture --warm`).
 // - The GPU slot is leased (`leaseGpuLock`): the worker keeps it from one view to the next and gives
 //   it up before a view only when it has held it for --lease seconds (20) and a request ranked
 //   before its next one waits for it; it then queues again. It frees the slot whenever it has no
@@ -119,7 +119,7 @@
 // is still written), or a wait timed out; 2 --worker without capture-set's IPC channel.
 import './help.mjs';
 import { acquireGpuLock, leaseGpuLock, releaseGpuLock } from './gpu-lock.mjs';
-import { launchCapture, waitForScene, waitForSettled, waitForStable, stableOptions, stopLoop, startLoop, pngShooter, READY_FRAMES } from './capture-browser.mjs';
+import { launchCapture, waitForScene, waitForSettled, waitForStable, stableOptions, stopLoop, startLoop, pngCapturer, READY_FRAMES } from './capture-browser.mjs';
 import { evalSource, runInPage } from './page-eval.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import PROJECT from '../project.mjs';
@@ -333,7 +333,7 @@ async function captureView( session, { url, query, evals, steps, readySteps = []
 	}
 	const frames = [];
 	// the shot: the compositor's image, PNG encoded for speed (tools/kit/capture-browser.mjs, "The shot")
-	const shooter = await pngShooter( page, { timeout } );
+	const capturer = await pngCapturer( page, { timeout } );
 	for ( let i = 0; i < frameCount; i ++ ) {
 
 		if ( i > 0 ) {
@@ -347,12 +347,12 @@ async function captureView( session, { url, query, evals, steps, readySteps = []
 		await stopLoop( page );
 		const frame = await renderedFrame( page );
 		const file = i === 0 ? `${ out }.png` : `${ out }.f${ i }.png`;
-		await writeFile( file, await shooter.shoot() );
+		await writeFile( file, await capturer.capture() );
 		frames.push( { file, frame } );
 
 	}
 	// (the device metrics back before the crop anchors read the page's ratio)
-	await shooter.close();
+	await capturer.close();
 	const diag = await page.evaluate( ( n ) => ( { ...window[ n.diagnostics ] } ), PAGE );
 	const crops = await page.evaluate( ( n ) => window[ n.crops ] ?? null, PAGE );
 	// a set's shot: where it is compared within the held tolerance (tools/kit/tolerance.py), the frame

@@ -39,7 +39,7 @@ import type { SwellParams } from '../ocean/OceanSpectrum.ts';
 // read, so a change to it rebuilds the world's cache) and the quality table (Quality.ts). A few
 // numbers that sit between a method's constants and the look stay in their modules too: the ambient
 // occlusion kernel's reach (post/GTAO.ts), the meadow canopy's depths (lighting/MeadowCanopy.ts),
-// the meadow shade's march (post/MeadowShade.ts), the gust field's scale and evolution
+// the meadow shade's march (post/MeadowShadows.ts), the gust field's scale and evolution
 // (weather/Wind.ts) and each plant part's answer to the wind (vegetation/Deform.ts).
 //
 // Headless: types and one list of names, no three.js and nothing of the page.

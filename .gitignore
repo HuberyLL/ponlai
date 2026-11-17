@@ -7,7 +7,7 @@ artifacts/
 .claude/*
 !.claude/skills/
 .claude/skills/*
-!.claude/skills/diagnosing-nonrepeating-frames
+!.claude/skills/diagnosing-nondeterministic-frames
 !.claude/skills/building-cinematic-stylised-realism
 !.claude/skills/fitting-a-look-to-reference-images
 !.claude/skills/writing-tsl-and-passes

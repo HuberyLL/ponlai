@@ -9,7 +9,7 @@ import { newGame } from './sim/Sim.ts';
 import { topFromTiles } from './sim/grid.ts';
 import { SAVE_KEY, UNREAD_KEY, keepsSave, readSlot, resumesSave, savedPieces } from './save.ts';
 import type { Sim } from './sim/Sim.ts';
-import type { Brain, ToolResult } from './sim/agent.ts';
+import type { Agent, ToolResult } from './sim/agent.ts';
 import type { SimEvent } from './sim/events.ts';
 import { GameView, propSamples } from './view/GameView.ts';
 import { SECONDS_PER_GAME_DAY } from './sim/types.ts';
@@ -22,7 +22,7 @@ import type { EntityId, IslandInput, Items } from './sim/types.ts';
 //
 // The island as a game (?game): the game around its simulation runs headless in a session
 // (Session.ts: the simulation of packages/game/sim, which runs the islanders' bodies, their needs and the
-// places they act at; its record, Chronicle.ts; the brain in its slot, the stand-in of plain rules by
+// places they act at; its record, Chronicle.ts; the agent in its slot, the stand-in of plain rules by
 // default, sim/standin.ts; the leader's words; the save's contents; the island's growth), and the
 // page hosts it here: GameView draws the islanders and the chest into the scene.
 // The player's interface is 蜃光 (ui/GameUi.ts, docs/design/ui.md): the top row (day and time, pause and play,
@@ -34,7 +34,7 @@ import type { EntityId, IslandInput, Items } from './sim/types.ts';
 // sky with it. The weather is the page's own, as without ?game, running on the day
 // clock, and its auto chain read ahead is the game's forecast (`forecast`, in game hours). Waves,
 // wind and rain keep real time. The player speaks to the islanders through `speak` (Session.speak:
-// the words go into the record and, for a brain that hears, wait per listener for its next
+// the words go into the record and, for an agent that hears, wait per listener for its next
 // thought); the stand-in does not hear. What happened reaches the interface as the simulation's
 // events, which the session hands to whoever listens (`listen`, Session.listen; sim/events.ts),
 // never by watching the state for changes.
@@ -49,9 +49,9 @@ import type { EntityId, IslandInput, Items } from './sim/types.ts';
 // docs/reference/url-options.md.
 //
 // Rules: without ?game the page stays the art-review scene, unchanged. The game follows
-// docs/design/game-design.md: nothing is built ahead of that design. The brain's
+// docs/design/game-design.md: nothing is built ahead of that design. The agent's
 // tools are the five actions (sim/actions.ts). Thinking is asynchronous to the world: `think( id )`
-// asks the brain with the islander's perception, the simulation never waits for the answer, the
+// asks the agent with the islander's perception, the simulation never waits for the answer, the
 // body goes on with what it is doing meanwhile, and the answer's tool calls run on the body when it
 // arrives; one thought per islander may be in flight. What starts a thought is not decided: until
 // it is, the simulation asks whenever an islander has nothing under way (sim/Sim.ts), and the
@@ -165,7 +165,7 @@ export class Game {
 
 	}
 
-	/** the game around the simulation, headless (Session.ts): the simulation, its record, the brain,
+	/** the game around the simulation, headless (Session.ts): the simulation, its record, the agent,
 	 * the leader's words, the island's growth */
 	readonly session: Session;
 	private view: GameView | null = null;
@@ -275,7 +275,7 @@ export class Game {
 	}
 
 	/** Install a simulation (and its record, for a saved game) in the session (Session.install: its
-	 * brain, the record, its events so far), a fresh view, and the day clock set to its hour at
+	 * agent, the record, its events so far), a fresh view, and the day clock set to its hour at
 	 * once. */
 	private async begin( sim: Sim, record?: RecordSave ): Promise<void> {
 
@@ -428,7 +428,7 @@ export class Game {
 
 	}
 
-	/** Whether the brain hears the player's words (sim/agent.ts Brain.hears): the interface keeps
+	/** Whether the agent hears the player's words (sim/agent.ts Agent.hears): the interface keeps
 	 * the characters that land for its next thought only then. */
 	hears(): boolean {
 
@@ -436,15 +436,15 @@ export class Game {
 
 	}
 
-	/** The brain that thinks for the islanders (sim/agent.ts Brain; null: none), kept across a load
-	 * (Session.setBrain). */
-	setBrain( brain: Brain | null ): void {
+	/** The agent that thinks for the islanders (sim/agent.ts Agent; null: none), kept across a load
+	 * (Session.setAgent). */
+	setAgent( agent: Agent | null ): void {
 
-		this.session.setBrain( brain );
+		this.session.setAgent( agent );
 
 	}
 
-	/** Ask the brain to think for an islander now (Sim.think): the results of its tool calls once they ran, or null. */
+	/** Ask the agent to think for an islander now (Sim.think): the results of its tool calls once they ran, or null. */
 	think( villager: EntityId ): Promise<ToolResult[]> | null {
 
 		return this.sim.think( villager );
@@ -495,7 +495,7 @@ export class Game {
 	}
 
 	/** The player speaks: words to some islanders (their ids) or to everyone (Session.speak: an
-	 * event, and for a brain that hears to each listener's next thought, asked for now). Null when
+	 * event, and for an agent that hears to each listener's next thought, asked for now). Null when
 	 * said, else why not. */
 	speak( words: string, to: EntityId[] | 'all' ): string | null {
 
@@ -511,14 +511,14 @@ export class Game {
 	}
 
 	/** Tool calls for an islander, `[ { tool, args } ]` (the five actions, sim/actions.ts: the
-	 * console's), through the entrance a brain's answer takes (Session.act): each call's result. */
+	 * console's), through the entrance an agent's answer takes (Session.act): each call's result. */
 	act( id: EntityId, calls: unknown ): ToolResult[] {
 
 		return this.session.act( id, calls );
 
 	}
 
-	/** An islander says something (the `say` action, through the entrance a brain's calls take:
+	/** An islander says something (the `say` action, through the entrance an agent's calls take:
 	 * the debug panel's and the console's). Null when said, else why not. */
 	say( id: EntityId, words: string ): string | null {
 

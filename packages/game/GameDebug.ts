@@ -7,8 +7,8 @@ import { groundPoint, pointerRay } from './pick.ts';
 import { describeCall } from './sim/actions.ts';
 import { tickAt } from './sim/clock.ts';
 import { needs } from './sim/registry.ts';
-import type { Brain, Perception, ToolCall } from './sim/agent.ts';
-import { StandInBrain } from './sim/standin.ts';
+import type { Agent, Perception, ToolCall } from './sim/agent.ts';
+import { StandInAgent } from './sim/standin.ts';
 import { GROWTH_STEPS } from './sim/types.ts';
 import type { EntityId } from './sim/types.ts';
 import { PLACEHOLDER_DAYS, PLACEHOLDER_NAMES, PLACEHOLDER_SKIES } from './ui/data/record.ts';
@@ -25,24 +25,24 @@ import { LOCALES, locale } from './ui/i18n/i18n.ts';
 // a step of the island's growth can be crossed by hand, and shows the population against the next
 // step. Its Interface folder puts the player's interface (ui/GameUi.ts) into the states the game
 // does not reach yet: the lists at three times their size, nine placeholder days in the record
-// (entries like any other, so they go into the save: a new game clears them), a brain that hears
-// the player and answers after a thought (HearingBrain), a line said by the islander inspected, and
+// (entries like any other, so they go into the save: a new game clears them), an agent that hears
+// the player and answers after a thought (HearingAgent), a line said by the islander inspected, and
 // their needs low and critical; and it picks the interface's language, which reloads the page with
 // `?lang=` (a load knob: ui/i18n/i18n.ts). Everything goes through the Game's methods, which the
 // console reaches as window.__PONLAI__.game.
 
-// placeholder answers of the hearing brain
+// placeholder answers of the hearing agent
 const REPLIES = [ '好，这就去。', '知道了。', '箱子放哪儿？', '我先喝口水，马上就来。', '嗯。', '鱼够不够？' ];
 
-// A brain for seeing the interface's speech at work until the language model hears the player: it
-// hears (Brain.hears), thinks over what it heard for a while (the thinking ring shows: two seconds
+// An agent for seeing the interface's speech at work until the language model hears the player: it
+// hears (Agent.hears), thinks over what it heard for a while (the thinking ring shows: two seconds
 // and 0.3 s a character, at most seven) and answers with a placeholder line; otherwise it thinks as
 // the stand-in does.
-class HearingBrain implements Brain {
+class HearingAgent implements Agent {
 
 	readonly hears = true;
 	private readonly game: Game;
-	private readonly inner = new StandInBrain();
+	private readonly inner = new StandInAgent();
 	private replies = 0;
 
 	constructor( game: Game ) {
@@ -117,7 +117,7 @@ export class GameDebug {
 		const ui = folder.addFolder( 'Interface' );
 		ui.add( { many: false }, 'many' ).name( 'many rows (x3)' ).onChange( ( many: boolean ) => game.ui?.setMany( many ) );
 		ui.add( { days: () => this.placeholderDays() }, 'days' ).name( 'placeholder days' );
-		ui.add( { hearing: false }, 'hearing' ).name( 'hearing brain' ).onChange( ( on: boolean ) => game.setBrain( on ? new HearingBrain( game ) : new StandInBrain() ) );
+		ui.add( { hearing: false }, 'hearing' ).name( 'hearing agent' ).onChange( ( on: boolean ) => game.setAgent( on ? new HearingAgent( game ) : new StandInAgent() ) );
 		let line = 0;
 		ui.add( { say: () => this.say( game.say( f.islander, REPLIES[ line ++ % REPLIES.length ] ) ?? 'Said' ) }, 'say' ).name( 'inspected islander says a line' );
 		// the registered needs in turn to these values: one low and one critical, both critical

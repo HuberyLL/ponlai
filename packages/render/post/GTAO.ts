@@ -6,7 +6,7 @@ import {
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tuneUniform } from '../debug/Tune.ts';
 import { shared } from '../shared.ts';
-import { MEADOW_SHADE } from './MeadowShade.ts';
+import { MEADOW_SHADOWS } from './MeadowShadows.ts';
 import { loadTier, qualityProfile } from '../Quality.ts';
 
 type F = THREE.Node<'float'>;
@@ -88,7 +88,7 @@ type V4 = THREE.Node<'vec4'>;
 // vegetation depth pass it reads):
 //   opaqueDepth  the opaque scene's copies (post/OpaquePrepass.ts) at half resolution, single
 //                sampled, their distance along the view into a target of their own (drawn before
-//                the meadow's shade, which reads it too over the whole scene: MeadowShade.ts)
+//                the meadow's shade, which reads it too over the whole scene: MeadowShadows.ts)
 //   gtaoDepth    the view z of each half-resolution texel: the nearer of the vegetation's depth
 //                (sample 0 of its full pixel's top left) and the opaque copies' distance
 //   gtao         the slices over that depth, (occlusion, view z) at half resolution
@@ -154,7 +154,7 @@ type V4 = THREE.Node<'vec4'>;
 
 /** Built at load: at 4x outside the temporal modes with the meadow's shade, where the tier's `ao`
  * knob or `flags=gtao` asks for it. */
-export const GTAO = MEADOW_SHADE && ( debugFlags.gtao === undefined ? qualityProfile( loadTier() ).ao : debugFlags.gtao !== false );
+export const GTAO = MEADOW_SHADOWS && ( debugFlags.gtao === undefined ? qualityProfile( loadTier() ).ao : debugFlags.gtao !== false );
 
 /** The slices per pixel and the depth steps on each side of each. */
 const SLICES = 2, STEPS = 4;

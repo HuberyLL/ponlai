@@ -6,7 +6,7 @@ import { onSceneDispose } from '../SceneDispose.ts';
 // The opaque scene's depth prepass, for the screen-space occlusion and the screen-space shade.
 //
 // The opaque scene's depth prepass, for the screen-space ambient occlusion (post/GTAO.ts) and the
-// screen-space shade over the whole scene (post/MeadowShade.ts `SS_SHADOW`): the island's chunks,
+// screen-space shade over the whole scene (post/MeadowShadows.ts `SS_SHADOW`): the island's chunks,
 // the submerged stones, the sea floor, the bamboo's culms and the yunpeng drawn before the opaque
 // scene, at the occlusion's half resolution into a target of their own, so that both read the whole
 // scene's depth (theirs beside the vegetation's, VegetationPrepass.ts) before the materials that
@@ -19,7 +19,7 @@ import { onSceneDispose } from '../SceneDispose.ts';
 //   half-resolution target with a depth of its own; meshes whose materials agree on these share
 //   one, so the copies build a few pipelines in all. Over the whole scene's screen-space shade the
 //   target holds a second channel, the depth a surface runs behind its front where a material marks
-//   it thinner than the march assumes (`userData.screenThickness`, post/MeadowShade.ts
+//   it thinner than the march assumes (`userData.screenThickness`, post/MeadowShadows.ts
 //   `screenThickness`: the bamboo's culms), 0 elsewhere; a thickness is part of the copy's key.
 //   Drawn into the scene's 4x depth at full resolution instead (so that the opaque scene could test
 //   equal against it) it cost about as much as the occlusion's own passes; at half resolution, single-sampled, a fraction of that. The shaded

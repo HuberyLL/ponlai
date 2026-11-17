@@ -20,7 +20,7 @@ import { beginMotionFrame, METER_LIGHT, onTaaCut } from './Motion.ts';
 import { preExposure } from './PreExposure.ts';
 import { RAIN_OVERLAY } from './AfterResolve.ts';
 import { jitter } from './Jitter.ts';
-import { MEADOW_SHADE, SS_SHADOW, meadowDepthMap, meadowDepthMaterial, meadowGroundView, meadowShade, meadowShadeMaterial, screenShadowView } from './MeadowShade.ts';
+import { MEADOW_SHADOWS, SS_SHADOW, meadowDepthMap, meadowDepthMaterial, meadowGroundView, meadowShadows, meadowShadowMaterial, screenShadowView } from './MeadowShadows.ts';
 import { GTAO, gtaoBlurMaterial, gtaoDepthMaterial, gtaoMap, gtaoMaterial, gtaoProjection, gtaoView } from './GTAO.ts';
 import { TemporalAA, type TemporalFrame } from './TemporalAA.ts';
 import { Settled, type SettleFrame } from './Settled.ts';
@@ -199,7 +199,7 @@ import { buildDisplay, GRADE_TABLE, NIGHT, TONE_SPACE } from './PipelineDisplay.
 // extent uniforms.
 // The graph runs the whole frame as passes that declare what they read and write: the scene half
 // (at 4x outside the temporal modes first the vegetation's depth, its resolve and the meadow's
-// shade, MeadowShade.ts; then opaque over that depth, the depth and copy resolves, water, the
+// shade, MeadowShadows.ts; then opaque over that depth, the depth and copy resolves, water, the
 // surface resolve, rain), the haze's two kernels, the light shafts' two passes, the composite's
 // constants, the
 // composite, the metering histograms (and their clear before the composite), the meter, the bloom (PhysicalBloom.ts: a pass per level), the sharp image, the display pass,
@@ -427,7 +427,7 @@ export class Pipeline {
 	readonly refraction = new RefractionView();
 	readonly resources: {
 		sceneColor: ResourceHandle; sceneDepth: ResourceHandle; linearDepth: ResourceHandle; opaqueColor: ResourceHandle;
-		meadowCoverage: ResourceHandle | null; meadowDepth: ResourceHandle | null; meadowShade: ResourceHandle | null;
+		meadowCoverage: ResourceHandle | null; meadowDepth: ResourceHandle | null; meadowShadows: ResourceHandle | null;
 		gtaoOpaque: ResourceHandle | null; gtaoOpaqueDepth: ResourceHandle | null; gtaoDepth: ResourceHandle | null; gtaoRaw: ResourceHandle | null; gtaoBlur: ResourceHandle | null; gtao: ResourceHandle | null;
 		underwater: ResourceHandle; refractionReach: ResourceHandle; refraction: ResourceHandle; refractionDepth: ResourceHandle;
 		surfaceDepth: ResourceHandle; velocity: ResourceHandle | null; meterLight: ResourceHandle; exposureState: ResourceHandle; exposureStatePrev: ResourceHandle; surfaceDepthPrev: ResourceHandle | null; veilReactive: ResourceHandle | null;
@@ -452,9 +452,9 @@ export class Pipeline {
 	refractionReachQuad: THREE.QuadMesh;
 	refractionMaskQuad: THREE.QuadMesh;
 	surfaceQuad: THREE.QuadMesh;
-	// the meadow's shade: the depth's nearest view z and the march (MeadowShade.ts)
+	// the meadow's shade: the depth's nearest view z and the march (MeadowShadows.ts)
 	meadowDepthQuad: THREE.QuadMesh | null = null;
-	meadowShadeQuad: THREE.QuadMesh | null = null;
+	meadowShadowQuad: THREE.QuadMesh | null = null;
 	// the ambient occlusion: the half-resolution view z, the slices and the blur (GTAO.ts)
 	gtaoQuads: { depth: THREE.QuadMesh; slices: THREE.QuadMesh; blurX: THREE.QuadMesh; blurY: THREE.QuadMesh } | null = null;
 	// (msaa, off and the temporal modes with `taaResolve=off`: the resolve has a canvas pass of its own)
@@ -655,18 +655,18 @@ export class Pipeline {
 		// the upscale's EASU image (the canvas's size) and the canvas (the resolve has its own)
 		const easu = O.fsrPort && ! RESOLVE && ! FSR3 ? g.color( 'FSR.easu', { size: { of: 'canvas' }, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
 		const canvas = g.import( 'canvas', null, { of: 'canvas' } );
-		// The meadow's shade (MeadowShade.ts): the colour the vegetation's depth pass draws beside the
+		// The meadow's shade (MeadowShadows.ts): the colour the vegetation's depth pass draws beside the
 		// scene's depth (three's targets carry one; never read: with an alpha channel, which alpha to
 		// coverage needs), the depth's nearest view z and the shade.
-		const meadowCoverage = MEADOW_SHADE ? g.color( 'meadowCoverage', { size: RENDER, format: THREE.RGBAFormat, type: THREE.UnsignedByteType, samples: 'scene' } ) : null;
-		const meadowDepth = MEADOW_SHADE ? g.color( 'meadowDepth', { size: RENDER, format: SS_SHADOW ? THREE.RGFormat : THREE.RedFormat, type: THREE.FloatType } ) : null;
+		const meadowCoverage = MEADOW_SHADOWS ? g.color( 'meadowCoverage', { size: RENDER, format: THREE.RGBAFormat, type: THREE.UnsignedByteType, samples: 'scene' } ) : null;
+		const meadowDepth = MEADOW_SHADOWS ? g.color( 'meadowDepth', { size: RENDER, format: SS_SHADOW ? THREE.RGFormat : THREE.RedFormat, type: THREE.FloatType } ) : null;
 		// (over the whole scene the depth's nearest view z and its surface's thickness, and the shade
-		// with both beside it, which the ground marches over: MeadowShade.ts)
-		const meadowShadeMap = MEADOW_SHADE ? g.color( 'meadowShade', SS_SHADOW ? { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType, filter: 'nearest' } : { size: RENDER, format: THREE.RedFormat, type: THREE.UnsignedByteType, filter: 'nearest' } ) : null;
+		// with both beside it, which the ground marches over: MeadowShadows.ts)
+		const meadowShadowMap = MEADOW_SHADOWS ? g.color( 'meadowShadows', SS_SHADOW ? { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType, filter: 'nearest' } : { size: RENDER, format: THREE.RedFormat, type: THREE.UnsignedByteType, filter: 'nearest' } ) : null;
 		// The ambient occlusion (GTAO.ts): at half the render's size, the opaque copies' distance (and
 		// over the whole scene their surfaces' thickness, post/OpaquePrepass.ts) and
 		// their depth (post/OpaquePrepass.ts; the meadow's shade reads them too over the whole scene,
-		// MeadowShade.ts `SS_SHADOW`), the view z, the slices' and the blur's ( occlusion, view z )
+		// MeadowShadows.ts `SS_SHADOW`), the view z, the slices' and the blur's ( occlusion, view z )
 		const half: SizeClass = { of: 'render', divisor: 2 };
 		const OPAQUE_PREPASS = GTAO || SS_SHADOW;
 		const gtaoOpaque = OPAQUE_PREPASS ? g.color( 'gtaoOpaque', { size: half, format: SS_SHADOW ? THREE.RGFormat : THREE.RedFormat, type: THREE.FloatType, filter: 'nearest' } ) : null;
@@ -675,19 +675,19 @@ export class Pipeline {
 		const gtaoRaw = GTAO ? g.color( 'gtaoRaw', { size: half, format: THREE.RGFormat, type: THREE.HalfFloatType, filter: 'nearest' } ) : null;
 		const gtaoBlur = GTAO ? g.color( 'gtaoBlur', { size: half, format: THREE.RGFormat, type: THREE.HalfFloatType, filter: 'nearest' } ) : null;
 		const gtao = GTAO ? g.color( 'gtao', { size: half, format: THREE.RGFormat, type: THREE.HalfFloatType, filter: 'nearest' } ) : null;
-		this.resources = { meadowCoverage, meadowDepth, meadowShade: meadowShadeMap, gtaoOpaque, gtaoOpaqueDepth, gtaoDepth, gtaoRaw, gtaoBlur, gtao, sceneColor, sceneDepth, linearDepth, opaqueColor, underwater, refractionReach, refraction, refractionDepth, surfaceDepth, velocity, meterLight, exposureState, exposureStatePrev, surfaceDepthPrev, veilReactive, rainAir, rainOverlay, rainLayer, rainInput, rainBehind, rainGrade, hdr, sharp, display, easu, canvas };
+		this.resources = { meadowCoverage, meadowDepth, meadowShadows: meadowShadowMap, gtaoOpaque, gtaoOpaqueDepth, gtaoDepth, gtaoRaw, gtaoBlur, gtao, sceneColor, sceneDepth, linearDepth, opaqueColor, underwater, refractionReach, refraction, refractionDepth, surfaceDepth, velocity, meterLight, exposureState, exposureStatePrev, surfaceDepthPrev, veilReactive, rainAir, rainOverlay, rainLayer, rainInput, rainBehind, rainGrade, hdr, sharp, display, easu, canvas };
 		// the targets the frame draws into, made now (the probes, the warm-ups and the water's
 		// textures need them before the first frame)
 		g.renderTarget( velocity ? [ sceneColor, velocity, meterLight ] : [ sceneColor, meterLight ], sceneDepth );
 		for ( const h of [ linearDepth, opaqueColor, underwater, refractionReach, display ] ) g.renderTarget( [ h ] );
 		g.renderTarget( [ refraction ], refractionDepth );
 		g.renderTarget( [ surfaceDepth ] );
-		if ( meadowCoverage && meadowDepth && meadowShadeMap ) {
+		if ( meadowCoverage && meadowDepth && meadowShadowMap ) {
 
 			g.renderTarget( [ meadowCoverage ], sceneDepth );
 			g.renderTarget( [ meadowDepth ] );
-			g.renderTarget( [ meadowShadeMap ] );
-			meadowShade.value = g.texture( meadowShadeMap );
+			g.renderTarget( [ meadowShadowMap ] );
+			meadowShadows.value = g.texture( meadowShadowMap );
 			meadowDepthMap.value = g.texture( meadowDepth );
 
 		}
@@ -750,10 +750,10 @@ export class Pipeline {
 		this.depthQuad = new THREE.QuadMesh( resolveMat );
 		if ( meadowDepth ) {
 
-			// (over the whole scene with the opaque copies' distance, MeadowShade.ts `SS_SHADOW`)
+			// (over the whole scene with the opaque copies' distance, MeadowShadows.ts `SS_SHADOW`)
 			const opaque = SS_SHADOW && gtaoOpaque ? { map: g.texture( gtaoOpaque ), halfSize: g.extent( half ) } : undefined;
 			this.meadowDepthQuad = new THREE.QuadMesh( meadowDepthMaterial( g.texture( sceneDepth ), renderSize, u.projInv, opaque ) );
-			this.meadowShadeQuad = new THREE.QuadMesh( meadowShadeMaterial( g.texture( meadowDepth ), renderSize, u.proj, u.projInv, u.keyView ) );
+			this.meadowShadowQuad = new THREE.QuadMesh( meadowShadowMaterial( g.texture( meadowDepth ), renderSize, u.proj, u.projInv, u.keyView ) );
 			// the ground's march (TerrainMaterial.ts) reads the same values
 			meadowGroundView.size.value = renderSize.value;
 			meadowGroundView.proj.value = u.proj.value;
@@ -1108,7 +1108,7 @@ export class Pipeline {
 		u.proj.value.copy( camera.projectionMatrix );
 		u.view.value.copy( camera.matrixWorldInverse );
 		// the resolve takes the opaque scene's depth while the shade over the whole scene is on
-		// (MeadowShade.ts `SS_SHADOW`, `flags.ssShadow`)
+		// (MeadowShadows.ts `SS_SHADOW`, `flags.ssShadow`)
 		screenShadowView.opaque.value = SS_SHADOW && debugFlags.ssShadow !== false ? 1 : 0;
 		if ( frame.keyDirection ) u.keyView.value.copy( frame.keyDirection );
 		else u.keyView.value.copy( frame.sun.position ).sub( frame.sun.target.position );

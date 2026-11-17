@@ -115,7 +115,7 @@ export function culmMaterial( shared: Shared, plants: PlantInstances ): THREE.Me
 	useSpecular( material, float( CULM_F0 ) );
 	material.name = 'bamboo culms';
 	receiveScreenAO( material );
-	// the whole scene's screen-space shade on the key (post/MeadowShade.ts); as a caster in it, a
+	// the whole scene's screen-space shade on the key (post/MeadowShadows.ts); as a caster in it, a
 	// grown culm's foot diameter deep, so the march does not take a culm for a wall far behind it
 	receiveScreenShadow( material );
 	screenThickness( material, GROVES.height / GROVES.slender );
@@ -374,7 +374,7 @@ export function leafMaterial( shared: Shared, atlas: LeafAtlas, plants: PlantIns
 		name: 'bamboo leaves', roughness: 0.75, wind: BAMBOO_WIND, branches: true, tint: BAMBOO_TINT, tone: 0.22, translucency: LEAF_TRANSLUCENCY,
 		place: placeVertex( v ), shade: v.lookVarying.z, tintAt: v.lookVarying.w,
 	} );
-	// the screen-space ambient occlusion (post/GTAO.ts) and shade on the key (post/MeadowShade.ts)
+	// the screen-space ambient occlusion (post/GTAO.ts) and shade on the key (post/MeadowShadows.ts)
 	receiveScreenAO( material );
 	receiveScreenShadow( material );
 	// what the leaves over a shaded leaf pass on of the key (vegetation/LeafLight.ts)

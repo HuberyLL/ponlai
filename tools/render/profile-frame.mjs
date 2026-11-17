@@ -58,7 +58,8 @@
 //   --world-cache off      generate the island as on a first visit (default on)
 //   --profile-dir dir      Chrome's profile (default <os tmpdir>/ponlai-profile-frame-chrome)
 //   --repeat n             run the whole set n times (default 1)
-//   --detail, --raw, --shots  each pass's own time, every frame, a JPEG per scene
+//   --detail, --raw        each pass's own time, every frame
+//   --screenshots          a JPEG per scene
 //   --out dir, --label name   the output folder (default artifacts/perf/<label>; label: kind + time)
 //   --report path          render summary.md again from a run's files: no browser, no lock
 //   --list                 print the scenes and exit
@@ -74,7 +75,7 @@
 //   stdout: the path of summary.md. stderr: the `[profile]` log of the run.
 //   <out>/profile.json (every figure, with `meta`), <out>/summary.md (the tables and verdicts),
 //   <out>/meta.json and <out>/scenes.jsonl (written as the run goes, for `--report` on an
-//   unfinished run), <out>/load.jsonl (the machine's load once a second, macOS), and with `--shots`
+//   unfinished run), <out>/load.jsonl (the machine's load once a second, macOS), and with `--screenshots`
 //   a JPEG per scene.
 //
 // GPU lock and browser:
@@ -254,7 +255,7 @@ const DETAIL = flags.has( '--detail' );
 const RAW = flags.has( '--raw' );
 const FRESH = flags.has( '--fresh' );
 // a JPEG of each scene after its measurement, to see what was measured
-const SHOTS = flags.has( '--shots' );
+const SCREENSHOTS = flags.has( '--screenshots' );
 // --scale-log: each page's dynamic-scale changes and their reasons per scene, in the run's output and
 // profile.json (`scaleLog`); in --compare also the controller's clock and timers around each slice
 const SCALE_LOG = flags.has( '--scale-log' );
@@ -1860,7 +1861,7 @@ async function runVariant( page, base, evalJs, log, groups = plan( sceneNames ),
 			await prepare( page, scene, evalJs, false );
 			const { frames, info, at } = await measure( page, scene );
 			await checkState( page, scene );
-			if ( SHOTS ) await page.screenshot( { path: path.join( OUT, `${ scene }${ shotSuffix }.jpg` ), type: 'jpeg', quality: 70, scale: 'css' } );
+			if ( SCREENSHOTS ) await page.screenshot( { path: path.join( OUT, `${ scene }${ shotSuffix }.jpg` ), type: 'jpeg', quality: 70, scale: 'css' } );
 			const r = { ...summarise( frames ), profiler: info, gpuIdle: sceneIdle.idle?.mean ?? null, contended: sceneIdle.contended, window: { at } };
 			if ( RAW ) r.raw = frames;
 			if ( SCALE_LOG ) r.scaleLog = await scaleChanges( page );
@@ -1924,7 +1925,7 @@ async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix 
 		const sampled = sampler ? await sampler.stop() : null;
 		const displayed = trace ? displayStats( await trace.end(), sampled, t0, t1 ) : undefined;
 		await checkState( page, scene );
-		if ( SHOTS ) await page.screenshot( { path: path.join( OUT, `${ scene }${ shotSuffix }.jpg` ), type: 'jpeg', quality: 70, scale: 'css' } );
+		if ( SCREENSHOTS ) await page.screenshot( { path: path.join( OUT, `${ scene }${ shotSuffix }.jpg` ), type: 'jpeg', quality: 70, scale: 'css' } );
 		const sw = { ms: r2( switchMs ), ...compile };
 		log( `${ scene.padEnd( 20 ) } switched in ${ Math.round( switchMs ) } ms, warmed ${ compile.seconds } s (${ compile.pipelines } pipelines, ${ compile.pipelineMs } ms JS, last ${ compile.lastCompileMs } ms after the switch)${ compile.scaleSettle ? `, scale settled at ${ compile.scaleSettle.scale } after ${ compile.scaleSettle.seconds } s more` : '' }` );
 		// the window's last frames' timestamps arrive a few frames later (the next scene waits for them)

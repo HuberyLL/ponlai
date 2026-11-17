@@ -110,7 +110,7 @@ The page's agreements, the only ways a tool meets it:
   starts: `app/WorldBoot.ts`) and, with `?profile`, `__PONLAI_PROFILE__` (the frame profiler's
   readings). The scene page mounts the same handles (`app/scenes/ScenePage.ts`).
 - `__THREE_GAME_DIAGNOSTICS__.settled`, true once a paused frame is final
-  (`packages/render/post/Settled.ts`; `docs/reference/page.md`).
+  (`packages/render/post/Settled.ts`; `docs/reference/debug-handles-and-keys.md`).
 
 A tool that needs more of the page adds it to one of the three, never a global of its own.
 

@@ -4,7 +4,7 @@
 // others. Another package imports the island through this file (or through island/land.ts, for the
 // land and the look's numbers), never one of its modules by its path (tools/repo/verify-layers.mjs). It
 // holds re-exports only; no module it loads awaits or reads a page global at load
-// (tools/repo/verify-exits.mjs). The wind probe (debug/WindProbe.ts), which the page loads on demand,
+// (tools/repo/verify-entry-points.mjs). The wind probe (debug/WindProbe.ts), which the page loads on demand,
 // is a lazy exit (tools/repo/layers.json).
 export { awaitWorld, bakeIslandGround, createCharacterShadow, createGrowth, createIslandCamera, createIslandFrame, createLand, createTrample, createVegetation, createWorld, createWorldViews, holdOpaque, registerIslandHistories } from './IslandStages.ts';
 export type { IslandFraming, IslandParts } from './IslandStages.ts';

@@ -3,7 +3,7 @@ import { materialColor, vec4 } from 'three/tsl';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { ALPHA_TO_COVERAGE, TEMPORAL } from '../post/Antialiasing.ts';
 import { VELOCITY_CLEAR, velocityOutput } from '../post/Motion.ts';
-import { MEADOW_SHADE } from '../post/MeadowShade.ts';
+import { MEADOW_SHADOWS } from '../post/MeadowShadows.ts';
 import { followPlantDraw } from './PlantInstances.ts';
 import { settings } from '../Settings.ts';
 import { onSceneDispose } from '../SceneDispose.ts';
@@ -43,7 +43,7 @@ import { onSceneDispose } from '../SceneDispose.ts';
 //   it saves far less.
 // URL options, read at load: vegPrepass=0, vegPrepass=coverage (vegPrepassOpaque = false).
 //
-// With the meadow's shade (post/MeadowShade.ts: at 4x outside the temporal modes) the depth copies
+// With the meadow's shade (post/MeadowShadows.ts: at 4x outside the temporal modes) the depth copies
 // are not their meshes' children but live in a scene of their own (`prepassScene`), drawn in a pass
 // of its own before the opaque scene, into the same depth, which the shade's march reads and the
 // opaque pass loads: the equal test holds as before. Before each of its renders the scene takes its
@@ -124,7 +124,7 @@ function depthMaterial( source: THREE.MeshStandardNodeMaterial ): THREE.MeshBasi
 
 }
 
-/** The depth copies' scene with the meadow's shade (post/MeadowShade.ts): drawn in a pass of its
+/** The depth copies' scene with the meadow's shade (post/MeadowShadows.ts): drawn in a pass of its
  * own before the opaque scene, into the same depth (Pipeline.ts). */
 export const prepassScene = new THREE.Scene();
 prepassScene.name = 'vegetation prepass';
@@ -211,7 +211,7 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 		};
 		// a child: it follows the mesh's transform and visibility; with the meadow's shade, in the
 		// scene of its own pass, following them there (`prepassScene`)
-		if ( MEADOW_SHADE ) {
+		if ( MEADOW_SHADOWS ) {
 
 			depth.matrixAutoUpdate = false;
 			depth.matrixWorldAutoUpdate = false;
@@ -334,7 +334,7 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 	};
 	// (the copies in a scene of their own draw before the scene: they take their meshes' transform
 	// and visibility, ancestors included, as children would)
-	if ( MEADOW_SHADE ) prepassScene.onBeforeRender = () => {
+	if ( MEADOW_SHADOWS ) prepassScene.onBeforeRender = () => {
 
 		sync();
 		apply();

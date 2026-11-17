@@ -3,7 +3,7 @@
 // It answers "how bright are the sunlit blades against bare ground in the same sun, how many of them
 // are lit, how dark are the shaded ones, how much of the lawn do the blades cover, and what colour is
 // the lit lawn on screen", in linear radiance per class of pixel, where a box on a screenshot mixes
-// them. For colour per kind of surface over the whole frame use tools/island/colour-rows.mjs; for the
+// them. For colour per kind of surface over the whole frame use tools/island/region-colours.mjs; for the
 // light through the dusk, tools/island/dusk-grid.mjs.
 //
 // Usage:
@@ -98,7 +98,7 @@
 import '../kit/help.mjs';
 import '../kit/qos.mjs'; // first: the measures run here, over every pixel of seven frames per view
 import { acquireGpuLock, leaseGpuLock, releaseGpuLock } from '../kit/gpu-lock.mjs';
-import { launchCapture, waitForScene, pngShooter, stopLoop, startLoop, decodePng } from '../kit/capture-browser.mjs';
+import { launchCapture, waitForScene, pngCapturer, stopLoop, startLoop, decodePng } from '../kit/capture-browser.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -194,9 +194,9 @@ const PAGES = [
 ];
 // the pages shot (`--pages`); the rest are read from `--reuse`'s run
 // (`none`: every page read from it, so a changed measure runs on a saved run without the browser)
-const shoot = options.pages === 'none' ? [] : options.pages ? options.pages.split( ',' ).filter( ( s ) => s !== '' ) : PAGES.filter( ( p ) => ! p.extra ).map( ( p ) => p.name );
-if ( ! shoot.every( ( n ) => PAGES.some( ( p ) => p.name === n ) ) ) { console.error( `--pages: of ${ PAGES.map( ( p ) => p.name ).join( ', ' ) }` ); process.exit( 2 ); }
-if ( PAGES.some( ( p ) => ! p.optional && ! shoot.includes( p.name ) ) && ! options.reuse ) { console.error( '--pages without every page needs --reuse dir' ); process.exit( 2 ); }
+const capturePages = options.pages === 'none' ? [] : options.pages ? options.pages.split( ',' ).filter( ( s ) => s !== '' ) : PAGES.filter( ( p ) => ! p.extra ).map( ( p ) => p.name );
+if ( ! capturePages.every( ( n ) => PAGES.some( ( p ) => p.name === n ) ) ) { console.error( `--pages: of ${ PAGES.map( ( p ) => p.name ).join( ', ' ) }` ); process.exit( 2 ); }
+if ( PAGES.some( ( p ) => ! p.optional && ! capturePages.includes( p.name ) ) && ! options.reuse ) { console.error( '--pages without every page needs --reuse dir' ); process.exit( 2 ); }
 const reuse = options.reuse ? path.resolve( options.reuse ) : null, save = options.save ? path.resolve( options.save ) : null;
 if ( save ) mkdirSync( save, { recursive: true } );
 const extraFlags = options.flags.split( ',' ).filter( ( s ) => s !== '' );
@@ -363,7 +363,7 @@ const shots = new Map( views.map( ( v ) => [ v.name, {} ] ) );
 const label = 'meadow-light';
 let failed = false;
 const errors = [];
-if ( shoot.length ) {
+if ( capturePages.length ) {
 
 	await acquireGpuLock( label, { shared: true } );
 	const capture = await launchCapture( { viewport: { width: Number( options.w ), height: Number( options.h ) }, deviceScaleFactor: Number( options.scale ), url } );
@@ -371,7 +371,7 @@ if ( shoot.length ) {
 	page.on( 'pageerror', ( e ) => errors.push( e.message ) );
 	try {
 
-		for ( const p of PAGES.filter( ( p ) => shoot.includes( p.name ) ) ) {
+		for ( const p of PAGES.filter( ( p ) => capturePages.includes( p.name ) ) ) {
 
 			await leaseGpuLock( label, { shared: true, budget: 0 } );
 			let current = null; // the query the page holds
@@ -417,9 +417,9 @@ if ( shoot.length ) {
 					if ( p.name === 'normal' ) {
 
 						await stopLoop( page );
-						const shooter = await pngShooter( page, { timeout } );
-						const png = await shooter.shoot();
-						await shooter.close();
+						const capturer = await pngCapturer( page, { timeout } );
+						const png = await capturer.capture();
+						await capturer.close();
 						await startLoop( page );
 						writeFileSync( path.join( out, `${ view.name }.png` ), png );
 						shot.png = png;
@@ -896,11 +896,11 @@ for ( const view of views ) {
 	// the pages left out of this run, from `--reuse`'s
 	for ( const p of PAGES ) {
 
-		if ( shoot.includes( p.name ) ) continue;
+		if ( capturePages.includes( p.name ) ) continue;
 		try {
 
 			const { read, placed, png } = loadPage( view.name, p.name );
-			const w = shot[ shoot[ 0 ] ]?.w ?? read.w, h = shot[ shoot[ 0 ] ]?.h ?? read.h;
+			const w = shot[ capturePages[ 0 ] ]?.w ?? read.w, h = shot[ capturePages[ 0 ] ]?.h ?? read.h;
 			if ( read.w !== w || read.h !== h ) throw new Error( `${ read.w }x${ read.h }, not ${ w }x${ h }` );
 			shot[ p.name ] = read;
 			if ( ! shot.placed ) shot.placed = placed;

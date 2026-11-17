@@ -425,7 +425,7 @@ takes the render pipeline's options of this page (the sky and weather, `paused`,
   GUI's Ambient folder does the same), e.g. `--eval "P.ambient.override = true;
   P.ambient.manual.skyBounce = 0.5"` before a radiance read under `lightOnly`.
 - The meadow's light and the grade's switches (`packages/render/debug/DebugFlags.ts` lists them
-  all), for A/Bs of the look: `flags=meadowShade:false` (the screen-space shade and its depth pass),
+  all), for A/Bs of the look: `flags=meadowShadows:false` (the screen-space shade and its depth pass),
   `groundCast:false`, `groundShade:false`, `grassShadow:false`, `grassClumps:false`,
   `shadowWind:false` (the plants cast their rest pose and the sun's map goes back to its stepped
   redraws; live, so `--toggle "s.flags.shadowWind = on"` times the swayed shadows); the meadow's
@@ -453,7 +453,7 @@ takes the render pipeline's options of this page (the sky and weather, `paused`,
   Tone curve folder (in Post), or `s.pipeline.settings.curve` (read every frame;
   `packages/render/look/DisplayLook.ts` `toneCurve`; a set the solve cannot meet keeps the last good
   curve and warns, and only the default set failing throws, on the dev server).
-  `fgview=meadowShade` shows the shade's map.
+  `fgview=meadowShadows` shows the shade's map.
 - The screen-space ambient occlusion (`packages/render/post/GTAO.ts`, on in high: the tier's `ao`
   knob builds it and the opaque scene's depth prepass at load,
   `packages/render/post/OpaquePrepass.ts`): `flags=gtao:false` builds without it, `flags=gtao` with
@@ -595,7 +595,7 @@ takes the render pipeline's options of this page (the sky and weather, `paused`,
   (`packages/game/sim/standin.ts`) thinks for the islander
   by default. `window.__PONLAI__.game` is the Game for the console: `.sim`, `act( id, calls )` (tool
   calls for an islander, `[ { tool, args } ]`: the five actions, through the entrance a brain's
-  answer takes), `listen( fn )` (the simulation's events as they come), `setBrain( brain )` (kept
+  answer takes), `listen( fn )` (the simulation's events as they come), `setAgent( brain )` (kept
   across a load; `null` leaves the islander idle),
   `think( id )`, `walkTo( id, x, z )`, `placeBlueprint( kind, x, z )` (a building of a kind,
   `'chest'`, any number, each with an id like `chest1`; returns why not, or null), `focus( id )`,

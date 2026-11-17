@@ -5,13 +5,14 @@ Chrome and reports the frame interval, the GPU time per pass, the tick's JavaScr
 with their cause and the startup. Its usage, options, output, lock and exit codes are in its header
 (`node tools/render/profile-frame.mjs --help --full`). This page holds the rest: the scenes, the
 modes, how the runs hold the GPU lock, and how to read the results. The steps for measuring a
-change: the skill [measuring-performance-changes](../../skills/measuring-performance-changes/SKILL.md)
-and its [binding](../bindings/measuring-performance-changes.md).
+change: the skill
+[measuring-performance-changes](../../skills/measuring-performance-changes/SKILL.md) and its
+[binding](../bindings/measuring-performance-changes.md).
 
 Contents:
 
 - [Scenes](#scenes)
-- [High's standard](#highs-standard)
+- [The high tier's performance target](#the-high-tiers-performance-target)
 - [Timestamps](#timestamps)
 - [Modes](#modes)
 - [A/B comparisons](#ab-comparisons)
@@ -52,7 +53,7 @@ half the frame there; `horizon-clear-noon` is the same view without a deck. `mea
 placed on the camera's ground (`controls.ground`). `weather-change` measures a front sweeping in,
 with its pipeline compiles and bakes; scenes with a change run last.
 
-## High's standard
+## The high tier's performance target
 
 The reference is a production build (`npm run build && npm run preview`, port 5191, the default
 url); the dev server works for quick checks. The default viewport is a generic 4K display: 1920 by
@@ -248,8 +249,8 @@ come from `--timestamps off` or `both` (see [Timestamps](#timestamps)).
 
 Each scene reports the frame interval's median, p95 and p99, the GPU time per pass, the tick's
 JavaScript time, the hitches with their cause, the render scale the frames were drawn at, and the
-startup. `--detail` adds each pass's own time and `--raw` every frame. `--shots` saves a JPEG of
-each scene after its measurement (profile runs, not A/Bs). A scene measured while something else
+startup. `--detail` adds each pass's own time and `--raw` every frame. `--screenshots` saves a JPEG
+of each scene after its measurement (profile runs, not A/Bs). A scene measured while something else
 kept the GPU busy is marked `(contended)` in summary.md's table, a compare's as a single profile's.
 
 `--eval` runs in the page for every scene, after its camera is placed and before its warm-up, with

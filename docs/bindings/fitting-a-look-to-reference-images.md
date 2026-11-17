@@ -25,7 +25,7 @@ Rules for every change); keep them and the run's notes in the task's artifacts f
 ## Measure
 
 - Region rows on your frames, by kind of surface and kind of light (sunlit rock, shaded grass, the
-  sky, the darkest land) in Oklab: `tools/island/colour-rows.mjs` (its
+  sky, the darkest land) in Oklab: `tools/island/region-colours.mjs` (its
   header). It reads the same cells before and after a change.
 - Boxes on a reference image or a capture: `uv run tools/kit/img.py stats` with `--oklab`,
   `--split` or `--linear`. On the test scenes, each shot's readings (`readings.json` of
@@ -40,7 +40,7 @@ Rules for every change); keep them and the run's notes in the task's artifacts f
 ## Knobs
 
 - The knobs, what each does on screen and where it is read: the skill
-  `building-cinematic-stylised-realism`, its `renderer-knobs.md`.
+  `building-cinematic-stylised-realism`, its `look-parameters.md`.
 - The island's values are in `packages/island/look/`; fitted values are written there.
 - Trying values without a rebuild: the tunables (`docs/reference/url-options.md`, Tunable
   parameters). At run time `__PONLAI__.tune.set( { name: value } )` (`P.tune` in a probe or a

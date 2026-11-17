@@ -195,7 +195,7 @@ async function jump( page, query ) {
 // Moves to a view, waits until the page is ready (the floor's frames and the loading screen gone,
 // the settled signal, the image stable with the loop stopped) and shoots it. Returns the PNG, the
 // readiness record, the diagnostics and the readings.
-async function shoot( page, view ) {
+async function captureView( page, view ) {
 
 	await page.evaluate( ( v ) => {
 
@@ -271,7 +271,7 @@ try {
 			await slot( key );
 			t0 = Date.now();
 			await jump( page, queryOf( scene, time ) );
-			const shot = await shoot( page, view );
+			const shot = await captureView( page, view );
 			shotCount ++;
 			const image = decodePng( shot.png );
 			const readings = {};
@@ -302,7 +302,7 @@ try {
 
 				await slot( `${ key } rebuilt` );
 				await jump( page, queryOf( scene, time ) );
-				const shot = await shoot( page, view );
+				const shot = await captureView( page, view );
 				shotCount ++;
 				if ( ! samePixels( shots.get( key ), shot.png ) ) {
 
@@ -339,7 +339,7 @@ try {
 			await slot( `${ key } reverse` );
 			t0 = Date.now();
 			await jump( page, queryOf( scene, time ) );
-			const shot = await shoot( page, view );
+			const shot = await captureView( page, view );
 			shotCount ++;
 			await differs( key, shot.png, 'reverse' );
 			console.log( `${ key } reverse ${ shot.ready.status } ${ ( ( Date.now() - t0 ) / 1000 ).toFixed( 1 ) } s` );
@@ -360,7 +360,7 @@ try {
 				const key = `${ scene }/${ time.name }.${ view }`;
 				// (the first view by the load alone; the others after a jump to the same time, as on the first page)
 				if ( view !== views[ 0 ] ) await jump( page, queryOf( scene, time ) );
-				const shot = await shoot( page, view );
+				const shot = await captureView( page, view );
 				shotCount ++;
 				await differs( key, shot.png, 'fresh' );
 

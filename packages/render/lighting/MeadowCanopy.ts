@@ -19,7 +19,7 @@ type V3 = THREE.Node<'vec3'>;
 // the path through the canopy, so a low sun deepens the shade without turning the meadow olive.
 // That canopy is level, as deep over every point, and gives every blade at one depth the same share
 // of the key, so none is lit and none shaded: with the meadow's screen-space shade (post/
-// MeadowShade.ts) the blades take its march in its place and keep this only under the temporal
+// MeadowShadows.ts) the blades take its march in its place and keep this only under the temporal
 // modes. What it leaves out is the sward's own relief: the taller tussocks stand over their
 // neighbours and shade them on the side away from the light (`meadowCastLight`, once per tuft), and
 // the crowns shade the ground under and beside them (`meadowGroundLight`, the turf's).
