@@ -18,7 +18,9 @@
 //
 // A file fails when its extension is an asset type (ASSET, the same list as .gitignore's), when git
 // reads it as binary (a NUL byte in its first 8000 bytes), or when it is larger than MAX_BYTES
-// (1 MiB). A submodule is not a file and is skipped.
+// (1 MiB). A submodule is not a file and is skipped; a symbolic link holds a path, not the bytes of
+// the file it names, so its extension does not count (the example's public/, examples/rock/, links
+// to files of the git-ignored public/).
 //
 // Output: on success one line on stdout with the count of files (or, with --history, objects)
 // checked; on failure the list on stderr, each path with why it fails.
@@ -48,7 +50,7 @@ function checkIndex( paths ) {
 
 		const [ meta, path ] = record.split( '\t' );
 		const [ mode, sha ] = meta.split( ' ' );
-		if ( mode !== '160000' ) entries.set( path, { sha, why: [] } ); // a submodule is no file
+		if ( mode !== '160000' ) entries.set( path, { sha, link: mode === '120000', why: [] } ); // a submodule is no file
 
 	}
 
@@ -66,7 +68,7 @@ function checkIndex( paths ) {
 	list.forEach( ( path, i ) => {
 
 		const entry = entries.get( path );
-		if ( ASSET.test( path ) ) entry.why.unshift( 'asset type' );
+		if ( ASSET.test( path ) && ! entry.link ) entry.why.unshift( 'asset type' );
 		if ( Number( sizes[ i ] ) > MAX_BYTES ) entry.why.push( `${ ( Number( sizes[ i ] ) / 1048576 ).toFixed( 1 ) } MiB` );
 
 	} );
@@ -83,11 +85,22 @@ function checkHistory() {
 		found.get( path ).add( why );
 
 	};
-	for ( const line of lines( git( [ 'log', '--all', '--no-renames', '--numstat', '--format=' ] ) ) ) {
+	// --raw gives each change's new mode (`:<old> <new> ...`), --numstat whether git read it as binary
+	const links = new Set();
+	const changes = lines( git( [ 'log', '--all', '--no-renames', '--raw', '--numstat', '--format=' ] ) );
+	for ( const line of changes ) {
 
+		const [ meta, path ] = line.split( '\t' );
+		if ( meta.startsWith( ':' ) && meta.split( ' ' )[ 1 ] === '120000' ) links.add( path );
+
+	}
+
+	for ( const line of changes ) {
+
+		if ( line.startsWith( ':' ) ) continue;
 		const [ added, , path ] = line.split( '\t' );
 		if ( added === '-' ) add( path, 'binary' );
-		if ( ASSET.test( path ) ) add( path, 'asset type' );
+		if ( ASSET.test( path ) && ! links.has( path ) ) add( path, 'asset type' );
 
 	}
 
