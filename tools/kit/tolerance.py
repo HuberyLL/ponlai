@@ -2,8 +2,8 @@
 image, and when two MSAA paused frames do inside the region the sea's held reflection reaches.
 Imported by diff-set.py (--temporal, --held); every threshold lives in TEMPORAL and HELD below.
 
-Why a tolerance: MSAA paused frames are byte-repeatable, temporal ones are not. The GPU ends a render
-pass on its own (a tile's binned geometry overflows, preemption) at points that vary from draw to
+Why a tolerance: MSAA paused frames are bit-identical between runs, temporal ones are not. The GPU
+ends a render pass on its own (a tile's binned geometry overflows, preemption) at points that vary from draw to
 draw, and a split pass shades a few samples differently (mostly through fragment derivatives). MSAA
 shows one frame, so a glitch in it is gone the next frame; the temporal rest averages 40 frames and
 freezes whatever glitches those frames held. Making that bit-exact would cost product changes we
@@ -30,9 +30,9 @@ the tolerance (`use`: the largest measurement / threshold); the weakest regressi
 Each threshold sits at two to four times the worst A/A value of its measurement. Windows are
 W x W at a stride of W / 2, so any square of 1.5 W lies whole inside one.
 
-The held rule (HELD): MSAA paused frames repeat byte for byte but where the sea's reflection
-reaches. The reflection averages a fixed sequence of frames of the opaque image and holds the
-result (packages/render/ocean/SeaReflection.ts, Rest); a few of those frames can differ in their
+The held rule (HELD): MSAA paused frames are bit-identical between runs except where the sea's
+reflection reaches. The reflection averages a fixed sequence of frames of the opaque image and
+holds the result (packages/render/ocean/SeaReflection.ts, Rest); a few of those frames can differ in their
 last bits from load to load, and the held result keeps what they held. The region is the cells of
 the render the reflection last traced from, which each capture records (`held`:
 packages/render/debug/HeldRegion.ts), grown by `dilate` cells for the upscale and the sharpening

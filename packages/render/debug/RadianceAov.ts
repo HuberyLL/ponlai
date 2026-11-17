@@ -22,7 +22,7 @@ import { SEA_STEP } from '../weather/VolumetricHaze.ts';
 //           camera, normalised; ( 0, 0, 0 ) where every texel is sky. The camera's matrices are
 //           read when called (the frame drawn last must have been drawn with them: a paused page).
 //   ao      ( the screen-space occlusion's visibility, 1 open ): post/GTAO.ts's output at half
-//           size, sampled at the cell's texels' halves; 1 where the page builds no GTAO.
+//           size, sampled at the cell's texels' halves; 1 where the app builds no GTAO.
 //   class   ( the kind's index in debug/Classes.ts FIT_CLASSES, or -1 ): on a page with
 //           `flags=classes`, the kind most of the cell's texels decode to, -1 when no kind holds
 //           more than half of them; the sky and the sea by depth (as `depth` above), the rest from

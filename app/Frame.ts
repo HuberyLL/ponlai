@@ -7,7 +7,7 @@
 //   and its draw, the island's frame stages (IslandStages.ts `createIslandFrame`: the growth, the
 //   camera, the night's lights, the sward's tint, the life, the islanders, the trample), the GUI's
 //   mirrors of the weather and the wind, and the camera's glide among the reasons a frame is not
-//   settled. The order is part of the image: a stage reads what the ones before it wrote in the same
+//   settled. The order affects the rendered image: a stage reads what the ones before it wrote in the same
 //   frame, so a new call goes in the slot its statements belong to.
 // - A load that measures the GPU for its tier (QualityDetect.ts) holds the dynamic scale at its
 //   nominal until it is done and reads the GPU's time from the frame's timer, or times frames on an
@@ -61,7 +61,7 @@ export function islandFrame( render: RenderParts, island: IslandParts, page: Pag
 					if ( render.paused && game && ! game.sim.paused ) render.paused = false;
 
 				},
-				// in the game the simulation's clock sets the pace of the day (and so of the page's weather)
+				// in the game the simulation's clock sets the pace of the day (and so of the app's weather)
 				dayStep: game ? ( rawDt ) => game.update( rawDt ) : undefined,
 				beforeDay: () => stages.grow(),
 				// the sky shows the simulation's hour, whatever else moved the day clock
@@ -154,7 +154,7 @@ export function islandLoop( parts: () => RenderParts, island: IslandParts, page:
 
 }
 
-/** The page's keys. */
+/** The app's keys. */
 export function addKeys( render: RenderParts, page: PageParts ): void {
 
 	const { dayCycle } = render;

@@ -8,7 +8,7 @@ import type { ShoreField } from '../../render/data.ts';
 //
 // A debug view of the world's chunks (packages/island/world/Chunks.ts): every chunk's square drawn on the ground
 // (the meadow's top, and the sea floor seen through the water) with a post at each corner, so a
-// seam in the image can be told from a chunk border (GUI Ground folder, `chunkBorders` URL option).
+// seam in the rendered image can be told from a chunk border (GUI Ground folder, `chunkBorders` URL option).
 // The cliff between the two is left out. main.ts builds it on first show, so its material's
 // pipeline exists only then.
 

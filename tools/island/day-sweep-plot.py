@@ -5,10 +5,10 @@
 """Draws tools/island/day-sweep.mjs's curves: one PNG per camera and weather, over the day.
 
 Five panels share the day's hours: the sun's elevation, the frame's exposure (EV), and the sky, the
-sea, the land and the land's darkest 5 % by log2 luminance of the rows' mean colour, Oklab chroma
-and Oklab hue. The steps day-sweep flagged are circled on the curves in their region's colour, and
-the pairs of frames the camera turned between (a change of the picture, not of the light) are
-shaded. day-sweep runs it; run it by hand only to redraw a run's curves.
+sea, the land and the land's darkest 5 % by log2 luminance of the measurements' mean colour, Oklab
+chroma and Oklab hue. The steps day-sweep flagged are circled on the curves in their region's
+colour, and the pairs of frames the camera turned between (a change of the view, not of the
+lighting) are shaded. day-sweep runs it; run it by hand only to redraw a run's curves.
 
 Usage:
     uv run tools/island/day-sweep-plot.py <series.json> <outDir>

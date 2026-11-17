@@ -33,7 +33,7 @@ import { Space } from './Space.ts';
 //   several side by side in the needs' order (satiety on the left).
 // - Thinking (a thought in flight, Sim.thinking, after hearing the player): the characters heard
 //   circle the head, at most six at a time, the whole line taking turns as each passes behind the
-//   head; words heard meanwhile wait for the next thought. Only a brain that hears keeps the
+//   head; words heard meanwhile wait for the next thought. Only an agent that hears keeps the
 //   characters that land (Game.hears): the stand-in's islanders hear none.
 // - Speaking (an islander's `said` event, sim/events.ts, heard through Game.listen: the latest
 //   line each islander said, never the state polled): the characters pop out of the mouth one at a time, each
@@ -204,7 +204,7 @@ export class People {
 	}
 
 	/** A character of the player's `line` (UiShared.lines) has sunk into an islander's head: it is
-	 * heard, by a brain that hears. */
+	 * heard, by an agent that hears. */
 	hear( id: EntityId, c: string, line: number ): void {
 
 		const m = this.marks.get( id );
@@ -234,7 +234,7 @@ export class People {
 			flag( m.talkBox, 'hidden', ! m.shown );
 			if ( m.shown ) css( m.root, 'transform', `translate(${ m.x.toFixed( 1 ) }px,${ m.y.toFixed( 1 ) }px)` );
 			this.alerts( m, v.needs, selected );
-			// (a brain that does not hear, put in its slot, keeps nothing heard for the next that does)
+			// (an agent that does not hear, put in its slot, keeps nothing heard for the next that does)
 			if ( ! hears && m.heard.length > 0 ) m.heard = [];
 			this.thinking( m, sim.thinking( v.id ) );
 			this.talking( m, v );

@@ -6,7 +6,7 @@
 // load's progress; the class `done` lifts it, with a CSS fade the page styles, which has ended once
 // its computed opacity is 0), and the page's globals on `window`. It is the render pipeline's one
 // module that reads the browser's globals for a scene (tools/repo/verify-layers.mjs, PAGE_NEEDS),
-// behind its own exit (render/browser.ts) that only the page takes.
+// behind its own entry point (render/browser.ts) that only the app layer imports.
 import type { SceneHost, SceneStore } from './SceneHost.ts';
 
 export interface BrowserHostOptions {

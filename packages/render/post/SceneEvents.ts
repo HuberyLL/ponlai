@@ -3,9 +3,9 @@ import { motionState, taaCut } from './Motion.ts';
 import { restEpoch } from './TemporalRest.ts';
 import { onSceneDispose } from '../SceneDispose.ts';
 
-// The page's scene events for the temporal modes: what changes the scene says so in one call.
+// The app's scene events for the temporal modes: what changes the scene says so in one call.
 //
-// The page's scene events for the temporal modes (Antialiasing.ts: aa=taa|taau). A temporal frame
+// The app's scene events for the temporal modes (Antialiasing.ts: aa=taa|taau). A temporal frame
 // is a function of the frames before it, so whatever changes the scene in a way the frames
 // themselves do not show must say so, at the site that does it, with one call: `renderEvent( reason
 // )` for the render pipeline's own reasons, the function of the declaration that names it for the
@@ -21,9 +21,9 @@ import { onSceneDispose } from '../SceneDispose.ts';
 // is built on it declares its own where it raises them (the island's growth, the game), so this
 // module names none of theirs. A declaration returns the function that raises its reasons and no
 // others, so a misspelt reason, or one of another declaration, does not compile; a reason declared
-// twice is refused. A declaration says only whether a reason cuts, so the reasons only the page
+// twice is refused. A declaration says only whether a reason cuts, so the reasons only the app
 // raises (the loop's start, a resize, a view jump) are declared among the render pipeline's, where
-// the rest of what they mean is known. Generic sites only (the page's setters and handlers), never
+// the rest of what they mean is known. Generic sites only (the app's setters and handlers), never
 // the camera controls' internals: a teleport of the camera that no event covers (a direct
 // assignment from the console, a control's own jump) is caught by Motion.ts's camera-delta detector
 // (more than 8 m, 30 degrees or 2 % of field of view in one rendered frame). Under MSAA the epoch
@@ -54,7 +54,7 @@ export function declareSceneEvents<const T extends Record<string, boolean>>( rea
 
 /** The render pipeline's own reasons, and whether each cuts. */
 const RENDER_EVENTS = {
-	// the frame loop starts (the page's first frame) or restarts (`loop.start()` after a stop)
+	// the frame loop starts (the app's first frame) or restarts (`loop.start()` after a stop)
 	'loop start': true,
 	// the page shows again (visibilitychange to visible): its last frame may be minutes old
 	'visible': true,
@@ -69,7 +69,7 @@ const RENDER_EVENTS = {
 	// the time of day or a time preset set at once (`setHour`, `setPreset`)
 	'set hour': true,
 	'set preset': true,
-	// the tier's runtime knobs applied (`applyQuality`: the clouds' view and march, the cadences)
+	// the tier's runtime settings applied (`applyQuality`: the clouds' view and march, the cadences)
 	'apply quality': true,
 	// the canvas changed size (a window resize); a render-scale step is not an event: the histories
 	// are carried across it (TemporalAA.ts)
@@ -79,10 +79,10 @@ const RENDER_EVENTS = {
 	'camera mode': true,
 	// any control of the GUI (bubbling to its root): it retunes the image in place
 	'gui': false,
-	// a look's knob set from a script (`setGrade`: the grade's table filled anew; `setLawnGain`):
+	// a look's parameter set from a script (`setGrade`: the grade's table filled anew; `setLawnGain`):
 	// the same, without the GUI
 	'retune': false,
-	// the page's keyboard toggles (Space: pause, H: the GUI)
+	// the app's keyboard toggles (Space: pause, H: the GUI)
 	'key toggle': false,
 	// `__PONLAI__.taa.restart()`
 	'restart': true,

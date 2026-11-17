@@ -15,7 +15,7 @@ import { diffuseOcclusion } from '../lighting/AmbientGrade.ts';
 //                  The specular stays.
 //   lightOnly:2    the same with the specular off too (direct and ambient).
 //   grey:<albedo>  the grey's albedo under lightOnly instead of 0.5: `grey:0.18` turns every lit
-//                  surface into an 18 % grey card, whose screen code values the display chain's
+//                  surface into an 18 % grey card, whose display values the display chain's
 //                  exposure and curve are set against (Pipeline.ts, Exposure.ts).
 //   ambientOnly    the key light (the sun or the moon) taken out of the lit materials, with the
 //                  vegetation's transmitted light and the feathers' (all of them its

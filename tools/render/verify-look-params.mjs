@@ -51,7 +51,7 @@ import { createExposure } from '../../packages/render/look/ExposureLook.ts';
 import { DayCycle, cloudMoonShare, displayNight, eveningHour, exposureNight, morningHour, moonKeyShare, nightAmbientAt, nightAmbientShare, rampIn, skyNight, starNight, nightGlowShare } from '../../packages/render/sky/DayCycle.ts';
 import { createDayWindows } from '../../packages/render/look/DayLook.ts';
 import { Wind, createWindUniforms, plantSpeedOf, windResponse } from '../../packages/render/weather/Wind.ts';
-import { AMBIENT_COLUMNS, AMBIENT_KNOBS, DEFAULT_KNOBS, createAmbientTables, createKeyLift } from '../../packages/render/look/AmbientLook.ts';
+import { AMBIENT_COLUMNS, AMBIENT_SETTINGS, DEFAULT_AMBIENT_SETTINGS, createAmbientTables, createKeyLift } from '../../packages/render/look/AmbientLook.ts';
 import { liftedKeyDirection, liftedKeyHeight } from '../../packages/render/lighting/KeyLift.ts';
 import { createHazeTables } from '../../packages/render/look/HazeLook.ts';
 import { hazeKeyAt } from '../../packages/render/weather/HazeKeys.ts';
@@ -404,29 +404,29 @@ console.log( `Wind: three responses from three tables, each its own (${ WIND_SPE
 //
 // The ambient light's look (packages/render/look/AmbientLook.ts `createAmbientTables`,
 // `createKeyLift`), in plain node, made from the island's ambient table, the neutral one and a copy
-// of the island's with every knob of every row moved, both gains under overcast's deck and the gain
+// of the island's with every parameter of every row moved, both gains under overcast's deck and the gain
 // on the sun's bounce raised, and the lift's rows and corner moved. Guarantees, each a failure:
 // - Each set holds its own table's numbers: the gain on the sun's bounce, the sun's and the moon's
 //   parts of the land gain under overcast's deck, the grade (setting and rising) at every row's
-//   elevation in every sky alone (the knobs at no grade under a row's changes), held beyond the end
-//   rows, and the knobs at no grade under no sky; the lift's shading at every row's elevation, held
+//   elevation in every sky alone (the parameters at no grade under a row's changes), held beyond the
+//   end rows, and the parameters at no grade under no sky; the lift's shading at every row's elevation, held
 //   below the first, the key's own elevation well above the last, and none at all from the neutral
 //   set (every elevation shading as itself: its single row's slopes and its corner of no width
 //   divide by nothing).
 // - Making the others leaves the island's as it was: the grade over a grid of elevations, skies and
 //   both sides, and the lift over a grid of elevations, are the same numbers bit for bit before and
 //   after.
-// - The changed copy differs from the island's in every knob and every gain, and in the lift.
+// - The changed copy differs from the island's in every parameter and every gain, and in the lift.
 // - The lifted key (packages/render/lighting/KeyLift.ts) follows the lift it is given: its height
 //   and its direction's elevation for a sun key are the lift's shading elevation, the key's own
 //   under the neutral set.
 
-// the island's ambient table changed: every knob of every row moved (by its column), the gains raised,
+// the island's ambient table changed: every parameter of every row moved (by its column), the gains raised,
 // the lift's rows and corner moved
 function changedAmbient( look ) {
 
 	const a = look.ambient;
-	const row = ( r ) => ( { at: r.at, ...Object.fromEntries( AMBIENT_COLUMNS.map( ( column, c ) => [ column, Object.fromEntries( AMBIENT_KNOBS.map( ( k ) => [ k, ( r[ column ]?.[ k ] ?? DEFAULT_KNOBS[ k ] ) + 0.125 * ( c + 1 ) ] ) ) ] ) ) } );
+	const row = ( r ) => ( { at: r.at, ...Object.fromEntries( AMBIENT_COLUMNS.map( ( column, c ) => [ column, Object.fromEntries( AMBIENT_SETTINGS.map( ( k ) => [ k, ( r[ column ]?.[ k ] ?? DEFAULT_AMBIENT_SETTINGS[ k ] ) + 0.125 * ( c + 1 ) ] ) ) ] ) ) } );
 	return {
 		grade: a.grade.map( row ),
 		gradeRising: a.gradeRising.map( row ),
@@ -446,11 +446,11 @@ for ( let e = - 30; e <= 60; e += 0.125 ) LIFT_ELEVATIONS.push( e );
 function ambientReadings( tables, lift ) {
 
 	const out = [ tables.sunBounceGain(), tables.overcastLand(), tables.overcastMoonLand ];
-	const knobs = { ...DEFAULT_KNOBS };
+	const params = { ...DEFAULT_AMBIENT_SETTINGS };
 	for ( const e of ELEVATIONS ) for ( const sky of AMBIENT_SKIES ) for ( const rising of [ false, true ] ) {
 
-		tables.evaluate( e, sky, knobs, rising );
-		for ( const k of AMBIENT_KNOBS ) out.push( knobs[ k ] );
+		tables.evaluate( e, sky, params, rising );
+		for ( const k of AMBIENT_SETTINGS ) out.push( params[ k ] );
 
 	}
 	for ( const e of LIFT_ELEVATIONS ) out.push( lift( e ) );
@@ -464,20 +464,20 @@ function ownAmbient( tables, lift, table, name ) {
 	assert.equal( tables.sunBounceGain(), table.sunBounceGain, `${ name } ambient: sunBounceGain` );
 	assert.equal( tables.overcastLand(), table.overcastLand, `${ name } ambient: overcastLand` );
 	assert.equal( tables.overcastMoonLand, table.overcastMoonLand, `${ name } ambient: overcastMoonLand` );
-	const knobs = { ...DEFAULT_KNOBS };
+	const params = { ...DEFAULT_AMBIENT_SETTINGS };
 	for ( const [ side, rows, rising ] of [ [ 'grade', table.grade, false ], [ 'gradeRising', table.gradeRising, true ] ] ) {
 
 		const at = ( r, e, label ) => AMBIENT_COLUMNS.forEach( ( column, c ) => {
 
-			tables.evaluate( e, ONE_SKY[ c ], knobs, rising );
-			for ( const k of AMBIENT_KNOBS ) assert.equal( knobs[ k ], r[ column ]?.[ k ] ?? DEFAULT_KNOBS[ k ], `${ name } ambient: ${ side } ${ label } ${ column } ${ k }` );
+			tables.evaluate( e, ONE_SKY[ c ], params, rising );
+			for ( const k of AMBIENT_SETTINGS ) assert.equal( params[ k ], r[ column ]?.[ k ] ?? DEFAULT_AMBIENT_SETTINGS[ k ], `${ name } ambient: ${ side } ${ label } ${ column } ${ k }` );
 
 		} );
 		for ( const r of rows ) at( r, r.at, `at ${ r.at }` );
 		at( rows[ 0 ], rows[ 0 ].at + 10, 'held above' );
 		at( rows[ rows.length - 1 ], rows[ rows.length - 1 ].at - 10, 'held below' );
-		tables.evaluate( 10, [ 0, 0, 0, 0 ], knobs, rising );
-		for ( const k of AMBIENT_KNOBS ) assert.equal( knobs[ k ], DEFAULT_KNOBS[ k ], `${ name } ambient: ${ side } under no sky, ${ k }` );
+		tables.evaluate( 10, [ 0, 0, 0, 0 ], params, rising );
+		for ( const k of AMBIENT_SETTINGS ) assert.equal( params[ k ], DEFAULT_AMBIENT_SETTINGS[ k ], `${ name } ambient: ${ side } under no sky, ${ k }` );
 
 	}
 	const rows = table.keyLift.rows, last = rows[ rows.length - 1 ];
@@ -496,17 +496,17 @@ for ( const [ name, { tables, lift } ] of Object.entries( ambients ) ) ownAmbien
 ambientReadings( islandAmbient.tables, islandAmbient.lift ).forEach( ( v, i ) => assert.ok( Object.is( v, islandAmbientBefore[ i ] ), `the island's ambient reading ${ i } moved: ${ islandAmbientBefore[ i ] } -> ${ v }` ) );
 // the neutral set lifts nothing: every elevation shades as itself
 for ( const e of LIFT_ELEVATIONS ) assert.equal( ambients.neutral.lift( e ), e, `neutral lift: at ${ e }` );
-// the changed copy differs from the island's in every knob, every gain and the lift
+// the changed copy differs from the island's in every parameter, every gain and the lift
 {
 
-	const knobs = { ...DEFAULT_KNOBS }, island = { ...DEFAULT_KNOBS };
-	for ( const k of AMBIENT_KNOBS ) {
+	const params = { ...DEFAULT_AMBIENT_SETTINGS }, island = { ...DEFAULT_AMBIENT_SETTINGS };
+	for ( const k of AMBIENT_SETTINGS ) {
 
 		const moved = ELEVATIONS.some( ( e ) => AMBIENT_SKIES.some( ( sky ) => {
 
-			ambients.changed.tables.evaluate( e, sky, knobs );
+			ambients.changed.tables.evaluate( e, sky, params );
 			islandAmbient.tables.evaluate( e, sky, island );
-			return knobs[ k ] !== island[ k ];
+			return params[ k ] !== island[ k ];
 
 		} ) );
 		assert.ok( moved, `changed ambient: ${ k } reads as the island's` );
@@ -532,7 +532,7 @@ for ( const [ name, { lift } ] of Object.entries( ambients ) ) for ( const e of 
 }
 assert.ok( [ 0.5, 3, 5.5 ].every( ( e ) => islandAmbient.lift( e ) !== e ), 'the island\'s lift lifts a low sun' );
 
-console.log( `Ambient light: three sets from three tables, each its own (${ islandAmbientBefore.length } readings), the island's unmoved by the others, the changed copy off the island's in every knob, gain and the lift, the neutral set lifting nothing, the lifted key on its own lift (${ liftedKeys } keys): passed.` );
+console.log( `Ambient light: three sets from three tables, each its own (${ islandAmbientBefore.length } readings), the island's unmoved by the others, the changed copy off the island's in every parameter, gain and the lift, the neutral set lifting nothing, the lifted key on its own lift (${ liftedKeys } keys): passed.` );
 
 // the island's sky tables (the sky's look, below), made here for the haze's key, which reads their
 // clouds' base
@@ -739,7 +739,7 @@ console.log( `Haze: three sets from three tables, each its own, the haze's key o
 // failure:
 // - Each set holds its own table's numbers: every field as the table wrote it (the base grade the
 //   table's changes over no grade, each change read back), and each table keyed by the sun and the
-//   weather (the shade's contrast, the desaturation, the white balance, the bloom: DayKeys.ts
+//   weather (the shadow contrast, the desaturation, the white balance, the bloom: DayKeys.ts
 //   `keyed`) read at every key's elevation on both sides, under a full cloud at every clouded key
 //   and at full night is that key's, the clouded day's and the night's values.
 // - Making the others leaves the island's as it was: its table, and every keyed table over a grid of
@@ -747,7 +747,7 @@ console.log( `Haze: three sets from three tables, each its own, the haze's key o
 // - The changed copy differs from the island's in every field, and the neutral set somewhere.
 
 // the display's tables keyed by the sun and the weather (DayKeys.ts), and the plain ones
-const DISPLAY_KEYED = [ 'shadeContrast', 'desaturation', 'whiteBalance', 'bloom' ];
+const DISPLAY_KEYED = [ 'shadowContrast', 'desaturation', 'whiteBalance', 'bloom' ];
 const DISPLAY_PLAIN = [ 'coolShare', 'highlightGrey', 'strengths', 'vignette', 'whiteOvercast', 'toneCurve', 'bloomStart', 'purkinje' ];
 const DISPLAY_FIELDS = [ ...DISPLAY_KEYED, ...DISPLAY_PLAIN, 'baseGrade' ];
 // a copy of `look`'s display table with every number moved: a key a degree later, any other number
@@ -885,7 +885,7 @@ console.log( `Display: three sets from three tables, each its own (${ displayRea
 //   luminance), and each function that reads them at every row of the table that row's numbers: the
 //   light lent to the island (`landSky`) at every setting row, every clouded row under a full
 //   cloud and every rising row, under no cloud and a full one; the clear shade's and the low key's
-//   rows; the sky's light, the clear day's gain and the thin layer's colours (DayKeys.ts `keyed`) at
+//   rows; the sky's light, the clear day's gain and the cirrus colours (DayKeys.ts `keyed`) at
 //   every key on both sides, under a full cloud at every clouded key and at full night; the clouds'
 //   rows and base (`cloudBase`) per sky, and the shadow's share the weather's; each store's night
 //   range (`storeNight`) under each sky alone and with no blend; the sea's knee, the key under cloud
@@ -944,8 +944,8 @@ const SKY_MIXES = [ null, ...ONE_SKY, [ 0.4, 0.1, 0.3, 0.2 ], [ 0.5, 0.5, 0, 0 ]
 const SKY_TRANSMITTANCES = [ [ 0.93, 0.95, 0.97 ], [ 0.7, 0.8, 0.88 ], [ 0.3, 0.45, 0.6 ], [ 0.02, 0.08, 0.2 ], [ 1e-4, 2e-3, 2e-2 ], [ 0.5, 0, 0.1 ] ];
 const SKY_TINTS = [ [ 1, 1, 1 ], [ 1.1, 0.98, 0.9 ] ];
 const SKY_KEYED = [ 'skyLight', 'clearSky', 'streakDirect', 'streakAmbient' ];
-const SKY_PLAIN = [ 'cloudLightTint', 'clearShadeTint', 'lowSun', 'lowSunTint', 'keyDeckWhite', 'moonKey', 'moonKeyLuminance', 'moonSkyHue', 'nightAmbientHue', 'nightAmbientShare' ];
-const SKY_READ = [ 'landSky', 'clearShade', 'storeRange', 'lowKey', 'cloudSkies', 'shadowDensity', 'seaKnee', 'keyHue', 'moonHue', 'keyThroughCloud' ];
+const SKY_PLAIN = [ 'cloudLightTint', 'clearSkyFillTint', 'lowSun', 'lowSunTint', 'keyDeckWhite', 'moonKey', 'moonKeyLuminance', 'moonSkyHue', 'nightAmbientHue', 'nightAmbientShare' ];
+const SKY_READ = [ 'landSky', 'clearSkyFill', 'storeRange', 'lowKey', 'cloudSkies', 'shadowDensity', 'seaKnee', 'keyHue', 'moonHue', 'keyThroughCloud' ];
 const SKY_FIELDS = [ ...SKY_KEYED, ...SKY_PLAIN, ...SKY_READ ];
 
 // every number a set of tables gives, by field: what its functions read over a grid of elevations,
@@ -963,7 +963,7 @@ function skyReadings( t ) {
 	for ( const e of SKY_ELEVATIONS ) {
 
 		out.lowKey.push( byElevation( t.lowKey, e, 'gain' ) );
-		out.clearShade.push( byElevation( t.clearShade, e, 'share' ) );
+		out.clearSkyFill.push( byElevation( t.clearSkyFill, e, 'share' ) );
 
 	}
 	for ( const group of [ 'dome', 'layer', 'panorama' ] ) for ( const mix of SKY_MIXES ) out.storeRange.push( storeNight( t, group, mix ) );
@@ -1028,9 +1028,9 @@ function ownSky( t, table, name ) {
 	};
 	assert.deepEqual( Object.keys( t ).sort(), [ ...SKY_FIELDS ].sort(), `${ name } sky: its fields` );
 	tinted( t.cloudLightTint, table.cloudLightTint, 'cloudLightTint' );
-	tinted( t.clearShadeTint, table.clearShadeTint, 'clearShadeTint' );
+	tinted( t.clearSkyFillTint, table.clearSkyFillTint, 'clearSkyFillTint' );
 	tinted( t.lowSunTint, table.lowSunTint, 'lowSunTint' );
-	for ( const f of [ 'clearShade', 'lowSun', 'keyDeckWhite', 'storeRange', 'lowKey', 'moonKey', 'moonSkyHue', 'nightAmbientHue', 'nightAmbientShare' ] ) {
+	for ( const f of [ 'clearSkyFill', 'lowSun', 'keyDeckWhite', 'storeRange', 'lowKey', 'moonKey', 'moonSkyHue', 'nightAmbientHue', 'nightAmbientShare' ] ) {
 
 		assert.deepEqual( t[ f ], table[ f ], `${ name } sky: ${ f }` );
 		reads ++;
@@ -1048,10 +1048,10 @@ function ownSky( t, table, name ) {
 		read( gain, rising && cloud ? landSky( t, row.at, false, clouded, 1 ) : row.gain ?? 1, `${ what }'s gain` );
 
 	} );
-	for ( const rows of [ table.clearShade, table.lowKey ] ) for ( const row of rows ) {
+	for ( const rows of [ table.clearSkyFill, table.lowKey ] ) for ( const row of rows ) {
 
 		const key = rows === table.lowKey ? 'gain' : 'share';
-		read( byElevation( rows === table.lowKey ? t.lowKey : t.clearShade, row.at, key ), row[ key ], `${ key } at ${ row.at }` );
+		read( byElevation( rows === table.lowKey ? t.lowKey : t.clearSkyFill, row.at, key ), row[ key ], `${ key } at ${ row.at }` );
 
 	}
 	reads += keysReadOwn( t.skyLight, table.skyLight, `${ name } sky: skyLight` );
@@ -1335,15 +1335,15 @@ try {
 	const gradeReadings = ( grade ) => GRADE_INPUTS.map( ( input ) => {
 
 		grade.update( ...input );
-		return { table: { ...grade.table }, uniforms: Object.fromEntries( AMBIENT_KNOBS.map( ( k ) => [ k, ambient[ k ].value ] ) ) };
+		return { table: { ...grade.table }, uniforms: Object.fromEntries( AMBIENT_SETTINGS.map( ( k ) => [ k, ambient[ k ].value ] ) ) };
 
 	} );
 	// what a controller on `tables` writes, worked out from them (lighting/AmbientGrade.ts `update`)
 	const gradeWanted = ( tables ) => GRADE_INPUTS.map( ( [ elevation, weights, rising, moonElevation, moonShare ] ) => {
 
-		const table = tables.evaluate( elevation, weights, { ...DEFAULT_KNOBS }, rising );
-		table.sunBounce = withMoon( table.sunBounce, tables.evaluate( moonElevation, weights, { ...DEFAULT_KNOBS } ).sunBounce, moonShare );
-		const uniforms = Object.fromEntries( AMBIENT_KNOBS.map( ( k ) => [ k, table[ k ] ] ) );
+		const table = tables.evaluate( elevation, weights, { ...DEFAULT_AMBIENT_SETTINGS }, rising );
+		table.sunBounce = withMoon( table.sunBounce, tables.evaluate( moonElevation, weights, { ...DEFAULT_AMBIENT_SETTINGS } ).sunBounce, moonShare );
+		const uniforms = Object.fromEntries( AMBIENT_SETTINGS.map( ( k ) => [ k, table[ k ] ] ) );
 		const land = tables.overcastLand(), moon = tables.overcastMoonLand, overcast = weights[ 3 ] ?? 0;
 		uniforms.sunBounce *= tables.sunBounceGain();
 		uniforms.sunBounce *= moon === 1

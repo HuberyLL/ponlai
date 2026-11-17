@@ -42,14 +42,14 @@ type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
-// The clouds' kernels: density, march, panorama, shadow map, rain, thin layer and deck mean.
+// The clouds' kernels: density, march, panorama, shadow map, rain, cirrus and deck mean.
 //
 // The clouds' kernels (Clouds.ts, whose header says what they draw): the density, the march, the
-// panorama, the shadow map, the rain, the thin layer and the deck's mean, built for the current tier
-// knobs as one function of the clouds. A name in backticks with no file is this file's, Clouds.ts's
+// panorama, the shadow map, the rain, the cirrus and the deck's mean, built for the current tier
+// settings as one function of the clouds. A name in backticks with no file is this file's, Clouds.ts's
 // or CloudModel.ts's.
 
-/** Build the march and the panorama and shadow kernels for the current tier knobs; the view's
+/** Build the march and the panorama and shadow kernels for the current tier settings; the view's
  * kernels follow on its next update. */
 export function buildKernels( clouds: Clouds ): void {
 
@@ -595,7 +595,7 @@ export function buildKernels( clouds: Clouds ): void {
 
 	};
 
-	// The thin layer: a sheet of fibres `streakHeight` up on the curved Earth, so they close up
+	// The cirrus: a sheet of fibres `streakHeight` up on the curved Earth, so they close up
 	// toward the horizon in true perspective, combed along the drift (Streaks.ts) and gathered in
 	// patches a few to twenty kilometres across (the synoptic field), filtered by each pixel's
 	// footprint on the sheet. Within a patch the depth is the fibres' with a silk between them (the

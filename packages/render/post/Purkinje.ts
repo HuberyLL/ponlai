@@ -51,7 +51,7 @@
 //   key and the fill are functions of the clock, the weather and the tuning; the sky's irradiance
 //   is the environment's, which on a running page cross-fades between bakes as it does for every
 //   material it lights), so the shift is a function of the frame's light and colour. The meter
-//   reads the shifted frame and settles on it as on any other, a paused frame repeats bit for bit
+//   reads the shifted frame and settles on it as on any other, a paused frame is bit-identical
 //   at any strength and a scene jump draws a fresh load's; on a running page the shift follows the
 //   light as smoothly as the light changes, never the exposure's adaptation or the pre-exposure's
 //   whole stops. The metered exposure is not the scale: the shift moves the meter's

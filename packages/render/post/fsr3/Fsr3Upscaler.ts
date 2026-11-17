@@ -17,9 +17,9 @@ import { fsr3MipBiasScale } from './MipBias.ts';
 import { preExposure } from '../PreExposure.ts';
 import type { N } from './Core.ts';
 
-// The page's FSR 3.1 upscaler, on the TSL port of AMD's FidelityFX FSR 3.1.5 in this folder.
+// The app's FSR 3.1 upscaler, on the TSL port of AMD's FidelityFX FSR 3.1.5 in this folder.
 //
-// The page's FSR 3.1 upscaler (Antialiasing.ts: aa=fsr3), on the TSL port of AMD's FidelityFX FSR
+// The app's FSR 3.1 upscaler (Antialiasing.ts: aa=fsr3), on the TSL port of AMD's FidelityFX FSR
 // 3.1.5 in this folder (Host.ts: the host's maths and frame plan; Bindings.ts: the resources and
 // constants; Passes.ts: the kernels). It stands where AMD's integration guide puts it: after the
 // scene and its composite of haze and shafts (`hdr`, scene radiance at the render's size, FSR's
@@ -82,7 +82,7 @@ import type { N } from './Core.ts';
 // frame's jitter, draws the same frame (`jitter.restIndex` = the sequence's length). Leaving the
 // rest continues from FSR's state.
 //
-// The reactive-mask generator (`fsr3.autoReactive`, `debugFlags.fsrAutoReactive`; a load knob: its
+// The reactive-mask generator (`fsr3.autoReactive`, `debugFlags.fsrAutoReactive`; a load-time setting: its
 // kernel is built only then) runs before the upscaler on the scene colour (before the composite)
 // against the opaque copy, its mask taken with the reactive input by the larger value. The mip bias
 // (MipBias.ts) follows the live render and canvas widths every frame.
@@ -153,7 +153,7 @@ const fovOf = ( p: THREE.Matrix4 ) => 2 * Math.atan( 1 / p.elements[ 5 ] );
 
 export class Fsr3Upscaler {
 
-	/** The page's upscaler, once built. */
+	/** The app's upscaler, once built. */
 	static current: Fsr3Upscaler | null = null;
 	readonly settings: TemporalSettings;
 	/** The rest convergence. */

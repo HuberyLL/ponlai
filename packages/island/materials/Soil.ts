@@ -63,7 +63,7 @@ export const soilUniforms = {
 	depth: uniform( 1 ),
 };
 
-/** Shows the soil layer or leaves it out: the page's switch (`soil`, the GUI's Ground folder). */
+/** Shows the soil layer or leaves it out: the app's switch (`soil`, the GUI's Ground folder). */
 export function setSoilStrength( on: boolean ): void {
 
 	soilUniforms.strength.value = on ? 1 : 0;

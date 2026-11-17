@@ -2,21 +2,21 @@
 //
 // A running scene's jump (StartScene.ts): `establishScene` moves the page to another scene as a
 // fresh load of its query holds it, `setTime` moves the (paused) scene clock, and SCENE_OPTIONS
-// names the query options that make a scene on any page; a page adds its own (`sceneOptions`).
+// names the query options that make a scene on any page; an app adds its own (`sceneOptions`).
 // A whole scene at once, as a page loads it (the capture tools' one page per set; the profiler's
 // scene switches). `establishScene( query )` (a string or URLSearchParams) leaves the page as a
 // fresh load of `?<query>` would draw it, from any scene before: once the caller has rendered a
 // frame at the jump's camera and then run what it runs after a load (a view's eval), the paused
-// frame equals the fresh load's, to the byte wherever the fresh load repeats itself
+// frame equals the fresh load's, to the byte wherever the fresh load is itself reproducible
 // (tools/island/verify-scene-jump.mjs checks every parity view from several scenes before).
 // - The scene's options come from the query, each one left out at its load default
-//   (RenderStages.ts `sceneOptions`, with the page's defaults): the weather established (wet in
+//   (RenderStages.ts `sceneOptions`, with the app's defaults): the weather established (wet in
 //   rain; auto weather without `weather`), the day clock (hour or preset, moon phase, day length,
 //   paused), the scene clock (`t`, `paused`) and the wind integrated to it, the cloud override. The
-//   page's own options then (`jump`: its camera, say).
+//   app's own options then (`jump`: its camera, say).
 // - What the scenes before left behind is cleared, in the order the histories were registered
-//   (post/SceneHistory.ts): the render pipeline's, the page's own (`histories`), the render
-//   pipeline's light, the frame pacer's. The sky bakes as the page's first bake (Sky.reset: both
+//   (post/SceneHistory.ts): the render pipeline's, the app's own (`histories`), the render
+//   pipeline's light, the frame pacer's. The sky bakes as a fresh load's first bake (Sky.reset: both
 //   endpoints and atlases, the clouds as before the first frame), the lightning forgets its
 //   strikes, the storm sea its foam window, the refracted sun its map (back to its size and redrawn
 //   at once after the bake, as the load's `prepare` draws it), the fog its bank; the sun's map
@@ -51,11 +51,11 @@ export type SceneRequest = string | { toString(): string; getAll( name: string )
 export interface SceneJumpContent {
 	/** every option a jump may change on this page (SCENE_OPTIONS by default) */
 	sceneOptions?: readonly string[];
-	/** the page's value of a load-time option, where it is not the address's */
+	/** the app's value of a load-time option, where it is not the URL's */
 	pageValue?( key: string ): string[] | null;
-	/** the page's part of a jump to a query (read by the page's own names), after the scene's options are set: its camera, say */
+	/** the app's part of a jump to a query (read by the app's own names), after the scene's options are set: its camera, say */
 	jump?( query: SettingsQuery<string> ): Promise<void> | void;
-	/** registers the page's histories, between the render pipeline's and its light's */
+	/** registers the app's histories, between the render pipeline's and its light's */
 	histories?(): void;
 }
 

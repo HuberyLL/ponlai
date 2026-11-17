@@ -38,10 +38,11 @@ const REFRACTION_ROW = row( 'refraction', [ col( 'refraction', 'load', 'store' )
 const MASK_ROW = row( 'refractionMask', [ col( 'refraction', 'clear', 'store' ) ], dep( 'refractionDepth', true, 'clear', 'store' ) );
 // and the lookups' reach it reads
 const REACH_ROW = row( 'refractionReach', [ col( 'refractionReach', 'clear', 'store' ) ] );
-// the meadow's shade (at 4x): the depth's nearest view z and the shade, both read by the next pass
+// the meadow's screen-space shadows (at 4x): the depth's nearest view z and the shadows, both read
+// by the next pass
 const MEADOW_ROWS = [
 	row( 'meadowDepthResolve', [ col( 'meadowDepth', 'clear', 'store' ) ] ),
-	row( 'meadowShade', [ col( 'meadowShade', 'clear', 'store' ) ] ),
+	row( 'meadowShadows', [ col( 'meadowShadows', 'clear', 'store' ) ] ),
 ];
 const RESOLVES = {
 	depthResolve: row( 'depthResolve', [ col( 'linearDepth', 'clear', 'store' ) ] ),
@@ -249,7 +250,7 @@ export const checks = [
 
 		const c = compileToday();
 		const clear = c.ops( 'derived', c.maskOf( [ 'refractionReach', 'refractionMask', 'refraction', 'rain', 'output' ] ) );
-		assert.deepEqual( clear.running, [ 'meadowDepth', 'meadowDepthResolve', 'meadowShade', 'opaque', 'underwaterPyramid', 'refractionReach', 'refractionMask', 'refraction', 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve', 'rain', 'hazeLight', 'postConstants', 'composite', ...BLOOM_PASSES, 'sharp', 'display', 'output' ] );
+		assert.deepEqual( clear.running, [ 'meadowDepth', 'meadowDepthResolve', 'meadowShadows', 'opaque', 'underwaterPyramid', 'refractionReach', 'refractionMask', 'refraction', 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve', 'rain', 'hazeLight', 'postConstants', 'composite', ...BLOOM_PASSES, 'sharp', 'display', 'output' ] );
 		assert.deepEqual( strip( clear ).slice( 0, 10 ), DERIVED_FULL.slice( 0, 10 ) );
 		// without the refraction the scene target's ops are the same (the water reads it optionally)
 		const dry = c.ops( 'derived', c.maskOf( [ 'rain', 'output' ] ) );

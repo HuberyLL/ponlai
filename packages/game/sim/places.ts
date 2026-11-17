@@ -14,7 +14,7 @@ import type { ActionResult, Vec2, Villager } from './types.ts';
 // `do( action )` (actions.ts) runs at a place the islander stands at; the simulation holds no
 // branch per place or option, so a new kind of place, or a new option at one, is a definition.
 //
-// Every place has an id, which the brain names it by, and a kind (shore, chest, person), which
+// Every place has an id, which the agent names it by, and a kind (shore, chest, person), which
 // perception shows beside the id so that several of a kind read as such.
 //
 // Standing at a place means standing on one of its cells (`reaches`): walking to it (`go`) ends on

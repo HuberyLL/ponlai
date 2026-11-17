@@ -20,7 +20,7 @@ import { beginMotionFrame, METER_LIGHT, onTaaCut } from './Motion.ts';
 import { preExposure } from './PreExposure.ts';
 import { RAIN_OVERLAY } from './AfterResolve.ts';
 import { jitter } from './Jitter.ts';
-import { MEADOW_SHADE, SS_SHADOW, meadowDepthMap, meadowDepthMaterial, meadowGroundView, meadowShade, meadowShadeMaterial, screenShadowView } from './MeadowShade.ts';
+import { MEADOW_SHADOWS, SS_SHADOW, meadowDepthMap, meadowDepthMaterial, meadowGroundView, meadowShadows, meadowShadowMaterial, screenShadowView } from './MeadowShadows.ts';
 import { GTAO, gtaoBlurMaterial, gtaoDepthMaterial, gtaoMap, gtaoMaterial, gtaoProjection, gtaoView } from './GTAO.ts';
 import { TemporalAA, type TemporalFrame } from './TemporalAA.ts';
 import { Settled, type SettleFrame } from './Settled.ts';
@@ -199,7 +199,7 @@ import { buildDisplay, GRADE_TABLE, NIGHT, TONE_SPACE } from './PipelineDisplay.
 // extent uniforms.
 // The graph runs the whole frame as passes that declare what they read and write: the scene half
 // (at 4x outside the temporal modes first the vegetation's depth, its resolve and the meadow's
-// shade, MeadowShade.ts; then opaque over that depth, the depth and copy resolves, water, the
+// screen-space shadows, MeadowShadows.ts; then opaque over that depth, the depth and copy resolves, water, the
 // surface resolve, rain), the haze's two kernels, the light shafts' two passes, the composite's
 // constants, the
 // composite, the metering histograms (and their clear before the composite), the meter, the bloom (PhysicalBloom.ts: a pass per level), the sharp image, the display pass,
@@ -285,7 +285,7 @@ import { buildDisplay, GRADE_TABLE, NIGHT, TONE_SPACE } from './PipelineDisplay.
 //   tone mapping, curve space and white balance after Patry, "Real-Time Samurai Cinema" (SIGGRAPH
 //   2021), in this order: the desaturation (`desaturation`) and the local tone mapping first
 //   (LocalTone.ts: a function of the frame, nothing kept between frames), one
-//   curve and grade (the shade's contrast, `shadeContrast`; the tone, TONE, and the night's grade, NIGHT, over it are off by default), then
+//   curve and grade (the shadows' contrast, `shadowContrast`; the tone, TONE, and the night's grade, NIGHT, over it are off by default), then
 //   the grade's tables (GradeLut.ts, indexed by the square root of the curve's linear output: the first generated from the grade's parameters, `grade` and
 //   `setGrade`, the second the identity), then overcast's highlights toward grey (`highlightGrey`).
 //   The curve maps each channel in the
@@ -325,21 +325,22 @@ const CANVAS: SizeClass = { of: 'canvas' };
  * rings) and the storm's spray, drawn after the resolve (AfterResolve.ts), while either shows. */
 export interface PipelineFrame {
 	scene: THREE.Scene; waterScene: THREE.Scene; rainScene?: THREE.Scene; overlay?: boolean; afterScene?: THREE.Scene; camera: THREE.Camera;
-	// the vegetation's depth copies with the meadow's shade (VegetationPrepass.ts `prepassScene`)
+	// the vegetation's depth copies with the meadow's screen-space shadows (VegetationPrepass.ts
+	// `prepassScene`)
 	prepassScene?: THREE.Scene;
-	// the opaque scene's depth copies with the ambient occlusion or the screen-space shade over the
+	// the opaque scene's depth copies with the ambient occlusion or the screen-space shadows over the
 	// whole scene (post/OpaquePrepass.ts)
 	opaquePrepassScene?: THREE.Scene;
 	water: { prepare( sun: THREE.DirectionalLight ): void } | null; sun: THREE.DirectionalLight; time: number;
 	// the key's shading direction (world, toward the light: lighting/KeyLift.ts), which the
-	// meadow's shade marches along; left out, the light's own
+	// meadow's screen-space shadows march along; left out, the light's own
 	keyDirection?: THREE.Vector3;
-	// the temporal resolve's per-frame inputs from the page (the rest's signature and stability, the
+	// the temporal resolve's per-frame inputs from the app (the rest's signature and stability, the
 	// frame's delta)
 	temporal?: TemporalFrame;
 	// the settled signal's per-frame inputs (Settled.ts; debug builds): left out, it is not observed
 	settle?: SettleFrame;
-	// the haze's rest inputs (VolumetricHaze.ts: the page's signature and stability); left out, the
+	// the haze's rest inputs (VolumetricHaze.ts: the app's signature and stability); left out, the
 	// haze never rests
 	haze?: HazeFrame;
 }
@@ -363,8 +364,8 @@ export interface PipelineSettings {
 	lut: number;
 	// tidewater's grade: the bloom's strength and the vignette's
 	bloom: number; vignette: number;
-	// the light's tone over tidewater's grade (0 none, 1 full): lights a touch golden, the shade a
-	// touch teal, the contrast round mid grey softer and the bloom a little stronger
+	// the lighting's tone over tidewater's grade (0 none, 1 full): highlights a touch golden,
+	// shadows a touch teal, the contrast round mid grey softer and the bloom a little stronger
 	tone: number;
 	// 0 by day, 1 at night (from the clock, main.ts): how far the night's grade has come in (NIGHT)
 	night: number;
@@ -376,14 +377,15 @@ export interface PipelineSettings {
 	skyMix: number[];
 }
 
-// The light's tone over tidewater's grade (docs/design/art-direction.md, The light): a photographic image
-// pushed a little toward a painted one. Lights turn a touch golden and the shade a touch teal (by
-// the exposed luminance, so the night takes it as the day), the contrast round mid grey softens by
-// a tenth and the bloom strengthens by a quarter. It lifts no black: a constant fill in the grade
-// greyed everything below mid grey alike and veiled the frame; the shade's openness comes from the
-// sky light the island takes instead (look/SkyLook.ts `clearShade`). 0.5 of the full step was chosen over 0
-// and 1 by eye. Off by default since (docs/design/art-direction.md, The light: the light keeps the sun's
-// and the sky's own balance): with the clear shade it took the light's direction out of the
+// The lighting's tone over tidewater's grade (docs/design/art-direction.md, Lighting): a
+// photographic image pushed a little toward a painted one. Highlights turn a touch golden and
+// shadows a touch teal (by the exposed luminance, so the night takes it as the day), the contrast
+// round mid grey softens by a tenth and the bloom strengthens by a quarter. It lifts no black: a
+// constant fill in the grade greyed everything below mid grey alike and veiled the frame; the
+// shadows' openness comes from the sky light the island takes instead (look/SkyLook.ts
+// `clearSkyFill`). 0.5 of the full step was chosen over 0 and 1 by eye. It is off by default
+// (docs/design/art-direction.md, Lighting: the lighting keeps the sun's and the sky's own
+// balance): with the clear-sky fill light (`clearSkyFill`) it took the light's direction out of the
 // meadow. `flags=tone:<t>` sets it at load for A/Bs.
 const TONE = Number( debugFlags.tone ?? 0 );
 
@@ -427,7 +429,7 @@ export class Pipeline {
 	readonly refraction = new RefractionView();
 	readonly resources: {
 		sceneColor: ResourceHandle; sceneDepth: ResourceHandle; linearDepth: ResourceHandle; opaqueColor: ResourceHandle;
-		meadowCoverage: ResourceHandle | null; meadowDepth: ResourceHandle | null; meadowShade: ResourceHandle | null;
+		meadowCoverage: ResourceHandle | null; meadowDepth: ResourceHandle | null; meadowShadows: ResourceHandle | null;
 		gtaoOpaque: ResourceHandle | null; gtaoOpaqueDepth: ResourceHandle | null; gtaoDepth: ResourceHandle | null; gtaoRaw: ResourceHandle | null; gtaoBlur: ResourceHandle | null; gtao: ResourceHandle | null;
 		underwater: ResourceHandle; refractionReach: ResourceHandle; refraction: ResourceHandle; refractionDepth: ResourceHandle;
 		surfaceDepth: ResourceHandle; velocity: ResourceHandle | null; meterLight: ResourceHandle; exposureState: ResourceHandle; exposureStatePrev: ResourceHandle; surfaceDepthPrev: ResourceHandle | null; veilReactive: ResourceHandle | null;
@@ -452,9 +454,9 @@ export class Pipeline {
 	refractionReachQuad: THREE.QuadMesh;
 	refractionMaskQuad: THREE.QuadMesh;
 	surfaceQuad: THREE.QuadMesh;
-	// the meadow's shade: the depth's nearest view z and the march (MeadowShade.ts)
+	// the meadow's screen-space shadows: the depth's nearest view z and the march (MeadowShadows.ts)
 	meadowDepthQuad: THREE.QuadMesh | null = null;
-	meadowShadeQuad: THREE.QuadMesh | null = null;
+	meadowShadowQuad: THREE.QuadMesh | null = null;
 	// the ambient occlusion: the half-resolution view z, the slices and the blur (GTAO.ts)
 	gtaoQuads: { depth: THREE.QuadMesh; slices: THREE.QuadMesh; blurX: THREE.QuadMesh; blurY: THREE.QuadMesh } | null = null;
 	// (msaa, off and the temporal modes with `taaResolve=off`: the resolve has a canvas pass of its own)
@@ -503,7 +505,7 @@ export class Pipeline {
 	readonly luts = lutNodes();
 	/** The first table's grade (GradeLut.ts): `setGrade` changes it and fills the table anew. */
 	readonly grade: GradeParams;
-	// the shade's contrast this frame (`shadeContrast`)
+	// the shadows' contrast this frame (`shadowContrast`)
 	private readonly shade = { pivot: 0, slope: 0 };
 	private readonly desaturation = { amount: 0, cool: 0 };
 	private readonly white = { r: 1, g: 1, b: 1 };
@@ -515,7 +517,7 @@ export class Pipeline {
 		// tidewater's grade (the bloom's strength the display's: the constructor sets it)
 		bloom: uniform( 0 ), tone: uniform( 0 ), night: uniform( 0 ),
 		vignette: uniform( 1 ),
-		// the shade's contrast (`shadeContrast`): its pivot as an exposed luminance, and its slope
+		// the shadows' contrast (`shadowContrast`): its pivot as an exposed luminance, and its slope
 		shadePivot: uniform( 0.8 ), shadeSlope: uniform( 0 ),
 		// the desaturation before the local gain (`desaturation`)
 		desaturate: uniform( 0 ), desaturateCool: uniform( 0 ),
@@ -537,7 +539,7 @@ export class Pipeline {
 		// the scene camera's (inside a full-screen pass the camera nodes refer to the pass's own camera)
 		projInv: uniform( new THREE.Matrix4() ), cameraWorld: uniform( new THREE.Matrix4() ),
 		proj: uniform( new THREE.Matrix4() ), view: uniform( new THREE.Matrix4() ),
-		// the key light's direction in the scene camera's view space (the meadow's shade)
+		// the key light's direction in the scene camera's view space (the meadow's screen-space shadows)
 		keyView: uniform( new THREE.Vector3( 0, 1, 0 ) ),
 		// 1 where the display pass adds the dither (drawn at the canvas's size, not upscaled after)
 		ditherOn: uniform( 1 ),
@@ -615,7 +617,7 @@ export class Pipeline {
 		const refractionDepth = g.depth( 'refractionDepth', { size: REFRACTION_SIZE, type: THREE.FloatType } );
 		// The temporal modes' motion vectors (rg: the NDC motion since the previous frame, b: the
 		// surface's class, a: its reactive weight; Motion.ts), and the nearest surface's depth of the
-		// frame before, for the resolve's disocclusion test (a copy at the frame's end).
+		// previous frame, for the resolve's disocclusion test (a copy at the frame's end).
 		// (in the scene's target: its sample count, one under the temporal modes)
 		const velocity = TEMPORAL ? g.color( 'velocity', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType, samples: 'scene' } ) : null;
 		// The metering illuminance M (the header's rules), the scene target's last attachment; at 4x
@@ -655,18 +657,18 @@ export class Pipeline {
 		// the upscale's EASU image (the canvas's size) and the canvas (the resolve has its own)
 		const easu = O.fsrPort && ! RESOLVE && ! FSR3 ? g.color( 'FSR.easu', { size: { of: 'canvas' }, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
 		const canvas = g.import( 'canvas', null, { of: 'canvas' } );
-		// The meadow's shade (MeadowShade.ts): the colour the vegetation's depth pass draws beside the
-		// scene's depth (three's targets carry one; never read: with an alpha channel, which alpha to
-		// coverage needs), the depth's nearest view z and the shade.
-		const meadowCoverage = MEADOW_SHADE ? g.color( 'meadowCoverage', { size: RENDER, format: THREE.RGBAFormat, type: THREE.UnsignedByteType, samples: 'scene' } ) : null;
-		const meadowDepth = MEADOW_SHADE ? g.color( 'meadowDepth', { size: RENDER, format: SS_SHADOW ? THREE.RGFormat : THREE.RedFormat, type: THREE.FloatType } ) : null;
-		// (over the whole scene the depth's nearest view z and its surface's thickness, and the shade
-		// with both beside it, which the ground marches over: MeadowShade.ts)
-		const meadowShadeMap = MEADOW_SHADE ? g.color( 'meadowShade', SS_SHADOW ? { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType, filter: 'nearest' } : { size: RENDER, format: THREE.RedFormat, type: THREE.UnsignedByteType, filter: 'nearest' } ) : null;
+		// The meadow's screen-space shadows (MeadowShadows.ts): the colour the vegetation's depth pass
+		// draws beside the scene's depth (three's targets carry one; never read: with an alpha channel,
+		// which alpha to coverage needs), the depth's nearest view z and the shadow.
+		const meadowCoverage = MEADOW_SHADOWS ? g.color( 'meadowCoverage', { size: RENDER, format: THREE.RGBAFormat, type: THREE.UnsignedByteType, samples: 'scene' } ) : null;
+		const meadowDepth = MEADOW_SHADOWS ? g.color( 'meadowDepth', { size: RENDER, format: SS_SHADOW ? THREE.RGFormat : THREE.RedFormat, type: THREE.FloatType } ) : null;
+		// (over the whole scene the depth's nearest view z and its surface's thickness, and the shadow
+		// with both beside it, which the ground marches over: MeadowShadows.ts)
+		const meadowShadowMap = MEADOW_SHADOWS ? g.color( 'meadowShadows', SS_SHADOW ? { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType, filter: 'nearest' } : { size: RENDER, format: THREE.RedFormat, type: THREE.UnsignedByteType, filter: 'nearest' } ) : null;
 		// The ambient occlusion (GTAO.ts): at half the render's size, the opaque copies' distance (and
 		// over the whole scene their surfaces' thickness, post/OpaquePrepass.ts) and
-		// their depth (post/OpaquePrepass.ts; the meadow's shade reads them too over the whole scene,
-		// MeadowShade.ts `SS_SHADOW`), the view z, the slices' and the blur's ( occlusion, view z )
+		// their depth (post/OpaquePrepass.ts; the meadow's screen-space shadows read them too over the whole scene,
+		// MeadowShadows.ts `SS_SHADOW`), the view z, the slices' and the blur's ( occlusion, view z )
 		const half: SizeClass = { of: 'render', divisor: 2 };
 		const OPAQUE_PREPASS = GTAO || SS_SHADOW;
 		const gtaoOpaque = OPAQUE_PREPASS ? g.color( 'gtaoOpaque', { size: half, format: SS_SHADOW ? THREE.RGFormat : THREE.RedFormat, type: THREE.FloatType, filter: 'nearest' } ) : null;
@@ -675,19 +677,19 @@ export class Pipeline {
 		const gtaoRaw = GTAO ? g.color( 'gtaoRaw', { size: half, format: THREE.RGFormat, type: THREE.HalfFloatType, filter: 'nearest' } ) : null;
 		const gtaoBlur = GTAO ? g.color( 'gtaoBlur', { size: half, format: THREE.RGFormat, type: THREE.HalfFloatType, filter: 'nearest' } ) : null;
 		const gtao = GTAO ? g.color( 'gtao', { size: half, format: THREE.RGFormat, type: THREE.HalfFloatType, filter: 'nearest' } ) : null;
-		this.resources = { meadowCoverage, meadowDepth, meadowShade: meadowShadeMap, gtaoOpaque, gtaoOpaqueDepth, gtaoDepth, gtaoRaw, gtaoBlur, gtao, sceneColor, sceneDepth, linearDepth, opaqueColor, underwater, refractionReach, refraction, refractionDepth, surfaceDepth, velocity, meterLight, exposureState, exposureStatePrev, surfaceDepthPrev, veilReactive, rainAir, rainOverlay, rainLayer, rainInput, rainBehind, rainGrade, hdr, sharp, display, easu, canvas };
+		this.resources = { meadowCoverage, meadowDepth, meadowShadows: meadowShadowMap, gtaoOpaque, gtaoOpaqueDepth, gtaoDepth, gtaoRaw, gtaoBlur, gtao, sceneColor, sceneDepth, linearDepth, opaqueColor, underwater, refractionReach, refraction, refractionDepth, surfaceDepth, velocity, meterLight, exposureState, exposureStatePrev, surfaceDepthPrev, veilReactive, rainAir, rainOverlay, rainLayer, rainInput, rainBehind, rainGrade, hdr, sharp, display, easu, canvas };
 		// the targets the frame draws into, made now (the probes, the warm-ups and the water's
 		// textures need them before the first frame)
 		g.renderTarget( velocity ? [ sceneColor, velocity, meterLight ] : [ sceneColor, meterLight ], sceneDepth );
 		for ( const h of [ linearDepth, opaqueColor, underwater, refractionReach, display ] ) g.renderTarget( [ h ] );
 		g.renderTarget( [ refraction ], refractionDepth );
 		g.renderTarget( [ surfaceDepth ] );
-		if ( meadowCoverage && meadowDepth && meadowShadeMap ) {
+		if ( meadowCoverage && meadowDepth && meadowShadowMap ) {
 
 			g.renderTarget( [ meadowCoverage ], sceneDepth );
 			g.renderTarget( [ meadowDepth ] );
-			g.renderTarget( [ meadowShadeMap ] );
-			meadowShade.value = g.texture( meadowShadeMap );
+			g.renderTarget( [ meadowShadowMap ] );
+			meadowShadows.value = g.texture( meadowShadowMap );
 			meadowDepthMap.value = g.texture( meadowDepth );
 
 		}
@@ -750,10 +752,10 @@ export class Pipeline {
 		this.depthQuad = new THREE.QuadMesh( resolveMat );
 		if ( meadowDepth ) {
 
-			// (over the whole scene with the opaque copies' distance, MeadowShade.ts `SS_SHADOW`)
+			// (over the whole scene with the opaque copies' distance, MeadowShadows.ts `SS_SHADOW`)
 			const opaque = SS_SHADOW && gtaoOpaque ? { map: g.texture( gtaoOpaque ), halfSize: g.extent( half ) } : undefined;
 			this.meadowDepthQuad = new THREE.QuadMesh( meadowDepthMaterial( g.texture( sceneDepth ), renderSize, u.projInv, opaque ) );
-			this.meadowShadeQuad = new THREE.QuadMesh( meadowShadeMaterial( g.texture( meadowDepth ), renderSize, u.proj, u.projInv, u.keyView ) );
+			this.meadowShadowQuad = new THREE.QuadMesh( meadowShadowMaterial( g.texture( meadowDepth ), renderSize, u.proj, u.projInv, u.keyView ) );
 			// the ground's march (TerrainMaterial.ts) reads the same values
 			meadowGroundView.size.value = renderSize.value;
 			meadowGroundView.proj.value = u.proj.value;
@@ -976,7 +978,7 @@ export class Pipeline {
 
 			};
 			g.hooks.jitterEnd = ( f ) => jitter.end( f.camera );
-			// across a cut the nearest surface's history is no longer the frame before
+			// across a cut the nearest surface's history is no longer the previous frame's
 			const surfaceDepthPrev = this.resources.surfaceDepthPrev;
 			if ( surfaceDepthPrev ) onTaaCut( () => g.resetHistory( surfaceDepthPrev ) );
 
@@ -996,7 +998,7 @@ export class Pipeline {
 	/** The wave maps and the caustics (ocean/WaveMaps.ts), baked by their pass while they are set. */
 	waveMaps: WaveMaps | null = null;
 
-	// the displacement field as its pass leaves it, and the frame before's (null without one)
+	// the displacement field as its pass leaves it, and the previous frame's (null without one)
 	displacement: { field: ResourceHandle; previous: ResourceHandle | null } | null = null;
 
 	/** Whether the clip tools step a clip (their global is set: assemble/StartScene.ts): the
@@ -1107,8 +1109,8 @@ export class Pipeline {
 		u.cameraWorld.value.copy( camera.matrixWorld );
 		u.proj.value.copy( camera.projectionMatrix );
 		u.view.value.copy( camera.matrixWorldInverse );
-		// the resolve takes the opaque scene's depth while the shade over the whole scene is on
-		// (MeadowShade.ts `SS_SHADOW`, `flags.ssShadow`)
+		// the resolve takes the opaque scene's depth while the screen-space shadows over the whole scene are on
+		// (MeadowShadows.ts `SS_SHADOW`, `flags.ssShadow`)
 		screenShadowView.opaque.value = SS_SHADOW && debugFlags.ssShadow !== false ? 1 : 0;
 		if ( frame.keyDirection ) u.keyView.value.copy( frame.keyDirection );
 		else u.keyView.value.copy( frame.sun.position ).sub( frame.sun.target.position );
@@ -1250,7 +1252,7 @@ export class Pipeline {
 		mu.up.value = ex.adaptUp; mu.down.value = ex.adaptDown;
 		u.bloom.value = S.bloom * ( 1 + S.tone * 0.5 ) * ( 1 + night * NIGHT.bloom );
 		const D = this.look;
-		const shade = keyed( D.shadeContrast, this.sky.elevation, night, this.shade, cloud );
+		const shade = keyed( D.shadowContrast, this.sky.elevation, night, this.shade, cloud );
 		u.shadePivot.value = 0.18 * 2 ** shade.pivot; u.shadeSlope.value = shade.slope;
 		const desaturation = keyed( D.desaturation, this.sky.elevation, night, this.desaturation, cloud, this.sky.rising );
 		u.desaturate.value = desaturation.amount; u.desaturateCool.value = desaturation.cool;

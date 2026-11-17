@@ -13,12 +13,12 @@
 // What it asserts, in order:
 // - The core: the clock and its ticks (a minute's first second that minute), the ground grid and a
 //   path over it, a body that walks to a point and stops there, a save that loads back as it was, a
-//   brain whose late answer is applied while the world ran on.
+//   agent whose late answer is applied while the world ran on.
 // - The first prototype's rules: needs that fall and rise (thirst off: hydration holds), fishing by
 //   the seeded generator and the bag's capacity, the chest placed as a blueprint and built, several
 //   of a kind with ids of their own, two islanders building one site, the island's stock (its
 //   stores) and a cost's shortfall, actions that replace each other, a perception without
-//   positions, the stand-in brain building the chest and keeping the islander fed for days, and a
+//   positions, the stand-in agent building the chest and keeping the islander fed for days, and a
 //   save taken mid-action.
 // - The islanders' lives: the starting three, ages that run a year a game day, lifespans drawn by
 //   Gompertz's law, a death noted in the record, a slower pace at the ends of life, ids never reused.
@@ -32,7 +32,7 @@
 // - The session the page and the play tool run the game in (packages/game/Session.ts): a new game's
 //   islanders landing as it is installed, a blueprint placed noted as the player's at its tick, the
 //   player's commands checked at the entrance, the sky noted over the ticks since the last look, the
-//   leader's words heard by a brain that hears, a save read back into another session, and a growth
+//   leader's words heard by an agent that hears, a save read back into another session, and a growth
 //   asked once while its piece is on the way and not again when none came.
 // - The islanders among themselves: words heard within earshot and noticed until the next thought,
 //   the others in sight by name, age and what they do, `do` naming its place, giving (its refusals,
@@ -41,7 +41,7 @@
 //   that plays on the same.
 // - The rules' structure: an action's condition held every tick (going to someone who died, dying
 //   mid-action, fishing on a coast a growth turned inland: each interrupted with its reason), a
-//   brain's late answer for an islander who died refused, the entrance refusing what a tool does not
+//   agent's late answer for an islander who died refused, the entrance refusing what a tool does not
 //   take (a NaN or null count, `__proto__`, stray, missing and mistyped arguments, answers that are
 //   not lists) and changing nothing, and two lines said in one frame both recorded at their tick.
 // - Content added by this check alone (a need, an item with a use, a kind of place with an option,
@@ -64,7 +64,7 @@ import { ROOT } from '../kit/root.mjs';
 import { newGame, loadGame } from '../../packages/game/sim/Sim.ts';
 import { findPath, goalAt, lineClear } from '../../packages/game/sim/path.ts';
 import { act, perceive } from '../../packages/game/sim/agent.ts';
-import { HUNGRY_WORDS, StandInBrain, THANKS_WORDS } from '../../packages/game/sim/standin.ts';
+import { HUNGRY_WORDS, StandInAgent, THANKS_WORDS } from '../../packages/game/sim/standin.ts';
 import { EARSHOT, NOTICED_KEPT, PERSON_REACH } from '../../packages/game/sim/people.ts';
 import { BAG_CAPACITY, bagOf, bring, count, room, transfer } from '../../packages/game/sim/items.ts';
 import { raiseNeed, startNeeds } from '../../packages/game/sim/needs.ts';
@@ -224,7 +224,7 @@ function farthestOpen( grid, p ) {
 
 }
 
-// ------------------------------------------------------------------ a brain that answers later
+// ------------------------------------------------------------------ an agent that answers later
 
 {
 
@@ -233,7 +233,7 @@ function farthestOpen( grid, p ) {
 	const far = farthestOpen( sim.grid, v.pos );
 	let perceived = null;
 	assert.equal( sim.walkTo( v.id, far ), null );
-	sim.brain = { think: ( p ) => {
+	sim.agent = { think: ( p ) => {
 
 		perceived = p;
 		return new Promise( ( resolve ) => setTimeout( () => resolve( [ { tool: 'go', args: { place: 'shore' } }, { tool: 'fly' } ] ), 5 ) );
@@ -242,19 +242,19 @@ function farthestOpen( grid, p ) {
 	const tick = sim.state.tick, start = { ...v.pos };
 	const thought = sim.think( v.id );
 	assert.ok( thought && sim.thinking( v.id ), 'a thought is in flight' );
-	assert.equal( perceived.body.hydration, 80, 'the brain perceives the islander' );
+	assert.equal( perceived.body.hydration, 80, 'the agent perceives the islander' );
 	assert.equal( sim.think( v.id ), null, 'one thought at a time' );
 	sim.step( 120 );
-	assert.equal( sim.state.tick, tick + 120, 'the world runs on while the brain thinks' );
+	assert.equal( sim.state.tick, tick + 120, 'the world runs on while the agent thinks' );
 	assert.ok( Math.hypot( v.pos.x - start.x, v.pos.z - start.z ) > 1, 'and the body keeps walking' );
 	const results = await thought;
 	assert.equal( sim.thinking( v.id ), false, 'the thought has landed' );
 	assert.equal( results[ 0 ].ok, true, 'its tool call ran on the body' );
 	assert.equal( results[ 1 ].ok, false, 'a tool that does not exist fails with a reason' );
 	assert.equal( v.action.call.args.place, 'shore', 'the body now goes where the answer said' );
-	sim.brain = null;
-	assert.equal( sim.think( v.id ), null, 'without a brain nothing thinks' );
-	console.log( 'brain: a late answer ran on the body while the world went on' );
+	sim.agent = null;
+	assert.equal( sim.think( v.id ), null, 'without an agent nothing thinks' );
+	console.log( 'agent: a late answer ran on the body while the world went on' );
 
 }
 
@@ -542,7 +542,7 @@ function buildChest( sim ) {
 
 }
 
-// the stand-in brain keeps the islander fed for days, builds the chests placed and
+// the stand-in agent keeps the islander fed for days, builds the chests placed and
 // stocks the first, the same for a seed
 {
 
@@ -550,7 +550,7 @@ function buildChest( sim ) {
 	const play = ( seed, store ) => {
 
 		const sim = newGame( input, { seed } );
-		sim.brain = new StandInBrain();
+		sim.agent = new StandInAgent();
 		for ( let n = 0; n < store; n ++ ) placeFirst( sim );
 		const v = sim.state.villagers[ 0 ];
 		let low = 100, built = - 1;
@@ -592,12 +592,12 @@ function buildChest( sim ) {
 		const sim = newGame( input, { seed: 11 } );
 		const v = sim.state.villagers[ 0 ];
 		if ( what === 'fishing' ) run( sim, { tool: 'go', args: { place: 'shore' } } );
-		sim.brain = new StandInBrain();
+		sim.agent = new StandInAgent();
 		assert.equal( act( sim, v.id, [ call ] )[ 0 ].ok, true );
 		sim.step( 30 );
 		assert.deepEqual( v.action.call.args, { ...call.args, ...( what === 'fishing' ? { place: 'shore' } : {} ) }, `mid-${ what }` );
 		const loaded = loadGame( sim.save(), input );
-		loaded.brain = new StandInBrain();
+		loaded.agent = new StandInAgent();
 		assert.equal( loaded.save(), sim.save() );
 		sim.step( 2 * 24 * HOUR );
 		loaded.step( 2 * 24 * HOUR );
@@ -709,7 +709,7 @@ function buildChest( sim ) {
 	};
 	const host = { grow() {} };
 	const sim = newGame( input, { seed: 2 } );
-	const session = new Session( input, host, new StandInBrain() ), record = session.record;
+	const session = new Session( input, host, new StandInAgent() ), record = session.record;
 	session.install( sim );
 	placeFirst( sim );
 	watch( session, 30 * HOUR );
@@ -727,7 +727,7 @@ function buildChest( sim ) {
 	assert.equal( JSON.stringify( save.sim ), sim.save(), 'the save holds the simulation\'s state' );
 	assert.equal( JSON.stringify( save.record ), JSON.stringify( record.save() ), 'and the record' );
 	assert.equal( savedPieces( json ), 0 );
-	const again = new Session( input, host, new StandInBrain() );
+	const again = new Session( input, host, new StandInAgent() );
 	const file = again.read( json );
 	again.install( file.sim, file.record );
 	again.look( 'cloudy' );
@@ -895,7 +895,7 @@ function buildChest( sim ) {
 		assert.equal( sim.walkTo( v.id, grid.centreOf( target ) ), null, `${ v.name } sets off onto the new piece` );
 
 	}
-	sim.brain = null;
+	sim.agent = null;
 	sim.step( 3600 );
 	for ( const v of sim.state.villagers ) assert.ok( coming[ grid.indexAt( v.pos.x, v.pos.z ) ] || Math.hypot( v.pos.x - grid.centreX( target ), v.pos.z - grid.centreZ( target ) ) < 1.5, `${ v.name } stands on the new piece` );
 
@@ -923,8 +923,8 @@ function buildChest( sim ) {
 
 	}
 	assert.ok( newShore > 0 && inland > 0, 'the shore runs along the new piece, and the old coast it met is inland' );
-	sim.brain = new StandInBrain();
-	loaded.brain = new StandInBrain();
+	sim.agent = new StandInAgent();
+	loaded.agent = new StandInAgent();
 	sim.step( 24 * HOUR );
 	loaded.step( 24 * HOUR );
 	assert.equal( loaded.save(), sim.save(), 'and the islanders play on as on a fresh load, a day of fishing included' );
@@ -941,7 +941,7 @@ function buildChest( sim ) {
 // new game hands on its islanders' landing and the record notes them at the start; a blueprint placed
 // is the player's, at its tick, and the player's commands are checked at the entrance; the ticks of
 // frames wait for the record's look, which notes the sky shown over them; the leader's words reach a
-// brain that hears; a growth is asked once while due, its piece coming at once, later or never; a
+// agent that hears; a growth is asked once while due, its piece coming at once, later or never; a
 // save reads back into another session as written
 {
 
@@ -977,21 +977,21 @@ function buildChest( sim ) {
 	session.look( 'cloudy' );
 	assert.deepEqual( record.save().skies, { 1: { fair: 1, cloudy: 0.5 } }, 'the record notes the sky shown over the ticks since its last look, none headless' );
 
-	// the leader's words go into the record; a brain that hears keeps them for each listener's next
+	// the leader's words go into the record; an agent that hears keeps them for each listener's next
 	// thought and is asked for one now
 	const [ a, b, c ] = sim.state.villagers.map( ( v ) => v.id ), asked = [];
 	session.speak( '  words  ', 'all' );
 	assert.deepEqual( record.entries.at( - 1 ), { kind: 'said', tick: 2 * HOUR, who: 'player', to: 'all', text: 'words' } );
 	assert.equal( clockText( record.timeOf( record.entries.at( - 1 ).tick ) ), '10:00' );
 	assert.equal( session.hears(), false );
-	assert.equal( session.hasHeard( a ), false, 'no brain that hears: no words wait' );
+	assert.equal( session.hasHeard( a ), false, 'no agent that hears: no words wait' );
 	const hearing = { hears: true, think: ( perception, id ) => {
 
 		asked.push( id );
 		return [];
 
 	} };
-	session.setBrain( hearing );
+	session.setAgent( hearing );
 	assert.equal( session.hears(), true );
 	session.speak( 'come', [ a, b ] );
 	session.speak( 'eat', 'all' );
@@ -1010,8 +1010,8 @@ function buildChest( sim ) {
 	assert.equal( record.entries.length, said, 'nothing refused is said' );
 	assert.equal( session.hasHeard( b ), true );
 	assert.deepEqual( session.takeHeard( b ), [ 'come', 'eat' ], 'nor heard' );
-	session.setBrain( null );
-	assert.equal( session.hasHeard( c ), false, 'another brain hears none of the old words' );
+	session.setAgent( null );
+	assert.equal( session.hasHeard( c ), false, 'another agent hears none of the old words' );
 
 	// a save reads back into another session: the simulation and the record as written, and both
 	// play on the same
@@ -1078,7 +1078,7 @@ function buildChest( sim ) {
 	} } );
 	frames( still, 600 );
 	assert.equal( idle, 1, 'a grow that brought no piece is not asked again' );
-	console.log( `session: ${ record.entries.length } record entries (the landings, the chest, the leader's words), the skies of its frames, words heard by a brain that hears, a save read back into another session and played on the same; a growth asked once while its piece is on the way, and not again when none came` );
+	console.log( `session: ${ record.entries.length } record entries (the landings, the chest, the leader's words), the skies of its frames, words heard by an agent that hears, a save read back into another session and played on the same; a growth asked once while its piece is on the way, and not again when none came` );
 
 }
 
@@ -1109,13 +1109,13 @@ function buildChest( sim ) {
 		return c;
 
 	};
-	/** what a brain is handed for an islander: a thought by a brain that only looks */
+	/** what an agent is handed for an islander: a thought by an agent that only looks */
 	const perceived = ( sim, v ) => {
 
 		let seen = null;
-		sim.brain = { think: ( p ) => { seen = p; return []; } };
+		sim.agent = { think: ( p ) => { seen = p; return []; } };
 		sim.think( v.id );
-		sim.brain = null;
+		sim.agent = null;
 		return seen;
 
 	};
@@ -1144,9 +1144,9 @@ function buildChest( sim ) {
 		perceived( sim, b );
 		does( sim, a, 'say', { words: 'one' } );
 		let answer = null, slow = null;
-		sim.brain = { think: ( p ) => { slow = p; return new Promise( ( resolve ) => { answer = resolve; } ); } };
+		sim.agent = { think: ( p ) => { slow = p; return new Promise( ( resolve ) => { answer = resolve; } ); } };
 		const thought = sim.think( b.id );
-		sim.brain = null;
+		sim.agent = null;
 		assert.deepEqual( slow.noticed.map( ( x ) => x.said ), [ 'one' ] );
 		does( sim, a, 'say', { words: 'two' } );
 		const loaded = loadGame( sim.save(), input );
@@ -1320,7 +1320,7 @@ function buildChest( sim ) {
 			a.needs.satiety = 50;
 			b.needs.satiety = 90;
 			b.bag = { fish: 1 };
-			sim.brain = new StandInBrain();
+			sim.agent = new StandInAgent();
 			const events = [];
 			let thanked = false, went = false;
 			for ( let t = 0; t < 2 * HOUR && ! thanked; t ++ ) {
@@ -1399,15 +1399,15 @@ function buildChest( sim ) {
 
 	}
 
-	// a brain's late answer for an islander who died meanwhile: refused at the entrance, nothing done
+	// an agent's late answer for an islander who died meanwhile: refused at the entrance, nothing done
 	{
 
 		const sim = newGame( input, { seed: 7, bodies: adults } );
 		const [ a ] = sim.state.villagers;
 		let answer = null;
-		sim.brain = { think: () => new Promise( ( resolve ) => { answer = resolve; } ) };
+		sim.agent = { think: () => new Promise( ( resolve ) => { answer = resolve; } ) };
 		const thought = sim.think( a.id );
-		sim.brain = null;
+		sim.agent = null;
 		a.lifespan = sim.age( a ) + 2 / SECONDS_PER_YEAR;
 		sim.step( 5 );
 		assert.equal( sim.villager( a.id ), undefined );
@@ -1497,8 +1497,8 @@ function buildChest( sim ) {
 // it). Nothing outside this check changes for it: it plays, is perceived, noted in the record,
 // saved and loaded as the game's own content is, and the interface's words and looks show it with
 // their defaults; then it is taken away again. Last, the core names no content: none of the ids
-// sim/content/ registers is written as a string in the rules outside it (the stand-in brain plays
-// the content, as any brain does, and may).
+// sim/content/ registers is written as a string in the rules outside it (the stand-in agent plays
+// the content, as any agent does, and may).
 importCatalogues();
 const { recordKind } = await import( '../../packages/game/ui/data/record.ts' );
 const { needLook, needName } = await import( '../../packages/game/ui/data/needs.ts' );

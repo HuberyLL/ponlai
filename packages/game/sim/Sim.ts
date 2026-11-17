@@ -1,6 +1,6 @@
 import { advanceAction, findWaysAgain, holdAction, interruptAction, stopAction } from './actions.ts';
 import { act, perceive } from './agent.ts';
-import type { Brain, ToolResult } from './agent.ts';
+import type { Agent, ToolResult } from './agent.ts';
 import { dayOf, hourOf } from './clock.ts';
 import type { SimEvent } from './events.ts';
 import { Grid, topOf } from './grid.ts';
@@ -26,9 +26,9 @@ import './content/index.ts';
 // an action under way (actions.ts), and are places to one another (people.ts: they hear each other,
 // and act on each other by the options registered at a person); the places they act at
 // (places.ts) keep their own state here too (the buildings). The core here names no piece of
-// content: the needs, items, kinds of place and of building are read from registry.ts. A brain
+// content: the needs, items, kinds of place and of building are read from registry.ts. An agent
 // may think for them (agent.ts) beside the world, never holding up a tick. The weather is the
-// page's own: nothing in the simulation depends on it.
+// app's own: nothing in the simulation depends on it.
 //
 // What happens is emitted as events (events.ts), at the tick it happens, by the rule that makes
 // it: here a landing, a death, a need falling critical, a blueprint placed and the island grown;
@@ -36,8 +36,8 @@ import './content/index.ts';
 //
 // Each tick: the needs fall, each body walks a step (at its age's pace) and its action advances
 // (once its condition held: actions.ts), those who reached their lifespan die (life.ts: what they
-// were doing ends interrupted), then the temporary trigger asks the brain for a thought for every
-// islander with nothing under way (no action, no walk) and no thought in flight. A brain that
+// were doing ends interrupted), then the temporary trigger asks the agent for a thought for every
+// islander with nothing under way (no action, no walk) and no thought in flight. An agent that
 // answers at once (the stand-in) acts within the tick, so a game with it is deterministic for a
 // seed; a slow one acts when it answers, through the same entrance (agent.ts `act`), which refuses
 // the answer of an islander who died meanwhile.
@@ -45,11 +45,11 @@ import './content/index.ts';
 // The island grows with the population (docs/design/game-design.md, "How the island grows"): the
 // population is the islanders' count, and each step of GROWTH_STEPS (types.ts) is one piece. The
 // simulation only says when growth is due (`growthDue`) and how near the next step is
-// (`approach`); the session's host grows the island (../Session.ts; on the page world/Growth.ts)
+// (`approach`); the session's host grows the island (../Session.ts; in the app world/Growth.ts)
 // and hands the new land back as `addPiece`, which opens its cells (every index stays valid:
 // grid.ts), finds each walk under way again on the new ground and counts the piece
 // (SimState.pieces: the land step the game stands on, so a save loads its world at it). The piece
-// to come is known ahead: its cells are `comingLand` from the moment the page has it, for planning.
+// to come is known ahead: its cells are `comingLand` from the moment the app has it, for planning.
 //
 // A new game starts with three grown islanders: a man, a woman and one of either, each 20 to 35
 // years old, from the seed. An islander who dies leaves the roll for the list of the dead
@@ -79,13 +79,13 @@ export class Sim {
 	/** fraction of the next tick already elapsed (0..1), for interpolating positions */
 	alpha = 0;
 	/** what thinks for the islanders; null: nothing, they stand idle */
-	brain: Brain | null = null;
+	agent: Agent | null = null;
 	private carry = 0;
 	/** the islanders with a thought in flight */
 	private readonly thoughts = new Map<EntityId, Promise<ToolResult[]>>();
 	/** what happened since the session last took it, in order */
 	private events: SimEvent[] = [];
-	/** the cells the next piece opens (1 per ground cell, on the grid's indices), once the page has
+	/** the cells the next piece opens (1 per ground cell, on the grid's indices), once the app has
 	 * the piece; null until then and after it arrived. Derived from the world, not saved. */
 	comingLand: Uint8Array | null = null;
 
@@ -123,7 +123,7 @@ export class Sim {
 
 	}
 
-	/** The next piece is known (the page's pending land, Growth.ts): its cells become `comingLand`,
+	/** The next piece is known (the app's pending land, Growth.ts): its cells become `comingLand`,
 	 * those on its top not on the island's now. */
 	setComing( input: IslandInput ): void {
 
@@ -241,7 +241,7 @@ export class Sim {
 
 		}
 		if ( state.villagers.some( ( v ) => ageOf( v, state.tick ) >= v.lifespan ) ) this.die();
-		if ( ! this.brain ) return;
+		if ( ! this.agent ) return;
 		for ( const v of state.villagers ) if ( ! v.action && ! v.path && ! this.thoughts.has( v.id ) ) this.think( v.id );
 
 	}
@@ -298,7 +298,7 @@ export class Sim {
 	}
 
 	/** The body's motor: find a path to a point and walk it from the next tick on, dropping the
-	 * action under way (the debug panel's walk; a brain walks by `go`). Null when it sets off (or
+	 * action under way (the debug panel's walk; an agent walks by `go`). Null when it sets off (or
 	 * already stands there), else why it cannot. */
 	walkTo( id: EntityId, target: Vec2 ): string | null {
 
@@ -379,17 +379,17 @@ export class Sim {
 	}
 
 	/**
-	 * Ask the brain to think for an islander now, from what it perceives. Thinking is asynchronous
+	 * Ask the agent to think for an islander now, from what it perceives. Thinking is asynchronous
 	 * to the world: the simulation never waits for it, the body goes on with what it is doing
 	 * meanwhile, and the answer's tool calls run through the entrance (agent.ts `act`) when it
 	 * arrives (at once for an answer that is not a Promise), which checks them and the islander
-	 * then, not when it asked. Resolves to the calls' results; null when there is no brain, no such
+	 * then, not when it asked. Resolves to the calls' results; null when there is no agent, no such
 	 * islander, or a thought already in flight for it.
 	 */
 	think( id: EntityId ): Promise<ToolResult[]> | null {
 
 		const v = this.villager( id );
-		if ( ! v || ! this.brain || this.thoughts.has( id ) ) return null;
+		if ( ! v || ! this.agent || this.thoughts.has( id ) ) return null;
 		const perception = perceive( this, v );
 		// what it noticed is the thought's once its answer is acted on, not before: a thought in flight
 		// is not saved, and a loaded game asks again with the notices still there. Those that came
@@ -402,7 +402,7 @@ export class Sim {
 			return act( this, id, calls );
 
 		};
-		const answer = this.brain.think( perception, v.id );
+		const answer = this.agent.think( perception, v.id );
 		if ( ! ( answer instanceof Promise ) ) return Promise.resolve( answered( answer ) );
 		const thought = answer.then( answered ).finally( () => this.thoughts.delete( id ) );
 		this.thoughts.set( id, thought );

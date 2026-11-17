@@ -23,20 +23,20 @@ import type { DayWindows } from '../look/DayLook.ts';
 
 /** How far the low sun's look has come in at `elevation` (degrees) under a sky of direct
  * visibility `direct`: 0 above the tables' `lowSun.top` and below the horizon, 1 from their
- * `lowSun.full` down to 3 degrees (the island's blue-violet shade). */
+ * `lowSun.full` down to 3 degrees (the island's blue-violet shadows). */
 export function lowSun( look: SkyTables, elevation: number, direct: number ): number {
 
-	// (off unless a number is set, with the clear shade)
+	// (off unless a number is set, with the clear-sky fill light)
 	const scale = typeof debugFlags.lowSun === 'number' ? debugFlags.lowSun : debugFlags.lowSun === true ? 1 : 0;
 	return THREE.MathUtils.smoothstep( elevation, 0, 3 ) * ( 1 - THREE.MathUtils.smoothstep( elevation, look.lowSun.full, look.lowSun.top ) )
 		* THREE.MathUtils.smoothstep( direct, 0.3, 0.95 ) * scale;
 
 }
 
-// The tables' `clearShade` share at `elevation` under a sky of direct visibility `direct`.
-function clearShade( look: SkyTables, elevation: number, direct: number ): number {
+// The tables' `clearSkyFill` share at `elevation` under a sky of direct visibility `direct`.
+function clearSkyFill( look: SkyTables, elevation: number, direct: number ): number {
 
-	const rows = look.clearShade;
+	const rows = look.clearSkyFill;
 	let share = rows[ rows.length - 1 ].share;
 	if ( elevation >= rows[ 0 ].at ) share = rows[ 0 ].share;
 	else for ( let i = 1; i < rows.length; i ++ ) if ( elevation >= rows[ i ].at ) {
@@ -46,8 +46,8 @@ function clearShade( look: SkyTables, elevation: number, direct: number ): numbe
 		break;
 
 	}
-	// (off unless a number is set: the lifted shade took the light's direction out of the meadow)
-	const scale = typeof debugFlags.clearShade === 'number' ? debugFlags.clearShade : debugFlags.clearShade === true ? 1 : 0;
+	// (off unless a number is set: the lifted shadows took the light's direction out of the meadow)
+	const scale = typeof debugFlags.clearSkyFill === 'number' ? debugFlags.clearSkyFill : debugFlags.clearSkyFill === true ? 1 : 0;
 	return share * THREE.MathUtils.smoothstep( direct, 0.3, 0.95 ) * scale;
 
 }
@@ -112,7 +112,7 @@ const _zenith = new THREE.Vector3( 0, 1, 0 );
 // while the sky behind them was still the sun's afterglow: at -5.3 degrees they gave about half the light
 // of the sky 8 degrees up, which greyed the glow and the far sea under it. The morning keeps -7 to
 // -3, inside its night sky's window (-13 to -3): there the moonlit clouds are part of the
-// sky the dawn's exposure meters (on a clear morning the thin layer's most), and without it the land
+// sky the dawn's exposure meters (on a clear morning the cirrus most of all), and without it the land
 // and the low band over the horizon at -6.5 degrees read lighter. Under cloud the evening keeps -7
 // to -3 too, as every night layer keeps the daylight's timing there (DayCycle.ts: the
 // clouded sky's night is whole by -6): no afterglow lights the sky behind the deck, and taken in
@@ -154,7 +154,7 @@ const MOON_OVER_SUN = Math.pow( 10, - 0.4 * ( MOON_MAGNITUDE - SUN_MAGNITUDE ) )
 const moonAboveAir = () => MOON_OVER_SUN * moonKeyGain();
 // a gain on the moon's light above the air (`moonAboveAir`), so on both of its paths: the key
 // (keyColor: the land, the sea's glitter, the haze's scatter of the key) and the sky, the clouds
-// and the haze. A debug knob, not the look's: 1 is the physical full moon, and so it stays.
+// and the haze. A debug parameter, not the look's: 1 is the physical full moon, and so it stays.
 const moonKeyGain = tune( 'lighting.moon.gain', 1, { min: 0.05, max: 4, scale: 'log' } );
 const _moonKey = new THREE.Color();
 const _moonHue = new THREE.Color();
@@ -266,12 +266,12 @@ export function trackSky( sky: Sky, celestial: DayCycleSnapshot | null, weather:
 		sky.grade.daylight = celestial.daylight;
 		sky.landGain.value = landSky( look, celestial.elevation, sky.rising, sky.landTint.value, cloud );
 		const direct = weather?.directVisibility ?? 1;
-		const shade = clearShade( look, celestial.elevation, direct ), low = lowSun( look, celestial.elevation, direct );
+		const shade = clearSkyFill( look, celestial.elevation, direct ), low = lowSun( look, celestial.elevation, direct );
 		const tint = sky.landTint.value;
 		if ( shade > 0 ) {
 
 			sky.landGain.value *= 1 + shade;
-			tint.set( look.clearShadeTint[ 0 ], look.clearShadeTint[ 1 ], look.clearShadeTint[ 2 ], look.clearShadeTint[ 3 ] * shade );
+			tint.set( look.clearSkyFillTint[ 0 ], look.clearSkyFillTint[ 1 ], look.clearSkyFillTint[ 2 ], look.clearSkyFillTint[ 3 ] * shade );
 
 		}
 		if ( low > 0 ) tint.set( tint.x + ( look.lowSunTint[ 0 ] - tint.x ) * low, tint.y + ( look.lowSunTint[ 1 ] - tint.y ) * low,
@@ -350,7 +350,7 @@ export function trackSky( sky: Sky, celestial: DayCycleSnapshot | null, weather:
 	const keyFloor = Math.min( look.keyThroughCloud() * sky.clouds.layerTransmission(), 1 ) * floorSun;
 	sky.keyCloudFloor.value = keyFloor;
 	sky.keyFloorUnderDeck = keyFloor * overcastShare;
-	// (`flags=streaks:<n>` scales the thin layer's amount, 0 turns it off)
+	// (`flags=streaks:<n>` scales the cirrus's amount, 0 turns it off)
 	sky.clouds.streaks.value = ( weather?.streaks ?? 0 ) * ( typeof debugFlags.streaks === 'number' ? debugFlags.streaks : 1 );
 	// A rainbow needs falling rain and direct sun at once, the sun lower than 42 degrees behind
 	// the viewer: most often as a shower clears, while it is still raining a few kilometres off.
@@ -502,7 +502,7 @@ function trackClouds( sky: Sky, celestial: DayCycleSnapshot | null, weather: Rea
 	light.add( moonCloud );
 	// (the low sun's lift of the beam, as `directGain`'s)
 	const beam = 1 + 0.7 * lowSunOf( sky.elevation, coverage );
-	// The thin layer's before the air, lifted alike: each of its points takes it through the air
+	// The cirrus's sunlight before the atmosphere, lifted alike: each of its points takes it through the air
 	// toward the sun at the sun's elevation there, and loses it as the disc sinks under the
 	// layer's own horizon there (Clouds.ts `streaksAt`), so no one moment ends the whole layer's.
 	clouds.streakSunColour.value.copy( sky.sunTint ).multiplyScalar( illuminance * beam * sky.daySky );

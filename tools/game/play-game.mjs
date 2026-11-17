@@ -1,14 +1,14 @@
 // Plays the game headless in node and writes what happened, day by day.
 //
-// A designer can read days of play without a browser, and a brain can be judged offline on the
+// A designer can read days of play without a browser, and an AI agent can be judged offline on the
 // same island, the same day clock and the same record the page keeps. It answers what the islanders
-// do over days of play, how the needs and the stock run, and how a brain plays from what it
+// do over days of play, how the needs and the stock run, and how an agent plays from what it
 // perceives; it replaces a loop over the simulation of one's own. To assert the rules instead, use
 // tools/game/verify-game.mjs.
 //
 // Usage:
 //   node tools/game/play-game.mjs [--days 5] [--seed 1] [--hour 8] [--pieces 0] [--grow]
-//       [--population 0] [--place kind[@x,z]]... [--script file.json] [--brain standin|<module>]
+//       [--population 0] [--place kind[@x,z]]... [--script file.json] [--agent standin|<module>]
 //       [--latency 90] [--thoughts] [--out dir]
 //
 // Options:
@@ -28,14 +28,14 @@
 //                   island's middle (as verify-game's chests)
 //   --script F      the leader's lines, JSON: [ { "at": "d1 08:30", "to": "all" | [ "v1" ],
 //                   "words": "..." } ], said as the speak bar says them (Session.speak)
-//   --brain B       `standin` (sim/standin.ts, the default), or a module's path: its `createBrain`
-//                   or default export is called with the context below and returns a Brain (or a
+//   --agent A       `standin` (sim/standin.ts, the default), or a module's path: its `createAgent`
+//                   or default export is called with the context below and returns an Agent (or a
 //                   Promise of one)
 //   --latency G     the game seconds an asynchronous thought takes (default 90: three real seconds
 //                   at the day clock's default 2880 s a game day, where a real second is 30 game
 //                   seconds)
 //   --thoughts      also write thoughts.jsonl: every thought, what the islander perceived and the
-//                   brain's answer (calls, or why it failed), for judging a brain offline
+//                   agent's answer (calls, or why it failed), for judging an agent offline
 //   --out DIR       where the outputs go (default artifacts/play/<UTC stamp>/, git-ignored)
 //
 // What it guarantees. The game runs as the page runs it: in the page's own session around the
@@ -51,26 +51,26 @@
 // never copied here. The record notes no skies: the weather is the page's own and nothing in the
 // simulation depends on it.
 //
-// With a brain that answers at once (the stand-in) the run is the simulation's own deterministic
+// With an agent that answers at once (the stand-in) the run is the simulation's own deterministic
 // game: the same options write the same files byte for byte (nothing in them depends on the wall
-// clock or the output folder). An asynchronous brain (a `think` that returns a Promise) never holds
+// clock or the output folder). An asynchronous agent (a `think` that returns a Promise) never holds
 // up the page's world, so headless the world runs on for --latency game seconds after a thought is
 // asked and only then waits, however long the answer takes in real time, before it applies the
-// answer and steps on: the timing of every answer is a function of the options, and a brain whose
-// answers are a function of its perceptions plays a repeatable game too. An answer that comes
+// answer and steps on: the timing of every answer is a function of the options, and an agent whose
+// answers are a function of its perceptions plays a reproducible game too. An answer that comes
 // sooner in real time still lands at its tick.
 //
-// The brain module's context: `heard( id )` and its session name `takeHeard( id )` (the leader's
+// The agent module's context: `heard( id )` and its session name `takeHeard( id )` (the leader's
 // words the islander heard since the last call, oldest first: Session.takeHeard), `hasHeard( id )`,
 // `islander( id )` (name, sex and age in years: perception never names the one it is for),
-// `note( id, text )` (a line of the brain's own in the transcript, e.g. its reasoning) and
-// `options` (this run's). A brain that keeps failing (MAX_FAILURES answers rejected in a row) ends
+// `note( id, text )` (a line of the agent's own in the transcript, e.g. its reasoning) and
+// `options` (this run's). An agent that keeps failing (MAX_FAILURES answers rejected in a row) ends
 // the run with exit 1, its outputs written.
 //
 // Output, in the --out folder: transcript.md (day by day: the record's entries in the words of the
 // record page, packages/game/ui/data/record.ts, the building one is about by its id; the islanders'
 // actions with their outcomes (an interrupted one as `interrupted: <reason>`), consecutive alike
-// ones merged, what they said, the brain's thoughts when it is asynchronous, needs every six game
+// ones merged, what they said, the agent's thoughts when it is asynchronous, needs every six game
 // hours, and a table per day), timeline.json (each game hour, every islander's position, needs, bag
 // and action), summary.json (per islander the share of time by activity, each need's lowest, mean
 // and highest, each item's flows by the call that moved it, thoughts; the dead, the buildings and
@@ -83,9 +83,9 @@
 // under the application scheduling policy (tools/kit/qos.mjs).
 //
 // Cost: five game days of the stand-in take about two seconds. A long run (many days, a
-// language-model brain) goes through tools/kit/job.mjs.
+// language-model agent) goes through tools/kit/job.mjs.
 //
-// Exit codes: 0 the run played through; 1 it failed (a brain that kept failing, an error); 2 a bad
+// Exit codes: 0 the run played through; 1 it failed (an agent that kept failing, an error); 2 a bad
 // option.
 //
 // Generic: no need, item, option, building or kind of record entry is named here. The needs are
@@ -100,7 +100,7 @@ import { mkdirSync, readFileSync, writeFileSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { newGame } from '../../packages/game/sim/Sim.ts';
-import { StandInBrain } from '../../packages/game/sim/standin.ts';
+import { StandInAgent } from '../../packages/game/sim/standin.ts';
 import { progressOf } from '../../packages/game/sim/buildings.ts';
 import { buildingKind, buildingKinds } from '../../packages/game/sim/registry.ts';
 import { Session } from '../../packages/game/Session.ts';
@@ -123,7 +123,7 @@ const { t } = await import( '../../packages/game/ui/i18n/i18n.ts' );
 const HOUR = 3600;
 // rejected answers in a row that end the run
 const MAX_FAILURES = 10;
-const USAGE = 'usage: node tools/game/play-game.mjs [--days 5] [--seed 1] [--hour 8] [--pieces 0] [--grow] [--population 0] [--place kind[@x,z]]... [--script file.json] [--brain standin|<module>] [--latency 90] [--thoughts] [--out dir] (see the header)';
+const USAGE = 'usage: node tools/game/play-game.mjs [--days 5] [--seed 1] [--hour 8] [--pieces 0] [--grow] [--population 0] [--place kind[@x,z]]... [--script file.json] [--agent standin|<module>] [--latency 90] [--thoughts] [--out dir] (see the header)';
 
 function fail( message ) {
 
@@ -136,7 +136,7 @@ function fail( message ) {
 
 function parseOptions( argv ) {
 
-	const o = { days: 5, seed: 1, hour: 8, pieces: 0, grow: false, population: 0, place: [], script: null, brain: 'standin', latency: 90, thoughts: false, out: null };
+	const o = { days: 5, seed: 1, hour: 8, pieces: 0, grow: false, population: 0, place: [], script: null, agent: 'standin', latency: 90, thoughts: false, out: null };
 	const number = ( name, text, ok ) => {
 
 		const x = Number( text );
@@ -169,7 +169,7 @@ function parseOptions( argv ) {
 
 			}
 			case '--script': o.script = value() ?? fail( '--script needs a file' ); break;
-			case '--brain': o.brain = value() ?? fail( '--brain needs standin or a module' ); break;
+			case '--agent': o.agent = value() ?? fail( '--agent needs standin or a module' ); break;
 			case '--out': o.out = value() ?? fail( '--out needs a folder' ); break;
 			// `--help` is answered by the kit's help module before this runs; `-h` prints the same manual
 			case '-h': {
@@ -426,7 +426,7 @@ function ended( { who, tick, call, outcome, result, moved } ) {
 
 }
 
-// ------------------------------------------------------------------ the brain
+// ------------------------------------------------------------------ the agent
 
 const takeHeard = ( id ) => session.takeHeard( id );
 const context = {
@@ -439,13 +439,13 @@ const context = {
 		return v ? { id, name: v.name, sex: v.sex, age: Math.floor( ageOf( v, sim.state.tick ) ) } : null;
 
 	},
-	note: ( id, text ) => push( sim.state.tick, `${ clockOf( sim.state.tick ) } ${ label( id ) } (brain): ${ text }` ),
+	note: ( id, text ) => push( sim.state.tick, `${ clockOf( sim.state.tick ) } ${ label( id ) } (agent): ${ text }` ),
 	options: { ...options, out: undefined },
 };
 
-async function loadBrain( spec ) {
+async function loadAgent( spec ) {
 
-	if ( spec === 'standin' ) return new StandInBrain();
+	if ( spec === 'standin' ) return new StandInAgent();
 	let module;
 	try {
 
@@ -453,33 +453,33 @@ async function loadBrain( spec ) {
 
 	} catch ( error ) {
 
-		fail( `cannot load the brain ${ spec }: ${ error.message }` );
+		fail( `cannot load the agent ${ spec }: ${ error.message }` );
 
 	}
-	const make = module.createBrain ?? module.default;
-	const brain = typeof make === 'function' ? await make( context ) : make;
-	if ( typeof brain?.think !== 'function' ) fail( `${ spec } exports no brain: a createBrain or default function that returns one` );
-	return brain;
+	const make = module.createAgent ?? module.default;
+	const agent = typeof make === 'function' ? await make( context ) : make;
+	if ( typeof agent?.think !== 'function' ) fail( `${ spec } exports no agent: a createAgent or default function that returns one` );
+	return agent;
 
 }
 
 // An answer rejected: the thought ends without acting, as on the page (Sim.think's promise
 // rejects; the islander is asked again once it has nothing under way).
-class BrainFailure extends Error {}
+class AgentFailure extends Error {}
 process.on( 'unhandledRejection', ( reason ) => {
 
-	if ( reason instanceof BrainFailure ) return;
+	if ( reason instanceof AgentFailure ) return;
 	throw reason;
 
 } );
 
-const inner = await loadBrain( options.brain );
+const inner = await loadAgent( options.agent );
 // thoughts in flight, in the order asked (so in the order due: the latency is one for all), and
 // every thought with what it perceived and answered (--thoughts)
 const pending = [], thoughts = [];
 let asked = 0, answered = 0, failed = 0, failures = 0;
-// the brain in the islanders' slot: the inner brain's answers, an asynchronous one held to its tick
-const brain = {
+// the agent in the islanders' slot: the inner agent's answers, an asynchronous one held to its tick
+const agent = {
 	hears: inner.hears ?? false,
 	think( perception, who ) {
 
@@ -509,7 +509,7 @@ const brain = {
 // what happened, heard from the start: the islanders the game starts with land as it is installed
 session.listen( onEvent );
 session.install( sim );
-session.setBrain( brain );
+session.setAgent( agent );
 
 /** The thoughts due by now: wait for each answer, then let it act on the body at this tick. */
 async function answerDue() {
@@ -533,7 +533,7 @@ async function answerDue() {
 			failures ++;
 			push( entry.asked, `${ span } ${ label( entry.who ) } thought, and failed: ${ error?.message ?? error }` );
 			if ( options.thoughts ) thoughts.push( { who: entry.who, asked: when( entry.asked ), answered: when( tick ), perception: entry.perception, failed: String( error?.message ?? error ) } );
-			entry.reject( new BrainFailure( String( error?.message ?? error ) ) );
+			entry.reject( new AgentFailure( String( error?.message ?? error ) ) );
 
 		}
 		// Sim.think's continuation acts on the body before the world steps on
@@ -636,7 +636,7 @@ for ( ;; ) {
 	if ( failures >= MAX_FAILURES ) {
 
 		ok = false;
-		console.error( `play-game: the brain failed ${ failures } times in a row at ${ when( sim.state.tick ) }: the run stops` );
+		console.error( `play-game: the agent failed ${ failures } times in a row at ${ when( sim.state.tick ) }: the run stops` );
 		break;
 
 	}
@@ -744,15 +744,15 @@ if ( options.thoughts ) writeFileSync( path.join( out, 'thoughts.jsonl' ), thoug
 // the transcript, day by day
 const command = [ 'node tools/game/play-game.mjs', `--days ${ options.days }`, `--seed ${ options.seed }`, `--hour ${ options.hour }`, `--pieces ${ options.pieces }`,
 	options.grow ? '--grow' : '', options.population ? `--population ${ options.population }` : '', ...options.place.map( ( p ) => `--place ${ p.text }` ),
-	options.script ? `--script ${ options.script }` : '', `--brain ${ options.brain }`, `--latency ${ options.latency }` ].filter( Boolean ).join( ' ' );
+	options.script ? `--script ${ options.script }` : '', `--agent ${ options.agent }`, `--latency ${ options.latency }` ].filter( Boolean ).join( ' ' );
 const md = [
-	`# Play: ${ options.days } game day${ options.days === 1 ? '' : 's' }, seed ${ options.seed }, ${ options.brain === 'standin' ? 'the stand-in brain' : `brain ${ options.brain }` }`,
+	`# Play: ${ options.days } game day${ options.days === 1 ? '' : 's' }, seed ${ options.seed }, ${ options.agent === 'standin' ? 'the stand-in agent' : `agent ${ options.agent }` }`,
 	'',
 	`\`${ command }\``,
 	'',
 	`Islanders: ${ [ ...people.values() ].map( ( p ) => `${ label( p.id ) } (${ p.id }, ${ p.sex === 'male' ? 'man' : 'woman' }, ${ p.age })` ).join( ', ' ) }.`,
 	'',
-	'Lines: `[record]` the record\'s entries (沧海录); `[needs]` every six game hours, each need and the bag; the other lines are the islanders\' actions from start to end, consecutive alike ones merged (×n) with their outcomes, their words (`says`) and, for an asynchronous brain, its thoughts from asked to answered.',
+	'Lines: `[record]` the record\'s entries (沧海录); `[needs]` every six game hours, each need and the bag; the other lines are the islanders\' actions from start to end, consecutive alike ones merged (×n) with their outcomes, their words (`says`) and, for an asynchronous agent, its thoughts from asked to answered.',
 ];
 lines.sort( ( a, b ) => a.tick - b.tick || a.seq - b.seq );
 const lastShown = Math.max( dayAt( Math.max( sim.state.tick - 1, 0 ) ), lines.length ? dayAt( lines.at( - 1 ).tick ) : 0 );

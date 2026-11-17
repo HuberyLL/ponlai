@@ -7,7 +7,7 @@ import { settings, type SettingsQuery } from '../Settings.ts';
 // (`?post=`, declared in Settings.ts): the pipeline (Pipeline.ts) reads them once, when it builds
 // its graph.
 
-/** The frame graph's structural choices, fixed when the page loads (the quality tier sets them;
+/** The frame graph's structural choices, fixed when the app loads (the quality tier sets them;
  * the defaults are today's high). `?post=legacy` restores the graph before they were introduced,
  * for A/B timing; `?post=` also takes a comma list of single switches (see `postOptionsFromURL`). */
 export interface PostOptions {
@@ -35,7 +35,7 @@ const LEGACY_SWITCHES: Record<string, Partial<PostOptions>> = {
 };
 
 /** The defaults (with a tier's options over them), with `?post=legacy` (every switch below) or
- * `?post=a,b` applied (the page's options, or `params`). */
+ * `?post=a,b` applied (the app's options, or `params`). */
 export function postOptionsFromURL( params: SettingsQuery = settings, base: Partial<PostOptions> = {} ): PostOptions {
 
 	const options = { ...DEFAULT_POST_OPTIONS, ...base };

@@ -46,14 +46,14 @@
 // - A chunk without island (no land within ISLAND_NEAR) has no island, anchors or lip, and carries no rim ground tile (ChunkMerge.ts fills its square): three quarters of a
 //   sea chunk's bytes went to a tile nothing reads.
 // - Arrays are ordered by world position (lattice order, or the owned items' own order), so a
-//   chunk's data and its hash repeat whatever order the chunks are built in: a chunk built alone,
+//   chunk's data and its hash are bit-identical whatever order the chunks are built in: a chunk built alone,
 //   in a block or on any thread equals itself.
 // - The island's mesh is simplified per chunk, its border locked (IslandSimplify.ts): its vertices
 //   keep their cell order and every bit, its triangles are the simplifier's (deterministic). The
 //   curvature and every attribute come from the full mesh before; the border's vertices and edges
 //   stay, so two chunks still meet bit for bit (S1, S2). A block meshed in one call (`chunkIsland`,
 //   the checks) is split by chunk before it is simplified, so it still equals its chunks.
-// - The page's derived products come with the chunk (ChunkDerived.ts): the island's caster columns
+// - The app's derived products come with the chunk (ChunkDerived.ts): the island's caster columns
 //   and ground grid on world lattices (a cell on a border is filled by both chunks, merged by min
 //   and max), taken from the island's mesh before it is simplified, and the refracted map's
 //   triangle subsets of the drawn island, the stones and the floor tile (owned with their
@@ -242,7 +242,7 @@ export function dirtyChunks( before: LandLattice, after: LandLattice ): string[]
 export interface LandField { i0: number; j0: number; nx: number; nz: number; data: Float32Array }
 
 /** The land field over `box` (by default the land's box and R + 2 m round it), once per land
- * version: the page's footprint pipeline (WorldShapes.buildFootprint) on the world lattice. */
+ * version: the app's footprint pipeline (WorldShapes.buildFootprint) on the world lattice. */
 export function landField( land: LandLattice, box: Bounds = grow( landBounds( land ), R + 2 ) ): LandField {
 
 	const N = Math.round( 2 * GROWTH.half / GROWTH.cell ), H = GROWTH.half;
@@ -357,7 +357,7 @@ export interface ChunkData {
 	ambient: Float32Array;
 	// the box round everything that casts a shadow: x0, y0, z0, x1, y1, z1 (empty: +-Infinity)
 	casters: [ number, number, number, number, number, number ];
-	// What the page derives from the meshes above, so it never walks their vertices (ChunkDerived.ts):
+	// What the app derives from the meshes above, so it never walks their vertices (ChunkDerived.ts):
 	// the island's caster columns for the sun's map, the triangles of the island, the stones and the floor tile
 	// (tileIndices) the refracted sun's map draws at `level` (null: all, or no mesh), and the
 	// island's ground grid for the camera. Empty grids where there is no island.
@@ -377,14 +377,14 @@ export interface ChunkOptions {
 	contactOcclusion?: boolean;
 	// the bamboo's canopy in the island's and the meadow's sky visibility (`underCanopy`, the
 	// anchors' `groveSky`); off where the ambient volume carries it (lighting/AmbientSample.ts
-	// CANOPY_SHADE), and off by default as the page builds it, so the node builds check that path
-	canopyShade?: boolean;
+	// CANOPY_SHADE), and off by default as the app builds it, so the node builds check that path
+	canopyShadow?: boolean;
 }
 
 // What every kind of content of the span x span chunks from ( ci, cj ) reads: the window's
 // footprint and island SDF, the stones round the chunks and the solids that shade (the island over
 // the window, those stones, the rendered floor).
-function setup( window: LandField, ci: number, cj: number, span: number, contactOcclusion: boolean, canopyShade = false ) {
+function setup( window: LandField, ci: number, cj: number, span: number, contactOcclusion: boolean, canopyShadow = false ) {
 
 	const box = { x0: ci * S, z0: cj * S, x1: ( ci + span ) * S, z1: ( cj + span ) * S }, area = grow( box, R );
 	const fp = windowFootprint( window );
@@ -405,7 +405,7 @@ function setup( window: LandField, ci: number, cj: number, span: number, contact
 	} ];
 	const aoSdf = contactOcclusion ? boundedSceneField( solids ) : undefined;
 	const contacts = ( receiver?: SDF ) => contactOcclusion ? contactVisibilitySampler( solids, receiver ) : undefined;
-	return { box, fp, sdf, renderedFloor, near, nearSDFs, rockBounds, islandSolid, aoSdf, contacts, canopyShade };
+	return { box, fp, sdf, renderedFloor, near, nearSDFs, rockBounds, islandSolid, aoSdf, contacts, canopyShadow };
 
 }
 
@@ -422,11 +422,11 @@ function islandNets( ctx: Setup, ci: number, cj: number, span: number, columns =
 	const full = surfaceNets( sdf, {
 		min: [ 0, Y0, 0 ], max: [ 0, Y1, 0 ], voxel: VOXEL,
 		own: [ ci * CELLS, cj * CELLS, ( ci + span ) * CELLS, ( cj + span ) * CELLS ],
-		// as the page's island mesh (chunkWorker.ts)
+		// as the app's island mesh (chunkWorker.ts)
 		normalStep: VOXEL * 0.15, sharpen: cliffSharpCells( fp ), columnRange: columns ? islandColumnRange( fp ) : undefined,
 		aoSdf, contactVisibility: contacts( sdf ), owners: span > 1 ? owners : undefined,
 	} );
-	if ( ctx.canopyShade ) underCanopy( full );
+	if ( ctx.canopyShadow ) underCanopy( full );
 	if ( ! simplify ) return { full, mesh: full };
 	if ( span === 1 ) return { full, mesh: simplifyIslandMesh( full ) };
 	const parts: MeshData[] = [];
@@ -449,7 +449,7 @@ function islandNets( ctx: Setup, ci: number, cj: number, span: number, columns =
 // The bamboo's canopy over the island's top (BambooGroves.ts `groveSky`): its sky visibility (`ao`)
 // times the share of the sky the groves leave the ground there, fading out down the cliff's top 2 m.
 // A function of each vertex's point, so every chunk and block agrees on it. Not where the ambient
-// volume lights the ground (`canopyShade` off): its probes see the groves, and the canopy would
+// volume lights the ground (`canopyShadow` off): its probes see the groves, and the canopy would
 // darken the floor twice.
 function underCanopy( mesh: MeshData ): void {
 
@@ -536,7 +536,7 @@ export function chunkBlock( window: LandField, ci: number, cj: number, span: num
  * (read only round the chunk, for the floor tile's cover test). */
 export function buildChunk( window: LandField, land: LandLattice, ci: number, cj: number, options: ChunkOptions = {} ): ChunkData {
 
-	const { version = 0, contactOcclusion = true, canopyShade = false } = options;
+	const { version = 0, contactOcclusion = true, canopyShadow = false } = options;
 	const timings: Record<string, number> = {};
 	// eslint-disable-next-line ponlai/scene-clock -- the build's timings, a readout
 	const t0 = performance.now();
@@ -545,7 +545,7 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 	const mark = ( k: string ) => { const now = performance.now(); timings[ k ] = Math.round( now - t ); t = now; };
 
 	// the scars, the stones round the chunk and the contact solids
-	const ctx = setup( window, ci, cj, 1, contactOcclusion, canopyShade );
+	const ctx = setup( window, ci, cj, 1, contactOcclusion, canopyShadow );
 	const { box, fp, sdf, near, nearSDFs, rockBounds, islandSolid, aoSdf, contacts } = ctx;
 	const island = landIn( window, grow( box, ISLAND_NEAR ) );
 	mark( 'setup' );
@@ -621,7 +621,7 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 		: new Float32Array( 0 );
 	mark( 'ambient' );
 
-	// --- what the page derives from the meshes (ChunkDerived.ts): the caster columns and the ground
+	// --- what the app derives from the meshes (ChunkDerived.ts): the caster columns and the ground
 	// from the island as meshed, which the simplified one lies within ISLAND_SIMPLIFY_ERROR of (its
 	// metre-wide plateau triangles leave cells without a vertex), the subsets from the drawn one
 	const islandPositions = full?.positions ?? new Float32Array( 0 );
@@ -662,8 +662,8 @@ function scatterAnchors( ctx: Setup, area: Bounds ): Float32Array {
 		for ( let j = 0; j < 8; j ++ ) reach[ dst + j ] = raw[ k + j ];
 		const x = raw[ k ], z = raw[ k + 2 ];
 		// (under the bamboo's canopy too, BambooGroves.ts `groveSky`, unless the ambient volume
-		// carries it: `canopyShade`)
-		reach[ dst + 8 ] = ( visibility?.( x, raw[ k + 1 ], z, raw[ k + 3 ], raw[ k + 4 ], raw[ k + 5 ] ) ?? 1 ) * ( ctx.canopyShade ? groveSky( x, z ) : 1 );
+		// carries it: `canopyShadow`)
+		reach[ dst + 8 ] = ( visibility?.( x, raw[ k + 1 ], z, raw[ k + 3 ], raw[ k + 4 ], raw[ k + 5 ] ) ?? 1 ) * ( ctx.canopyShadow ? groveSky( x, z ) : 1 );
 
 	}
 	return reach;

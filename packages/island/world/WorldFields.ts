@@ -39,7 +39,7 @@ import type { ShoreField } from '../../render/data.ts';
 // floats are carried over where the chunks did not change and converted where they did).
 
 type FieldKey = 'shore' | 'floor' | 'beds' | 'rim';
-// the WebGPU calls made here (the page has no WebGPU typings); through SubmitBatch.ts's wrappers
+// the WebGPU calls made here (the app has no WebGPU typings); through SubmitBatch.ts's wrappers
 type GpuTexture = object;
 type GpuBuffer = { getMappedRange(): ArrayBuffer; unmap(): void; destroy(): void };
 type GpuDevice = {

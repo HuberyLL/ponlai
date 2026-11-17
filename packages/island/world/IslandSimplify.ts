@@ -36,7 +36,7 @@
 //   thread. A block meshed in one call (the checks) is split by chunk first and each part
 //   simplified on its own, as its chunk is.
 // - The curvature and every per-vertex attribute are computed on the full mesh before this runs.
-//   What the page derives from the positions (ChunkDerived.ts) is taken from the full mesh too:
+//   What the app derives from the positions (ChunkDerived.ts) is taken from the full mesh too:
 //   the simplified plateau's triangles are metres wide, which left the ground's and the caster
 //   columns' cells empty where no vertex remained, while the full mesh lies within the error of
 //   the drawn one. The refracted map's subsets index the drawn (simplified) triangles.
@@ -55,7 +55,7 @@ const WEIGHTS = [ 0.5, 0.5, 0.5, 0.5, 0.2, 1, 0.5, 1, 1, 0.5, 0.5, 0.5, 0.05 ];
 
 let ready = false;
 
-/** Resolves once the simplifier can run. (Pure for the bundler: the page's main thread imports
+/** Resolves once the simplifier can run. (Pure for the bundler: the app's main thread imports
  * Chunks.ts for its grid, and only the worker should carry the wasm.) */
 export const simplifierReady: Promise<void> = /* @__PURE__ */ MeshoptSimplifier.ready.then( () => { ready = true; } );
 

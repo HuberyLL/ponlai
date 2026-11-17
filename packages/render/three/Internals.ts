@@ -1,21 +1,21 @@
 import { REVISION } from 'three/webgpu';
 
-// The checks of what the page reaches in three beyond its public interface.
+// The checks of the three.js internals the app depends on beyond three's public interface.
 //
-// What the page reaches in three beyond its public interface is listed in `three-internals.json`
+// The three.js internals the app depends on beyond three's public interface are listed in `three-internals.json`
 // (an entry per member, method or mirrored code: where it lives in three, how it is used, which of
 // our functions needs it), and `tools/repo/verify-three-internals.mjs` checks the list against the three
 // installed. A dependency that no longer holds is an error naming its entry, never a fallback to
 // another path: `missing` makes that error, and `checkRenderer` checks the members of the
 // renderer's instance that the functions of this directory use once the renderer is initialised
 // (the static check cannot see what three assigns at run time). An upgrade of three follows
-// docs/how-to/upgrade-three.md.
+// packages/render/three/README.md.
 
-/** The error for a dependency on three's internals that does not hold: `entry` is the list's id
+/** The error for a dependency on three.js internals that does not hold: `entry` is the list's id
  * (`three-internals.json`), `user` the function of ours that needs it. */
 export function missing( entry: string, user: string ): Error {
 
-	return new Error( `three r${ REVISION } lacks '${ entry }' (packages/render/three/three-internals.json), which ${ user } needs: see docs/how-to/upgrade-three.md` );
+	return new Error( `three r${ REVISION } lacks '${ entry }' (packages/render/three/three-internals.json), which ${ user } needs: see packages/render/three/README.md` );
 
 }
 

@@ -7,7 +7,7 @@
 // browser (its Math functions could differ between engines), the chunk and the growth steps whose
 // pieces lie in its window (so the land it reads). The land of a seed and step has a record of its
 // own there too. A chunk is stored as the worker posts it (structured clone keeps every typed array
-// bit for bit), before the page merges anything.
+// bit for bit), before the main thread merges anything.
 //
 // One generator is kept: the `meta` store holds the identity of the generator that wrote the
 // chunks (its hash and the browser, both of which the keys name), and opening the cache with
@@ -27,7 +27,7 @@
 // miss too. Writes keep the default durability: 'relaxed' measured no faster here.
 //
 // Eviction: every land version a page loads adds its land and chunk records (some 35 chunks, tens
-// of MB), and a game that grows step by step would pile them up to gigabytes. After a load the page
+// of MB), and a game that grows step by step would pile them up to gigabytes. After a load the main thread
 // sends one `keep` job with the keys of the version it loaded (WorldChunks.ts), and the store keeps
 // the records of the two most recently loaded versions only: the `meta` store's `recent` lists their
 // keys, newest first; `keep` puts this load's keys first, keeps the most recent other version (a

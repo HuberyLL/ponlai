@@ -16,7 +16,7 @@ import { checkDeclarations, type Declarations } from '../Extensions.ts';
  * `name` names it in errors (its passes' names are its own, given to `addPass`). It states the
  * three declarations every registered definition does (Extensions.ts), or it is refused.
  * The one place in the order and a `declare` that cannot read the frame's own data (it is generic
- * over `Frame`) are a deliberate limit for now: the one pass the page hands in (the falling
+ * over `Frame`) are a deliberate limit for now: the one pass the app hands in (the falling
  * leaves) needs neither, and another opening is added when a pass does. */
 export interface ExtraPass extends Declarations {
 	name: string;

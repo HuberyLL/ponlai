@@ -95,7 +95,7 @@ type V4 = THREE.Node<'vec4'>;
 //     T ( 1 - exp( -sigma dt ) ), which keeps the energy whatever the step's length (Hillaire,
 //     "Physically Based and Unified Volumetric Rendering in Frostbite", SIGGRAPH 2015). The
 //     march sums five factors, each per unit of its light's colour, and colours them once it ends
-//     (rain, the thin layer and the view's clamp share the targets as colours, so the factors are
+//     (rain, the cirrus and the view's clamp share the targets as colours, so the factors are
 //     coloured in the march, not where they are shown):
 //     the key's beam. A light march toward the key light in segments that grow geometrically and
 //     span the shell's depth, run however faint the light, so the cloud's own shadow moves without
@@ -158,9 +158,9 @@ type V4 = THREE.Node<'vec4'>;
 //     a low layer for the air below it (VolumetricHaze.ts `scatterToward`), by the shares the same
 //     kernel stores, and the glow's colour (`lobeTint`).
 //     The night's faint ambient (`nightAmbient`) joins the sky's two parts. The march adds no air
-//     of its own, nor does the thin layer: the dome lays the haze over both, the clouds at their
+//     of its own, nor does the cirrus: the dome lays the haze over both, the clouds at their
 //     distance and the layer at its own (SkyDome.ts domeColour).
-//   - the thin layer (`streaksAt`): patches of fibres combed along the drift (Streaks.ts) on a
+//   - the cirrus (`streaksAt`): patches of fibres combed along the drift (Streaks.ts) on a
 //     sheet `streakHeight` up (8.5 km), near the top of the clear and fair skies' cumulus shell
 //     (4 to 9.2 km), where few cumulus reach, so drawn behind them in the composite (sky, thin
 //     layer, cumulus, rain), its optical depth the weather's amount
@@ -190,7 +190,7 @@ type V4 = THREE.Node<'vec4'>;
 // The view is ray marched in screen space, one pixel of every 4 x 4 block per frame, accumulated
 // with reprojection (camera motion and wind drift), clamped to this frame's neighbourhood and
 // upsampled bicubically. Beside the colour the view accumulates the cumulus's opacity-weighted
-// depth and, third, the thin layer's opacity as seen through the cumulus in front of it
+// depth and, third, the cirrus's opacity as seen through the cumulus in front of it
 // (`sampleViewFog`), by the same reprojection and factors but unclamped: the dome fogs a low deck
 // at the depth and the layer's share of the opacity at the layer's distance (Sky.ts
 // `domeColour`). A trace's own depth is a sixteenth of the pixels at a
@@ -226,7 +226,7 @@ type V4 = THREE.Node<'vec4'>;
 // Everything returns vec4( in-scattered radiance, transmittance ).
 //
 // Rules: the view accumulates over frames, and a scene at rest (paused clock, still camera)
-// settles its clouds once and keeps them, so a paused frame is exactly repeatable. The march
+// settles its clouds once and keeps them, so a paused frame is bit-identical. The march
 // assumes a camera below the cloud base: a free camera above the low deck sees it from 50 m
 // under its base, and the dome fogs it from that same height (`camY`). On high the view's resolution is a share of the display
 // (0.45 of its ratio up to 1.5: 1152x648 at 2K output, under half the render's linear size there,
@@ -249,10 +249,10 @@ type V4 = THREE.Node<'vec4'>;
 // range stay). A view kept at rest holds the scale it settled at: a new P settles it again, so a
 // paused frame takes the clouds at its own P, never at the 0 a jump starts P from.
 // Every explicit bake (the load's, a scene jump's, a seek's, a retune's: RenderStages.ts `bakeEnvironment`,
-// through Sky.reset) restarts the clouds as they stand before a page's first frame (`restart`),
+// through Sky.reset) restarts the clouds as they stand before a fresh load's first frame (`restart`),
 // then sets their drift, evolution and axes to the scene clock, for the bake that follows.
 // Where the parts are: the model's constants and shared helpers in CloudModel.ts; the kernels (the
-// density, the march `makeMarch`, the panorama, the shadow map, the rain `rainAt`, the thin layer
+// density, the march `makeMarch`, the panorama, the shadow map, the rain `rainAt`, the cirrus
 // `streaksAt`, the deck's mean) in CloudKernels.ts; the view's buffers, kernels and reads
 // (`sampleView`, `sampleViewFog`) in CloudView.ts; the shadow's reads in CloudShadow.ts.
 
@@ -295,7 +295,7 @@ export class Clouds {
 	// How far the heaps of a broken sky may shower (0 to 1): none in fog, whose cover is a layer of
 	// mist and stratus rather than rain cells.
 	readonly heapShowers = uniform( 1 );
-	// The thin layer (`streaksAt`): the weather's amount of it, its height (m) and its fibres'
+	// The cirrus (`streaksAt`): the weather's amount of it, its height (m) and its fibres'
 	// optical depth, the light's share on its unlit side and the start (m) of its density's fade
 	// with the panorama's footprint; and the unit direction of the surface wind, which its fibres
 	// lie along veered by LOW_VEER, and the rain's slant and the tops' lean follow.
@@ -331,7 +331,7 @@ export class Clouds {
 	// The cumulus' drift: the field is sampled at p + windOffset. Set through setDrift, which keeps
 	// it within one noise period.
 	readonly windOffset = uniform( new THREE.Vector2() );
-	// The thin layer's drift in its frame (`streaksAt`'s toWind), wrapped on the period of each
+	// The cirrus's drift in its frame (`streaksAt`'s toWind), wrapped on the period of each
 	// texture it samples: the synoptic field's and each fibre scale's (setDrift).
 	readonly streakShift = { synoptic: uniform( new THREE.Vector2() ), fine: uniform( new THREE.Vector2() ), broad: uniform( new THREE.Vector2() ) };
 	readonly lightDir = uniform( new THREE.Vector3( 0.75, 0.53, - 0.12 ).normalize() );
@@ -365,11 +365,11 @@ export class Clouds {
 	// by the atmosphere; favouring it keeps sunset clouds glowing instead of muddy.
 	readonly directGain = uniform( 1 );
 	readonly ambientGain = uniform( 1 );
-	// How far the thin layer's direct light (`streaksAt`) is desaturated toward its luminance: the
+	// How far the cirrus's direct light (`streaksAt`) is desaturated toward its luminance: the
 	// haze's clear-day value when it was set (weather/HazeKeys.ts), not linked to it; the haze's has
 	// since been set higher, and the layer's keeps its own until it is set.
 	readonly lightDesaturation = uniform( 0.26 );
-	// The thin layer's colours (`streaksAt`): the moon's direct light gain (SkyTrack.ts trackClouds) and
+	// The cirrus's colours (`streaksAt`): the moon's direct light gain (SkyTrack.ts trackClouds) and
 	// the shaded side's desaturation.
 	readonly moonLight = uniform( 0 );
 	readonly ambientDesaturation = uniform( 0.26 );
@@ -466,7 +466,7 @@ export class Clouds {
 	// Light march taps (offset, segment length) and their mip levels (shape, erosion).
 	readonly lightTaps = Array.from( { length: MAX_LIGHT_TAPS }, () => uniform( new THREE.Vector4() ) );
 	readonly lightLods = Array.from( { length: MAX_LIGHT_TAPS }, () => uniform( new THREE.Vector2() ) );
-	// Tier knobs (setDome, setMarch, setShadowRefresh, setViewScale).
+	// Tier settings (setDome, setMarch, setShadowRefresh, setViewScale).
 	domeSize: { width: number; height: number; strideX: number; strideY: number } = { ...DOME_DEFAULTS };
 	private domeOrder = ditherOrder( DOME_DEFAULTS.strideX, DOME_DEFAULTS.strideY );
 	private readonly domeNode: THREE.TextureNode;
@@ -591,7 +591,7 @@ export class Clouds {
 
 	get ready(): boolean { return this.panoramaKernel !== null; }
 
-	/** Loads the shape noise, bakes the weather and the thin layer's fibres, and builds the panorama and
+	/** Loads the shape noise, bakes the weather and the cirrus's fibres, and builds the panorama and
 	 * shadow kernels. */
 	init( renderer: THREE.WebGPURenderer ): Promise<void> {
 
@@ -764,7 +764,7 @@ export class Clouds {
 	/** Advance the clouds for a frame: the panorama, the shadow map, the distance field after a
 	 * coverage change, and the view as seen by `camera` (its drawing buffer `width` by `height`).
 	 * `time` is the scene clock: a still camera over a paused clock stops tracing once the view
-	 * has converged, so a paused frame is exactly repeatable. */
+	 * has converged, so a paused frame is bit-identical. */
 	update( renderer: THREE.WebGPURenderer, camera: THREE.PerspectiveCamera | null, width: number, height: number, time: number ): void {
 
 		if ( ! this.panoramaKernel || ! this.shadowKernel ) return;
@@ -852,8 +852,8 @@ export class Clouds {
 		if ( resting && ( ! this.settled || full || rescaled ) ) {
 
 			// The scene has come to rest: settle the view once, from scratch, then keep it (or settle it
-			// again at a new P). Depending only on the scene and P, a paused frame is exactly
-			// repeatable. The panorama and the shadow map (camera-relative, refreshed a share per
+			// again at a new P). Depending only on the scene and P, a paused frame is
+			// bit-identical. The panorama and the shadow map (camera-relative, refreshed a share per
 			// frame) are brought up to date with it, so a paused frame does not wait out their refresh
 			// cycles after a camera move.
 			if ( ! full ) this.refreshMaps( renderer, true, 1 );
@@ -1037,7 +1037,7 @@ export class Clouds {
 
 	}
 
-	/** Back to the state before the page's first frame (every explicit bake, through Sky.reset, which
+	/** Back to the state before a fresh load's first frame (every explicit bake, through Sky.reset, which
 	 * then sets the wind's offset, the evolution and the axes to the scene clock): the wind's offset,
 	 * the evolution, the wind's axis and the viewer as constructed, no view history, the
 	 * frame count at zero and a whole refresh due. */
@@ -1145,7 +1145,7 @@ export class Clouds {
 	/** What the dome fogs the clouds by toward `direction`, as the view holds it beside its colour
 	 * (the resolve's depth history): `depth`, the distance (metres) to the cumulus's light, the
 	 * march's opacity-weighted depth (`makeMarch`), `fallback` outside the view, before it has data,
-	 * or where it holds no cumulus; and `thin`, the thin layer's opacity as seen through what lies
+	 * or where it holds no cumulus; and `thin`, the cirrus's opacity as seen through what lies
 	 * in front of it, 0 outside the view. */
 	sampleViewFog( direction: V3, fallback: F ): { depth: F; thin: F } {
 
@@ -1257,7 +1257,7 @@ export class Clouds {
 
 	/** Drift the clouds by the surface wind's integrated displacement (metres downwind; Wind.ts
 	 * `displacement`): a function of the wind's state alone, so a paused frame and a seek draw the
-	 * same sky. Set `windAxis` first: the thin layer's shift is kept in its frame. */
+	 * same sky. Set `windAxis` first: the cirrus's shift is kept in its frame. */
 	/** Each layer's sampling offset before wrapping, from the displacement setDrift was last given:
 	 * the layer moves by minus its change (the wind probe's W5 reads the drifts off these). The
 	 * streaks drift with the cumulus. */
@@ -1339,7 +1339,7 @@ export class Clouds {
 		} else {
 
 			// A share (at most 1) of the render high draws at its nominal ratio. The size follows the
-			// display alone, not the render: high's dynamic resolution moves the render's scale, and a
+			// display alone, not the render: the high tier's dynamic resolution moves the render's scale, and a
 			// view that followed it would be rebuilt, with its kernels, at every step.
 			const nominal = Math.min( this.display.ratio, 1.5 ) * scale.display;
 			w = this.display.width * nominal;

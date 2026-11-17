@@ -1,7 +1,7 @@
-// One land version's chunks merged into the WorldData the page draws.
+// One land version's chunks merged into the WorldData the app draws.
 //
-// One land version's chunks (Chunks.ts `ChunkData`) merged into the WorldData the page draws: the
-// page's pool (WorldChunks.ts) and the node tools' serial path (tools/island/world-node.mjs) both end
+// One land version's chunks (Chunks.ts `ChunkData`) merged into the WorldData the app draws: the
+// app's worker pool (WorldChunks.ts) and the node tools' serial path (tools/island/world-node.mjs) both end
 // here, so they draw and check the same world. Pure (no three, no DOM). A grown island's version
 // is merged in steps (`mergeSteps`, in idle time: Growth.ts), to the same result.
 //
@@ -9,10 +9,10 @@
 //   own order (Chunks.ts), so the merged arrays, the meadow's pools and a paused frame are the
 //   same whatever order the workers finished in.
 // - The island stays a part per land chunk, with what its job derived from it (ChunkDerived.ts),
-//   for the page to draw a mesh per chunk (World.ts). The stones are one mesh, the chunks' meshes
+//   for the app to draw a mesh per chunk (World.ts). The stones are one mesh, the chunks' meshes
 //   concatenated, and the sea floor one mesh of the chunks' near tiles in that order, then the far
 //   floor. The refracted sun's triangle subsets of those two are the chunks' subsets joined in the
-//   same order (the far floor cut here, by the same rule), so the page cuts none of the world's
+//   same order (the far floor cut here, by the same rule), so the app cuts none of the world's
 //   meshes itself.
 // - The world fields cover the land's box and 32 m round it, out to the world's 32 m grid
 //   (`fieldBounds`), which holds every chunk; each chunk's texels are copied into its square:
@@ -52,7 +52,7 @@ const STEP = SEABED_TILE / ( TILE_SIDE - 1 );
 // the shore field's texels filled a step (in steps)
 const FILL = 1 << 15;
 
-/** A land version and what the page needs of it before its chunks (chunkWorker.ts `buildLand`). */
+/** A land version and what the main thread needs of it before its chunks (chunkWorker.ts `buildLand`). */
 export interface LandData {
 	seed: number; step: number;
 	// LandLattice.toBytes

@@ -262,7 +262,7 @@ export class RefractedSun {
 	// the map's size as constructed (it may grow once to 2048: see update)
 	private readonly initialSize: number;
 	// Turn of the key light (radians) below which a moving light keeps the drawn map: a quality
-	// tier's knob. A light at rest is always drawn exactly.
+	// tier's setting. A light at rest is always drawn exactly.
 	angleGate = ANGLE_GATE;
 
 	constructor( private readonly renderer: THREE.WebGPURenderer, private readonly shared: Pick<Shared, 'waterLevel' | 'sunDir'>, { mapSize = 1024, contactBias = 0.02 }: RefractedSunOptions = {} ) {

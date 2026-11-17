@@ -6,29 +6,29 @@ import type { GameSettingsQuery } from './GameSettings.ts';
 //
 // The game's save: one slot in this browser's storage (localStorage) holding the game as JSON with
 // a version number: the simulation's state (sim/Sim.ts, where every change of the world is kept)
-// and the record (沧海录, Chronicle.ts: its entries, each at its tick, and the skies of each day). Kept apart from Game.ts so the page's entry (WorldBoot.ts) can read the
-// saved piece count as the page loads, before the world is asked for, without the game's code; and
+// and the record (沧海录, Chronicle.ts: its entries, each at its tick, and the skies of each day). Kept apart from Game.ts so the app's entry (WorldBoot.ts) can read the
+// saved piece count as the app loads, before the world is asked for, without the game's code; and
 // plain TypeScript, so node's checks read saves (tools/game/verify-game.mjs).
 //
-// What is not saved: what the page holds rather than the game (the weather, the camera, which page
-// of the record is open), a brain's thought in flight (the islander is asked again once it has
+// What is not saved: what the app holds rather than the game (the weather, the camera, which page
+// of the record is open), an agent's thought in flight (the islander is asked again once it has
 // nothing under way, and still holds what it noticed, which only an answer acted on takes) and the
 // player's words no thought has taken yet. Events (sim/events.ts) are not saved: the session hands
 // them on before it saves.
 //
-// The page keeps the slot itself (`keepsSave`): it resumes the saved game as it loads, and saves it
+// The app keeps the slot itself (`keepsSave`): it resumes the saved game as it loads, and saves it
 // every minute while it runs and when the page is hidden or left (Game.ts). It does not in an
 // automated browser, so a capture or a check neither resumes a game left in its profile nor leaves
 // one there; the `autosave` URL option (on, off) decides anywhere. `load` resumes the save whatever
 // that says, and `new` starts a new game, which replaces the save at its first save.
 //
 // Rules: a change to what is saved bumps SAVE_VERSION (sim/types.ts). While the game is in development a save of
-// another version is not carried over: the page starts a new game, and copies the old save to
+// another version is not carried over: the app starts a new game, and copies the old save to
 // UNREAD_KEY before it saves over the slot, so it is never lost unseen.
 
 /** the one save slot (localStorage) */
 export const SAVE_KEY = 'ponlai.game';
-/** where a save this build cannot read is kept when the page saves over the slot */
+/** where a save this build cannot read is kept when the app saves over the slot */
 export const UNREAD_KEY = 'ponlai.game.unread';
 
 /** the save's shape this build writes (kept with the simulation, sim/types.ts) */
@@ -96,7 +96,7 @@ export function readSlot(): string | null {
 
 }
 
-/** Whether the page keeps the slot itself: resumes it at load, and saves as the game runs. */
+/** Whether the app keeps the slot itself: resumes it at load, and saves as the game runs. */
 export function keepsSave( params: GameSettingsQuery ): boolean {
 
 	const asked = params.get( 'autosave' );

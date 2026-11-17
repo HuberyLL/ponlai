@@ -1,5 +1,5 @@
 // The project's values that the generic tools in tools/kit/ read, so that a kit tool names no part
-// of this project: the globals the page mounts and its loading screen (the page's agreements:
+// of this project: the globals the app mounts and its loading screen (the app's interfaces:
 // docs/bindings/writing-tools-and-checks.md, Build), the project's name, where the tools write and
 // the names they share on the machine (the GPU lock, the jobs' registry, temp folders), the dev
 // server's address and the capture's default query, what a stored reference depends on and what may
@@ -14,9 +14,9 @@
 export default Object.freeze( {
 
 	page: Object.freeze( {
-		// the page's parts and controls, mounted on debug pages
+		// the app's parts and controls, mounted on debug pages
 		handle: '__PONLAI__',
-		// the page's diagnostics (`settled`, `frame`, `taa`)
+		// the app's diagnostics (`settled`, `frame`, `taa`)
 		diagnostics: '__THREE_GAME_DIAGNOSTICS__',
 		// the element of the loading screen: the scene is shown once it is gone or faded out
 		loading: 'loading',
@@ -26,7 +26,7 @@ export default Object.freeze( {
 		crops: '__PONLAI_CROPS__',
 		// the capture's hold on the page's GPU device until the world is generated (tools/kit/capture.mjs)
 		gpuGate: '__PONLAI_GPU_GATE__',
-		// the stepped clip a clips table's clipEval installs, and the notes it leaves (the page reads
+		// the stepped clip a clips table's clipEval installs, and the notes it leaves (the app reads
 		// the first too: packages/render/post/Pipeline.ts freezes the exposure while it is set)
 		clip: '__PONLAI_CLIP__',
 		clipNotes: '__PONLAI_CLIP_NOTES__',

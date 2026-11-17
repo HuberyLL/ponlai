@@ -1,11 +1,11 @@
 // The frame profiler for `?profile`: each pass's GPU time and the frame's CPU time.
 
-// three is imported for its types only: the page hands in the inspector's base class, so this
+// three is imported for its types only: the app hands in the inspector's base class, so this
 // lazily loaded module does not split three out of the main bundle into a chunk of its own.
 import type * as THREE from 'three/webgpu';
 import { canvasContext, gpuDevice, pendingTimestamps, resolveTimestamps, takeTimestamps, timestampPools, tracksTimestamps, wrapPipelineCreation, type TimestampPool } from '../three/Backend.ts';
 
-// Frame profiler for `?profile` (loaded only then; without it the page builds the same renderer,
+// Frame profiler for `?profile` (loaded only then; without it the app builds the same renderer,
 // pipelines and image). Three's inspector hooks see every render and compute pass with the uid of
 // its timestamp query; the renderer's `trackTimestamp` writes each pass's GPU start and end, which
 // are resolved here every frame into a ring of read-back buffers (three's own pool resolves into
@@ -80,7 +80,7 @@ import { canvasContext, gpuDevice, pendingTimestamps, resolveTimestamps, takeTim
 // So the graph labels its own passes and what three's nodes render as part of them (the bloom
 // chains' passes); what runs outside the graph (the sky, the shadow maps, the ocean) is labelled
 // by hand.
-// The page (app/main.ts, app/scenes/ScenePage.ts) exposes `api` as `window.__PONLAI_PROFILE__`, read by tools/render/profile-frame.mjs.
+// The app (app/main.ts, app/scenes/ScenePage.ts) exposes `api` as `window.__PONLAI_PROFILE__`, read by tools/render/profile-frame.mjs.
 // `?profile=frames` keeps the frame and tick timing but skips the GPU timestamps. Measure frame
 // rates that way: with timestamp queries on, Chrome ran the same frames up to a quarter faster
 // (light scenes most; a scene that keeps the GPU saturated hardly at all), so the per-pass split
@@ -183,9 +183,9 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 	class FrameProfiler extends Base {
 
 		readonly timestamps: boolean;
-		/** The page's render scale, recorded with each frame as it starts. */
+		/** The app's render scale, recorded with each frame as it starts. */
 		renderScale = NaN;
-		/** Called with each frame as it finishes (the page's dynamic resolution reads its GPU time). */
+		/** Called with each frame as it finishes (the app's dynamic resolution reads its GPU time). */
 		onRecord: ( ( record: FrameRecord ) => void ) | null = null;
 		/** Whether the pass with a timestamp uid follows the render's pixel count (the dynamic
 		 * resolution's split, `PassScaling`), asked once per timed pass. */
@@ -894,7 +894,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 export type FrameProfiler = ReturnType<typeof createFrameProfiler>;
 
 /** The renderer's passes by subsystem. `handles` are the renderer's parts, named as in
- * RenderStages.ts `RenderParts`, as the page hands them in (app/main.ts); a page labels its own
+ * RenderStages.ts `RenderParts`, as the app hands them in (app/main.ts); an app labels its own
  * parts with `profiler.scope` beside this call. */
 export function labelPasses( profiler: FrameProfiler, handles: Record<string, unknown> ): void {
 

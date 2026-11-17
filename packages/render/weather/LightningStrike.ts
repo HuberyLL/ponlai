@@ -22,7 +22,7 @@ import { SimplexNoise } from 'three/addons/math/SimplexNoise.js';
 // instead of every frame. Its life (the leader propagating down from the source, the steady
 // channel, the vanishing) moves to the GPU: every vertex carries the times at which the
 // propagation front reaches it and leaves it, and the material compares them with the strike's
-// age, so the front advances smoothly between frames and a paused frame is exactly repeatable.
+// age, so the front advances smoothly between frames and a paused frame is bit-identical.
 // Each vertex also keeps the point on the channel's axis it was offset from, so the material
 // can widen a channel kilometres away to a pixel without moving it. All randomness comes from
 // one seed. Branches are not recycled over time (the original's subray period and duty cycle),
@@ -100,7 +100,7 @@ interface Segment {
 const COS30DEG = Math.cos( 30 * Math.PI / 180 );
 const SIN30DEG = Math.sin( 30 * Math.PI / 180 );
 
-// The original's repeatable generator: a fixed table of random numbers read from a seekable
+// The original's deterministic generator: a fixed table of random numbers read from a seekable
 // position, so a branch can restart the sequence from its own seed. The table is filled from
 // one integer seed (mulberry32) instead of Math.random.
 class SeededGenerator {

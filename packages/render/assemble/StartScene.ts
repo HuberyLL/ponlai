@@ -39,7 +39,7 @@ import { DEFAULT_GLOBALS, createSceneDiagnostics, exposeSceneHandles, type Scene
 import type { SceneHost } from './SceneHost.ts';
 
 export interface StartOptions {
-	/** the look's tables the scene is drawn with (look/Look.ts: the render pipeline's NEUTRAL_LOOK, or a page's own) */
+	/** the look's tables the scene is drawn with (look/Look.ts: the render pipeline's NEUTRAL_LOOK, or an app's own) */
 	look: Look;
 	/** the scene a query names where it names no hour or day length; `parkedWeather` defaults to the debug page's */
 	defaults: { hour: number; dayLength: number; parkedWeather?: boolean };
@@ -59,7 +59,7 @@ export interface SceneContext {
 	readonly look: Look;
 	/** a debug page: the dev server, `?debug` or `?profile` */
 	readonly DEBUG: boolean;
-	/** the scene a query names, with the page's defaults: the load's and a scene jump's */
+	/** the scene a query names, with the app's defaults: the load's and a scene jump's */
 	sceneOptions( query: SettingsQuery ): SceneOptions;
 	/** the canvas's size and the render scale (from `afterWater` on) */
 	readonly sizing: SceneSizing;
@@ -109,7 +109,7 @@ export interface SceneContent {
 	/** the frame, asked for after the haze's bake: its switches, its setup, the resize, the caller's
 	 * part of each frame */
 	frame?( scene: SceneContext ): SceneFrameSpec;
-	/** after the frame's draws compiled ahead (the warm-up) */
+	/** after the frame's draws were precompiled (the warm-up) */
 	afterWarmUp?( scene: SceneContext ): Step;
 	/** after the shared builds are primed, before the loop starts */
 	afterShared?( scene: SceneContext ): Step;
@@ -167,10 +167,10 @@ export async function startScene( host: SceneHost, options: StartOptions, conten
 	// scene handles and frame diagnostics on the page, for the capture tool and the console: dev
 	// server, ?debug or ?profile only
 	const DEBUG = !! import.meta.env?.DEV || params.has( 'debug' ) || profiler !== null;
-	// The quality tier (Quality.ts): its load knobs are read as the parts they shape are built, its
-	// runtime ones applied by applySkyQuality. The page chose it with the settings, since the
-	// anti-aliasing mode and other load knobs are read as the modules load; a page that installed
-	// none builds the `quality` option's, else high (`loadTier`, as those modules read it).
+	// The quality tier (Quality.ts): its load-time settings are read as the parts they shape are
+	// built, its runtime ones applied by applySkyQuality. The app chose it with the settings, since
+	// the anti-aliasing mode and other load-time settings are read as the modules load; an app that
+	// installed none builds the `quality` option's, else high (`loadTier`, as those modules read it).
 	const qualityTier = loadTier();
 	const quality = qualityProfile( qualityTier );
 	await createRenderer( render, { profiler, mark: ( name ) => profiler?.mark( name ), DEBUG, qualityTier, quality, setStatus: ( s ) => host.status( s ) } );
@@ -189,7 +189,7 @@ export async function startScene( host: SceneHost, options: StartOptions, conten
 		get frame() { if ( ! frame ) throw new Error( 'startScene: the frame exists from its content on' ); return frame; },
 	};
 
-	// where the canvas goes and the size it starts at; `dpr`: the page's pixel ratio, pinned
+	// where the canvas goes and the size it starts at; `dpr`: the app's pixel ratio, pinned
 	// (captures), over the display's and the tier's
 	const size = host.size();
 	createScenes( render, { viewport: { host: host.canvasHost, width: size.width, height: size.height }, dpr: params.has( 'dpr' ) ? Number( params.get( 'dpr' ) ) : null } );
@@ -242,7 +242,7 @@ export async function startScene( host: SceneHost, options: StartOptions, conten
 	// The loading screen lifts once the scene shows what it will show (by default: the sun's map has
 	// drawn once its casters' pipelines exist, a few frames in, and the ambient light's first relight
 	// is in, once the sky has been projected), at most REVEAL_WAIT ms on; a paused page lifts it
-	// without its fade, so a capture never shoots through it.
+	// without its fade, so a capture never sees through it.
 	const REVEAL_WAIT = 3000;
 	// eslint-disable-next-line ponlai/scene-clock -- the loading screen's longest wait: when it lifts, not what is drawn
 	const revealAt = performance.now() + REVEAL_WAIT;
@@ -260,9 +260,9 @@ export async function startScene( host: SceneHost, options: StartOptions, conten
 
 		}
 		// A paused page lifts the loading screen at once, without its fade: the frame holds still, and
-		// the captures and reviews of paused frames shoot it as soon as it is ready, which for a
+		// the captures and reviews of paused frames capture it as soon as it is ready, which for a
 		// temporal rest is about 40 frames after a view's eval, well inside the second the fade takes.
-		// A rest shot so showed up to 2 % of the loading screen's colour over the whole image (a
+		// A rest captured so showed up to 2 % of the loading screen's colour over the whole image (a
 		// converged rest is the canvas alone: TemporalRest.ts).
 		host.liftLoading( render.paused );
 		content.onRevealed?.( scene );

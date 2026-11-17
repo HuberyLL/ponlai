@@ -916,7 +916,7 @@ def flicker_clip(d, a):
       std     the mean per-pixel standard deviation over the frames; `mean` the luma mean
     The map is the share of frames whose |s| exceeds the first level, times 255 x --gain.
     Odd frames: a paused page's stepped frames now and then come out as a discrete alternative image
-    (scattered vegetation pixels off by up to 190 levels: capture-clip.mjs, "The rest shot twice"),
+    (scattered vegetation pixels off by up to 190 levels: capture-clip.mjs, beside RECHECK_SHOTS),
     which in a 120-frame meadow clip raised Fhp by about 5 % and the flashes by about 6 % from one
     frame. A frame whose flash share over all the regions exceeds --odd times the clip's median and
     the median by ODD_FLOOR is listed (`odd`); --drop-odd leaves out every term that reads one, so

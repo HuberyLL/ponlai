@@ -1,7 +1,7 @@
 # Life and islanders
 
 What the island's creatures and its people look like and why, and what to avoid. What every subject
-shares (the light, the exposure, the image) is in [Art direction](art-direction.md). Of the
+shares (lighting, exposure, post-processing) is in [Art direction](art-direction.md). Of the
 creatures below, only the wenyao is built (`packages/island/life/Wenyao.ts`), and it is parked:
 the scene leaves it out unless the `wenyao` URL option is given. The others are designed.
 
@@ -20,11 +20,12 @@ Contents:
 - Each creature is a real species in body, gait and habitat, with one or two departures from life,
   as the texts themselves make them: the Shanhaijing's wenyao is a flying fish with a white head, a
   red beak and a bird's wings, and it flies by night; the Liezi's trees are trees whose flowers and
-  fruit are pearl and jade. There is no creature of the texts alone, with no living model. Fantasy
+  fruit are pearl and jade. No creature comes from the texts alone, without a living model. Fantasy
   plants follow the same rule.
-- Each has a reason the world gives. It lives where its real species would: a turtle on the seagrass
-  it grazes, a clam in the sunlit shallows its algae need. Its numbers follow the extent of that
-  habitat (the coast's length, the shallows' or the meadow's area), and nothing is placed by hand.
+- Each has a reason in the world for being there. It lives where its real species would: a turtle on
+  the seagrass it grazes, a clam in the sunlit shallows its algae need. Its numbers follow the
+  extent of that habitat (the coast's length, the shallows' or the meadow's area), and nothing is
+  placed by hand.
 - The island's own birds and beasts are white: real species in white plumage or coat ("its birds and
   beasts are all pure white", the Liezi; "its creatures, birds and beasts, are all white", the
   Shiji). Visitors from elsewhere (the jingwei from the western mountains, the wenyao from the
@@ -35,7 +36,7 @@ Contents:
   the surface. A small creature of the texts is made larger than life where that view would lose it.
 - No beings of human form (the jiaoren), no herds of phoenixes and qilin, and no dragons but the
   bones they shed (as on Fangzhang in the Shiyi ji), which read as rock, like a whale's fossil ribs.
-  Any of these would turn the photograph into an illustrated myth.
+  Any of these would turn the photographic image into an illustrated myth.
 
 ## The cast
 
@@ -76,9 +77,9 @@ The cast the texts give so far:
 
 - The islanders are the people of 含明, west of Penglai, who stitch birds' feathers into clothes and
   drink the dew (拾遗记 卷十).
-- Their gear covers what a figure cannot do well, a face and hair: a woven bamboo hat (笠: the
+- Their gear hides what the figures cannot render well, a face and hair: a woven bamboo hat (笠: the
   pointed 斗笠 and the flat crowned 箬笠) over a head with no hair and no worked face, in the brim's
-  shade.
+  shadow.
 - White feathers are stitched into a short-sleeved top worn open over the bare chest and belly and
   into shorts to mid-thigh, with bare arms and legs and straw sandals: little cloth, as on an island
   short of everything. No sash or headcloth: a headcloth reads as a bandit's.
@@ -86,8 +87,9 @@ The cast the texts give so far:
   as a feather cloak's are), or they are not worn. The clothes keep no finer detail.
 - From the game's default distance a figure reads by colour and silhouette: the straw disc, the
   white top and shorts, the skin. The feathers' and the weave's texture show from the closest zoom.
-- The figures are lit by the island's own light, three's physical model with the ground's bounce,
-  with no cel steps and no outlines, and stand about 6.5 heads tall
+- The figures are lit as the rest of the island is, by three.js's physically based shading with
+  bounce light from the ground, with no cel-shading steps and no outlines. They stand about 6.5
+  heads tall
   (`packages/island/characters/FigureSurfaces.ts`; `real` in
   `packages/island/characters/Proportions.ts`).
 - They are built in Blender on the character kit's rig and its clips, never modelled in code

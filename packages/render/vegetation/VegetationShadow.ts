@@ -21,7 +21,7 @@ type V3 = THREE.Node<'vec3'>;
 // keep the mask the same on all three corners (one flag per part), or the triangle stretches.
 //
 // Motion vectors (the temporal modes, packages/render/post/Motion.ts): `previousPosition` is where the
-// animated vertex was in the rendered frame before, in the same space (the wind's sway evaluated
+// animated vertex was in the previous rendered frame, in the same space (the wind's sway evaluated
 // with `shared.wind.previous`, `previousSway`). The shaded draw assigns it to three's
 // `positionPrevious` in its position stage, after the rest inputs are read and before three moves
 // `positionLocal` to the swayed pose, and writes its velocity as class vegetation. Only the

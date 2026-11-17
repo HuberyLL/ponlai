@@ -6,7 +6,7 @@ import { lookup, t } from '../i18n/i18n.ts';
 //
 // What the interface says in words for the simulation's states: what an islander is doing (the name
 // tag's second line), the names of places (an islander, as a place, by their name) and items, and
-// the reasons a placement is refused. The simulation speaks English to the brain (its tools,
+// the reasons a placement is refused. The simulation speaks English to the agent (its tools,
 // reasons and ids); the player reads the catalogue's words for them (i18n/zh-CN.json `doing`,
 // `place`, `item`, `build.refusal`), and anything without a row there shows as the simulation
 // says it.

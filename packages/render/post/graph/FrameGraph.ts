@@ -1105,7 +1105,7 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 
 		const entry = `${ what }: ${ String( ( error as Error )?.message ?? error ).split( '\n' )[ 0 ] }`;
 		( this.warmStats?.failed ?? this.earlyFailures ).push( entry );
-		console.warn( `FrameGraph.warm: '${ what }' did not compile ahead (it will on its first frame)`, error );
+		console.warn( `FrameGraph.warm: '${ what }' did not precompile (it will compile on its first frame)`, error );
 
 	}
 

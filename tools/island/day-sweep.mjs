@@ -4,8 +4,8 @@
 // the grade) go wrong at one hour under one sky, which the few frames a tuning session looks at miss.
 // Run it before handing back a change to anything keyed by the sun's elevation or the weather, and
 // again with `--compare` on the run from before. It only combines tools that exist:
-// tools/island/colour-rows.mjs shoots the frames (shoot --warm: one warm page, a scene jump per frame)
-// and reads them (rows --own), `tools/kit/img.py sheet` and `thumb` lay them out and shrink them, and
+// tools/island/region-colours.mjs captures the frames (capture --warm: one warm page, a scene jump per frame)
+// and reads them (measure --own), `tools/kit/img.py sheet` and `thumb` lay them out and shrink them, and
 // tools/island/day-sweep-plot.py draws the curves. `report` runs the second half again on the frames
 // already in <outDir> (new thresholds, a comparison, a sheet that failed).
 //
@@ -25,16 +25,16 @@
 //   --times spec       HH:MM tokens and the words below, mixed (`hourly,05:20`) (all)
 //   --weathers a,b     the weathers (the kept ones, every weather not in Weather.ts PARKED_WEATHER)
 //   --compare <dir>    compares with an earlier run of the same cameras, size and sort
-//   --transitions      also shoots each adjacent pair of weathers half way through a front
+//   --transitions      also captures each adjacent pair of weathers half way through a front
 //   --keep-frames      keeps every frame at full size
 //   --thr-stops s      a step in log2 luminance worth a line (1/3)
 //   --thr-de d         a step in the Oklab (a, b) distance worth a line (0.03)
 //   --turn-deg d       a pair the camera turned more than d degrees over is not scanned (15)
-//   --sky-mask-deg d   leaves the sky within d degrees of the sun or the moon out of the sky's row (5)
+//   --sky-mask-deg d   leaves the sky within d degrees of the sun or the moon out of the sky's measurement (5)
 //   --size WxH@dpr     the frames' size (2560x1440@1)
-//   --jobs n           colour-rows's page count (1)
+//   --jobs n           region-colours's page count (1)
 //   --q query          extra query options for every frame
-//   --thin             report: thins a run already made to thumbnails (as a shoot does)
+//   --thin             report: thins a run already made to thumbnails (as a capture run does)
 //
 // A routine run is hundreds of scene jumps: start it through tools/kit/job.mjs and wait on it there,
 // never in a shell of its own. <outDir> must be new or empty: a run into an old one would read the
@@ -60,10 +60,10 @@
 //   all     hourly, midday, dense and key together: the default, 61 frames a camera and weather
 // Each frame is `weather=<w>&hour=<h>` on the camera's pose; its label's elevation is the page's own.
 //
-// The regions, read per frame by colour-rows rows --own, each frame sorted by its own depth read:
+// The regions, read per frame by region-colours measure --own, each frame sorted by its own depth read:
 // `sky` and `sea` (cells more than 0.99 sky or sea; the sky without the cells within --sky-mask-deg of
 // the sun or the moon), `land` (no sky and no sea at all) and `floor` (the land's darkest 5 % by
-// luminance). A row is the final pixel's mean linear colour over its cells, as log2 luminance and
+// luminance). A region's measurement is the final pixel's mean linear colour over its cells, as log2 luminance and
 // Oklab L, C, h. A region a camera holds no cells of is "not read"; one with too few cells (under 8)
 // in a frame is a gap in its curve and a line in gaps.txt, not a failure.
 //
@@ -75,9 +75,9 @@
 // as "camera turned" instead. The rules are beside `stepsOf`.
 //
 // --compare <earlier outDir> gives a before, after and difference sheet per camera and weather and
-// compare.txt, the frames whose regions changed beyond the thresholds, read from both runs' rows, so
-// either run may be thinned. A run of another sort, size or with no camera in common is refused
-// before anything is shot; a sky masked otherwise is marked not compared. Frames are subtracted only
+// compare.txt, the frames whose regions changed beyond the thresholds, read from both runs'
+// measurements, so either run may be thinned. A run of another sort, size or with no camera in
+// common is refused before anything is captured; a sky masked otherwise is marked not compared. Frames are subtracted only
 // where both runs hold the same query; the rest are listed. --transitions freezes each adjacent pair
 // of weathers half way through a front (views.mjs's `weather-change` recipe) at sunrise, noon, the
 // golden hour and sunset (the first camera, a page each) and reports how far the middle frame lies
@@ -90,11 +90,11 @@
 // overview-<camera>.png (the weathers by the key moments), rows.json, curves-<camera>-<weather>.png
 // (the regions' readings, the sun's elevation and the EV over the day, the steps circled),
 // jumps-<camera>.txt and jumps.txt, compare/, compare.txt and compare.json (with --compare),
-// transitions.txt and sheet-transitions.png (with --transitions), colour/ (colour-rows's own shoot and
-// rows), plan.json, timing.json (wall, lock-wait and busy time per part) and gaps.txt. A thinned run's
+// transitions.txt and sheet-transitions.png (with --transitions), colour/ (region-colours's own capture and
+// measurements), plan.json, timing.json (wall, lock-wait and busy time per part) and gaps.txt. A thinned run's
 // `report` redoes the numbers only; the sheets need the whole frames.
 //
-// GPU lock and browser: colour-rows takes the GPU lock shared (docs/reference/gpu-lock.md) in the
+// GPU lock and browser: region-colours takes the GPU lock shared (docs/reference/gpu-lock.md) in the
 // capture tools' headless browser; a short probe reads the default view's pose first. `report`: neither.
 //
 // Cost: a scene jump per frame on a warm page, a fraction of a page load each; a routine run of the
@@ -102,7 +102,7 @@
 // --transitions adds a page load per pair and moment. A SIGTERM (job.mjs stop) goes on to the tools
 // below it.
 //
-// Exit codes: 0 done; 1 a failed shoot, picture or thumbnail, a frame with no row, or an unexpected
+// Exit codes: 0 done; 1 a failed capture, image or thumbnail, a frame with no measurement, or an unexpected
 // error; 2 bad usage, an output directory that is not empty, an earlier run that cannot be compared,
 // or a packages/render/sky/Weather.ts without WEATHER_PRESETS or with every weather parked.
 import '../kit/help.mjs';
@@ -138,7 +138,7 @@ const HANDOFF_ELEVATION = - 12;
 // minutes at sunrise and sunset; at -12 the light changes slowly, and the camera's one big turn is
 // there (--turn-deg). low stands at the island camera's `maxPolarAngle`, 82 degrees from straight
 // down, so the horizon and the low sky stand in the frame; the sun stands in that sky band while it
-// is under about 5 degrees (--sky-mask-deg). The turned cameras are shot at the default view's
+// is under about 5 degrees (--sky-mask-deg). The turned cameras are captured at the default view's
 // distance read from the page (a short probe), because the framing's own distance changes with the
 // heading (85 m at az 180, 108 m at 200) and a turned camera would otherwise also change its
 // height. There is no near or far camera: the game camera's farthest zoom, 70 m, is under the 85 m
@@ -163,7 +163,7 @@ function usage( message ) {
 
 const SHARED = [ 'compare', 'thr-stops', 'thr-de', 'turn-deg', 'sky-mask-deg' ];
 const MODES = {
-	shoot: { flags: [ 'transitions', 'keep-frames' ], values: [ ...SHARED, 'scope', 'views', 'times', 'weathers', 'size', 'jobs', 'q' ], lists: [ 'view' ] },
+	capture: { flags: [ 'transitions', 'keep-frames' ], values: [ ...SHARED, 'scope', 'views', 'times', 'weathers', 'size', 'jobs', 'q' ], lists: [ 'view' ] },
 	report: { flags: [ 'thin' ], values: SHARED, lists: [] },
 };
 
@@ -306,12 +306,12 @@ for ( const signal of [ 'SIGTERM', 'SIGINT' ] ) {
 
 }
 
-// runs colour-rows with its output on ours, and adds up the GPU lock's waits it reports
+// runs region-colours with its output on ours, and adds up the GPU lock's waits it reports
 function runColour( args ) {
 
 	return new Promise( ( resolve ) => {
 
-		const child = spawn( process.execPath, [ 'tools/island/colour-rows.mjs', ...args ], { cwd: REPO, stdio: [ 'ignore', 'inherit', 'pipe' ] } );
+		const child = spawn( process.execPath, [ 'tools/island/region-colours.mjs', ...args ], { cwd: REPO, stdio: [ 'ignore', 'inherit', 'pipe' ] } );
 		children.add( child );
 		let waited = 0, tail = '';
 		child.stderr.on( 'data', ( d ) => {
@@ -375,7 +375,7 @@ async function planOf( options, url ) {
 	const weathers = ( options.weathers ?? WEATHERS.join( ',' ) ).split( ',' ).filter( Boolean );
 	for ( const w of weathers ) if ( ! WEATHER_NAMES.includes( w ) ) usage( `no weather ${ w } (${ WEATHER_NAMES.join( ', ' ) })` );
 	const size = options.size ?? '2560x1440@1';
-	// an earlier run this one cannot be compared with stops it here, before a frame is shot
+	// an earlier run this one cannot be compared with stops it here, before a frame is captured
 	const earlier = options.compare ? earlierRun( options.compare, size, options.skyMaskDeg, [ ...names, ...options.view.map( ( t ) => t.slice( 0, t.indexOf( ':' ) ) ) ] ) : null;
 	if ( earlier && ! earlier.skyComparable ) notes.push( `--compare: ${ earlier.skyNote }` );
 	const everyTimes = timesOf( options.times ?? 'all' ), keyTimes = timesOf( options.times ?? 'key' );
@@ -428,9 +428,9 @@ async function planOf( options, url ) {
 
 }
 
-// ------------------------------------------------------------------ shooting
+// ------------------------------------------------------------------ capturing
 
-// what the views of a shoot cost, from their own records: the time they were busy and the time
+// what the views of a capture run cost, from their own records: the time they were busy and the time
 // they waited for the GPU lock (colour/normal/<view>.json `page`)
 function pageCosts( out, views ) {
 
@@ -450,7 +450,7 @@ function pageCosts( out, views ) {
 
 }
 
-async function shoot( plan, out, options ) {
+async function captureDay( plan, out, options ) {
 
 	const colour = path.join( out, 'colour' );
 	mkdirSync( colour, { recursive: true } );
@@ -468,10 +468,10 @@ async function shoot( plan, out, options ) {
 
 		console.log( `day-sweep: ${ name }: ${ list.length } views` );
 		const started = Date.now();
-		const { code, waited } = await runColour( [ 'shoot', plan.url, colour, '--views-file', file, '--pages', 'normal', ...common ] );
+		const { code, waited } = await runColour( [ 'capture', plan.url, colour, '--views-file', file, '--pages', 'normal', ...common ] );
 		if ( code !== 0 ) {
 
-			console.error( `day-sweep: shooting the ${ name } views failed (exit ${ code })` );
+			console.error( `day-sweep: capturing the ${ name } views failed (exit ${ code })` );
 			process.exit( 1 );
 
 		}
@@ -488,11 +488,11 @@ async function shoot( plan, out, options ) {
 const lum = ( [ r, g, b ] ) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
 const degrees = ( x ) => x.toFixed( 1 ).replace( /^-0\.0$/, '0.0' );
 
-// a region's numbers from a colour-rows row, or null when it holds none. Each frame is sorted on its
-// own (colour-rows rows --own) because the turned cameras share no cells from one frame to the next:
+// a region's numbers from a region-colours measurement, or null when it holds none. Each frame is sorted on its
+// own (region-colours measure --own) because the turned cameras share no cells from one frame to the next:
 // a sort fixed on one frame read sea where the island had stood, and a sort of the sunlit and the
 // shaded land fixed at noon read noon's shadow at every hour (a jump of three stops there). The land
-// is taken whole and its dark end by rank, so the shade that moves with the sun moves no curve. The
+// is taken whole and its dark end by rank, so the shadow that moves with the sun moves no curve. The
 // sky's mask works by angle, from the page's own read of the lights and the camera, so the disc and
 // its glare do not make the sky's curve.
 function regionOf( row ) {
@@ -527,12 +527,12 @@ const chromaDistance = ( p, q ) => Math.hypot( p.a - q.a, p.b - q.b );
 // last pair of the list are not scanned, nor is a pair over MAX_PAIR minutes wide. A pair's step is
 // the change between its two frames less the time between them times the slope of the pair on
 // either side (the one of the smaller size, so a single odd frame shows as two steps of its own
-// size). A step in the light is flagged at its whole size, wherever the frames lie close or far
-// apart, and a smooth curve shows only its bend. A change of light that moves both measures is two
+// size). A step in the lighting is flagged at its whole size, wherever the frames lie close or far
+// apart, and a smooth curve shows only its bend. A change of lighting that moves both measures is two
 // lines. A region read from 8-bit pixels in the dark is only as fine as its levels. The camera turn
 // that a pair may hold (--turn-deg, 15): the sun at noon turns it 12 degrees in half an hour, the
-// sun and moon switch at -12 degrees about 100. A turned pair is a change of the picture, not of the
-// light; a pair beside it uses the slope of its other side only.
+// sun and moon switch at -12 degrees about 100. A turned pair is a change of what the camera sees, not
+// of the lighting; a pair beside it uses the slope of its other side only.
 function stepsOf( points, thr, turnDeg ) {
 
 	const n = points.length, steps = [], turned = [];
@@ -586,7 +586,7 @@ const stepLine = ( s, weather, camera ) => {
 
 // ------------------------------------------------------------------ the sheets
 
-// pictures that failed, for the exit code
+// images that failed, for the exit code
 const failed = [];
 
 function uv( args, what, quiet = false ) {
@@ -614,7 +614,7 @@ function link( from, to ) {
 
 // ------------------------------------------------------------------ the report
 
-// a run's picture of a frame: the full-size frame, or the thumbnail a thinned run kept
+// a run's image of a frame: the full-size frame, or the thumbnail a thinned run kept
 const framePicture = ( root, f ) => [ 'png', 'jpg' ].map( ( e ) => path.join( root, 'frames', f.camera, `${ f.weather }-${ hhmm( f.minute ) }.${ e }` ) ).find( existsSync ) ?? null;
 const framePng = ( out, f ) => path.join( out, 'frames', f.camera, `${ f.weather }-${ hhmm( f.minute ) }.png` );
 
@@ -626,9 +626,9 @@ const framePng = ( out, f ) => path.join( out, 'frames', f.camera, `${ f.weather
 // are named, and the flagged ones, the sheets and the curves keep their size, so the run comes to
 // under half of its size. A thinned run cannot read its pixels again: `report` on it redoes the
 // numbers from colour/rows.json (jumps, curves, compare.txt and compare.json, transitions.txt) and
-// leaves the pictures as they are, so a step found only under a new threshold has no full-size
+// leaves the images as they are, so a step found only under a new threshold has no full-size
 // frame; the sheets, overviews and sheet-transitions.png need the whole frames, the compare/
-// pictures do not.
+// images do not.
 function thin( plan, out, keep ) {
 
 	const bytes = ( dir ) => Number( spawnSync( 'du', [ '-sk', dir ], { encoding: 'utf8' } ).stdout.split( '\t' )[ 0 ] ) * 1024;
@@ -652,29 +652,29 @@ function thin( plan, out, keep ) {
 
 }
 
-// colour-rows's rows of this run's frames, each sorted by its own depth read (--own: a turned
+// region-colours's measurements of this run's frames, each sorted by its own depth read (--own: a turned
 // camera's frames share no cells), into colour/rows.json once all of them are there
 function readRows( out, plan, skyMaskDeg ) {
 
 	const colour = path.join( out, 'colour' );
 	const file = path.join( colour, 'rows.json' ), temporary = path.join( colour, 'rows.tmp.json' );
 	const views = [ ...plan.frames, ...plan.transitions ].map( ( f ) => f.view );
-	const r = spawnSync( process.execPath, [ 'tools/island/colour-rows.mjs', 'rows', colour, '--own', '--sky-mask-deg', String( skyMaskDeg ), '--views', views.join( ',' ), '--out', temporary ],
+	const r = spawnSync( process.execPath, [ 'tools/island/region-colours.mjs', 'measure', colour, '--own', '--sky-mask-deg', String( skyMaskDeg ), '--views', views.join( ',' ), '--out', temporary ],
 		{ cwd: REPO, stdio: [ 'ignore', 'ignore', 'inherit' ], maxBuffer: 1 << 30 } );
 	if ( r.status !== 0 ) {
 
-		console.error( `day-sweep: colour-rows rows failed (exit ${ r.status })` );
+		console.error( `day-sweep: region-colours measure failed (exit ${ r.status })` );
 		process.exit( 1 );
 
 	}
 	const doc = JSON.parse( readFileSync( temporary, 'utf8' ) );
-	if ( views.some( ( v ) => ! doc.views[ v ] ) ) { console.error( 'day-sweep: colour-rows rows left frames out' ); process.exit( 1 ); }
+	if ( views.some( ( v ) => ! doc.views[ v ] ) ) { console.error( 'day-sweep: region-colours measure left frames out' ); process.exit( 1 ); }
 	renameSync( temporary, file );
 	return doc;
 
 }
 
-// the swept points of each camera and weather, by time; `missing` lists frames without a row and
+// the swept points of each camera and weather, by time; `missing` lists frames without a measurement and
 // `gaps` the frames where a region its camera reads has too few cells (a gap in its curve)
 function seriesOf( plan, views, present ) {
 
@@ -698,7 +698,7 @@ function report( out, options, thinNow ) {
 
 	const plan = JSON.parse( readFileSync( path.join( out, 'plan.json' ), 'utf8' ) );
 	const thr = options.thr;
-	// a thinned run has no pixels to read again: its numbers come from the rows it wrote
+	// a thinned run has no pixels to read again: its numbers come from the measurements it wrote
 	const thinned = existsSync( path.join( out, 'colour', 'thinned.json' ) );
 	const kept = thinned ? JSON.parse( readFileSync( path.join( out, 'colour', 'rows.json' ), 'utf8' ) ) : null;
 	// the earlier run is checked before the frames are read
@@ -744,7 +744,7 @@ function report( out, options, thinNow ) {
 	if ( missing.length ) {
 
 		writeFileSync( path.join( out, 'missing.txt' ), missing.join( '\n' ) + '\n' );
-		console.error( `day-sweep: STOP: ${ missing.length } frame(s) have no row (missing.txt):\n  ${ missing.slice( 0, 12 ).join( '\n  ' ) }` );
+		console.error( `day-sweep: STOP: ${ missing.length } frame(s) have no measurement (missing.txt):\n  ${ missing.slice( 0, 12 ).join( '\n  ' ) }` );
 		process.exit( 1 );
 
 	}
@@ -803,7 +803,7 @@ function report( out, options, thinNow ) {
 		all.push( ...lines );
 		const head = `# ${ camera.name }: steps between neighbouring frames beyond what their neighbours' slope predicts: log2 luminance over ${ thr.stops.toFixed( 3 ) } stops, or Oklab (a, b) distance over ${ thr.de }; size in units of the threshold\n`
 			+ ( camera.scan ? '' : '# (key moments only: no scan)\n' )
-			+ ( turnedLines.length ? `# pairs the camera turned over ${ options.turnDeg } deg between, not scanned (the picture changed, not the light):\n${ turnedLines.map( ( l ) => `# ${ l }` ).join( '\n' ) }\n` : '' );
+			+ ( turnedLines.length ? `# pairs the camera turned over ${ options.turnDeg } deg between, not scanned (the view changed, not the lighting):\n${ turnedLines.map( ( l ) => `# ${ l }` ).join( '\n' ) }\n` : '' );
 		writeFileSync( path.join( out, `jumps-${ camera.name }.txt` ), head + lines.map( ( l ) => l.line ).join( '\n' ) + ( lines.length ? '\n' : '' ) );
 
 	}
@@ -866,9 +866,9 @@ function transitions( plan, views, cameras, out, thr, pictures ) {
 
 // ------------------------------------------------------------------ comparison with an earlier run
 
-// An earlier run to compare with, checked before anything is shot or read: the same sort of cells
-// and the same size, or a refusal (exit 2); a camera in common. A sky masked otherwise is not
-// refused: its rows can only be read again from the full-size frames, which a thinned run no longer
+// An earlier run to compare with, checked before anything is captured or read: the same sort of
+// cells and the same size, or a refusal (exit 2); a camera in common. A sky masked otherwise is not
+// refused: its measurements can only be read again from the full-size frames, which a thinned run no longer
 // holds, so the sky is left out of the comparison and the others are compared.
 function earlierRun( dir, size, skyMaskDeg, cameraNames ) {
 
@@ -956,7 +956,7 @@ function compare( plan, doc, cameras, out, earlier, thr, keep ) {
 		// the sheet: the frames that changed and the key moments, before | after | difference x8
 		const pick = new Set( flagged.map( ( x ) => x.f.minute ) );
 		for ( const [ , minute ] of KEY_MOMENTS ) pick.add( frames.reduce( ( best, f ) => Math.abs( f.minute - minute ) < Math.abs( best.minute - minute ) ? f : best ).minute );
-		// each side's picture: the full-size frame, or the thumbnail a thinned run kept
+		// each side's image: the full-size frame, or the thumbnail a thinned run kept
 		const picks = frames.filter( ( x ) => pick.has( x.minute ) ).map( ( f ) => ( { f, was: framePicture( before, f ), now: framePicture( out, f ), name: `${ hhmm( f.minute ).replace( /^(\d\d)/, '$1h' ) }_sun${ degrees( pointOf( f, newViews[ f.view ] ).elevation ) }deg` } ) ).filter( ( x ) => x.was && x.now );
 		const full = picks.every( ( x ) => x.was.endsWith( '.png' ) && x.now.endsWith( '.png' ) );
 		let from = full ? 'full-size frames' : `${ thumbShortSide } px thumbnails`;
@@ -968,7 +968,7 @@ function compare( plan, doc, cameras, out, earlier, thr, keep ) {
 			for ( const x of picks ) for ( const [ side, file ] of [ [ 'before', x.was ], [ 'after', x.now ] ] ) {
 
 				// (a thumbnail on either side: every full-size frame is shrunk the way the thinning
-				// shrank the other's, so the difference is taken between pictures of one size)
+				// shrank the other's, so the difference is taken between images of one size)
 				if ( full || file.endsWith( '.jpg' ) ) link( file, path.join( dir, side, `${ x.name }${ path.extname( file ) }` ) );
 				else link( file, path.join( dir, `png-${ side }`, `${ x.name }.png` ) );
 
@@ -981,7 +981,7 @@ function compare( plan, doc, cameras, out, earlier, thr, keep ) {
 			if ( ! uv( [ 'tools/kit/img.py', 'sheet', path.join( dir, 'before' ), path.join( dir, 'after' ), '--diff', ...( full ? [] : [ '--match', '*.jpg' ] ), '--width', '480', '--out', path.join( out, 'compare', `${ camera }-${ weather }.png` ) ], `compare sheet ${ camera }-${ weather }` ) ) from = 'failed';
 			rmSync( dir, { recursive: true, force: true } );
 
-		} else from = 'no frame pictured on both sides';
+		} else from = 'no frame present on both sides';
 		sheets[ `${ camera }-${ weather }` ] = from;
 		summary.push( `${ camera.padEnd( 8 ) } ${ weather.padEnd( 8 ) } ${ String( flagged.length ).padStart( 3 ) } of ${ frames.length } frames changed; largest ${ maxStops.toFixed( 3 ) } stops, Oklab (a, b) ${ maxColour.toFixed( 4 ) }; sheet's difference from ${ from }` );
 
@@ -996,7 +996,7 @@ function compare( plan, doc, cameras, out, earlier, thr, keep ) {
 
 const argv = process.argv.slice( 2 );
 const reportOnly = argv[ 0 ] === 'report';
-const { positional, options } = parse( reportOnly ? argv.slice( 1 ) : argv, reportOnly ? 'report' : 'shoot' );
+const { positional, options } = parse( reportOnly ? argv.slice( 1 ) : argv, reportOnly ? 'report' : 'capture' );
 if ( positional.length !== ( reportOnly ? 1 : 2 ) ) usage( reportOnly ? 'report needs <outDir>' : 'needs <url> <outDir>' );
 const out = path.resolve( positional[ reportOnly ? 0 : 1 ] );
 try {
@@ -1010,7 +1010,7 @@ try {
 		const plan = await planOf( options, url );
 		console.log( `day-sweep: ${ plan.cameras.map( ( c ) => c.name ).join( ', ' ) } x ${ plan.weathers.join( ', ' ) }: ${ plan.frames.length } frames${ plan.transitions.length ? ` and ${ plan.transitions.length } transitions` : '' }` );
 		for ( const note of plan.notes ) console.log( `day-sweep: ${ note }` );
-		const timing = await shoot( plan, out, options );
+		const timing = await captureDay( plan, out, options );
 		const reported = Date.now();
 		report( out, options, ! options[ 'keep-frames' ] );
 		timing.reportS = Math.round( ( Date.now() - reported ) / 1000 );

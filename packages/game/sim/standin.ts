@@ -1,9 +1,9 @@
-import type { Brain, Perception, ToolCall } from './agent.ts';
+import type { Agent, Perception, ToolCall } from './agent.ts';
 import { BAG_CAPACITY } from './items.ts';
 
-// A stand-in brain of plain rules that thinks for the islanders until the language model joins.
+// A stand-in agent of plain rules that thinks for the islanders until the language model joins.
 //
-// A stand-in brain of plain rules, thinking for the islander until the language model is
+// A stand-in agent of plain rules, thinking for the islander until the language model is
 // connected. It reads only the Perception and remembers nothing, and
 // answers with the five actions, as a person would act on what they see, hear and carry: one
 // action a thought, with words said before it where it has something to say:
@@ -54,7 +54,7 @@ function number( value: unknown ): number {
 /** whether a place is at hand */
 const at = ( p: Perception, id: string ) => p.atHand.some( ( h ) => h.place === id );
 
-export class StandInBrain implements Brain {
+export class StandInAgent implements Agent {
 
 	think( p: Perception ): ToolCall[] {
 

@@ -9,8 +9,8 @@ import { missing } from './Internals.ts';
 // map, the map it made, and the material a caster is drawn with into it. three draws a caster with
 // the shadow node's material in its own's place (scene.overrideMaterial), taking the caster's
 // colour, depth and position nodes and side into it per draw and restoring them after
-// (Renderer.renderObject); `shadowPassMaterial` makes that material, as the draw leaves it, for a
-// compile ahead of the draw. It mirrors three's shadow material (ShadowBaseNode) and its non-VSM
+// (Renderer.renderObject); `shadowPassMaterial` makes that material, as the draw leaves it, so the
+// pipeline can be precompiled before the draw. It mirrors three's shadow material (ShadowBaseNode) and its non-VSM
 // side rule (`SHADOW_SIDE`).
 
 /** A light's shadow node as three draws its map with it. */

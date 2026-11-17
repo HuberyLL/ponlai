@@ -1,25 +1,26 @@
-// The page: the one place that assembles it, from the render pipeline's assembly and the island's stages.
+// The app: the one place that assembles it, from the render pipeline's assembly and the island's stages.
 //
-// The page: the one place that assembles it. It hands the render pipeline's assembly
+// The app: the one place that assembles it. It hands the render pipeline's assembly
 // (render/index.ts `startScene`) the island's content: the island's stages (IslandStages.ts) and
-// the page's own parts (app/: the camera views, the GUI, its part of the frame, of the scene jump
+// the app's own parts (app/: the camera views, the GUI, its part of the frame, of the scene jump
 // and of the diagnostics), each in the slot between the render pipeline's stages where its
 // statements stand. Between them it does only what joins two layers: it hands one layer's parts to
 // another's stage, and it starts the game, whose start takes what it needs from the render
 // pipeline's and the island's parts.
 // - The slots run in the assembly's order and no other: the render pipeline's stages and the
-//   island's alternate, and the order materials first build in is part of the image
+//   island's alternate. The order in which materials are first built affects the rendered image
 //   (docs/reference/three-behaviour.md, Build order).
 // - Every wait is in a slot: a slot that ends in one returns its promise.
-// - It takes each package through its exits (render/index.ts, render/setup.ts, render/browser.ts,
-//   island/index.ts, island/land.ts, game/sim/index.ts, and the game's own, game/index.ts, by a dynamic
-//   import when `?game` starts it), never a package's module by its path. An exit loads its whole
-//   package, and no module does anything at load that depends on the order the modules load in.
+// - It imports each package through its entry points (render/index.ts, render/setup.ts,
+//   render/browser.ts, island/index.ts, island/land.ts, game/sim/index.ts, and the game's own,
+//   game/index.ts, by a dynamic import when `?game` starts it), never a package's module by its
+//   path. An entry point loads its whole package, and no module does anything at load that depends
+//   on the order the modules load in.
 // On the dev server and with ?debug (or ?profile) the assembly hands the scene to the capture and
 // profiling tools as `window.__PONLAI__` with the island's handles (app/Diagnostics.ts):
 // `establishScene( query )` jumps to a whole scene as a fresh load of `?<query>` draws it (the
 // island's part: app/Scene.ts), and `loop` and `step` hold, resume and step the frame loop.
-// the page's settings, which its entry (Boot.ts) installed before this module's imports load
+// the app's settings, which its entry (Boot.ts) installed before this module's imports load
 import { QUALITY_CHOICE, PAGE_LOOK } from './PageSettings.ts';
 import { startScene, type ExtraPass, type RenderParts } from '../packages/render/index.ts';
 import { browserHost } from '../packages/render/browser.ts';
@@ -44,8 +45,8 @@ const ground = { soil: params.get( 'soil' ) !== '0' };
 page.ground = ground;
 setSoilStrength( ground.soil );
 // The quality tier (Quality.ts): without ?quality it is high (QualityDetect.ts). The entry chose it
-// with the settings (PageSettings.ts), since the anti-aliasing mode and other load knobs are read as
-// the modules load, before this code runs. A change of tier reloads the page.
+// with the settings (PageSettings.ts), since the anti-aliasing mode and other load-time settings are
+// read as the modules load, before this code runs. Changing the quality tier reloads the page.
 page.qualityChoice = QUALITY_CHOICE;
 page.detector = null;
 // ?game turns the island into the game: its own islanders, a clock that drives the sky and the
@@ -61,7 +62,7 @@ island.fallingLeaves = null as FallingLeaves | null;
 
 const host = browserHost( { canvasHost: document.getElementById( 'app' )!, loading: document.getElementById( 'loading' ) } );
 // The scene the query names (render/index.ts `sceneOptions`), the load's and a scene jump's alike,
-// from the page's defaults (Frame.ts `sceneDefaults`); a parked weather loads on a debug page only.
+// from the app's defaults (Frame.ts `sceneDefaults`); a parked weather loads on a debug page only.
 await startScene( host, { look: PAGE_LOOK, defaults: sceneDefaults( GAME ) }, {
 	afterScenes( scene ) {
 
@@ -164,13 +165,13 @@ await startScene( host, { look: PAGE_LOOK, defaults: sceneDefaults( GAME ) }, {
 		if ( ! render.profiler ) return;
 		const { labelPasses } = await import( '../packages/render/debug/FrameProfiler.ts' );
 		labelPasses( render.profiler, { scene: render.scene, waterScene: render.waterScene, rainScene: render.rainScene, pipeline: render.pipeline, sky: render.sky, rain: render.rain, sunShadow: render.sunShadow, refractedSun: render.refractedSun, fft: render.fft, stormSea: render.stormSea, shoreWaves: render.shoreWaves, groundBounce: render.groundBounce } );
-		// the page's own parts: the islanders' update draws their shadow
+		// the app's own parts: the islanders' update draws their shadow
 		render.profiler.scope( island.characters, 'update', 'character shadow' );
 
 	},
 	async afterShared() {
 
-		// The falling leaves, which the warm-up ran before they existed, and their kernels compile ahead
+		// The falling leaves, which the warm-up ran before they existed, and their kernels are precompiled
 		// as latents of the opaque pass, so the view that first finds them builds no pipeline.
 		if ( island.fallingLeaves ) await render.latents.latent( 'opaque', [ island.fallingLeaves.mesh ], [ island.fallingLeaves.kernel, island.fallingLeaves.prewarm ] );
 

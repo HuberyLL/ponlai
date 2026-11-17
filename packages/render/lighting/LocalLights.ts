@@ -39,7 +39,7 @@ import { onSceneDispose } from '../SceneDispose.ts';
 // (lighting/GroundBounce.ts `diffuseFresnel`), a plant its wrap, its light through and its thin
 // layer (vegetation/VegetationLighting.ts), an islander its plain Lambert. The sum takes the occlusion
 // the model's ambient diffuse takes (lighting/AmbientGrade.ts `diffuseOcclusion`: the material's,
-// times the screen's where it receives it; an islander's own), so a pool shows the contact shade in
+// times the screen's where it receives it; an islander's own), so a pool shows the contact shadow in
 // cracks, at blade roots and culm feet, and whatever dims the model's key (the water column's
 // attenuation: lighting/Underwater.ts); the vegetation's occlusion from root to tip
 // (VegetationLighting `scale`) dims only the ambient terms, not these lights.
@@ -98,7 +98,7 @@ import { onSceneDispose } from '../SceneDispose.ts';
 // things every registered definition does (Extensions.ts), or `add` refuses it. A source without an
 // intensity or a range of its own is the default, a white point light (DEFAULT_SOURCE). The
 // registry is an object of the render pipeline's; the buffers, the uniforms and the kernel above
-// stay the module's, since every lit material's shader names them: one light table a page.
+// stay the module's, since every lit material's shader names them: one light table per page.
 
 /** The light table's first capacity; a larger table takes the next power of two, up to 16 bits. */
 const CAPACITY = 1024;
@@ -453,7 +453,7 @@ export class LocalLights {
 
 }
 
-// the page's registry, which the pass below reads (the pipeline declares the pass without it)
+// the app's registry, which the pass below reads (the pipeline declares the pass without it)
 let installed: LocalLights | null = null;
 
 /** The look's tables the local lights take (`LocalLights`, `createLocalLights`). */

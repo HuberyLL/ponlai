@@ -1,9 +1,9 @@
-// Checks the page's settings against their docs, the entry that installs them and the tools' addresses.
+// Checks the URL options against their docs, the entry that installs them and the tools' addresses.
 //
 // The settings (packages/render/Settings.ts) are the one entrance every URL option is read through;
 // each layer declares its own options in a table (the render pipeline's RENDER_SETTINGS there,
 // packages/island/IslandSettings.ts, packages/game/GameSettings.ts, app/AppSettings.ts), which the
-// page merges (app/AppSettings.ts PAGE_SETTINGS); docs/reference/url-options.md documents them. Run
+// app merges (app/AppSettings.ts PAGE_SETTINGS); docs/reference/url-options.md documents them. Run
 // it after adding or changing an option; it is part of `npm run check`. A usage a tool needs is
 // declared in the table of the layer that reads it, not changed in the tool.
 //
@@ -19,13 +19,13 @@
 //   four layers' tables, in the layers' order, and SETTING_PREFIXES, its Owner column the layer of
 //   each option's table: a new or changed option rewrites it (`--write`), so the table never drifts
 //   from the code.
-// - No option is declared by two layers (mergeSettings throws as the page merges them).
+// - No option is declared by two layers (mergeSettings throws as the app merges them).
 // - Every declared option and prefix is also named in the page's prose (a backticked `name`,
 //   `name=...` or `?name...` outside the table and the code blocks), anywhere in it: the table
 //   lists, the prose explains. Which of the prose's groups names an option is not checked.
 // - Every option the prose writes with a value (a backticked `name=...` or `?name`) is declared, or
-//   starts with a declared prefix: the prose names no option the page does not read.
-// - The page installs the settings before any module that reads them loads: index.html loads
+//   starts with a declared prefix: the prose names no option the app does not read.
+// - The app installs the settings before any module that reads them loads: index.html loads
 //   /app/Boot.ts, and Boot.ts imports PageSettings.ts (which installs them) before it imports
 //   main.ts dynamically. (A static import of main.ts there, or the install moved into main.ts,
 //   would let a bundle evaluate the shared chunks main.ts imports first, and every module in them
@@ -78,7 +78,7 @@ for ( const a of process.argv.slice( 2 ) ) {
 const { RENDER_SETTINGS, SETTING_PREFIXES, parseSettings, settingProblems } = await import( path.join( ROOT, 'packages', 'render', 'Settings.ts' ) );
 const { ISLAND_SETTINGS } = await import( path.join( ROOT, 'packages', 'island', 'IslandSettings.ts' ) );
 const { GAME_SETTINGS } = await import( path.join( ROOT, 'packages', 'game', 'GameSettings.ts' ) );
-// the page's merge throws as it loads where two layers declare one name
+// the app's merge throws as it loads where two layers declare one name
 const { APP_SETTINGS, PAGE_SETTINGS } = await import( path.join( ROOT, 'app', 'AppSettings.ts' ) );
 // each layer's table and where it is declared, render lowest
 const TABLES = [
@@ -125,7 +125,7 @@ function table() {
 	];
 	const row = ( name, spec ) => rows.push( `| ${ code( name ) } | ${ values( spec ) } | ${ spec.default } | ${ spec.layer } | ${ spec.about }${ spec.debug ? ' (debug pages only)' : '' } |` );
 	for ( const [ name, spec ] of Object.entries( SETTINGS ) ) row( name, spec );
-	for ( const [ prefix, spec ] of Object.entries( SETTING_PREFIXES ) ) row( `${ prefix }<knob>`, { ...spec, layer: PREFIX_LAYER } );
+	for ( const [ prefix, spec ] of Object.entries( SETTING_PREFIXES ) ) row( `${ prefix }<setting>`, { ...spec, layer: PREFIX_LAYER } );
 	return rows.join( '\n' );
 
 }

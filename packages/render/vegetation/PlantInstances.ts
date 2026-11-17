@@ -26,7 +26,7 @@ import { VegetationCull, poolBuffers, poolSteps, type CullBatchInput, type CullB
 //   vegetation kinds, two roots here), each a mesh over its prototype's geometry (its own geometry
 //   object sharing the prototype's buffers) drawn indirectly from the cull (VegetationCull.ts): one
 //   pass per view counts, scans and scatters the visible instances of every draw into its list, in
-//   the plants' order, so a paused frame repeats exactly. Each draw holds every plant of its
+//   the plants' order, so a paused frame is bit-identical. Each draw holds every plant of its
 //   prototype; the cull keeps those inside the view and inside the draw's band of distance (its
 //   `fold`), so the indirect arguments count only what draws.
 // - The switch (Lod.ts LEVEL_SWITCH): at `start`, where the plant's stem is a few render pixels wide
@@ -451,7 +451,7 @@ export class PlantInstances {
 
 		const old = this.cull.setPool( prepared.pool, prepared.buffers );
 		this.follow( prepared.box );
-		// (the page's one renderer uploaded the old pool too, ahead or at its first draw)
+		// (the app's one renderer uploaded the old pool too, ahead or at its first draw)
 		const renderer = prepared.renderer;
 		return () => {
 

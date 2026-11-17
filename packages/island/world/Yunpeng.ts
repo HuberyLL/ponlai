@@ -36,7 +36,7 @@ import { plantClumps, type ClumpLand, type ClumpSite } from './YunpengSites.ts';
 //   all directions, a two-sided leaf or tassel half of one face's), so the light and the glow are
 //   one quantity. Its range: YUNPENG.reach.
 // - The glow and its light are scaled by one constant, 2 to minus the exposure's nightMeterLift
-//   (look/ExposureLook.ts; the page hands it in, IslandStages.ts `createVegetation`), the stops
+//   (look/ExposureLook.ts; the app hands it in, IslandStages.ts `createVegetation`), the stops
 //   the metered exposure rises by from the twilight to a clear night: a
 //   lamp does not know the hour or the weather, so a clear night shows it as the glow's value was
 //   set for, it shows later in the dusk (the exposure has not yet risen), and brighter on a darker
@@ -90,7 +90,7 @@ export const YUNPENG = {
 /** The night's share of the glow and the light (0 by day: DayCycle.ts `nightGlowShare`), each
  * frame. */
 export const yunpengNight = uniform( 0 );
-/** Sets the night's share for the frame and returns it: the page's tick does, from the sky. */
+/** Sets the night's share for the frame and returns it: the app's tick does, from the sky. */
 export function setYunpengNight( share: number ): number {
 
 	yunpengNight.value = share;
@@ -421,7 +421,7 @@ function clumpStalks( site: ClumpSite, groundAt: ( x: number, z: number ) => num
 
 }
 
-// ------------------------------------------------------------------ the page's yunpeng
+// ------------------------------------------------------------------ the app's yunpeng
 
 /** What a growth step prepared: the clumps, their lights and their pool, or null where the clumps
  * did not change. */
@@ -508,7 +508,7 @@ export class Yunpeng {
 
 	}
 
-	/** Swaps `prepared` in (PlantInstances.ts `swap`): the page moves the lights after it. Returns
+	/** Swaps `prepared` in (PlantInstances.ts `swap`): the app moves the lights after it. Returns
 	 * what frees the old pool. */
 	swap( prepared: YunpengPrepared ): ( () => void ) | null {
 
@@ -572,7 +572,7 @@ function material( shared: Shared, plants: PlantInstances, lift: number ): THREE
 	( m as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new GroundBounceLightingModel();
 	writeMeter( m );
 	receiveScreenAO( m );
-	// the whole scene's screen-space shade on the key (post/MeadowShade.ts)
+	// the whole scene's screen-space shade on the key (post/MeadowShadows.ts)
 	receiveScreenShadow( m );
 	return m;
 

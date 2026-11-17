@@ -1,14 +1,14 @@
 import type { BloomKey, DuskWindow, FullKey, Look, Rgb, Span, StreakKeys } from './Look.ts';
 
-// The neutral look: every gain 1 and every grade off, for the test scenes' page.
+// The neutral look: every gain 1 and every grade off, for the test scenes' app.
 //
-// The neutral look: what the test scenes' page draws with (app/ScenesBoot.ts), and what
+// The neutral look: what the test scenes' app draws with (app/ScenesBoot.ts), and what
 // `renderLook=neutral` loads on a debug page of the island's. It is no picture of its own: every gain is 1,
 // every offset, strength and cast 0, no grade, no vignette, no bloom, nothing done for the night,
 // and one key held all day in every table that is keyed by the sun. Where a number has no such
 // identity it takes the plainest value its reader accepts, and the comment beside it says why.
 // The tables keep the shapes the readers take (a keyed table holds one key, a table by elevation
-// one row, a table per sky four equal rows). Numbers only: no three.js, nothing of the page.
+// one row, a table per sky four equal rows). Numbers only: no three.js, nothing of the app.
 
 const WHITE = (): Rgb => ( { r: 1, g: 1, b: 1 } );
 
@@ -75,7 +75,7 @@ export const NEUTRAL_LOOK: Look = {
 	},
 
 	ambient: {
-		// one row with no change over the knobs at no grade
+		// one row with no change over the parameters at no grade
 		grade: [ { at: 0 } ],
 		gradeRising: [ { at: 0 } ],
 		sunBounceGain: 1,
@@ -110,7 +110,7 @@ export const NEUTRAL_LOOK: Look = {
 	},
 
 	display: {
-		shadeContrast: { day: [ { at: 0, name: 'day', values: { pivot: 0, slope: 0 } } ], night: { pivot: 0, slope: 0 } },
+		shadowContrast: { day: [ { at: 0, name: 'day', values: { pivot: 0, slope: 0 } } ], night: { pivot: 0, slope: 0 } },
 		desaturation: { day: [ { at: 0, name: 'day', values: { amount: 0, cool: 0 } } ], night: { amount: 0, cool: 0 } },
 		// (no desaturation takes it; the edges only have to differ)
 		coolShare: { from: 0, to: 1 },
@@ -155,8 +155,8 @@ export const NEUTRAL_LOOK: Look = {
 	sky: {
 		cloudLightTint: [ 1, 1, 1, 0 ],
 		landSky: { setting: [ { at: 0 } ], clouded: [ { at: 0 } ], rising: [ { at: 0 } ] },
-		clearShade: [ { at: 0, share: 0 } ],
-		clearShadeTint: [ 1, 1, 1, 0 ],
+		clearSkyFill: [ { at: 0, share: 0 } ],
+		clearSkyFillTint: [ 1, 1, 1, 0 ],
 		// (the elevations only have to differ: the amount is 0)
 		lowSun: { full: 0, top: 1, amount: 0 },
 		lowSunTint: [ 1, 1, 1 ],
@@ -205,7 +205,7 @@ export const NEUTRAL_LOOK: Look = {
 
 	meadowCanopy: {
 		// No medium: the key crosses the canopy and the crowns whole (an extinction of 0), so the
-		// meadow's own shade drops out and the share that passes between the blades has nothing to add.
+		// meadow's own shadowing drops out and the share that passes between the blades has nothing to add.
 		canopy: { density: 0, open: 0 },
 		cast: { density: 0, open: 0 },
 	},

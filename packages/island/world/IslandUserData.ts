@@ -4,7 +4,7 @@ import type { UserDataKey, UserDataName } from '../../render/index.ts';
 //
 // The `userData` keys the island keeps to itself: set and read above the render pipeline, which
 // never names them. A file of the island names a key of the render pipeline's list
-// (packages/render/UserData.ts, whose types the render pipeline's exit offers) or of this one, and
+// (packages/render/UserData.ts, whose types the render pipeline's entry points export) or of this one, and
 // nothing else (tools/repo/verify-layers.mjs, its userData check, which also fails on a key here
 // that no file of the island names). A key the render pipeline reads belongs on its list, not here;
 // one spelt as a key of the render pipeline's does not compile.

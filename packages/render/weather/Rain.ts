@@ -19,7 +19,7 @@ type V4 = THREE.Node<'vec4'>;
 //
 // Rain: light streaks (GPU drops in nested camera volumes, RainDrops.ts; a distant veil of streaks
 // in the post pass) plus analytic ripples on the water normal. Drops are a stateless function of
-// the clock, the wind's integrated travel and the camera, so a paused frame repeats exactly; they
+// the clock, the wind's integrated travel and the camera, so a paused frame is bit-identical; they
 // stop on the first surface in the collision map (RainCollision.ts, the island's rest pose) and
 // splash there (crown and droplets on land, rings on the sea). `registerLatent` registers its draws and kernels with the frame graph's `rain`
 // pass, whose warm-up (post/graph/FrameGraph.ts) compiles them at startup, so a weather change
@@ -54,7 +54,7 @@ export interface RainOptions {
 
 }
 
-/** Quality knobs of the rain's shading, read when the water and post materials are built, so
+/** Quality settings of the rain's shading, read when the water and post materials are built, so
  * a change takes a reload (or a rebuild of those materials): the veil's shells (1 - 3) and the
  * sea's ripple layers (1 - 2). The defaults are the high tier's. The drop count is separate
  * (`Rain.setQuality`) and changes at once. */

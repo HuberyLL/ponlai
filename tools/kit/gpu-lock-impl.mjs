@@ -213,7 +213,7 @@ import PROJECT from '../project.mjs';
 // that takes the lock itself does not wait for its own ancestor (a timing tool under a shared parent
 // says so: its numbers may share the GPU). Below an exclusive holder everything is re-entrant. Below
 // a shared holder, the first descendant that asks for a shared slot takes its ancestor's slot over:
-// the ancestor (a `run --shared` around capture-set or baseline.mjs, an inner `run` per shot) is an
+// the ancestor (a `run --shared` around capture-set or baseline.mjs, an inner `run` per capture) is an
 // orchestrator from then on and holds nothing, and its other children queue like anyone else. So
 // an orchestrator never holds a slot its children wait for (with 2 slots, two wrapped sets would
 // otherwise hold both while their captures wait), and an exclusive waiter gets in between the
@@ -675,7 +675,7 @@ function holdingAncestor() {
 	const held = Number( process.env[ `${ ENV }GPU_LOCK_HELD` ] );
 	if ( held > 0 && holders.has( held ) && alive( held ) ) return { pid: held, mode };
 	// A holder further up the process tree. The environment names only the nearest `run`, and a
-	// wrapper in between need not be a member: a tool that runs each shot through its own `run`
+	// wrapper in between need not be a member: a tool that runs each capture through its own `run`
 	// (capture-growth.mjs) under an outer `run` names that inner `run`. Its child would then wait
 	// for a slot of its own, which an exclusive waiter blocks while the holder waits for the child:
 	// a deadlock.

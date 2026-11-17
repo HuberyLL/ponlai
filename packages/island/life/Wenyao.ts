@@ -44,7 +44,7 @@ import { makeFishMaterial, type Skin } from './FishMaterial.ts';
 // again (once at most, a third of the time) or folds its wings and dives back in.
 //
 // History: the state is integrated with the scene clock's step (none while paused) and drawn from
-// random streams seeded per school, so a stepped clip repeats. The layout it starts from is a
+// random streams seeded per school, so a stepped clip is reproducible. The layout it starts from is a
 // function of the land alone: a scene jump (`reset`) returns to it, and a page loaded paused (the
 // test mode) never steps away from it, so a paused frame equals a fresh load's. A Grow resets it if
 // it has not stepped since; otherwise it keeps its fish and moves only those the land took, or that

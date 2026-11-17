@@ -13,7 +13,7 @@ import type { LandSkyRow, Rgb, SkyLook, Span, StreakKeys } from './Look.ts';
 // (`landSky`, `cloudLightTint`), the sky's gains on the sun's light (`skyLight`, `clearSky`), the
 // clouds' rows per sky of the blend (`cloudSkies`, `shadowDensity`), the stores' night ranges
 // (`storeNight`), the low key (`lowKey`), the distant sea's knee (`seaKnee`), the key's hue
-// (`keyHue`), the thin layer's colours (`streakDirect`, `streakAmbient`), the moon's key
+// (`keyHue`), the cirrus colours (`streakDirect`, `streakAmbient`), the moon's key
 // (`moonKey`, `moonHue`) and the key under cloud (`keyThroughCloud`). Like the exposure
 // (look/ExposureLook.ts), they are taken as an argument where the render pipeline's sky stage
 // creates them (RenderStages.ts `createSky`, which hands them to the sky: sky/Sky.ts `look`), not
@@ -23,7 +23,7 @@ import type { LandSkyRow, Rgb, SkyLook, Span, StreakKeys } from './Look.ts';
 // each frame, sky/SkyBake.ts the sea's knee at each bake and weather/HazeKeys.ts the clouds' base
 // each frame; every function here that reads them takes them as its first argument. A name in
 // backticks with no file is a field of the tables or sky/Sky.ts's. The A/B switches that turn a
-// table off (`flags=clearShade`, `lowSun`, `clearSky`, `skyGain`, `lowKey`) stay with their readers
+// table off (`flags=clearSkyFill`, `lowSun`, `clearSky`, `skyGain`, `lowKey`) stay with their readers
 // in sky/SkyTrack.ts.
 // - The tables register their tunables (debug/Tune.ts) as they are created, under the names they
 //   always had (`sky.light.*`, `sky.clear.*`, `sky.weather.shadowDensity@*`, `sky.clouds.*`,
@@ -63,13 +63,13 @@ export interface SkyTables {
 	// luminance), how far, and the gain; rows interpolate linearly and the end rows hold beyond them.
 	// The setting sun's rows, the setting sun's under cloud and the rising sun's (`landSky`).
 	readonly landSky: SkyLook[ 'landSky' ];
-	// The clear shade, off by default (`flags=clearShade:<k>` or `true` brings it back for A/Bs): the
+	// The clear-sky fill light, off by default (`flags=clearSkyFill:<k>` or `true` brings it back for A/Bs): the
 	// sky light lent to the land (as `landSky`'s) takes a gain and a tint. The gain's extra share
 	// per sun elevation (degrees, descending; linear between rows, the end rows held beyond).
-	readonly clearShade: readonly { at: number; share: number }[];
+	readonly clearSkyFill: readonly { at: number; share: number }[];
 	// the sky light's tint (unit luminance) and how far it is drawn toward it at a share of 1
-	readonly clearShadeTint: Tint;
-	// The low sun's shade, off by default with the clear shade (`flags=lowSun:<k>` or `true` for
+	readonly clearSkyFillTint: Tint;
+	// The low sun's shadow tint, off by default with the clear-sky fill light (`flags=lowSun:<k>` or `true` for
 	// A/Bs): from `full` degrees down to the horizon the sky light lent to the land is drawn toward
 	// `lowSunTint` by up to `amount`, fading out above `top`.
 	readonly lowSun: SkyLook[ 'lowSun' ];
@@ -122,7 +122,7 @@ export interface SkyTables {
 	readonly storeRange: SkyLook[ 'storeRange' ];
 	// The low sun's key: the key (the island's and the sea's sunlight) takes a gain by the sun's
 	// elevation (degrees, descending; linear between rows, the last row held down to the horizon). The
-	// shade, lit by the sky, does not move; the disk and the sky's own sun are untouched.
+	// shadows, lit by the sky, do not move; the disk and the sky's own sun are untouched.
 	readonly lowKey: readonly { at: number; gain: number }[];
 	// The distant sea's body (the environment's lower half under its reflection, `seaPanorama`): its
 	// colour's share of the light that reaches the sea, the sky's irradiance with its clouds (the bake's
@@ -135,7 +135,7 @@ export interface SkyTables {
 	// sun is high) and the onsets of the air's change in each ratio (`sky.key.reddens`,
 	// `sky.key.yellows`).
 	readonly keyHue: { readonly depth: () => number; readonly dawnDepth: () => number; readonly white: readonly [ number, number ]; readonly reddens: () => number; readonly yellows: () => number };
-	// The overall colour on each of the thin layer's two shares (Clouds.ts `keyDirect`, `keyAmbient`),
+	// The overall colour on each of the cirrus's two shares (Clouds.ts `keyDirect`, `keyAmbient`),
 	// by the sun's elevation, the morning's apart (DayKeys.ts `rising`), the night's coming in with
 	// the clouds' moonlight (`moonShare`). Tunable on debug pages (debug/Tune.ts):
 	// `sky.streaks.<keyDirect|keyAmbient>.<r|g|b>@<afterglow|golden|low|predawn|sunrise|morning|high|night>`.
@@ -171,7 +171,7 @@ export interface SkyTables {
 	// lose the key whole: the land's key keeps mix( floor, 1, T ), T the clouds' transmittance along
 	// the key (`keyDirectVisibility`), and the floor is the diffuse transmission of a layer of the
 	// sky's shell and density (Clouds.ts `layerTransmission`) times this share, at most 1: how much of
-	// what the layer passes down the land keeps as a light along the key, the one knob for how deep
+	// what the layer passes down the land keeps as a light along the key, the one parameter for how deep
 	// the clouds shade the land. The sea keeps the same floor (`seaKeyVisibility`; its glint only the
 	// direct beam, `cloudDirectVisibility`), and under a closed sky the air does (`deckKeyFloor`, by
 	// overcast's share). The floor rides on whichever light keys the scene, the
@@ -220,8 +220,8 @@ export function createSkyTables( look: SkyLook ): SkyTables {
 	return {
 		cloudLightTint: unitTint( look.cloudLightTint ),
 		landSky: look.landSky,
-		clearShade: look.clearShade,
-		clearShadeTint: unitTint( look.clearShadeTint ),
+		clearSkyFill: look.clearSkyFill,
+		clearSkyFillTint: unitTint( look.clearSkyFillTint ),
 		lowSun: look.lowSun,
 		keyDeckWhite: look.keyDeckWhite,
 		lowSunTint: unit( ...look.lowSunTint ),
@@ -239,7 +239,7 @@ export function createSkyTables( look: SkyLook ): SkyTables {
 
 }
 
-// the thin layer's keys (`streakDirect`, `streakAmbient`) from a look's, their tunables under `prefix`
+// the cirrus keyframes (`streakDirect`, `streakAmbient`) from a look's, their tunables under `prefix`
 const streakKeys = ( prefix: string, keys: StreakKeys ): DayKeys<Rgb> => {
 
 	const range = { min: 0.01, max: 4, scale: 'log' as const, onChange: markSkyRetune };

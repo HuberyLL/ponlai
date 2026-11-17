@@ -35,7 +35,7 @@ import type { UiShared } from './Shared.ts';
 //
 // Focus: the dialog itself takes the keyboard's focus on opening (not its ×, which Space or Enter
 // would press) and gives it back on closing, only to where the keyboard had it; while it is open no
-// key but its own reaches the page (GameUi routes them).
+// key but its own reaches the app (GameUi routes them).
 //
 // Rules: it reads the game's record (Chronicle.ts) and turns each entry into words by its kind's
 // row (data/record.ts), so a new kind never changes this file. It rebuilds only when the record or

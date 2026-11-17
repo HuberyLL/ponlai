@@ -5,73 +5,73 @@ import { readSave, writeSave } from './save.ts';
 import { loadGame } from './sim/Sim.ts';
 import type { Sim } from './sim/Sim.ts';
 import { act } from './sim/agent.ts';
-import type { Brain, ToolResult } from './sim/agent.ts';
+import type { Agent, ToolResult } from './sim/agent.ts';
 import type { SimEvent } from './sim/events.ts';
 import { checkArgs } from './sim/schema.ts';
-import { StandInBrain } from './sim/standin.ts';
+import { StandInAgent } from './sim/standin.ts';
 import type { EntityId, IslandInput } from './sim/types.ts';
 
-// The game around its simulation, without the page: the record, brain, commands and save.
+// The game around its simulation, without the browser: the record, agent, commands and save.
 //
-// The game around its simulation, without the page: the simulation installed (sim/Sim.ts) and its
-// record (Chronicle.ts), the brain in the islanders' slot, the stream of what happened handed to
+// The game around its simulation, without the browser: the simulation installed (sim/Sim.ts) and
+// its record (Chronicle.ts), the agent in the islanders' slot, the stream of what happened handed to
 // its listeners, the player's commands checked at the entrance, the leader's words as each
 // listener hears them, the island's growth asked of a host, and the save of the simulation with its
-// record (save.ts). The page's game (Game.ts) hosts it beside the view, the
+// record (save.ts). The app's game (Game.ts) hosts it beside the view, the
 // interface, the scene events and the autosave; tools/game/play-game.mjs hosts it headless, so a run in
-// node plays the game the page plays, with nothing copied. No three.js or DOM: node runs it by
+// node plays the game the app plays, with nothing copied. No three.js or DOM: node runs it by
 // stripping types, as it runs sim/.
 //
 // What happened is one stream (sim/events.ts): the rules emit events at the tick they happen, and
 // the session takes them from the simulation and hands each, in order, to its listeners (`listen`):
-// the record first (Chronicle.note), then the page's interface and the play tool. It hands them on
+// the record first (Chronicle.note), then the app's interface and the play tool. It hands them on
 // after every call that can make them (`install`, `advance`, `look`, `speak`, `act`, `place`,
 // `setIsland`, `save`), so a listener hears what a call did before the call returns; a late
-// brain's answer (Sim.think) comes between calls, and its events go with the next one, as do those
+// agent's answer (Sim.think) comes between calls, and its events go with the next one, as do those
 // of a host's own calls on the simulation (the debug panel's: an islander added, a walk, a need
 // set). Events carry their own tick, so when they are handed on changes nothing they say.
 //
 // A frame: `advance` asks for a growth that is due, runs the simulation's ticks (Sim.advance) and
-// tells the host how near the next step is; the host shows the frame (on the page the day clock and
+// tells the host how near the next step is; the host shows the frame (in the app the day clock and
 // the weather step by the seconds `advance` returns), and then `look` notes the sky shown over its
 // ticks in the record. The look is a call of its own because the sky it notes is the one shown
 // after the weather's step. What the host does between frames comes in through the session's
 // calls: the leader's words (`speak`), a blueprint placed (`place`), an islander added (a growth it
 // makes due is asked for at the next `advance`).
 //
-// The player's commands are outside input, checked once at the entrance as a brain's calls are
+// The player's commands are outside input, checked once at the entrance as an agent's calls are
 // (sim/schema.ts; sim/agent.ts `act`): `speak` and `place` refuse what does not match, with the
 // reason, before any rule runs.
 //
-// Installing a simulation (`install`: a new game, a load) hands it the brain, and the coming piece
+// Installing a simulation (`install`: a new game, a load) hands it the agent, and the coming piece
 // once the host has it; the record starts over (or takes a saved one back), the words no thought
 // has taken are forgotten, and what the simulation emitted before it was installed is handed on: a
 // new game's islanders landing at its start (a loaded one has emitted nothing). So a host adds the
 // islanders a game starts with before installing it.
 //
-// The leader's words (`speak`) are an event as the player's; for a brain that hears
-// (Brain.hears) each listener keeps them until a thought takes them (`takeHeard`, `hasHeard`), and
+// The leader's words (`speak`) are an event as the player's; for an agent that hears
+// (Agent.hears) each listener keeps them until a thought takes them (`takeHeard`, `hasHeard`), and
 // is asked for one at once (Sim.think: not while one is in flight; the words then wait for the next).
 //
 // The island grows with the population (docs/design/game-design.md, "How the island grows"; Sim.ts): once
 // a step is due and none is under way, `advance` asks the host's `grow`, before the frame's ticks,
 // so on the state the last frame showed. The host hands the piece back through `setIsland`, which
 // is the simulation's `addPiece` (the piece is counted there, whoever asked for it): at once
-// (headless) or once its promise resolves (the page's swap, world/Growth.ts). A grow that brought
+// (headless) or once its promise resolves (the app's swap, world/Growth.ts). A grow that brought
 // no piece (the growth horizon, a failed generation, a headless run that does not grow) is not
 // asked again. The pending piece comes to `setComing` once the host has it, and goes to a
 // simulation installed later too.
 //
-// Rules: nothing here reads the page, and only the save reads the wall clock (the time it was
-// written, save.ts); the rest is a function of the host's calls, so a headless run with a brain
-// that answers at once repeats byte for byte.
+// Rules: nothing here reads the browser, and only the save reads the wall clock (the time it was
+// written, save.ts); the rest is a function of the host's calls, so a headless run with an agent
+// that answers at once is reproducible byte for byte.
 
-/** What a session asks of its host (the page's game, a headless run). */
+/** What a session asks of its host (the app's game, a headless run). */
 export interface SessionHost {
 	/** Grow the island by the next piece, a step being due: the host hands it back through
-	 * `setIsland`, before returning or by the time the promise resolves (the page's swap). */
+	 * `setIsland`, before returning or by the time the promise resolves (the app's swap). */
 	grow(): Promise<void> | void;
-	/** How near the next step is (0..1, Sim.approach), after each frame's ticks: the page's sea
+	/** How near the next step is (0..1, Sim.approach), after each frame's ticks: the app's sea
 	 * floor rises over the coming piece. */
 	approach?( p: number ): void;
 }
@@ -88,8 +88,8 @@ export class Session {
 	readonly record = new Chronicle();
 	// who hears the simulation's events, in order: the record first
 	private readonly listeners: ( ( event: SimEvent ) => void )[] = [];
-	// the brain in the islanders' slot, kept across an install (setBrain)
-	private brain: Brain | null;
+	// the agent in the islanders' slot, kept across an install (setAgent)
+	private agent: Agent | null;
 	// the leader's words each islander has heard and no thought has taken yet (takeHeard)
 	private readonly heard = new Map<EntityId, string[]>();
 	private readonly host: SessionHost;
@@ -101,12 +101,12 @@ export class Session {
 	// the ticks run since the record's last look, which it notes the sky shown over
 	private ticks = 0;
 
-	/** A session on an island (the world generator's land), with a brain (the stand-in by default). */
-	constructor( input: IslandInput, host: SessionHost, brain: Brain | null = new StandInBrain() ) {
+	/** A session on an island (the world generator's land), with an agent (the stand-in by default). */
+	constructor( input: IslandInput, host: SessionHost, agent: Agent | null = new StandInAgent() ) {
 
 		this.input = input;
 		this.host = host;
-		this.brain = brain;
+		this.agent = agent;
 		this.listen( ( event ) => this.record.note( event ) );
 
 	}
@@ -139,12 +139,12 @@ export class Session {
 
 	}
 
-	/** Install a simulation (a new game, a load), and its record for a saved game: its brain, the
+	/** Install a simulation (a new game, a load), and its record for a saved game: its agent, the
 	 * coming piece, the record started over or taken back, the words no thought has taken
 	 * forgotten, and what it emitted before (a new game's landings) handed on. */
 	install( sim: Sim, record?: RecordSave ): void {
 
-		sim.brain = this.brain;
+		sim.agent = this.agent;
 		if ( this.coming ) sim.setComing( this.coming );
 		this.sim = sim;
 		this.record.reset( sim.state.startHour );
@@ -200,7 +200,7 @@ export class Session {
 
 	}
 
-	/** The island grew by a piece (the host's grow, or a grow of the page's own): the simulation's
+	/** The island grew by a piece (the host's grow, or a grow of the app's own): the simulation's
 	 * ground follows the new land and counts the piece (Sim.addPiece); a game installed later
 	 * stands on it. */
 	setIsland( input: IslandInput ): void {
@@ -212,7 +212,7 @@ export class Session {
 
 	}
 
-	/** The next piece is known (the page's pending land, Growth.ts): the simulation sees its cells
+	/** The next piece is known (the app's pending land, Growth.ts): the simulation sees its cells
 	 * (Sim.comingLand). */
 	setComing( input: IslandInput ): void {
 
@@ -221,25 +221,25 @@ export class Session {
 
 	}
 
-	/** Whether the brain hears the leader's words (sim/agent.ts Brain.hears). */
+	/** Whether the agent hears the leader's words (sim/agent.ts Agent.hears). */
 	hears(): boolean {
 
-		return this.brain?.hears ?? false;
+		return this.agent?.hears ?? false;
 
 	}
 
-	/** The brain that thinks for the islanders (sim/agent.ts Brain; null: none), kept across an
+	/** The agent that thinks for the islanders (sim/agent.ts Agent; null: none), kept across an
 	 * install; the words no thought has taken are forgotten. */
-	setBrain( brain: Brain | null ): void {
+	setAgent( agent: Agent | null ): void {
 
-		this.brain = brain;
+		this.agent = agent;
 		this.heard.clear();
-		this.sim.brain = brain;
+		this.sim.agent = agent;
 
 	}
 
 	/** The leader speaks: words to some islanders (their ids, each on the island) or to everyone.
-	 * They are an event; for a brain that hears, each listener keeps them until a thought takes
+	 * They are an event; for an agent that hears, each listener keeps them until a thought takes
 	 * them (takeHeard), and is asked for one now. Null when they are said, else why not. */
 	speak( words: unknown, to: unknown ): string | null {
 
@@ -249,7 +249,7 @@ export class Session {
 		if ( audience !== 'all' ) for ( const id of audience ) if ( ! sim.villager( id ) ) return `${ id } is not on the island`;
 		sim.emit( { kind: 'said', tick: sim.state.tick, who: 'player', words: text, to: audience } );
 		this.dispatch();
-		if ( ! this.brain?.hears ) return null;
+		if ( ! this.agent?.hears ) return null;
 		const listeners = audience === 'all' ? sim.state.villagers.map( ( v ) => v.id ) : audience;
 		for ( const id of listeners ) {
 
@@ -260,14 +260,14 @@ export class Session {
 		}
 		// (Sim.think: not while a thought is in flight; the words then wait for the next)
 		for ( const id of listeners ) sim.think( id );
-		// a brain that answers at once acts within the call
+		// an agent that answers at once acts within the call
 		this.dispatch();
 		return null;
 
 	}
 
 	/** Tool calls for an islander, from outside a thought (the debug panel's, the console's), through
-	 * the entrance a brain's answer takes (sim/agent.ts `act`); what they did is handed on. */
+	 * the entrance an agent's answer takes (sim/agent.ts `act`); what they did is handed on. */
 	act( who: EntityId, calls: unknown ): ToolResult[] {
 
 		const results = act( this.sim, who, calls );
@@ -289,7 +289,7 @@ export class Session {
 	}
 
 	/** The leader's words an islander has heard since the last call for it, oldest first (for a
-	 * brain that hears: hearing the leader is designed with the language model). */
+	 * agent that hears: hearing the leader is designed with the language model). */
 	takeHeard( id: EntityId ): string[] {
 
 		const lines = this.heard.get( id ) ?? [];

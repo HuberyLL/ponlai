@@ -1,11 +1,11 @@
 import { settingsFor, type SettingName, type SettingsQuery, type SettingsTable } from '../render/setup.ts';
 
-// The island's options of the page's address, and the reader the island's modules take them by.
+// The island's URL options, and the reader the island's modules take them by.
 //
-// The island's own options (the world, its growth, the islanders), declared as the render pipeline
-// declares its own (render/Settings.ts, which holds the rules of every table): the page merges the
-// layers' tables (app/AppSettings.ts) and installs the address before anything reads it.
-// `settings` here is the page's one installed reader, typed for the render pipeline's names and the
+// The island's own URL options (the world, its growth, the islanders), declared as the render
+// pipeline declares its own (render/Settings.ts, which holds the rules of every table): the app
+// merges the layers' tables (app/AppSettings.ts) and installs the URL's options before anything
+// reads them. `settings` here is the app's one installed reader, typed for the render pipeline's names and the
 // island's; docs/reference/url-options.md explains each option (tools/repo/verify-settings.mjs).
 
 /** The island's options. */

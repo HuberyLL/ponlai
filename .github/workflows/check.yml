@@ -1,7 +1,7 @@
 # The checks every commit passes (tools/check.mjs: types, the code lint, every check that needs no
-# GPU), the docs' lint and the production build. The world's chunk checks of `check --full` take too
-# long on a hosted runner's few cores and stay local; the checks that render run by hand on a machine
-# with WebGPU (AGENTS.md, Checks run by hand).
+# GPU), the docs' lint, the production build and the blank project's build. The world's chunk
+# checks of `check --full` take too long on a hosted runner's few cores and stay local; the checks
+# that render run by hand on a machine with WebGPU (AGENTS.md, Checks run by hand).
 name: check
 
 # main after every merge, every pull request, and any branch by hand (gh workflow run check --ref <branch>)
@@ -41,3 +41,6 @@ jobs:
       - run: npm run build
         env:
           GH_TOKEN: ${{ github.token }}
+      # the blank project (templates/blank/) builds as a project of its own, from the assets the
+      # build pulled
+      - run: npm run build:template

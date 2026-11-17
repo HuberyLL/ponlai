@@ -1,21 +1,21 @@
-// The page's world: the land and its chunks generated on a worker pool, cached and merged.
+// The app's world: the land and its chunks generated on a worker pool, cached and merged.
 //
-// The page's world: the land and its chunks generated on a pool of
+// The app's world: the land and its chunks generated on a pool of
 // chunk workers (chunkWorker.ts), read from the per-chunk cache where it holds them
-// (WorldCache.ts), and merged into one WorldData (ChunkMerge.ts) that the page draws (World.ts:
+// (WorldCache.ts), and merged into one WorldData (ChunkMerge.ts) that the app draws (World.ts:
 // the island a mesh per land chunk, every other kind merged).
 //
-// - The pool: min( 6, max( 1, hardwareConcurrency - 2 ) ) workers, leaving the page and the
+// - The pool: min( 6, max( 1, hardwareConcurrency - 2 ) ) workers, leaving the main thread and the
 //   compositor a core each (the single world worker's split also used up to six); a grown island's
 //   next version (Growth.ts) runs on two, in the background.
 // - Versions (`generateVersion`): a land step's chunks, unmerged. A version grown from another
 //   (`from`) takes over every chunk whose window holds the same growth steps (its cache key's
 //   changing part: Chunks.ts dirtyChunks), so only the rebuild set is read from the cache or built.
-//   `loadWorld` is a version merged at once (the page's load).
+//   `loadWorld` is a version merged at once (the page load).
 // - Order of work: the land first (one job: the grown land, the chunks it has, each chunk's cache
 //   key, the far floor), then every chunk, nearest the camera's pivot first. A chunk job looks the
 //   chunk up in the cache; the first one that misses asks for the land field (a few tenths of a
-//   second, once per land version), which the page hands to every worker, and the chunks that
+//   second, once per land version), which the main thread hands to every worker, and the chunks that
 //   missed run again and are built. A land that missed the cache (a new land version: some chunk
 //   will miss too) asks for the field at once, before any chunk's lookup has come back. A reload
 //   that finds the land and every chunk never builds the field. A lookup of a key the cache did not
@@ -23,8 +23,8 @@
 //   again after the field never waits for the other workers' writes, and a cold load costs what
 //   one with `worldCache=off` does.
 //   (The worker that builds the field keeps it and sends a copy for every other worker, which the
-//   page passes on without copying: rather than each job sent its window, as a window is 4 MB and
-//   a load would copy several times the field's bytes, and rather than the page cloning it, about
+//   main thread passes on without copying: rather than each job sent its window, as a window is 4 MB and
+//   a load would copy several times the field's bytes, and rather than the main thread cloning it, about
 //   10 MB on the main thread, in a frame of a page that grows.)
 // - The merge runs once every chunk has arrived, in rows ( cj, then ci ), so the world is the same
 //   whatever order the workers finish in, and the same as the node tools' serial path
@@ -118,10 +118,10 @@ export function generateVersion( options: WorldOptions = {}, { cache = true, piv
 
 	// eslint-disable-next-line ponlai/scene-clock -- the load's timings, a readout
 	const t0 = performance.now();
-	const { worldSeed = 1, step = 0, contactOcclusion = true, canopyShade = CANOPY_SHADE } = options;
+	const { worldSeed = 1, step = 0, contactOcclusion = true, canopyShadow = CANOPY_SHADE } = options;
 	const generator = cache ? WORLD_GENERATOR_HASH : null;
 	const key = ( ...parts: unknown[] ) => generator === null ? null
-		: JSON.stringify( [ CACHE_FORMAT, generator, { worldSeed, contactOcclusion, canopyShade }, cacheBrowser(), ...parts ] );
+		: JSON.stringify( [ CACHE_FORMAT, generator, { worldSeed, contactOcclusion, canopyShadow }, cacheBrowser(), ...parts ] );
 	const threads = wanted ?? Math.min( 6, Math.max( 1, ( navigator.hardwareConcurrency || 4 ) - 2 ) );
 
 	return new Promise( ( resolve, reject ) => {
@@ -170,7 +170,7 @@ export function generateVersion( options: WorldOptions = {}, { cache = true, piv
 				}
 				const next = field ? needs.shift() ?? queue.shift() : generator !== null ? queue.shift() : undefined;
 				if ( ! next ) continue;
-				send( slot, { kind: 'chunk', ci: next.ci, cj: next.cj, version: step, key: key( next.ci, next.cj, next.steps ), contactOcclusion, canopyShade } );
+				send( slot, { kind: 'chunk', ci: next.ci, cj: next.cj, version: step, key: key( next.ci, next.cj, next.steps ), contactOcclusion, canopyShadow } );
 
 			}
 
@@ -241,7 +241,7 @@ export function generateVersion( options: WorldOptions = {}, { cache = true, piv
 					field = true;
 					mark( 'field' );
 					// every other worker cuts its chunks' windows from a copy (made by the worker that
-					// built it, which keeps its own: the page only passes the buffers on)
+					// built it, which keeps its own: the main thread only passes the buffers on)
 					const copies = [ ...reply.copies ];
 					for ( const other of pool ) {
 
@@ -277,7 +277,7 @@ export function generateVersion( options: WorldOptions = {}, { cache = true, piv
 			// loop and leave the load pending for ever: it rejects the load instead
 			slot.worker.onmessage = ( e: MessageEvent<ChunkReply> ) => {
 
-				// eslint-disable-next-line ponlai/scene-clock -- the time the page spent on a chunk's reply, charged to the growth's log
+				// eslint-disable-next-line ponlai/scene-clock -- the time the main thread spent on a chunk's reply, charged to the growth's log
 				const t = performance.now();
 				try {
 
@@ -288,7 +288,7 @@ export function generateVersion( options: WorldOptions = {}, { cache = true, piv
 					fail( error );
 
 				}
-				// eslint-disable-next-line ponlai/scene-clock -- the time the page spent on a chunk's reply, charged to the growth's log
+				// eslint-disable-next-line ponlai/scene-clock -- the time the main thread spent on a chunk's reply, charged to the growth's log
 				clock?.( performance.now() - t );
 
 			};

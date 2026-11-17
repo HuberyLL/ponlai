@@ -3,7 +3,7 @@
 // The ambient light's probes: a world-anchored lattice of points, each holding how much of the sky
 // it sees and how much sky light the world round it bounces to it, by direction, baked per chunk
 // in the world's workers (Chunks.ts `buildChunk`) from the chunk's window alone. Plain numbers and
-// no three.js, so the workers and node run it. The page uploads the merged lattice
+// no three.js, so the workers and node run it. The app uploads the merged lattice
 // (lighting/AmbientVolume.ts), which relights it with the sky's colour every frame
 // (lighting/AmbientRelight.ts).
 //

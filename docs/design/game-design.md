@@ -59,9 +59,9 @@ harder to lead.
 - They live a life, and a game day is a year of it. A body is a man's or a woman's at its age, from
   a child of two to the stooped old (`packages/island/characters/Ages.ts`), and it changes smoothly
   as it ages, walking slower as a child and when old.
-- Each islander dies of old age at a lifespan drawn as they come, as a present-day population's
-  are with accidents left out: the life the body was born with (`packages/game/sim/life.ts`). The
-  island's record notes the death.
+- Each islander dies of old age at a lifespan drawn once, when they arrive, the way lifespans are
+  distributed in a present-day population with accidents left out: the life the body was born with
+  (`packages/game/sim/life.ts`). The island's record notes the death.
 - A game starts with three grown islanders: a man, a woman and one of either, 20 to 35 years old.
 - They live among each other: they hear what is said near them, hand each other things and follow
   one another ([People](#people)).
@@ -70,8 +70,8 @@ harder to lead.
 
 1. **Food**: the island holds little food, and more people need more.
 2. **Fresh water**: the sea is all around but cannot be drunk.
-3. **Weather**: storms, long rain and fog have to be prepared for. The weather the page already
-   runs is the source of this pressure.
+3. **Weather**: storms, long rain and fog have to be prepared for. The weather that the scene
+   already simulates is the source of this pressure.
 
 Without pressure, orders and layout would not matter. So every core system feeds one of these
 pressures or the island's growth; a system that feeds none is left out ([Not now](#not-now)).
@@ -111,8 +111,8 @@ walk the long way every day.
   and mist around it; under that cover the old coast it meets turns into inland ground. This is not
   built yet: today the piece swaps in at once.
 - **Incremental, never regenerated**: a new piece rebuilds only the land near it, and everything
-  else on the island stays exactly as it was.
-  The world is built in chunks for this; what a chunk holds and how far it reads is in the header of
+  else on the island stays exactly as it was. The world is built in chunks for this; what a chunk
+  holds and how far beyond its edges it reads the land is in the header of
   `packages/island/world/Chunks.ts`.
 - Plants that matter to play are content placed in the world, not part of the terrain.
 
@@ -129,10 +129,10 @@ walk the long way every day.
 
 ### Actions
 
-An islander acts through five primitive actions of the body, as an agent that uses a computer has
-a browser, not a "search Twitter" tool. Every task, from fetching water to building a hut, is
-composed from them. The actions never change: what using a thing does is defined by the thing, so
-new content adds places and items with their own options, never a new action.
+An islander acts through five primitive actions of the body, just as an AI agent that uses a
+computer gets a browser rather than a "search Twitter" tool. Every task, from fetching water to
+building a hut, is composed from them. The actions never change: what using a thing does is defined
+by the thing, so new content adds places and items with their own options, never a new action.
 
 | Kind | Action | Its options come from |
 |---|---|---|
@@ -141,8 +141,8 @@ new content adds places and items with their own options, never a new action.
 | An item's | `use( item )` | the item, carried in the bag |
 
 - `go` names a place or a person, never a point or a distance: finding the way and walking it is
-  the body's job, not the mind's. A person moves, so the body keeps after them until it is beside
-  them.
+  the body's job, not the mind's. A person moves, so the body keeps following them until it is
+  beside them.
 - `do` runs one of the actions the islander's current place offers: fish at the shore, put in or
   take out at the chest, build at a construction site. Fishing is an option of a place, not a verb
   of the islander, so a new kind of place, or a new option at one, is a definition and needs no

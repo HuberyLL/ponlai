@@ -63,7 +63,7 @@ type Histories = Pick<FrameGraph<never>, 'color' | 'previous' | 'texture' | 'cop
 //   moments sum the rows' sums down the column at their own pixels (`columns`), which saves a pass
 //   whose two half-float targets were stored whole for the pixels of the sea alone to read.
 // - seaReflectionReproject: the history reprojected, FidelityFX's `PickReprojection`: the hit's
-//   (the reflected point seen through the surface, reprojected by the frame before's view) where
+//   (the reflected point seen through the surface, reprojected by the previous frame's view) where
 //   the surface's normal and roughness match there, else the surface's own if its history lies
 //   near the neighbourhood's mean, else none; then the disocclusion factor from the normals and
 //   the depths, a 3 x 3 search and a 2 x 2 bilinear rescue at edges. Writes the reprojected
@@ -88,7 +88,7 @@ type Histories = Pick<FrameGraph<never>, 'color' | 'previous' | 'texture' | 'cop
 //   speed-up for rough materials falling back to a probe) would leave most of a breezy sea to the
 //   sky. The roughness compared and the samples' count take sqrt( alpha ).
 // FidelityFX takes motion vectors for the surface's history; under MSAA there are none, and the
-// surface's point is reprojected by the frame before's view-projection (the hit's is FidelityFX's
+// surface's point is reprojected by the previous frame's view-projection (the hit's is FidelityFX's
 // own). The signal is the opaque colour (pre-exposed, PreExposure.ts) times 2^PRE_EXPOSURE_BIAS,
 // about the exposed image's scale, which FidelityFX's absolute constants (a luminance of 0.5 as the
 // variance's floor, the average's weight) assume; it is clamped to SIGNAL_CEILING, whose square
@@ -99,9 +99,9 @@ type Histories = Pick<FrameGraph<never>, 'color' | 'previous' | 'texture' | 'cop
 // that frame as a bright view and asked for the lower pre-exposure back, so on a night view the
 // pre-exposure alternated and a paused page never settled.
 //
-// Rest (the test mode's paused frame repeats, however it was reached: within a tolerance where the
+// Rest (the test mode's paused frame is reproducible, however it was reached: within a tolerance where the
 // reflection reaches, exactly elsewhere): the temporal rest (TemporalRest.ts) keyed by the camera,
-// the clock, the sizes, the scene's epoch, the pre-exposure, the page's signature and the box the
+// the clock, the sizes, the scene's epoch, the pre-exposure, the app's signature and the box the
 // reflection traces in. At its first frame of the sequence the histories are cleared, and the
 // passes run its `sequence` frames with the rest's own noise indices: what they hold after the last
 // one is a function of the scene and of the opaque frames they read. It is then held: the passes
@@ -331,7 +331,7 @@ export class SeaReflection {
 			return r.mul( d.negate().div( r.z ) );
 
 		};
-		// a world point on the frame before's screen (uv, y down)
+		// a world point on the previous frame's screen (uv, y down)
 		const previousUV = ( w: V3 ) => {
 
 			const h = this.previousViewProjection.mul( vec4( w, 1 ) ).toVar();
@@ -841,7 +841,7 @@ export class SeaReflection {
 	}
 
 	/** Once per frame, before the graph runs: the camera (its view, and its projection without the
-	 * temporal modes' jitter) and the page's frame. Sets the rest and the frame's noise. */
+	 * temporal modes' jitter) and the app's frame. Sets the rest and the frame's noise. */
 	update( camera: THREE.Camera, projection: THREE.Matrix4, width: number, height: number, frame: SeaReflectionFrame ): void {
 
 		const C = this.camera;

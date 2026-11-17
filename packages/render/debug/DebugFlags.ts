@@ -41,8 +41,8 @@
 // when set at load (`flags=trample:false`: no displacement field, no sprites, the blades read
 // none), and empties its walkers when set at run time (--toggle "s.flags.trample = !on" times the
 // sprites' draw).
-// `clearShade` (a number, or `true` for 1; off unless set) scales the sky light the island takes
-// for its clear shade (look/SkyLook.ts `clearShade`), read whenever the sky tracks the clock (an
+// `clearSkyFill` (a number, or `true` for 1; off unless set) scales the sky light the island takes
+// for its clear-sky fill light (look/SkyLook.ts `clearSkyFill`), read whenever the sky tracks the clock (an
 // environment bake later, `refreshEnvironment()` while paused).
 // `skyGain = false` leaves the sun's in-scattered sky light as the atmosphere gives it (sky/Sky.ts
 // `look.skyLight`), read whenever the sky tracks the clock (an environment bake later,
@@ -57,17 +57,17 @@
 // `clearSky = false` leaves the clear day's sky light without its gain against the key (sky/Sky.ts
 // `look.clearSky`), read whenever the sky tracks the clock (an environment bake later).
 // `lowSun` (a number, or `true` for 1; off unless set) scales the low sun's warm light and
-// blue-violet shade (sky/SkyTrack.ts lowSun), read every frame (the shade's at the next environment bake).
+// blue-violet shadows (sky/SkyTrack.ts lowSun), read every frame (the shadows' tint at the next environment bake).
 // `keyLift = false` keeps the direct light and the sun's shadows on the low key's own direction
 // (lighting/KeyLift.ts), read at each publish of the lighting.
 // Read at load: `tone` (a number, 0 unless set) and `filmNight = true` bring back the grade's tone
 // and the film's night (post/Pipeline.ts TONE, post/PipelineDisplay.ts NIGHT); `localTone = false`
 // builds the display chain without its local tone mapping (post/LocalTone.ts).
-// The meadow's light, each on unless false: `meadowShade` (its screen-space shade and the
-// vegetation's depth pass, post/MeadowShade.ts), `groundCast` (the crowns' shade on the turf,
-// materials/TerrainMaterial.ts), `groundShade` (the blades' screen-space shade on the turf, the
+// The meadow's light, each on unless false: `meadowShadows` (its screen-space shadows and the
+// vegetation's depth pass, post/MeadowShadows.ts), `groundCast` (the crowns' shadow on the turf,
+// materials/TerrainMaterial.ts), `groundShadow` (the blades' screen-space shadow on the turf, the
 // same), `grassClumps` (the blades' clumps, world/Grass.ts CLUMP);
-// `grassShadow = false` (at load) turns off the shade of the meadow's layer on its blades and the
+// `grassShadow = false` (at load) turns off the shadowing by the meadow's layer on its blades and the
 // ground under and beside it (world/Grass.ts GRASS_SHADOW); `grassSunMap = false` (at load) keeps
 // the sun's shadow map off the blades, their own shades kept (world/Grass.ts);
 // `grassLod = true` (at load) turns on the meadow's LOD, off unless true: from 20 m along the
@@ -95,18 +95,18 @@
 // Read at load (lighting/AmbientSample.ts): `ambientVolume = false` (or 0) builds the lit materials
 // on the environment's irradiance as before the ambient volume, the ground bounce whole;
 // `groundBounceLand = true` (or 1) keeps the ground bounce's land beside the volume;
-// `canopyShade = true` (or 1) keeps the bamboo canopy's baked shade beside it (the chunks' sky
+// `canopyShadow = true` (or 1) keeps the bamboo canopy's baked shadowing beside it (the chunks' sky
 // visibility and the culms'), which the volume carries; `ambientVolumeOff = 'terrain/meadow'`
 // sends the receivers named back to the environment's irradiance (the A/B of each one's cost; for
 // timing only: the bakes and the ground bounce's land stay the volume's, and `ambientVolume = false`
 // gives the old path).
 // `gtao = false` (at load) builds without the screen-space ambient occlusion and the opaque
-// scene's depth prepass it reads (post/GTAO.ts, post/OpaquePrepass.ts), which high's `ao` knob
-// builds; `gtao = true` builds them on a tier whose knob is off. At run time `gtao = false` skips
+// scene's depth prepass it reads (post/GTAO.ts, post/OpaquePrepass.ts), which the high tier's `ao`
+// setting builds; `gtao = true` builds them on a tier whose setting is off. At run time `gtao = false` skips
 // their passes and the receivers read 1, so --toggle "s.flags.gtao = on" times it.
-// `ssShadow = false` (at load) builds the meadow's screen-space shade over the vegetation's depth
-// alone, as before it reached the whole scene (post/MeadowShade.ts `SS_SHADOW`; on unless false);
-// at run time it keeps the opaque scene's depth out of the shade, its prepass skipped unless the
+// `ssShadow = false` (at load) builds the meadow's screen-space shadows over the vegetation's depth
+// alone, as before they reached the whole scene (post/MeadowShadows.ts `SS_SHADOW`; on unless
+// false); at run time it keeps the opaque scene's depth out of the shadows, its prepass skipped unless the
 // occlusion runs, and the receivers other than the meadow read 1, so
 // --toggle "s.flags.ssShadow = on" times it.
 // `localLights = false` (or 0; at load or at run time) turns the local lights off, their clusters'

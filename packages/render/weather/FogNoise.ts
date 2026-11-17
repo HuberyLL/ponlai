@@ -51,7 +51,7 @@ export const FOG_EVOLUTION = 0.02;
 /** The field's period in cells on every axis, where the evolution's time wraps. */
 export const FOG_PERIOD = FOG_EVOLUTION * CLOCK_PERIOD;
 
-/** The knobs: the cell's size (metres) and its height over its width, the amplitude, the threshold
+/** The parameters: the cell's size (metres) and its height over its width, the amplitude, the threshold
  * at the sea and at the ramp's top, the regions' cell (metres) and share of the field's variance,
  * the detail's roughness and its warp (cells)
  * (`haze.fog.<noiseScale|squash|noiseAmp|coverLow|coverHigh|regionScale|regionShare|rough|warp>`). */

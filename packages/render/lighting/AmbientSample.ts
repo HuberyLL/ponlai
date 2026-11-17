@@ -51,7 +51,7 @@ import { onSceneDispose } from '../SceneDispose.ts';
 //   (AmbientRelight.ts `storageGain`, a power of two from the sky's geometric mean luminance, read
 //   from the sky's harmonics buffer: no texture binding), which the lookup multiplies back, times
 //   the receiver's gain tier (`AmbientReceiver.tier`, `AMBIENT_TIERS`: 'normal' 1, every
-//   receiver's; a tier of another gain would be a knob to give a few materials). The
+//   receiver's; a tier of another gain would be a parameter to give a few materials). The
 //   last slab's w holds the probe's sky view factor (the share of a level surface's light under a
 //   uniform sky that reaches it: AmbientRelight.ts) as one number, unscaled
 //   (`ambientSkyVisibility`, at least 0.01), for what needs only how much sky a point sees. The
@@ -119,11 +119,11 @@ import { onSceneDispose } from '../SceneDispose.ts';
 //   Frostbite to PBR", SIGGRAPH 2014); this form and its constants are ours. It replaces three's
 //   specular occlusion from the AO and N.V and the stones' own horizon band.
 // - The bamboo's canopy: its probes see the groves (world/AmbientProbes.ts), so the volume darkens
-//   a grove's floor and its culms' feet itself, and the canopy's own shade on their sky light (the
+//   a grove's floor and its culms' feet itself, and the canopy's own shadowing of their sky light (the
 //   island's and the meadow's baked sky visibility, world/Chunks.ts `underCanopy` and the
 //   anchors'; the culms' by their height, world/BambooMaterials.ts) is left out where materials
 //   read the volume (`CANOPY_SHADE`), or the floor would darken twice: on a fair noon, in the
-//   shade, a grove's floor took 0.45 of an open meadow's light before the volume, 0.51 from the
+//   shadow, a grove's floor took 0.45 of an open meadow's light before the volume, 0.51 from the
 //   volume alone and 0.22 with both. The culms keep only a soft darkening at their feet
 //   (BambooMaterials.ts CULM_SHADE). The contact terms (a stone's foot, a culm's) stay. The
 //   meadow's blades are the one receiver that keeps the canopy beside the volume, taken relative
@@ -135,7 +135,7 @@ import { onSceneDispose } from '../SceneDispose.ts';
 // environment's irradiance as before the volume, the ground bounce whole (the shaders those
 // materials built before this module); `groundBounceLand` keeps the ground bounce's land
 // (GroundBounce.ts) beside the volume, which carries the key's bounce off the land itself;
-// `canopyShade` keeps the canopy's shade beside it (the A/B of the double darkening; the world's
+// `canopyShadow` keeps the canopy's shadowing beside it (the A/B of the double darkening; the world's
 // chunks are baked with it, so the flag is part of their cache key: world/WorldChunks.ts);
 // `ambientVolumeOff:<kinds>` sends the receivers named (`/` between them; `all` every one) back to
 // the environment's irradiance, the rest unchanged, to time each one's read of the volume
@@ -154,8 +154,8 @@ export const AMBIENT_VOLUME = debugFlags.ambientVolume !== false && debugFlags.a
 export const GROUND_BOUNCE_LAND = ! AMBIENT_VOLUME || debugFlags.groundBounceLand === true || debugFlags.groundBounceLand === 1;
 /** The bamboo's canopy darkens the sky light of what stands under it on its own (the island's and
  * the meadow's baked sky visibility, world/Chunks.ts; the culms' by their height,
- * world/BambooMaterials.ts): without the volume, or with `flags=canopyShade`. */
-export const CANOPY_SHADE = ! AMBIENT_VOLUME || debugFlags.canopyShade === true || debugFlags.canopyShade === 1;
+ * world/BambooMaterials.ts): without the volume, or with `flags=canopyShadow`. */
+export const CANOPY_SHADE = ! AMBIENT_VOLUME || debugFlags.canopyShadow === true || debugFlags.canopyShadow === 1;
 
 // receivers sent back to the environment's irradiance (`flags=ambientVolumeOff:terrain/meadow`)
 const OFF = new Set( typeof debugFlags.ambientVolumeOff === 'string' ? debugFlags.ambientVolumeOff.split( '/' ) : [] );
@@ -171,7 +171,7 @@ const NORMAL_OFFSET = 0.5, VIEW_OFFSET = 0.25, LIFT = 0.5;
 // under an even sky a diffuse surface sends back its albedo times the sky's radiance (one bounce);
 // 0.09 is the land's mean albedo (0.093 over our views under `flags=albedoOnly`: the leaves 0.07,
 // the grass 0.08, the ground 0.09, the culms 0.10, the rock 0.16). Tunable (debug/Tune.ts
-// `lighting.specularOcclusion.strength`), read as the page loads: `specularOcclusion` takes it as a
+// `lighting.specularOcclusion.strength`), read as the app loads: `specularOcclusion` takes it as a
 // constant.
 const CONE_FIT = [ 0.051, 5.612, - 8.899, 4.728 ];
 const CONE_OCCLUSION = tune( 'lighting.specularOcclusion.strength', 0.91, { min: 0.5, max: 1, load: true } )();
@@ -408,7 +408,7 @@ export const specularOcclusion = /*@__PURE__*/ Fn( ( [ N, Ng, V, alpha ]: [ V3, 
 } );
 
 /** A lighting model's ambient from the volume: `irradiance`, three's `iblIrradiance` in its place
- * (graded: the relight applies the grade's sky and bounce knobs), and `occlusion`, the factor on
+ * (graded: the relight applies the grade's sky and bounce parameters), and `occlusion`, the factor on
  * the environment's specular. `env` is the environment's irradiance at the surface (three's
  * `iblIrradiance`). */
 export function ambientEnvironment( env: V3, receiver: AmbientReceiver ): { irradiance: V3; occlusion: F; thin?: V3 } {

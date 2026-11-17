@@ -24,7 +24,7 @@ import type { RefractedSun } from '../../render/index.ts';
 //   (`approach`, 0 .. 1: the progress toward the next piece, which the game or the GUI's Approach
 //   slider sets). `snap` puts R on its target at once, as soon as the tiles are installed: the URL's
 //   `approach` option at load and a scene jump (packages/render/assemble/SceneJump.ts `establishScene`) take it, so a paused
-//   frame repeats whatever path led to it.
+//   frame is bit-identical whatever path led to it.
 // - Whenever the shown R has moved by STEP_M of the largest rise since the last write (or reached
 //   its target), the pending tiles are written at it: their heights, normals (mixed, normalised)
 //   and beds on the CPU into the merged floor's attributes, uploaded by update ranges over the rows

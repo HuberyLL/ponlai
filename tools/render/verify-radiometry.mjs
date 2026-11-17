@@ -4,7 +4,7 @@
 // coefficient. The disk's integral, less the sky behind it, is the displayed share of the key's
 // irradiance (lighting/SunDisc.ts SUN_DISC_RADIANCE, read from the page's tunable) in luminance,
 // within 2 %, with the sun at 32, 60 and 70 degrees, and every value is finite and within half
-// float's range. Only the luminance: the disk takes the air's own colour (Atmosphere.ts
+// float's range. Only the luminance: the disk takes the atmosphere's own colour (Atmosphere.ts
 // discTransmittance) and the haze laid over the dome, while the key's hue is a white of its own
 // (look/SkyLook.ts `keyHue`), so the disk's blue reads 10 - 25 % under the key's. Below 30 degrees
 // it is measured and printed but not checked: the disk's transmittance leaves the ozone out and the
@@ -61,7 +61,7 @@ try {
 		const s = window.__PONLAI__, r = s.renderer, sky = s.sky;
 		const animation = r.getAnimationLoop(), previous = r.getRenderTarget();
 		const original = { elevation: sky.elevation, illuminance: sky.sunIlluminance, weather: s.weather.target };
-		// The disk's integral equals the direct light only where no cloud covers it, the thin layer included.
+		// The disk's integral equals the direct light only where no cloud covers it, cirrus included.
 		await s.setWeather( 'clear', 0 );
 		await r.setAnimationLoop( null );
 		const scene = new s.scene.constructor(), dome = sky.dome.clone();

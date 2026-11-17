@@ -15,7 +15,7 @@ import * as THREE from 'three/webgpu';
 // trees' leaf sprays take them (vegetation/TreeSurfaces.ts LeafPainter).
 
 /** A square canvas of `size` texels to draw a texture on: the vegetation's one use of the
- * page's document (tools/repo/verify-layers.mjs, the page check), which every texture drawn on a canvas
+ * page's document (tools/repo/verify-layers.mjs, the browser-globals check), which every texture drawn on a canvas
  * takes from here. */
 export function textureCanvas( size: number ): HTMLCanvasElement {
 

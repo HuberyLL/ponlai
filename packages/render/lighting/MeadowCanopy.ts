@@ -5,7 +5,7 @@ import { shared } from '../shared.ts';
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 
-// The meadow's canopy shade: the key light that survives the blades above a point.
+// The meadow's canopy shadowing: the key light that survives the blades above a point.
 //
 // Grass blades are narrower than a sun-shadow texel, so the meadow does not cast into the sun's
 // shadow map: as the sun turns, re-rasterising sub-texel blades reshuffles their whole shadow
@@ -16,10 +16,10 @@ type V3 = THREE.Node<'vec3'>;
 // the overview read as fine dark blotches and, under a low sun, as dark streaks along its azimuth;
 // the lawn's own root-to-tip colour (Grass.ts) carries the darkening near the ground instead. Of
 // the key light, `open` passes as if through the gaps between blades, and the rest falls off with
-// the path through the canopy, so a low sun deepens the shade without turning the meadow olive.
+// the path through the canopy, so a low sun deepens the shadow without turning the meadow olive.
 // That canopy is level, as deep over every point, and gives every blade at one depth the same share
-// of the key, so none is lit and none shaded: with the meadow's screen-space shade (post/
-// MeadowShade.ts) the blades take its march in its place and keep this only under the temporal
+// of the key, so none is lit and none shaded: with the meadow's screen-space shadows (post/
+// MeadowShadows.ts) the blades take its march in its place and keep this only under the temporal
 // modes. What it leaves out is the sward's own relief: the taller tussocks stand over their
 // neighbours and shade them on the side away from the light (`meadowCastLight`, once per tuft), and
 // the crowns shade the ground under and beside them (`meadowGroundLight`, the turf's).

@@ -1,6 +1,6 @@
-// The page's own parts: what the GUI, camera views, frame, scene jump and diagnostics share.
+// The app's own parts: what the GUI, camera views, frame, scene jump and diagnostics share.
 //
-// The page's own parts: what the island page's modules (the GUI, the camera views, its part of the
+// The app's own parts: what the island page's modules (the GUI, the camera views, its part of the
 // frame, of the scene jump and of the diagnostics) build and share, on one object the entry
 // (main.ts) creates beside the render pipeline's (RenderStages.ts) and the island's
 // (IslandStages.ts). The frame, the scene jump and the handles themselves are the render pipeline's
@@ -17,7 +17,7 @@ import type { QualityChoice, QualityLines } from './QualityDetect.ts';
 export interface PageParts {
 	ground: { soil: boolean };
 	qualityChoice: QualityChoice;
-	/** the scene's uniforms (render/index.ts `startScene` makes them from the page's look) */
+	/** the scene's uniforms (render/index.ts `startScene` makes them from the app's look) */
 	shared: Shared;
 	reloadWithQuality: ( tier: QualityTier | null ) => void;
 	GAME: boolean;

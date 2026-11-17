@@ -1,5 +1,5 @@
 import { tune } from '../debug/Tune.ts';
-import type { AmbientColumn, AmbientKnobs, AmbientLook, AmbientRowLook } from './Look.ts';
+import type { AmbientColumn, AmbientSettings, AmbientLook, AmbientRowLook } from './Look.ts';
 
 // The environment light's look built from a look's table: the ambient grade and the key's lift.
 //
@@ -12,34 +12,34 @@ import type { AmbientColumn, AmbientKnobs, AmbientLook, AmbientRowLook } from '.
 // them (RenderStages.ts: the tables in `createLight`, for the grade's controller and the ambient
 // light's relight; the lift in `createSky`, which the sky carries beside the key's direction), so
 // two made from two tables hold their own numbers (tools/render/verify-look-params.mjs) and this
-// module holds none at module level: only the knobs' and the columns' names and the knobs at no
-// grade, which no look changes. The land's floor under cloud is the sky's (look/SkyLook.ts
+// module holds none at module level: only the parameters' and the columns' names and the
+// parameters at no grade, which no look changes. The land's floor under cloud is the sky's (look/SkyLook.ts
 // `keyThroughCloud`). Each module's header says what its numbers do on screen.
 // - The tables register their tunables (debug/Tune.ts) as they are created, under the names they
 //   always had (`lighting.grade.sunBounce`, `lighting.relight.overcastLand`). The tune table is one
 //   per process: on a debug page a second set made from another table reads the first one's
 //   tunables.
 
-export type { AmbientKnobs };
+export type { AmbientSettings };
 
-export const AMBIENT_KNOBS: ReadonlyArray<keyof AmbientKnobs> = [ 'skySpecular', 'skyBounce', 'sunBounce', 'directionality', 'aoStrength' ];
+export const AMBIENT_SETTINGS: ReadonlyArray<keyof AmbientSettings> = [ 'skySpecular', 'skyBounce', 'sunBounce', 'directionality', 'aoStrength' ];
 
 /** The table's columns, the skies of the weather's blend (Weather.ts MIX_SKIES' order). */
 export const AMBIENT_COLUMNS = [ 'clear', 'fair', 'cloudy', 'overcast' ] as const satisfies readonly AmbientColumn[];
-type AmbientRow = { at: number } & Record<AmbientColumn, Readonly<AmbientKnobs>>;
+type AmbientRow = { at: number } & Record<AmbientColumn, Readonly<AmbientSettings>>;
 
-// The knobs at no grade: a look's rows spell their changes over it.
-export const DEFAULT_KNOBS: Readonly<AmbientKnobs> = { skySpecular: 1, skyBounce: 1, sunBounce: 1, directionality: 0.25, aoStrength: 1 };
-const D = DEFAULT_KNOBS;
+// The parameters at no grade: a look's rows spell their changes over it.
+export const DEFAULT_AMBIENT_SETTINGS: Readonly<AmbientSettings> = { skySpecular: 1, skyBounce: 1, sunBounce: 1, directionality: 0.25, aoStrength: 1 };
+const D = DEFAULT_AMBIENT_SETTINGS;
 const whole = ( row: AmbientRowLook ): AmbientRow => ( { at: row.at, clear: { ...D, ...row.clear }, fair: { ...D, ...row.fair }, cloudy: { ...D, ...row.cloudy }, overcast: { ...D, ...row.overcast } } );
 
 /** The ambient grade's table and its gains a look's table makes (`createAmbientTables`). */
 export interface AmbientTables {
 	/** The table at a sun elevation (degrees), `rising` or setting, and the weather's column
 	 * weights, into `out`. */
-	evaluate( elevation: number, weights: readonly number[], out: AmbientKnobs, rising?: boolean ): AmbientKnobs;
+	evaluate( elevation: number, weights: readonly number[], out: AmbientSettings, rising?: boolean ): AmbientSettings;
 	/** A gain on the table's `sunBounce` at every hour and in every weather: scales the key's bounce
-	 * throughout without reshaping the table: the shade's level is the light the ground sends up.
+	 * throughout without reshaping the table: the shadows' level is the light the ground sends up.
 	 * Tunable: `lighting.grade.sunBounce`. */
 	readonly sunBounceGain: () => number;
 	/** The sun's part of the weather's gain under overcast's deck, per unit, on the land's ambient
@@ -78,7 +78,7 @@ export function createAmbientTables( look: AmbientLook ): AmbientTables {
 				break;
 
 			}
-			for ( const key of AMBIENT_KNOBS ) {
+			for ( const key of AMBIENT_SETTINGS ) {
 
 				let sum = 0, weight = 0;
 				AMBIENT_COLUMNS.forEach( ( column, c ) => {

@@ -2,14 +2,14 @@ import type { EntityId } from './types.ts';
 
 // The schemas outside input is checked against once, at the entrance, before any rule runs.
 //
-// Outside input is checked once, at the entrance: a tool call from a brain (agent.ts `act`), or a
+// Outside input is checked once, at the entrance: a tool call from an agent (agent.ts `act`), or a
 // command of the player's (../Session.ts `speak`, `place`), is matched against its schema here
 // before any rule runs, and the rules then take the clean arguments as given. A schema names each
 // argument with its type and whether it may be left out; `checkArgs` refuses what does not match,
 // with a reason the caller hands on (the next thought perceives it):
 //
 // - not an object (an array, null, a number), or absent where an argument is required;
-// - an argument the schema does not name (a brain's stray field, `__proto__`): refused, never
+// - an argument the schema does not name (an agent's stray field, `__proto__`): refused, never
 //   copied, so nothing outside the schema reaches a rule or the save;
 // - a value of another type: a text that is blank, a number that is not finite (NaN, which JSON
 //   writes as null), a count that is not a whole number from 1, an audience that names an
@@ -18,7 +18,7 @@ import type { EntityId } from './types.ts';
 //
 // The arguments come back as a fresh object holding only the schema's names, read with
 // Object.hasOwn, each once, and texts trimmed (words said, an id with a stray space). Outside input
-// is plain data, what JSON carries (a brain's answer is parsed from it), so nothing here defends
+// is plain data, what JSON carries (an agent's answer is parsed from it), so nothing here defends
 // against getters or proxies. Whether a value names something in the world (a place, an item, an
 // islander) is the rules' to say: that changes as the game runs, a schema does not.
 

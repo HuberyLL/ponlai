@@ -220,7 +220,7 @@ class PreExposure {
 	}
 
 	/** Every rendered frame, before its ticket: what it draws from (TemporalRest.ts `restKey`, with
-	 * the page's signature, its epoch without the pre-exposure's own bumps: `changes`), whether the
+	 * the app's signature, its epoch without the pre-exposure's own bumps: `changes`), whether the
 	 * page waits for nothing but the pre-exposure (`quiet`: false without the settled signal's
 	 * inputs) and the frames a quiet view takes to settle (`settle`, the tier's `restSettle`). A new
 	 * key, or a frame that is not quiet, makes the pre-exposure pending at once and leaves the
@@ -281,7 +281,7 @@ class PreExposure {
 
 }
 
-/** The page's pre-exposure (see the header). */
+/** The app's pre-exposure (see the header). */
 export const preExposure = new PreExposure();
 
 /** A scene-unit colour as a pre-exposed writer stores it. */

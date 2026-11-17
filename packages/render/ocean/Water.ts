@@ -170,7 +170,7 @@ import { settings } from '../Settings.ts';
 //
 // Motion vectors (the temporal modes, Motion.ts): the sea writes its velocity with its colour (class
 // water). Each vertex is moved back to where it was a step of the scene clock ago (`step`: the
-// clock's advance since the rendered frame before, 0 across a cut, a seek or a pause): its cascades'
+// clock's advance since the previous rendered frame, 0 across a cut, a seek or a pause): its cascades'
 // displacement less their rate of change times the step (OceanFFT's orbital velocity, horizontally
 // scaled by the choppiness), weighted by the fine cascade's fade and the skirt's flattening as seen
 // from the previous camera, plus the rocky shore's reflected wave from its previous bake
@@ -454,7 +454,7 @@ export interface WaterInputs {
 	quality?: Partial<WaterQuality>; // compile-time: read once, a change needs a new Water (a reload)
 }
 
-// The water's quality knobs. They are compiled into the shader (a uniform-gated branch keeps its
+// The water's quality settings. They are compiled into the shader (a uniform-gated branch keeps its
 // registers), so they are fixed for the material's life. High is the reference image; the lower
 // tiers trade a little of it for time:
 //   ssrIterations: the most steps the screen-space reflection's trace takes over the depth pyramid
@@ -474,7 +474,7 @@ export interface WaterInputs {
 //     down, take no time for it. 4 on high: against 8 it changed under 2 % of the horizon view's
 //     pixels, unseen side by side, for about a twelfth of that view's water pass; 2 dulled the
 //     far glitter (a tenth of the pixels). The slope table models this sampler's reads, so the
-//     knob is typed to the table's limit (UnresolvedSlopes.ts MAX_ANISOTROPY): another value fails
+//     setting is typed to the table's limit (UnresolvedSlopes.ts MAX_ANISOTROPY): another value fails
 //     the build until the table's columns follow it.
 export interface WaterQuality {
 	ssrIterations: number;
@@ -534,7 +534,7 @@ export class Water {
 	private prepassMaterial: THREE.NodeMaterial | null = null;
 	private inputs: WaterInputs;
 	private materials = new Map<number, THREE.NodeMaterial>();
-	// The temporal modes' motion: the scene clock's step since the rendered frame before (s), 0
+	// The temporal modes' motion: the scene clock's step since the previous rendered frame (s), 0
 	// across a cut or a seek; and 0 to leave the waves' own motion out (flags.mv.sea = false).
 	private step = uniform( 0 );
 	private ownMotion = uniform( 1 );

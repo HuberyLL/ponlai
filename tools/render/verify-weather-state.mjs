@@ -271,7 +271,7 @@ for ( let elevation = - 6; elevation >= - 90; elevation -= 0.25 ) {
 	assert.equal( overcastDeckLight( elevation ), 0, `overcast's deck light at ${ elevation }` );
 	assert.equal( deckRamp( elevation ), 0, `cloudy's deck light at ${ elevation }` );
 }
-// A fixed stream of numbers in [ 0, 1 ) for the checks below (mulberry32), so a failure repeats.
+// A fixed stream of numbers in [ 0, 1 ) for the checks below (mulberry32), so a failure is reproducible.
 let seed = 0x5eed;
 const random = () => {
 	seed = ( seed + 0x6d2b79f5 ) | 0;

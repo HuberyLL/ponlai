@@ -27,8 +27,8 @@ type V3 = THREE.Node<'vec3'>;
 //
 // The particles live in fixed groups: each emitter thread owns one group of slots and may only
 // burst again once its last particle has died. There is no shared atomic ring head, so which
-// slot a particle lands in never depends on thread scheduling and a paused frame stays exactly
-// repeatable. Each step every idle emitter picks a random cell of the foam field and bursts with
+// slot a particle lands in never depends on thread scheduling and a paused frame stays
+// bit-identical. Each step every idle emitter picks a random cell of the foam field and bursts with
 // a probability that grows with the fresh breaking there (Poisson in time).
 //
 // Rendering (camera-facing sprites, premultiplied alpha, in the water target after the sea; under

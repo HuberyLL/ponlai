@@ -4,7 +4,7 @@ import {
 	cameraPosition, specularColor, specularColorBlended, specularF90,
 	normalize, abs, pow, sqrt, max, min, dot, sign, mix, smoothstep, clamp, fract, floor, sin, cos, exp, log2, select, dFdx, dFdy, length, varying,
 } from 'three/tsl';
-import { type Shared, DETAIL_SIZE, GTAO, floorOcclusion, receiveScreenAO, screenAOAt, type WaveMaps, underwaterLight, UnderwaterLightingModel, type UnderwaterLight, type UnderwaterModelOptions, TURF_CANOPY_DEPTH, meadowCanopyLight, meadowGroundLight, puddleField, puddleRipples, DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness, hexReadScan, heightBlend, type HexScan, debugFlags, FSR3, fsr3MipBiasScale, MEADOW_SHADE, SS_SHADOW, meadowGroundShade, screenShadowAt, writeMeter, liftKeyWorld } from '../../render/index.ts';
+import { type Shared, DETAIL_SIZE, GTAO, floorOcclusion, receiveScreenAO, screenAOAt, type WaveMaps, underwaterLight, UnderwaterLightingModel, type UnderwaterLight, type UnderwaterModelOptions, TURF_CANOPY_DEPTH, meadowCanopyLight, meadowGroundLight, puddleField, puddleRipples, DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness, hexReadScan, heightBlend, type HexScan, debugFlags, FSR3, fsr3MipBiasScale, MEADOW_SHADOWS, SS_SHADOW, meadowGroundShadow, screenShadowAt, writeMeter, liftKeyWorld } from '../../render/index.ts';
 import { settings } from '../IslandSettings.ts';
 import { SCAN_LAYER, type GroundTextures } from './GroundTextures.ts';
 import { MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_MAX_DROP, groundGains } from './Meadow.ts';
@@ -21,15 +21,15 @@ import { FLOOR_ALBEDO } from '../world/SeabedTile.ts';
 // `flags=groundCast:false` at load (the canopy's mean depth instead).
 const GROUND_CAST = debugFlags.groundCast !== false;
 // The blades' own shade on it, marched from its point over the vegetation's depth as the blades'
-// is (post/MeadowShade.ts `meadowGroundShade`), so the ground under a sunlit sward carries the
+// is (post/MeadowShadows.ts `meadowGroundShadow`), so the ground under a sunlit sward carries the
 // blade-shaped shadows a close look shows, within some 20 m of the eye; the fade beyond only
 // changes where the screen-space shade comes from (the ground's own march, then the pixel's), never
-// the layer's shade or the occlusion; off with `flags=groundShade:false` at load. With the screen-space shade
+// the layer's shade or the occlusion; off with `flags=groundShadow:false` at load. With the screen-space shade
 // over the whole scene (`SS_SHADOW`) that march runs over the opaque scene's depth too and fades
 // into the pixel's shade beyond it, and the ground and stones elsewhere take the pixel's shade on
 // the key (the culms' and the stones' contact shade, a rock's seams); the sea floor, lit by the
 // refracted sun, does not.
-const GROUND_SHADE = MEADOW_SHADE && debugFlags.groundShade !== false;
+const GROUND_SHADE = MEADOW_SHADOWS && debugFlags.groundShadow !== false;
 
 // PBR materials for the rock and the sea floor: MeshStandardNodeMaterial (lights, shadows, IBL)
 // with the surface built procedurally in world space (triplanar baked detail, moss, wet band,
@@ -188,7 +188,7 @@ const stoneSlope = Fn( ( [ v ]: [ THREE.Node<'vec4'> ] ) => {
 // the slugs of water running down the runnels (see the specular setup below); the runnels'
 // darkening of the stone and their shade on its ambient light.
 const PUDDLE_F0 = 0.2, FLOW_F0 = 0.5, RING_GAIN = 5;
-const RUNNEL_DARKENING = 0.6, RUNNEL_SHADE = 0.7;
+const RUNNEL_DARKENING = 0.6, RUNNEL_DIM = 0.7;
 // The reflectance of stone and sand under the water over theirs in the air: Fresnel's at normal
 // incidence, ( ( 1.5 - 1.33 ) / ( 1.5 + 1.33 ) )^2 against 0.04.
 const STONE_UNDER_WATER = 0.09;
@@ -385,8 +385,8 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 		// The stone stays darker than real limestone (about 0.1 linear albedo against 0.2 - 0.35):
 		// the exposure is set for the meadow, and an afternoon sun meets the vertical faces almost
 		// head on, so a paler stone ran into the tone curve's shoulder, where its grain flattened
-		// into one cream-white face (a third of the sunlit face's pixels at 0.85 of display white
-		// or above, against about 6 % now, its local contrast up by about 40 %).
+		// into one cream-white face (a third of the sunlit face's pixels at a display value of 0.85
+		// of white or above, against about 6 % now, its local contrast up by about 40 %).
 		const convex = vegetation ? smoothstep( 1.2, 4.0, vCurv ) : smoothstep( 1.6, 5.0, vCurv );
 		// The island's blocks meet in sharp creases: only the deepest of them count as hollows.
 		const concave = ( vegetation ? smoothstep( - 1.5, - 6.0, vCurv ) : smoothstep( - 0.5, - 3.0, vCurv ) ).toVar();
@@ -576,7 +576,7 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 				mossC.assign( mix( mossC, ground, turfCover ) );
 				rimGrassC.assign( ground );
 				// The blades above shade the turf: by their layer's shade, the law their own blades
-				// take (Grass.ts `GRASS_SHADOW`, the material's `sunShade`, and here the rest of the
+				// take (Grass.ts `GRASS_SHADOW`, the material's `sunOcclusion`, and here the rest of the
 				// turf's own run, past what every pixel of the ground takes there); without it, through the crowns over it and
 				// toward the light, so the clumps cast on the ground between them (the meadow map's B,
 				// MeadowCanopy.ts `meadowGroundLight`), or without the crowns' heights
@@ -586,7 +586,7 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 				else canopy.assign( meadowCanopyLight( turfCover.mul( shade ).mul( TURF_CANOPY_DEPTH ), shared.sunDir ).mul( mix( float( 1 ), float( GRASS_ROOTS.key ), rootLight ) ) );
 				if ( GROUND_SHADE && ! BARE_GROUND ) {
 
-					canopy.mulAssign( meadowGroundShade( cameraViewMatrix.mul( vec4( p, 1 ) ).xyz ) );
+					canopy.mulAssign( meadowGroundShadow( cameraViewMatrix.mul( vec4( p, 1 ) ).xyz ) );
 					marched.assign( 1 );
 
 				}
@@ -712,13 +712,13 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 
 		}
 		// the whole scene's screen-space shade at the pixel, where the ground did not march its own
-		// (post/MeadowShade.ts `SS_SHADOW`)
+		// (post/MeadowShadows.ts `SS_SHADOW`)
 		if ( SS_SHADOW ) canopy.mulAssign( mix( screenShadowAt(), float( 1 ), marched ) );
 
 		// --- rain: wet materials after Lagarde (see Wetness.ts). The mask starts above the highest
 		// tidal modulation, preserving that band and all submerged detail exactly; downward-facing
 		// overhangs receive less rain. Dry weather skips the branch, so it renders as before.
-		const water = float( 0 ).toVar(), puddle = float( 0 ).toVar(), flow = float( 0 ).toVar(), runShade = float( 1 ).toVar();
+		const water = float( 0 ).toVar(), puddle = float( 0 ).toVar(), flow = float( 0 ).toVar(), runnelDim = float( 1 ).toVar();
 		const exposure = smoothstep( 0.65, 1.0, p.y.sub( shared.waterLevel ) ).mul( smoothstep( - 0.6, 0.1, up ) ).toVar();
 		If( shared.wetness.greaterThan( 0 ).and( exposure.greaterThan( 0 ) ), () => {
 
@@ -756,7 +756,7 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 			// floor, so a darker albedo alone left the runnels invisible in the rain. The water's
 			// paths also return less of the sky's light (an art-directed shade on the ambient and
 			// sky reflection), except where a slug of water running down them catches the sky.
-			runShade.assign( float( 1 ).sub( run.x.mul( soak ).mul( RUNNEL_SHADE ).mul( float( 1 ).sub( run.y ) ) ) );
+			runnelDim.assign( float( 1 ).sub( run.x.mul( soak ).mul( RUNNEL_DIM ).mul( float( 1 ).sub( run.y ) ) ) );
 			rough.assign( wetRoughness( rough, porosity, soak ) );
 			// A water film on bare stone that faces the sky and in the runnels; the turf only glistens.
 			const filmCover = max( film.mul( smoothstep( 0.25, 0.75, up ) ), max( run.x.mul( film ), run.y.mul( exposure ) ) )
@@ -863,7 +863,7 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 		// the floor every receiver keeps.
 		const roots = mix( float( 1 ), rootsSky, rootLight );
 		const ao = floorOcclusion( ( vegetation ? mix( float( 1 ), clamp( vAO, 0, 1 ), float( 0.7 ).sub( pocket.mul( 0.3 ) ) ) : clamp( vAO, 0, 1 ) )
-			.mul( mix( float( 1 ), mix( float( 0.72 ), float( 0.88 ), pocket ), concave ) ).mul( runShade ).mul( GTAO ? min( roots, screenAOAt() ) : roots ) );
+			.mul( mix( float( 1 ), mix( float( 0.72 ), float( 0.88 ), pocket ), concave ) ).mul( runnelDim ).mul( GTAO ? min( roots, screenAOAt() ) : roots ) );
 		return Surface( albedo, nW, rough, ao, canopy, water, puddle, flow, swardCover );
 
 	} )();
@@ -1053,7 +1053,7 @@ function buildTerrainMaterial( kind: 'cliff' | 'seabed', ctx: Ctx, waveMaps: Wav
 	const { shared, vegetation } = ctx;
 	const topYU = ctx.topY;
 	const mat = new THREE.MeshStandardNodeMaterial( { roughness: 0.85, metalness: 0 } );
-	// the island's ground's two runs under the meadow's layer (`sunShade` below, and the turf's in
+	// the island's ground's two runs under the meadow's layer (`sunOcclusion` below, and the turf's in
 	// `cliffSurface`), by the surface's normal's height as well (the land's chunks stand untransformed,
 	// so the geometry's normal is the world's)
 	const key = liftKeyWorld( shared.sunDir );
@@ -1076,7 +1076,7 @@ function buildTerrainMaterial( kind: 'cliff' | 'seabed', ctx: Ctx, waveMaps: Wav
 	// stage already samples WebGPU's sixteen textures. The turf's run differs only along the rim, and
 	// which pixels are turf is known in the fragment stage alone: every pixel takes the first run here
 	// and the turf the rest of its own in its canopy, so the stone beside it stays as it was.
-	if ( meadowRun ) mat.userData.sunShade = meadowLayerLight( meadowRun.x );
+	if ( meadowRun ) mat.userData.sunOcclusion = meadowLayerLight( meadowRun.x );
 	// A water film or puddle reflects with water's specular reflectance instead of the stone's.
 	const f0 = mix( float( DRY_F0 ), float( WATER_F0 ), surf.get( 'water' ) ).toVar();
 	// Seen from above, a puddle mirrors only 2 % of the sky, about as much light as the dark ground

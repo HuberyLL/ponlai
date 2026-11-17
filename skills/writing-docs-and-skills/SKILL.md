@@ -1,34 +1,36 @@
 ---
 name: writing-docs-and-skills
-description: Writes and keeps the documentation of a repository that agents work in, so that an agent reads little, finds the one place a fact lives and is not misled by stale text, such as a fact written in several places that disagree, a rules file that every turn pays for growing past its budget, a doc that describes what the code no longer does, a restructuring of the docs, or a method to be kept as a skill. Puts each text in its kind and the one place that kind lives, checks each claim against the code, states the current state only, turns a rule that can be checked into a check, rewrites docs from an inventory without losing an item, and distils a skill from recorded work with the project's facts in a binding. Use with any repository developed mostly by AI agents (an AGENTS.md or CLAUDE.md, skills, a docs folder) whenever a doc, a rule, a module's header, a tool's manual or a skill is written, moved or rewritten.
+description: Writes and maintains the documentation of a repository that agents work in, so that an agent reads little, finds the one place each fact lives and is not misled by stale text. Symptoms: a fact written in several places that disagree, a rules file loaded on every turn that has grown past its budget, a doc that describes what the code no longer does, docs written in house terms instead of the field's standard terms, a restructuring of the docs, or a method to be kept as a skill. Puts each text in its kind and the one place that kind lives, checks each claim against the code, states the current state only, turns a rule that can be checked into a check, rewrites docs from an inventory without losing an item, and distils a skill from recorded work with the project's facts in a binding. Use with any repository developed mostly by AI agents (an AGENTS.md or CLAUDE.md, skills, a docs folder) whenever a doc, a rule, a module's header, a tool's manual or a skill is written, moved or rewritten.
 ---
 
 # Writing docs and skills
 
 An agent reads what it is given and what it finds, and trusts both. Two copies of a fact drift
-apart and the agent follows either; a sentence the code has outgrown is followed as if it were
-true; a rules file that every turn loads costs context on every turn. The method: put each text in
-the one place its kind lives, check it against the code, write the current state only, and keep
-it true with checks rather than care.
+apart, and the agent follows either one. A sentence that the code has outgrown is followed as if it
+were still true. A rules file is loaded on every turn, so each of its lines costs context on every
+turn. The method is to put each text in the one place where its kind lives, check it against the
+code, write only the current state, and keep it true with checks rather than with care.
 
 ## Rules most often broken without notice
 
-- One fact or rule in one place. Every other place links to it and does not restate it. Before
-  you write a fact, search for it: an existing copy is moved or linked, never left beside yours.
-- A claim about the code is checked against the code before it is written, and a doc that
-  disagrees with the code is fixed to the code. Copying a sentence from another doc is not
-  checking it.
-- Write the current state only. What was tried, what it was before, and why it changed go in the
-  commit message. Never cite private notes, plans, task names or milestones.
-- The rules file is loaded on every turn: rules every change follows and an index, nothing else.
-  A multi-step method goes in a skill; a rule of one module goes in that module's header.
-- A rule that can be a check becomes a check in the same change. Text is the last resort.
-- A path that moves is fixed everywhere in the same change: docs, code comments, strings,
-  configuration, skills.
-- A rewrite never drops an item or changes a rule's meaning in passing. Deletions and changes of
-  meaning go to the owner first; a rule you think wrong is listed for the owner, not fixed.
-- A rule that must hold is never only in a skill: whether a skill loads is the model's call. It
-  gets a check, or a line in the rules file.
+- Write each fact or rule in one place. Every other place links to it and does not restate it.
+  Before you write a fact, search for it. Move or link an existing copy; never leave it beside
+  yours.
+- Check a claim about the code against the code before you write it. If a doc disagrees with the
+  code, fix the doc to match the code. Copying a sentence from another doc is not checking it.
+- Write only the current state. What was tried, what the code did before, and why it changed go in
+  the commit message. Never cite private notes, plans, task names or milestones.
+- The rules file is loaded on every turn. It holds the rules that every change follows and an
+  index, nothing else. A multi-step method goes in a skill; a rule of one module goes in that
+  module's header.
+- If a rule can be a check, make it a check in the same change. Text is the last resort.
+- When a path moves, fix it everywhere in the same change: docs, code comments, strings,
+  configuration and skills.
+- A rewrite never drops an item or changes a rule's meaning in passing. Take deletions and changes
+  of meaning to the owner first. If you think a rule is wrong, list it for the owner; do not fix
+  it.
+- A rule that must hold is never only in a skill, because the model decides whether a skill loads.
+  Give the rule a check, or a line in the rules file.
 
 ## The project's facts: the binding
 
@@ -78,19 +80,20 @@ Each text is one kind, and each kind has one home and one time it is read:
 - A fact or rule of one module lives in that module's header, beside the code it describes. A
   reference page holds what no one module owns (a table of options, a convention across modules)
   and links to the headers for the rest; a header is never emptied into a page.
-- A list that can be generated is generated, not kept: a file-by-file code map printed from the
-  headers' first lines cannot fall behind the code.
-- A header is seen only by a reader who opens the file. A rule needed before the file exists (how
-  to add a new kind of thing) goes in a skill or the rules file, not only in a header.
+- If a list can be generated, generate it instead of maintaining it by hand. A file-by-file code
+  map printed from the headers' first lines cannot fall behind the code.
+- Only a reader who opens the file sees its header. A rule that is needed before the file exists
+  (how to add a new kind of thing) goes in a skill or the rules file, not only in a header.
 - A long page (over about 100 lines) opens with its contents, so a reader can take one section.
 
 ### 2. Check the claim against the code
 
-Read the code, the tool or the measurement the sentence describes, and write what it does now.
-Where docs disagree, none of them is the source: the code is. A number the code holds is named by
-its constant or linked, not copied. A claim about a source outside the repository is checked by
-opening that source: credit only what its page states. A stale sentence you meet on the way is
-fixed in the same change or reported to the owner, never passed over in silence.
+Read the code, the tool or the measurement that the sentence describes, and write what it does
+now. Where docs disagree, none of them is the source: the code is. For a number that the code
+holds, name its constant or link to it; do not copy the value. To check a claim about a source
+outside the repository, open that source, and credit only what its page states. If you meet a
+stale sentence on the way, fix it in the same change or report it to the owner; never pass over it
+in silence.
 
 ### 3. Write it once; link from the rest
 
@@ -100,19 +103,20 @@ fixed in the same change or reported to the owner, never passed over in silence.
 
 ### 4. Keep the always-loaded text in budget (binding: Budget)
 
-What loads up front and what is fetched on demand is decided by the task: a rule that every
-change must follow belongs up front; a method, a manual or a fact belongs where it is fetched.
-Every line of the rules file is paid for on every turn and lowers how well the rest is followed.
-Before you add a line, take one out or move one to where it is owned. A rules file over its budget
-is cut before the new line goes in. Moving a rule out of the rules file changes when it is read:
-it goes to the owner with the changes of meaning, unless a check now holds it.
+The task decides what loads up front and what is fetched on demand. A rule that every change must
+follow belongs up front; a method, a manual or a fact belongs where it is fetched. Every line of
+the rules file costs context on every turn and lowers how well the rest is followed. Before you
+add a line, take one out or move one to where it is owned. If the rules file is over its budget,
+cut it before the new line goes in. Moving a rule out of the rules file changes when it is read,
+so take the move to the owner with the changes of meaning, unless a check now enforces the rule.
 
 ### 5. Turn what can be checked into a check (binding: Checks)
 
 For a new rule, prefer in order: make the mistake impossible in the architecture, then in the
-types, then a lint rule, then a test or a verify tool, then text. A rule written as text is one
-line; what enforces it ("judgement" when nothing does) and the mistake that led to it are recorded
-where the binding says. A text rule broken a second time gets a check in the change that meets it.
+types, then a lint rule, then a test or a verify tool, then text. Write a text rule as one line.
+Record what enforces it ("judgement" when nothing does) and the mistake that led to it where the
+binding says. If a text rule is broken a second time, add a check in the change that finds the
+breach.
 
 Docs are kept true by checks too:
 
@@ -125,8 +129,8 @@ Docs are kept true by checks too:
 
 ### 6. Run the docs checks (binding: Checks)
 
-Run the checks for what you touched before the commit. A failure is fixed at its cause: a path is
-corrected, never added to an allow list without a reason written beside it.
+Before the commit, run the checks for what you touched. Fix a failure at its cause: correct the
+path, and never add it to an allow list without a reason written beside it.
 
 ### 7. Commit, with the history in the message (binding: Commit)
 
@@ -170,8 +174,12 @@ A rewrite is harder to check than a move, so the inventory comes before the writ
 
 ## Prose
 
-Plain words, short sentences, one idea each. One term per thing, the same term throughout. The
-present tense, the second person and the active voice; a condition before the instruction it
-governs. Repository text is in the project's language whatever the language of the conversation.
+Use plain words and short sentences, one idea each, each with a subject and a verb. Use one term per
+thing, the same term throughout. Use the field's standard term, not a house word: "post-processing",
+not "the image"; "capture", not "shoot"; "deterministic", not "repeats". Describe a thing in other
+words only when the field has no term for it. Write for a newcomer to the project, not for the team:
+"a load knob is read once" becomes "load-time settings are read once at startup". Use the present
+tense, the second person and the active voice, and put a condition before the instruction it
+governs. Repository text is in the project's language, whatever the language of the conversation.
 
 Why the method works this way, and the sources: [background.md](background.md).

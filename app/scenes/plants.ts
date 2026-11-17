@@ -53,9 +53,9 @@ function sites(): PlantSite[] {
 
 }
 
-// Where the post's shade lies on the plants: the shadow, at the leaves' height, of the point three
+// Where the post's shadow lies on the plants: the shadow, at the leaves' height, of the point three
 // quarters up the post (past the clearing at noon), at most 4 m from it. `aside` moves the point
-// out of the shade, sideways.
+// out of the shadow, sideways.
 function shade( { key }: ReadingContext, aside = 0 ): Triple {
 
 	const flat = Math.hypot( key.x, key.z ) || 1;

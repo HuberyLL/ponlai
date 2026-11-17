@@ -3,19 +3,19 @@
 // The world's worker: WorldChunks.ts runs a pool of these, and each job
 // is one chunk, built from the land field's window round it (Chunks.ts `buildChunk`), or the land
 // itself. Any worker can run any job; a job's result depends only on what it names (the chunk, the
-// land version, the options) and the land the page gave this worker, never on the jobs before it.
+// land version, the options) and the land the main thread gave this worker, never on the jobs before it.
 //
-// - `land`: the grown land of a seed and step (IslandGrowth.ts), with what the page needs before
+// - `land`: the grown land of a seed and step (IslandGrowth.ts), with what the main thread needs before
 //   any chunk arrives (ChunkMerge.ts `LandData`: the chunks, the steps each chunk's cache key
 //   names, the far floor, the floor's fields over the fields' bounds, the walking loop). Cached
 //   under its own key.
 // - `field`: the land field of a land version (Chunks.ts `landField`, the costliest part of the
 //   land: a few tenths of a second), once per version, and only when the land or a chunk was not
 //   in the cache.
-//   The worker keeps it, and its reply carries a copy for every other worker, which the page hands
+//   The worker keeps it, and its reply carries a copy for every other worker, which the main thread hands
 //   on (`use`); each cuts the chunks' windows from its own.
 // - `chunk`: the chunk from the cache when it holds it, else built (when the worker has the field,
-//   once the island's simplifier is ready: IslandSimplify.ts) and stored; without the field the worker answers `need` and the page sends the job again once
+//   once the island's simplifier is ready: IslandSimplify.ts) and stored; without the field the worker answers `need` and the main thread sends the job again once
 //   it has the field. The cache (WorldCache.ts) is read and written here, off the main thread.
 // - `keep`: after a load, the keys of every record of its land version (the land's first): the
 //   cache keeps them and the version loaded before, and deletes the rest (WorldCache.ts `keep`).
@@ -36,7 +36,7 @@ import { fieldBounds, BED_CELL, FLOOR_CELL, type LandData } from './ChunkMerge.t
 import { openChunkStore, type ChunkStore } from './WorldCache.ts';
 import { walkLoop } from './WalkLoop.ts';
 
-/** The land of `seed` after `step` growth steps, and what the page needs of it before its chunks. */
+/** The land of `seed` after `step` growth steps, and what the main thread needs of it before its chunks. */
 export function buildLand( seed: number, step: number ): LandData {
 
 	const { land, pieces } = growLand( seed, step );
@@ -100,7 +100,7 @@ export type ChunkJob =
 	| { kind: 'land'; seed: number; step: number; key: string | null }
 	| { kind: 'field'; land: Uint8Array; copies: number }
 	| { kind: 'use'; land: Uint8Array; field: LandField }
-	| { kind: 'chunk'; ci: number; cj: number; version: number; key: string | null; contactOcclusion: boolean; canopyShade: boolean }
+	| { kind: 'chunk'; ci: number; cj: number; version: number; key: string | null; contactOcclusion: boolean; canopyShadow: boolean }
 	| { kind: 'keep'; keys: string[] }
 	| { kind: 'close' };
 
@@ -194,7 +194,7 @@ async function run( job: ChunkJob ): Promise<void> {
 			}
 			if ( ! land || ! field ) { post( { kind: 'need', ci: job.ci, cj: job.cj } ); break; }
 			await simplifierReady;
-			const data = buildChunk( landWindow( field, job.ci, job.cj ), land, job.ci, job.cj, { version: job.version, contactOcclusion: job.contactOcclusion, canopyShade: job.canopyShade } );
+			const data = buildChunk( landWindow( field, job.ci, job.cj ), land, job.ci, job.cj, { version: job.version, contactOcclusion: job.contactOcclusion, canopyShadow: job.canopyShadow } );
 			if ( cache ) track( cache.write( job.key!, data ) );
 			// eslint-disable-next-line ponlai/scene-clock -- a chunk's build time, a readout
 			post( { kind: 'chunk', data, cache: cache ? 'miss' : job.key !== null ? 'error' : 'off', ms: performance.now() - t } );
@@ -229,7 +229,7 @@ if ( 'WorkerGlobalScope' in globalThis ) {
 
 		queue = queue.then( () => run( e.data ) ).catch( ( error: unknown ) => {
 
-			// an uncaught error reaches the page's worker.onerror; a rejected promise would not
+			// an uncaught error reaches the main thread's worker.onerror; a rejected promise would not
 			setTimeout( () => { throw error; } );
 
 		} );

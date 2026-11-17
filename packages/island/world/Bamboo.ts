@@ -353,7 +353,7 @@ const CULM_PROTOTYPES = BAMBOO.prototypes.heights * BAMBOO.prototypes.girths;
 const bandMiddle = ( [ lo, hi ]: readonly [ number, number ], count: number, k: number ) => lo * ( hi / lo ) ** ( ( k + 0.5 ) / count );
 const bandOf = ( [ lo, hi ]: readonly [ number, number ], count: number, x: number ) => Math.min( count - 1, Math.max( 0, Math.floor( Math.log( x / lo ) / Math.log( hi / lo ) * count ) ) );
 
-/** Prototype `k`'s culm: its band's middle height and girth (GROVES.height is a load knob, read
+/** Prototype `k`'s culm: its band's middle height and girth (GROVES.height is a load-time setting, read
  * here once). */
 function prototypeCulm( k: number ): Culm {
 
@@ -395,7 +395,7 @@ function instances( sites: Sites ): PlantInstance[] {
 
 }
 
-// ------------------------------------------------------------------ the page's bamboo
+// ------------------------------------------------------------------ the app's bamboo
 
 export type Sites = { culms: CulmSite[] };
 

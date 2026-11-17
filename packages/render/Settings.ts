@@ -3,20 +3,20 @@ import type { QualityTier } from './Quality.ts';
 import type { DayPreset } from './sky/DayCycle.ts';
 import type { WeatherName, WindLevel } from './sky/Weather.ts';
 
-// The page's settings: the render pipeline's options of its address, and the one reader of every layer's.
+// The app's settings: the render pipeline's URL options, and the one reader of every layer's.
 //
-// The page's settings: the render pipeline's own options of the page's address, each declared once
-// here with its type, its range and its default, and the one reader every module takes the page's
+// The app's settings: the render pipeline's own options in the page's URL, each declared once
+// here with its type, its range and its default, and the one reader every module takes the app's
 // options from. A layer above the render pipeline declares its own options in a table of the same
 // shape (`SettingsTable`) beside its code and reads them by `settingsFor( its table )`, the same
-// reader typed for its names and the render pipeline's; the page merges the layers' tables
+// reader typed for its names and the render pipeline's; the app merges the layers' tables
 // (`mergeSettings`: a name two layers declare throws) for the reports below.
 //
 //   import { settings } from './Settings.ts';
 //   const option = settings.get( 'windView' );          // the value as written, or null
 //   if ( settings.has( 'paused' ) ) ...                  // named at all (a bare `?paused` too)
 //
-// - The page's entry parses the address once (`parseSettings`), reports in one form each name its
+// - The app's entry module parses the URL once (`parseSettings`), reports in one form each name its
 //   merged table does not declare and each value outside its range (`settingProblems`: a console
 //   warning `?name=value: why`, the option keeping whatever its reader makes of it), chooses the
 //   quality tier and installs both (`installSettings`) before any other module loads, so a module
@@ -34,7 +34,7 @@ import type { WeatherName, WindLevel } from './sky/Weather.ts';
 //   each module still reads its options as it did, so the values, the defaults the modules apply
 //   and their console warnings are unchanged. `get` takes only a name its reader is typed for, so a
 //   misspelt read, or a render pipeline's read of a layer's option above it, fails the type check;
-//   `prefixed` reads the declared prefixes (`tier.<knob>`, Quality.ts).
+//   `prefixed` reads the declared prefixes (`tier.<setting>`, Quality.ts).
 // - RENDER_SETTINGS lists the options by the groups of docs/reference/url-options.md, whose table of
 //   every layer's options tools/repo/verify-settings.mjs writes from the tables and checks against
 //   them: a new option is declared in the table of the lowest layer that reads it, explained there
@@ -52,7 +52,7 @@ export interface SettingSpec {
 	/** `switch`: named or not, its value unread; `choice`: one of `values`; `number`, `integer`: a
 	 * number in `range` (or one of `words`); `list`: a comma list; `text`: any text. */
 	readonly type: 'switch' | 'choice' | 'number' | 'integer' | 'list' | 'text';
-	/** What the page does without it, as words for the docs' table. */
+	/** What the app does without it, as words for the docs' table. */
 	readonly default: string;
 	readonly values?: readonly string[];
 	readonly range?: readonly [ number, number ];
@@ -62,7 +62,7 @@ export interface SettingSpec {
 	readonly about: string;
 }
 
-/** A layer's options by name (`RENDER_SETTINGS`; the island's, the game's and the page's own). */
+/** A layer's options by name (`RENDER_SETTINGS`; the island's, the game's and the app's own). */
 export type SettingsTable = Readonly<Record<string, SettingSpec>>;
 
 const WEATHERS = [ 'clear', 'fair', 'cloudy', 'overcast', 'rain', 'storm', 'fog' ] as const satisfies readonly WeatherName[];
@@ -116,16 +116,16 @@ export const RENDER_SETTINGS = {
 	windView: { type: 'choice', default: 'off', values: [ '', 'arrows', 'plants' ], debug: true, about: 'makes the vegetation\'s wind visible' },
 } as const satisfies SettingsTable;
 
-/** Options read by a prefix: `tier.<knob path>=<value>` (Quality.ts `qualityProfile`). */
+/** Options read by a prefix: `tier.<setting path>=<value>` (Quality.ts `qualityProfile`). */
 export const SETTING_PREFIXES = {
-	'tier.': { type: 'text', default: 'the tier\'s', about: 'overrides one knob of the tier (`tier.post.hazeGrid.width=128`)' },
+	'tier.': { type: 'text', default: 'the tier\'s', about: 'overrides one setting of the tier (`tier.post.hazeGrid.width=128`)' },
 } as const satisfies SettingsTable;
 
 /** The render pipeline's option names. */
 export type SettingName = keyof typeof RENDER_SETTINGS;
 export type SettingPrefix = keyof typeof SETTING_PREFIXES;
 
-/** What a module reads its options through: the page's installed settings (`settings`, or a
+/** What a module reads its options through: the app's installed settings (`settings`, or a
  * layer's `settingsFor` its table), or a query of its own (`parseSettings`, a scene jump's), for
  * the names `N` (the render pipeline's by default). URLSearchParams has the same shape. */
 export interface SettingsQuery<N extends string = SettingName> {
@@ -164,7 +164,7 @@ export function parseSettings( search: string ): ParsedSettings<string> {
 
 type Merged<T extends readonly SettingsTable[]> = T extends readonly [ infer First, ...infer Rest extends readonly SettingsTable[] ] ? First & Merged<Rest> : unknown;
 
-/** The page's options: the layers' tables in one (the page's entry merges them; a name declared by
+/** The app's options: the layers' tables in one (the app's entry module merges them; a name declared by
  * two throws). */
 export function mergeSettings<const T extends readonly SettingsTable[]>( ...tables: T ): Merged<T> {
 
@@ -179,7 +179,7 @@ export function mergeSettings<const T extends readonly SettingsTable[]>( ...tabl
 
 }
 
-/** Each name `table` (the page's merged options) does not declare and each value outside its
+/** Each name `table` (the app's merged options) does not declare and each value outside its
  * declared range, as `?name=value: why`. */
 export function settingProblems( query: ParsedSettings<string>, table: SettingsTable ): string[] {
 
@@ -233,7 +233,7 @@ const current = ( name: string ) => {
 
 };
 
-/** Installs the page's settings and the quality tier its entry chose (null: the `quality` option's,
+/** Installs the app's settings and the quality tier its entry chose (null: the `quality` option's,
  * else the default: Quality.ts `loadTier`), before the modules that read them load. Once only, and
  * before any read: it throws on a second install, and when a module read an option before (it took
  * the default, whatever the address says), naming the first. */
@@ -270,7 +270,7 @@ export const settings: InstalledSettings = Object.freeze( {
 } );
 
 /** The installed settings read by a layer above the render pipeline: the same reader as `settings`, by
- * the render pipeline's names and those of `table` (the layer's own, or the page's merged ones). */
+ * the render pipeline's names and those of `table` (the layer's own, or the app's merged ones). */
 export function settingsFor<T extends SettingsTable>( _table: T ): InstalledSettings<SettingName | Extract<keyof T, string>> {
 
 	return settings as InstalledSettings<string>;

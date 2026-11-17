@@ -261,7 +261,7 @@ export interface DynamicResolutionOptions extends DynamicRange {
 }
 
 /** TAAU's bound on the upscale (canvas over render, per axis): the floor rises to the canvas's ratio
- * over it (0.4 at 2K output and 0.8 at 4K, below high's floor there, 0.75 and 1.0). TAAU
+ * over it (0.4 at 2K output and 0.8 at 4K, below the high tier's floor there, 0.75 and 1.0). TAAU
  * reconstructs the canvas from jittered renders, about eight samples per output pixel over its
  * sequence (Jitter.ts: L = 8 r^2, up to 64), so far below the canvas a moving image has too few
  * samples per pixel to hold its detail (FSR 2 and DLSS stop at 3x, their Ultra Performance mode,

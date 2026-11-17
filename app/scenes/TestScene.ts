@@ -5,16 +5,16 @@
 // pipeline's stages on the render pipeline's neutral inputs (NeutralInputs.ts): level ground of one
 // albedo under an open sky, or the open sea over a level floor, and whatever the scene places there
 // (plant kinds among it, drawn with the registry's default plant). It declares what it tests, its
-// views, the hours and weathers it is shot at and the readings taken of it, so a tool shoots and
-// reads it without knowing the scene (tools/render/scenes.mjs).
+// views, the hours and weathers it is captured at and the readings taken of it, so a tool captures
+// and reads it without knowing the scene (tools/render/scenes.mjs).
 //
 // Rules:
-// - A scene imports the render pipeline through its exits only (render/index.ts, render/setup.ts,
+// - A scene imports the render pipeline through its entry points only (render/index.ts, render/setup.ts,
 //   render/data.ts), never the island or the game, and never another layer's module by its path
 //   (tools/repo/verify-layers.mjs).
 // - Its surfaces are lit as every other surface is (`surface`: the shared lighting model and the
 //   metering light, docs/bindings/building-cinematic-stylised-realism.md, Materials).
-// - Everything it places is a function of constants: no random stream, no clock, so a load repeats.
+// - Everything it places is a function of constants: no random stream, no clock, so every load is bit-identical.
 import * as THREE from 'three/webgpu';
 import { GroundBounceLightingModel, writeMeter, type RenderParts, type VegetationKind } from '../../packages/render/index.ts';
 
@@ -32,7 +32,7 @@ export interface SceneView {
 	fov?: number;
 }
 
-/** An hour and a weather the scene is shot at: the scene options of its query (`weather`, `hour`,
+/** An hour and a weather the scene is captured at: the scene options of its query (`weather`, `hour`,
  * `preset`, `moon`, ...), as a load's address or a scene jump takes them. */
 export interface SceneTime { name: string; query: string }
 
@@ -82,7 +82,7 @@ export interface TestScene {
 	build( render: RenderParts ): SceneContent;
 	/** the views, the first the one a load shows */
 	views: SceneView[];
-	/** the hours and weathers it is shot at */
+	/** the hours and weathers it is captured at */
 	times: SceneTime[];
 	/** the readings taken in each view; a view takes those its frame holds */
 	readings: SceneReading[];

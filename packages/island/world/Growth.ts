@@ -18,7 +18,7 @@ import { SeabedRise } from './SeabedRise.ts';
 // The island grows in place: the next piece is
 // generated in the background, and a Grow (`grow()`, the GUI's Island folder) swaps in only the
 // chunks that changed, in one frame, with every dependent following. No pipeline is built: a swap
-// needing one would be a bug (tools/render/verify-first-use.mjs and the page's pipeline count). A grown
+// needing one would be a bug (tools/render/verify-first-use.mjs and the app's pipeline count). A grown
 // page against a fresh load of its land, pipelines across swaps included: tools/island/verify-growth-swap.mjs.
 // Anything new that depends on the land's shape joins the swap, the same function of the version as
 // at load: through `GrowthPage` (below), a vegetation kind's `growth` (vegetation/Registry.ts) or
@@ -32,14 +32,14 @@ import { SeabedRise } from './SeabedRise.ts';
 //   Session.ts): it is told the pending piece once it is ready (`game.setComing`), and asks for
 //   the grow once a step is due.
 // - Versions: a version is a land step and its chunks (WorldChunks.ts `VersionChunks`). The shown
-//   one is the page's; the next step is generated as the pending one, on at most two workers (the
+//   one is the app's; the next step is generated as the pending one, on at most two workers (the
 //   shown one's own chunks are taken over wherever the growth steps in a chunk's window are the
 //   same, Chunks.ts dirtyChunks, so only the rebuild set is generated or read from the cache). A
 //   rebuilt chunk whose hash equals the shown one's is the shown one's (the same object), so it is
 //   not swapped: `changed` lists the chunks whose data differs.
 // - Preparation, in idle time (requestIdleCallback; a timer where there is none), slices of at
 //   most SLICE ms of steps of a few tenths of a millisecond each: the merge (ChunkMerge.ts
-//   mergeSteps), the land's box and the page's framing of it (`measure`), the new island meshes
+//   mergeSteps), the land's box and the app's framing of it (`measure`), the new island meshes
 //   of the changed land chunks, the merged kinds' new geometry, of the same layout as the old (the
 //   stones, the sea floor, their bounds found in steps: Steps.ts), the walking loop, each vegetation kind its
 //   own part in registry order (vegetation/Registry.ts: the meadow planted a slice of anchors at a
@@ -55,9 +55,9 @@ import { SeabedRise } from './SeabedRise.ts';
 //   and three's write at their first draw becomes a copy on the GPU (Upload.ts stagedWriteSteps,
 //   `staged`: no kind does today): as queue writes, each 256 KB of instance matrices blocked the
 //   main thread for 15-35 ms on a running page, and the first frame after the swap (the rain's map
-//   draws them first) took 50-200 ms. Nothing is compiled ahead for the island's chunks: their draws use
+//   draws them first) took 50-200 ms. No pipelines are precompiled for the island's chunks: their draws use
 //   the pipelines the loaded chunks drew with (the same materials and layouts), and the swap's
-//   frame only makes their render objects (compiling ahead cost 10-19 ms of the main thread per
+//   frame only makes their render objects (precompiling their pipelines cost 10-19 ms of the main thread per
 //   chunk, more than that frame's share).
 //   A grow asked for before it is done swaps once it is.
 // - The swap, in the frame's tick before the camera and the shadows update (main.ts's one-line
@@ -65,12 +65,12 @@ import { SeabedRise } from './SeabedRise.ts';
 //   page loaded on that land orders them), the merged kinds' geometry, then each vegetation kind's
 //   swap (the meadow's pool, its edge records with it, and the bamboo's instance pool: the cull's storage nodes (vegetation/VegetationCull.ts) pointed at the new buffers),
 //   the fields' changed squares (copied on the GPU) or new textures, the shore's wave fields, the
-//   ambient light's probes (their storage node pointed at the new buffer), the refracted sun's casters, the walker's loop, and the page's own (IslandStages.ts `onSwap`: the land's
+//   ambient light's probes (their storage node pointed at the new buffer), the refracted sun's casters, the walker's loop, and the app's own (IslandStages.ts `onSwap`: the land's
 //   box and framing as measured ahead, the fog's clearing, the sun's caster box and columns, the
 //   sea's reflection box, the camera's ground).
 // - The frames after it, one step each: the rain's collision map (resized, then baked again eight
 //   meshes a frame from the island and the kinds registered with `rainBake`: RainCollision.bakeSteps), the game's ground (the game
-//   reads the chunks' walk tiles: game/Game.ts `setIsland`), the old resources disposed (a kind a frame), the page's own (`onSwapped`).
+//   reads the chunks' walk tiles: game/Game.ts `setIsland`), the old resources disposed (a kind a frame), the app's own (`onSwapped`).
 //   A replaced mesh, and the refracted sun's and the rain map's proxies of it, are disposed as
 //   objects, not only their geometry: three keeps a render object (and its uniform buffers) per
 //   object and pass until the object's dispose. Their shared materials stay. They go after the swap's
@@ -79,7 +79,7 @@ import { SeabedRise } from './SeabedRise.ts';
 // - The growth's own main-thread time is counted per frame (`work`; the workers' replies
 //   included), and kept with the swap's record (`state.last.work`): no frame's share should pass
 //   2 ms (the growth's frame-time budget).
-// - The page then draws what a page loaded on the grown land draws, bit for bit (paused): every
+// - The app then draws what a page loaded on the grown land draws, bit for bit (paused): every
 //   dependent is the same function of the same version, and the island's meshes are split and
 //   ordered alike (World.ts on split draws).
 // - The shoal (SeabedRise.ts, `rise`): once the next version is generated, the preparation's first
@@ -95,7 +95,7 @@ export interface GrowthGame {
 	setIsland( land: LandLattice, chunks: readonly ChunkData[] ): void;
 }
 
-/** What the growth changes on the page: its world objects, and the page's own hooks. */
+/** What the growth changes in the app: its world objects, and the app's own hooks. */
 export interface GrowthPage<M = unknown> {
 	renderer: THREE.WebGPURenderer;
 	world: WorldMeshes;
@@ -110,14 +110,14 @@ export interface GrowthPage<M = unknown> {
 	characters: Villagers | null;
 	/** the game (?game) */
 	game: GrowthGame | null;
-	/** the page's own land-dependent state, in the swap's frame */
-	/** what the page measures of a land (its box and framing), ahead in a step of the preparation */
+	/** the app's own land-dependent state, in the swap's frame */
+	/** what the app measures of a land (its box and framing), ahead in a step of the preparation */
 	measure( land: LandLattice ): M;
-	/** the page's own land-dependent state, in the swap's frame, with `measure`'s result */
+	/** the app's own land-dependent state, in the swap's frame, with `measure`'s result */
 	onSwap( land: LandLattice, data: WorldData, measured: M ): void;
 	/** after the swap's frames (the chunks' borders, the diagnostics) */
 	onSwapped?( data: WorldData ): void;
-	/** the shoal's floor was written anew (SeabedRise.ts): a change no frame before shows */
+	/** the shoal's floor was written anew (SeabedRise.ts): a change no previous frame shows */
 	onRise?(): void;
 }
 
@@ -144,7 +144,7 @@ interface Prepared<M> {
 }
 
 /** What the growth is doing: `idle` (nothing pending: at the horizon, or between steps), generating
- * the pending version in the workers, preparing it on the page, `ready` to swap, `swapping` (the
+ * the pending version in the workers, preparing it on the main thread, `ready` to swap, `swapping` (the
  * swap and the frames after it). */
 export type GrowthPhase = 'idle' | 'generating' | 'preparing' | 'ready' | 'swapping' | 'failed';
 
@@ -237,7 +237,7 @@ export class Growth<M = unknown> {
 	}
 
 	/** Starts generating the next piece ahead (the game, once the page shows: the workers then share
-	 * the machine with the frames, not with the page's start). A page that never calls it generates
+	 * the machine with the frames, not with the app's start). A page that never calls it generates
 	 * on its first `grow`, and keeps a piece ahead from then on; one that never grows spends no
 	 * worker time on it. */
 	start(): void {
@@ -270,7 +270,7 @@ export class Growth<M = unknown> {
 	 * the frames after one. */
 	update( time: number ): void {
 
-		// the frame before ends here
+		// the previous frame ends here
 		// eslint-disable-next-line ponlai/scene-clock -- the growth's frame times, logged
 		const now = performance.now();
 		if ( this.frameMs > 0 ) {
@@ -483,7 +483,7 @@ export class Growth<M = unknown> {
 
 		// the island: a mesh per changed land chunk, its buffers uploaded. The frame's passes draw it
 		// with the pipelines the loaded chunks drew with (the same material and layout): nothing is
-		// compiled ahead (the swap's frame makes its render objects, which build no pipeline).
+		// precompiled (the swap's frame makes its render objects, which build no pipeline).
 		this.stage = 'island';
 		const changedKeys = new Set( changed.map( ( c ) => `${ c.ci },${ c.cj }` ) );
 		const add: THREE.Mesh[] = [];

@@ -10,7 +10,7 @@
 //   grow       (for the record) a larger array assigned to an existing attribute.
 // For each it counts the pipelines, shader modules and bind groups the GPU device was asked for,
 // and checks the results read back (every element written, every instance drawn). Run it again
-// after an upgrade of three (docs/how-to/upgrade-three.md) or a change to how a pool grows
+// after an upgrade of three (packages/render/three/README.md) or a change to how a pool grows
 // (docs/reference/three-behaviour.md, Storage buffers).
 //
 // Usage:

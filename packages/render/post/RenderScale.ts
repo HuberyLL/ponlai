@@ -53,8 +53,8 @@ export interface DynamicRange {
 	floor: number;
 }
 
-/** A dynamic tier's range on a display of pixel ratio `ratio` (pure: the tools compute high's
- * standard pin with it). */
+/** A dynamic tier's range on a display of pixel ratio `ratio` (pure: the tools compute the pin of
+ * the high tier's performance target with it). */
 export function dynamicRange( width: number, height: number, ratio: number, rule: Extract<RenderScaleRule, { dynamic: unknown }>, cap: number ): DynamicRange {
 
 	const { dynamic } = rule;

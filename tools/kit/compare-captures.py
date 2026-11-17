@@ -1,7 +1,7 @@
 """Measures two matched overview captures region by region and saves unretouched comparison crops.
 
 It answers how a change moved the island's main regions (the cliff, the meadow, the open water and
-the water's glare) in one before-and-after pair of overview shots: the same metrics per region,
+the water's glare) in one before-and-after pair of overview captures: the same metrics per region,
 and the crops side by side for the eye.
 
 Usage:

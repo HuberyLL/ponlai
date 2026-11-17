@@ -6,7 +6,7 @@ import * as THREE from 'three/webgpu';
 // idle-time steps, Growth.ts): typed arrays from long plain arrays a slice at a time, and a
 // geometry's bounds. Each gives the same values as the one-shot call three makes
 // (`Float32BufferAttribute`, `setIndex` with an array, `computeBoundingBox`, `computeBoundingSphere`).
-// A page's first build runs the same generators to the end in one go (`runSteps`).
+// An app's first build runs the same generators to the end in one go (`runSteps`).
 
 // values a step (a slice of a long array)
 const SLICE = 1 << 14;

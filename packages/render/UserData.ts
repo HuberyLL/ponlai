@@ -8,7 +8,7 @@
 // sets it (`sets`), who reads it (`reads`) and what it means. tools/repo/verify-layers.mjs fails
 // when a file names a key that is not here (or, above the render pipeline, on its own layer's
 // list), or when the list holds a key no file names; a key reached through an alias of the bag
-// (`const data = material.userData`) is not seen. The render pipeline's exit offers the names
+// (`const data = material.userData`) is not seen. The render pipeline's entry point offers the names
 // (`UserDataName`) and the shape of an entry (`UserDataKey`) to the layers above.
 //
 // A mark the island's or the game's code keeps to itself (set and read above the render pipeline)
@@ -84,21 +84,21 @@ export const USER_DATA = {
 		on: 'material', sets: 'SunShadow.ts', reads: 'RainCollision.ts',
 		means: 'the sun\'s map wrapped the material\'s cast position with its push along the light, which the rain\'s bake must not take',
 	},
-	sunShade: {
+	sunOcclusion: {
 		on: 'material', sets: 'the island\'s terrain and meadow materials', reads: 'SunShadow.ts',
-		means: 'a node of the material\'s own shade of the key, taken instead of the screen-space shade',
+		means: 'a node of the material\'s own shadowing of the key light, taken instead of the screen-space shadow',
 	},
 	sunVisibility: {
 		on: 'material', sets: 'the meadow\'s material (a debug flag)', reads: 'SunShadow.ts',
 		means: 'a node that replaces the sun\'s map for the material',
 	},
 	screenShadow: {
-		on: 'material', sets: 'MeadowShade.ts receiveScreenShadow', reads: 'SunShadow.ts',
-		means: 'the material takes the key\'s screen-space shade',
+		on: 'material', sets: 'MeadowShadows.ts receiveScreenShadow', reads: 'SunShadow.ts',
+		means: 'the material takes the key light\'s screen-space shadow',
 	},
 	screenThickness: {
-		on: 'material', sets: 'MeadowShade.ts screenThickness', reads: 'OpaquePrepass.ts',
-		means: 'the thickness (m) the screen-space shade gives the material\'s depth copy',
+		on: 'material', sets: 'MeadowShadows.ts screenThickness', reads: 'OpaquePrepass.ts',
+		means: 'the thickness (m) the screen-space shadows give the material\'s depth copy',
 	},
 	screenAO: {
 		on: 'material', sets: 'GTAO.ts receiveScreenAO', reads: 'AmbientGrade.ts',

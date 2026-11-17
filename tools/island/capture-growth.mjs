@@ -15,18 +15,18 @@
 //
 // Options:
 //   --base url         the base page (default http://127.0.0.1:5190/, the dev server)
-//   --cand url         the candidate page; without it the base alone is shot
+//   --cand url         the candidate page; without it the base alone is captured
 //   --seeds a,b        the islands' seeds (1)
 //   --grow a,b         the growth steps (0,12)
 //   --views v1,v3      the views, of v1-v6 (all six)
 //   --label name       the output folder's name (the start time to the second and the pid); a used one is refused
-//   --q query          extra query options for every shot, after the URL's own
+//   --q query          extra query options for every capture, after the URL's own
 //   --jobs n           pages at once, one group each (2)
-//   --base-ref sha     keeps and reuses the base side's shots as references of that commit
-//   --recheck 0|1      shoots a pair with a tiny difference again on both sides (1)
+//   --base-ref sha     keeps and reuses the base side's captures as references of that commit
+//   --recheck 0|1      captures a pair with a tiny difference again on both sides (1)
 //   --recheck-px n     a tiny difference: at most n pixels (64)
 //   --recheck-level n  and at most n levels (2)
-//   --retries n        a failed view or a lost page is shot again n times on a fresh page (1)
+//   --retries n        a failed view or a lost page is captured again n times on a fresh page (1)
 //   --timeout ms       capture.mjs's waits for the page (240000)
 //   --page-per-view    a fresh page for every view instead of the scene jump
 //
@@ -34,19 +34,19 @@
 // degrees), v3 cliff close, v4 meadow close, v5 rim close, v6 sea floor; the close views at noon.
 // They are framed on the land in the page (`__PONLAI__.land`; without it, the first island's
 // framing) and the close views walk the camera's ground (`controls.ground`), never the drawn
-// meshes' vertices. Every shot is headless, paused at t=12, clear, 1672 x 941 at DPR 1, with `debug`
-// added to the query (a production build exposes `__PONLAI__` only with it), and loads high (no
-// `quality` in its query). A URL's own query and then `--q` pass through to every shot of it and
+// meshes' vertices. Every capture is headless, paused at t=12, clear, 1672 x 941 at DPR 1, with
+// `debug` added to the query (a production build exposes `__PONLAI__` only with it), and loads high
+// (no `quality` in its query). A URL's own query and then `--q` pass through to every capture of it and
 // override the tool's own options (debug, paused, t, dpr, preset, weather, seed, grow).
 //
-// Pages. The shots are grouped by side and by what a page reads once at load (every query option
+// Pages. The captures are grouped by side and by what a page reads once at load (every query option
 // outside the scene's own: seed and grow choose the world; quality, aa, dpr, the debug switches).
 // Each group is one `tools/kit/capture.mjs --worker` page: its first view is a fresh load, every
 // later one is reached by the exact scene jump (`__PONLAI__.establishScene`), so a group's world is
 // built once. A view that fails, or a page that dies or goes silent (no answer within 3 x --timeout +
-// 2 min of the view taking its GPU slot: killed), is shot again on a fresh page, and the group's
+// 2 min of the view taking its GPU slot: killed), is captured again on a fresh page, and the group's
 // remaining views go on that page. A view whose PNG was written but whose page logged errors counts
-// as shot, its messages listed. A build without the exact scene jump (`__PONLAI__.sceneJump`) gets a
+// as captured, its messages listed. A build without the exact scene jump (`__PONLAI__.sceneJump`) gets a
 // page per view, as `--page-per-view` does. The worker's JSON keeps how each view was reached
 // (`page`: load or jump, from).
 //
@@ -55,8 +55,8 @@
 // the capture profiles' variable (`PONLAI_CAPTURE_PROFILES` here) when it is set), so a repeat run finds every group's world in its world
 // cache. The first run in a new root also compiles the shaders cold.
 //
-// References. `--base-ref <sha>` keeps the base side's shots as references of that commit, one entry
-// per shot under `artifacts/captures/growth-ref/<sha>/<shot key>-<hash>/` of the main checkout
+// References. `--base-ref <sha>` keeps the base side's captures as references of that commit, one
+// entry per capture under `artifacts/captures/growth-ref/<sha>/<capture key>-<hash>/` of the main checkout
 // (shot.png, shot.json; the manifest of tools/kit/reference.mjs written last). The hash covers what
 // changes the pixels: the size, the full query, placeCamera's code, the capture tools (capture.mjs,
 // capture-browser.mjs) and the browser build. An entry already there is reused; one that another
@@ -69,25 +69,25 @@
 // saturation; a delta beyond 10 % is flagged. Each pair's pixel difference counts the pixels that
 // differ at all and the largest channel difference, on decoded pixels. A pair whose difference is
 // tiny (within --recheck-px and --recheck-level, not zero) may be the page's own frame noise: both
-// sides are shot again on fresh pages (a group's rechecks in reverse order, so each is reached from
-// another view) and the pair is reported as identical (the first difference was noise), repeatable
-// (a real difference) or not repeatable.
+// sides are captured again on fresh pages (a group's rechecks in reverse order, so each is reached
+// from another view) and the pair is reported as `identical` (the first difference was noise),
+// `repeatable` (the difference is reproducible: a real one) or `not repeatable`.
 //
 // Output: in `artifacts/captures/growth/<label>/`, index.html (the pairs, flagged ones marked),
-// stats.json, the shots and each view's log; stdout has the progress and a summary line (views,
+// stats.json, the captures and each view's log; stdout has the progress and a summary line (views,
 // flagged, failed, the worlds taken from the cache).
 //
 // GPU lock and browser: each worker page takes the GPU lock itself, shared
 // (docs/reference/gpu-lock.md): a load only once its world is generated, then leased from view to
-// view; the frame loop is stopped before each shot, so no lock is held across the world's CPU work.
-// Headless capture browsers, `--jobs` at once; no server (it shoots the URLs given).
+// view; the frame loop is stopped before each capture, so no lock is held across the world's CPU
+// work. Headless capture browsers, `--jobs` at once; no server (it captures the URLs given).
 //
 // Cost: a page load per group, then a scene jump per view; a grown world generated cold takes seconds
 // to a minute, from the cache much less.
 //
-// Exit codes: 0 the page was written and every shot taken; 1 a label already used, an unknown view or
-// an unexpected error; 2 a `--base-ref` that is not a commit or that the base URL does not serve; 3
-// the page was written but a shot failed (listed in it and in the summary).
+// Exit codes: 0 the page was written and every capture taken; 1 a label already used, an unknown view
+// or an unexpected error; 2 a `--base-ref` that is not a commit or that the base URL does not serve;
+// 3 the page was written but a capture failed (listed in it and in the summary).
 //
 // A view must not depend on the view before it: placeCamera starts from the page's load state.
 import '../kit/help.mjs';
@@ -232,7 +232,7 @@ function placeCamera( s, view ) {
 
 const evalFor = ( view ) => `(${ placeCamera.toString() })( window.__PONLAI__, ${ JSON.stringify( view ) } )`;
 // what a reference's pixels depend on besides its query and size: the camera code, the capture
-// tools' readiness and shot, the browser
+// tools' readiness and capture, the browser
 const CAMERA = hash( evalFor( 'VIEW' ) );
 const TOOL_FILES = Object.fromEntries( [ 'capture.mjs', 'capture-browser.mjs' ].map( ( f ) => [ f, hash( readFileSync( path.join( ROOT, 'tools', 'kit', f ) ) ) ] ) );
 
@@ -331,7 +331,7 @@ function runPage( queue ) {
 		const fail = ( item, why ) => {
 
 			item.attempts ++;
-			// written although the page logged errors: shot, with its messages (the page is gone)
+			// written although the page logged errors: captured, with its messages (the page is gone)
 			if ( existsSync( item.out + '.json' ) ) return item.done( true, why );
 			if ( item.attempts <= retries ) {
 
@@ -418,12 +418,12 @@ function runPage( queue ) {
 
 }
 
-// ------------------------------------------------------------------ the shots
+// ------------------------------------------------------------------ the captures
 
 const t0 = performance.now();
 let finished = 0;
 const total = shots.length;
-// a shot's outcome: its messages from the JSON, or the log's error lines
+// a capture's outcome: its messages from the JSON, or the log's error lines
 async function settle( shot, ok, why, item ) {
 
 	shot.ok = ok;
@@ -452,7 +452,7 @@ const outcomes = [];
 const item = ( shot, out, onDone, log = path.basename( shot.file ) ) => ( { shot, key: shot.key, out, log: path.join( outDir, 'logs', `${ log }.log` ), attempts: 0,
 	done: ( ok, why ) => { outcomes.push( Promise.resolve( onDone( ok, why ) ) ); } } );
 
-// the base side's stored references (--base-ref): each shot reused, waited for or captured here
+// the base side's stored references (--base-ref): each capture reused, waited for or captured here
 const refJobs = [];
 if ( baseRef ) {
 
@@ -475,7 +475,7 @@ if ( baseRef ) {
 		const result = ensureReference( {
 			dir: path.join( REFS, baseRef, `${ shot.key }-${ hash( stable( key ) ) }` ), kind: 'shot', key, files: { ...TOOL_FILES, placeCamera: CAMERA },
 			url: base, label: `capture-growth ${ label } ${ shot.key }`, yieldGpu: false,
-			// (the store's per-entry lines would be one per shot: only waiting and replacing are said)
+			// (the store's per-entry lines would be one per capture: only waiting and replacing are said)
 			log: ( line ) => { if ( / waiting | moved to /.test( line ) ) console.log( line ); },
 			capture: ( todo, into ) => new Promise( ( resolve ) => asked( { into, resolve } ) ),
 		} );
@@ -661,7 +661,7 @@ const pixelLine = ( r ) => {
 	if ( ! r.pixels ) return '';
 	const d = r.pixels, again = d.recheck;
 	const text = d.pixels === 0 ? 'identical pixels' : `${ d.pixels } px differ, largest difference ${ d.max }`;
-	const check = ! again ? '' : again.verdict === 'failed' ? ' · re-check failed' : ` · again ${ again.second.pixels } px (max ${ again.second.max }), base ${ again.base.pixels } px and candidate ${ again.candidate.pixels } px from their first shots: <b>${ again.verdict }</b>`;
+	const check = ! again ? '' : again.verdict === 'failed' ? ' · re-check failed' : ` · again ${ again.second.pixels } px (max ${ again.second.max }), base ${ again.base.pixels } px and candidate ${ again.candidate.pixels } px from their first captures: <b>${ again.verdict }</b>`;
 	return `<p class="pixels">${ text }${ check }</p>`;
 
 };
@@ -699,7 +699,7 @@ td.flag { color: var(--flag); background: var(--flag-bg); font-weight: 600; }
 </style></head><body>
 <header><h1>Growth captures · ${ esc( label ) }</h1>
 <p>base: ${ esc( base ) }${ cand ? `<br>candidate: ${ esc( cand ) }` : '' }${ extra ? `<br>extra query: ${ esc( extra ) }` : '' }</p>
-<p>${ shots.length } shots at ${ W } × ${ H }, paused at t = 12, weather clear. Deltas are the candidate's change against the base per crop (mean luma, mean saturation, edge density as the mean adjacent luma difference); beyond ±10 % is flagged. The pixel difference counts the pixels that differ at all and the largest channel difference${ recheck ? `; a pair within ${ tiny.pixels } px and ${ tiny.level } levels was shot again on both sides` : '' }. Shapes differ between steps and builds: judge by eye and these statistics; the pixel difference matters where both sides should draw the same.</p></header>
+<p>${ shots.length } captures at ${ W } × ${ H }, paused at t = 12, weather clear. Deltas are the candidate's change against the base per crop (mean luma, mean saturation, edge density as the mean adjacent luma difference); beyond ±10 % is flagged. The pixel difference counts the pixels that differ at all and the largest channel difference${ recheck ? `; a pair within ${ tiny.pixels } px and ${ tiny.level } levels was captured again on both sides` : '' }. Shapes differ between steps and builds: judge by eye and these statistics; the pixel difference matters where both sides should draw the same.</p></header>
 ${ rows.map( section ).join( '\n' ) }
 </body></html>
 `;

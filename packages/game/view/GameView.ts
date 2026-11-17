@@ -32,7 +32,7 @@ import { VillagerView, disposeFigure } from './VillagerView.ts';
 // material and attributes, castShadow and receiveShadow), since that is what the pipelines are
 // keyed by, and shares the real thing's material where it can, so that the shaders are built too
 // (Props.ts buildingMaterial: every building and site shares one). The samples are never drawn and
-// are kept for the page's life: disposing one would
+// are kept for the app's life: disposing one would
 // release the pipelines it shares with the props drawn later. An islander's figure has no sample:
 // each load brings its own material, so `loadLook` hands a figure over only once its own draws
 // are compiled (main.ts), and a figure taken over on a load keeps the pipelines it drew with.

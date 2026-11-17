@@ -91,7 +91,7 @@
 //
 // Output: `status` prints a line per manifest or claim: the path, the kind, `tools current` or
 // `tools CHANGED`, the browser build (and the builds it is verified for), a set's views, repeats,
-// views not repeatable and options, or a clip entry's aa, tier, clip and view, `carried from`, and
+// views not reproducible and options, or a clip entry's aa, tier, clip and view, `carried from`, and
 // a live or stale claim; `no reference under <dir>` when there is none. As a module it logs each
 // decision (`reference <name>: reused`, `... captured in N min`) through the caller's log (stdout
 // by default).
@@ -241,7 +241,7 @@ export function anchorsHash( file ) {
 
 }
 
-// The temporal modes, whose paused frames repeat only within a tolerance (diff-set.py --temporal).
+// The temporal modes, whose paused frames are reproducible only within a tolerance (diff-set.py --temporal).
 const TEMPORAL = [ 'taa', 'taau', 'fsr3', 'gt' ];
 
 /** Two keys that differ at most by the browser build. */
@@ -918,7 +918,7 @@ function status( dir ) {
 			if ( m.kind === 'set' ) {
 
 				const views = Object.entries( m.coverage.views );
-				parts.push( `${ views.length } views, ${ views.filter( ( [ , v ] ) => v.repeat ).length } repeated, ${ views.filter( ( [ , v ] ) => v.identical === false ).length } not repeatable`,
+				parts.push( `${ views.length } views, ${ views.filter( ( [ , v ] ) => v.repeat ).length } repeated, ${ views.filter( ( [ , v ] ) => v.identical === false ).length } not reproducible`,
 					`${ m.key.quality }${ m.key.aa ? ' aa=' + m.key.aa : '' }${ m.key.q ? ' ' + m.key.q : '' }` );
 
 			} else parts.push( `${ m.key.aa } ${ m.key.tier } ${ m.key.clip }@${ m.key.view }` );

@@ -26,8 +26,8 @@ import { onSceneDispose } from '../SceneDispose.ts';
 //   1 MB. A point (x, z) reads it at uv = ( x, z ) / coverage + 0.5, v down the texture (row 0 at
 //   -z's edge: the sprites' clip y is 1 - 2 v). The land grows within the lattice, so the field
 //   never moves or resizes with it. Its content is a function of the frame's sprites, with no
-//   history of its own, so a paused frame repeats and a scene jump leaves nothing of the scene
-//   before (the temporal modes' copy of the frame before is a history, which the jump's cut
+//   history of its own, so a paused frame is bit-identical and a scene jump leaves nothing of the
+//   scene before (the temporal modes' copy of the previous frame is a history, which the jump's cut
 //   drops; `fgview=displacement` shows the field).
 // - A sprite is an oriented quad (its centre, its half axis along, its half width across) carrying a
 //   vector map V in the quad's frame (along, across), analytic (no texture), of three shapes:
@@ -63,7 +63,7 @@ import { onSceneDispose } from '../SceneDispose.ts';
 //   registered with the pass's warm-up as a latent, so the first walker builds no pipeline. Under
 //   the temporal modes the graph copies it at the frame's end into a persistent texture
 //   (`copyToPersistent`: many materials read it, and a ping-pong pair through `previous()` would
-//   rebind their texture every frame). Its readers take that frame before's for their previous
+//   rebind their texture every frame). Its readers take the previous frame's copy for their previous
 //   position (`DisplacementUniforms.previous`; `previousValid` 0 after a cut of the histories, when
 //   they take the current one instead).
 // - Its readers sample it with a cubic B-spline (`displacementAt`), four bilinear taps of the field
@@ -109,7 +109,7 @@ const CAPACITY = 2560;
 
 /** The field's uniforms and the base nodes its readers sample it through (Pipeline.ts sets the
  * graph's textures): the field of the frame being rendered and, under the temporal modes, of the
- * frame before, and whether that one is valid (0 after a cut). */
+ * previous frame, and whether that one is valid (0 after a cut). */
 export function createDisplacementUniforms() {
 
 	const blank = () => new THREE.DataTexture( new Uint16Array( 4 ), 1, 1, THREE.RGBAFormat, THREE.HalfFloatType );
@@ -158,7 +158,7 @@ const bsplineWeights = Fn( ( [ x ]: [ V2 ] ) => {
 
 } ).setLayout( { name: 'displacementWeights', type: 'vec4', inputs: [ { name: 'x', type: 'vec2' } ] } );
 
-/** `field` (the field or the frame before's) at the point `p` (world x, z): the cubic B-spline of its
+/** `field` (the field or the previous frame's) at the point `p` (world x, z): the cubic B-spline of its
  * texels there, four bilinear taps at level 0, 0 outside it. */
 function readField( field: DisplacementUniforms[ 'field' ], coverage: number, p: V2 ): V2 {
 
@@ -174,7 +174,7 @@ function readField( field: DisplacementUniforms[ 'field' ], coverage: number, p:
 }
 
 /** The field's value (world x, z) at the point `p` (world x, z), in the vertex stage: of the frame
- * being rendered, or with `previous` of the frame before under the temporal modes (the current one
+ * being rendered, or with `previous` of the previous frame under the temporal modes (the current one
  * after a cut, or outside them). 0 without a field. */
 export function displacementAt( p: V2, previous = false ): V2 {
 
@@ -284,7 +284,7 @@ export class DisplacementField {
 	}
 
 	/** Declares the field and its pass on `graph`, first in the frame; returns the field as the pass
-	 * leaves it, for its readers' reads, and under the temporal modes the frame before's. */
+	 * leaves it, for its readers' reads, and under the temporal modes the previous frame's. */
 	declare<F>( graph: FrameGraph<F> ): { field: ResourceHandle; previous: ResourceHandle | null } {
 
 		const g = graph;
@@ -292,7 +292,7 @@ export class DisplacementField {
 		const size = { of: 'fixed' as const, width: DISPLACEMENT_SIZE, height: DISPLACEMENT_SIZE };
 		const desc = { size, format: THREE.RGFormat, type: THREE.HalfFloatType, filter: 'linear' as const };
 		let field = g.color( 'displacement', desc );
-		// the frame before's, copied at the frame's end: every material and kernel that draws the
+		// the previous frame's, copied at the frame's end: every material and kernel that draws the
 		// meadow reads it, so it is one persistent texture rather than a ping-pong pair
 		const previous = TEMPORAL ? g.color( 'displacementPrev', desc, true ) : null;
 		const u = this.uniforms;
@@ -336,7 +336,7 @@ export class DisplacementField {
 
 	}
 
-	/** A cut of the temporal modes' histories: the frame before's field is not read. */
+	/** A cut of the temporal modes' histories: the previous frame's field is not read. */
 	cut(): void {
 
 		if ( this.graph && this.previousHandle ) this.graph.resetHistory( this.previousHandle );

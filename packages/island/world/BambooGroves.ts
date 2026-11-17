@@ -67,8 +67,8 @@ export const GROVES = {
 		thin: [ - 0.12, 0.14 ], inside: 0.35 },
 };
 
-/** Another look for the page to load (`bamboo=cover,height`, for comparing): the groves' share of
- * the land and a grown culm's height (m), each left out keeping the default. A load knob: set once,
+/** Another look for the app to load (`bamboo=cover,height`, for comparing): the groves' share of
+ * the land and a grown culm's height (m), each left out keeping the default. A load-time setting: set once,
  * before the meadow and the bamboo are planted (both read the groves). */
 export function loadBambooLook( option: string | null ): void {
 

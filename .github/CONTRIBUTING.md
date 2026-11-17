@@ -1,7 +1,10 @@
 # Contributing to Ponlai
 
 Thank you for your interest in Ponlai. This page says how to ask a question, report a bug and send
-a change. Everyone who takes part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+a change. Everyone who takes part follows the [Code of Conduct](CODE_OF_CONDUCT.md) (also in
+[Chinese](https://www.contributor-covenant.org/zh-cn/version/2/1/code_of_conduct/)).
+
+Write issues, discussions and pull requests in English or Chinese.
 
 ## Ask a question or share an idea
 
@@ -11,8 +14,8 @@ requests.
 
 ## Report a bug
 
-Open an issue with the bug form. Say what you saw and what you expected, the page's address with
-its options, your browser, its version, your GPU and your operating system. A screenshot helps for
+Open an issue with the bug form. Say what you saw and what you expected, the page's URL with its
+options, your browser, its version, your GPU and your operating system. A screenshot helps for
 anything on screen.
 
 Report a security issue privately, as [Security](SECURITY.md) says, never in a public issue.
@@ -24,16 +27,23 @@ the approach before you spend time on it.
 
 ## Set up
 
-Follow the README's [Requirements](../README.md#requirements) and
-[Run this repository](../README.md#run-this-repository). The dev server downloads the assets on its
-first start.
+Follow the README's [Quick start](../README.md#quick-start). The checks and tools need a few more
+programs: [lychee](https://lychee.cli.rs/) for the docs lint, [uv](https://docs.astral.sh/uv/) for
+the Python tools, and Playwright's Chromium for captures:
+
+```bash
+npx playwright install chromium
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Install lychee as its page says for your system.
 
 ## Make a change
 
 1. Fork the repository and create a branch from `main`.
-2. Follow the project's rules: [AGENTS.md](../AGENTS.md) lists them, written for AI coding agents,
-   and every change follows it. Read the module's header comment before you change the module: it
-   holds the module's rules and their reasons. Update it with the module's behaviour.
+2. Follow the project's rules: [AGENTS.md](../AGENTS.md) lists them. It is written for AI coding
+   agents, and every change follows it. Read the module's header comment before you change the
+   module: it holds the module's rules and their reasons. Update it with the module's behaviour.
 3. Follow the code style of three.js: tabs, spaces inside parentheses and brackets, and English
    comments that explain why.
 4. Run the commit-time checks. They take seconds and need no GPU:
@@ -42,10 +52,10 @@ first start.
    npm run check
    ```
 
-   The pull request's CI also runs the docs' lint (`npm run lint:docs`, which needs
+   The pull request's CI also runs the docs lint (`npm run lint:docs`, which needs
    [lychee](https://lychee.cli.rs/)) and the production build (`npm run build`). A change to the
-   world generator also passes `npm run check -- --full`, which adds the world's chunk checks.
-5. If your change touches what renders, run the checks for it by hand on a machine with WebGPU
+   world generator also passes `npm run check -- --full`, which adds the world generator's checks.
+5. If your change affects rendering, run the checks for it by hand on a machine with WebGPU
    ([AGENTS.md](../AGENTS.md#checks-run-by-hand)), and compare captures from before and after
    your change ([Verifying rendering changes](../skills/verifying-rendering-changes/SKILL.md)). If
    you cannot run them, say so in the pull request.
@@ -71,7 +81,7 @@ why. The types are `feat`, `fix`, `perf`, `refactor`, `style`, `test`, `docs`, `
 ## Send a pull request
 
 - Keep a pull request to one change, and say what it changes and why.
-- For a change on screen, include before and after screenshots of the same view.
+- For a change that is visible on screen, include before and after screenshots of the same view.
 - Fill in the pull request's checklist.
 - The CI must pass. A first-time contributor's CI starts once the maintainer approves it.
 

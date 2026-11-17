@@ -23,8 +23,8 @@ import { float, texture3D } from 'three/tsl';
 //   setting its `value` (a table of LUT_SIZE^3): new bind groups, no new pipeline; a table refilled
 //   in place (`fillGradeLut`) is uploaded again.
 //
-// A table is generated from a grade's parameters (`GradeParams`) when the page loads, never stored
-// as an image, so its knobs stay readable and later grades build on them (the day's, which the
+// A table is generated from a grade's parameters (`GradeParams`) when the app loads, never stored
+// as an image, so its parameters stay readable and later grades build on them (the day's, which the
 // others build on: look/DisplayLook.ts `baseGrade`). On a display colour, in order, on the linear
 // colour a texel stands for:
 // - Its zone: shadows, midtones and highlights by its lightness (Oklab L of the linear colour, the

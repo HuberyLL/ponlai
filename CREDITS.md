@@ -53,8 +53,8 @@ carries the notice.
   Stochastic Screen-Space Reflections and the reflection denoiser: © 2024 Advanced Micro Devices,
   Inc. The sea's reflection (`packages/render/ocean/SeaReflection.ts`,
   `packages/render/ocean/ScreenReflection.ts`).
-- [temporal](https://github.com/playdeadgames/temporal), by Playdead: © 2015 Playdead. The clip of
-  a history to a box, as the FidelityFX denoiser takes it (`packages/render/ocean/SeaReflection.ts`).
+- [temporal](https://github.com/playdeadgames/temporal), by Playdead: © 2015 Playdead. Clipping the
+  history to a box, as the FidelityFX denoiser does it (`packages/render/ocean/SeaReflection.ts`).
 - [pbrt-v3](https://github.com/mmp/pbrt-v3), by Matt Pharr, Greg Humphreys and Wenzel Jakob:
   © 1998-2015 Matt Pharr, Greg Humphreys and Wenzel Jakob (BSD-2-Clause). The sampling of
   Beckmann's visible normals (`packages/render/ocean/ScreenReflection.ts`).

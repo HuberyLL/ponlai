@@ -95,7 +95,7 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // the sky the eye sees, the sea's reflection of it and the sea's own body never take. The dome lays the air's haze over
 // itself (`fogDome`, VolumetricHaze.ts `skyHaze`): the clouds at the distance to their shell's middle
 // height (the weather's shell: `look.cloudSkies`, low under cloudy and overcast skies), under the low
-// deck's share at the march's own opacity-weighted depth, and under the thin layer's share of their
+// deck's share at the march's own opacity-weighted depth, and under the cirrus's share of their
 // opacity at its own height (Clouds `sampleViewFog`), the sky behind them along the whole way; so the haze's composite leaves the sky's pixels. Measured on the horizon
 // views (paused, fresh loads): overcast's sky box spread .067 to .059, its gradient p99 .019 to .043
 // and its scale std under 3 degrees .0017 to .0030, the deck's rolls showing from about 8 degrees
@@ -811,13 +811,13 @@ export class Sky {
 	 * to report (main.ts awaits it before the loop); the bakes waiting on it go ahead. */
 	warm( r: THREE.WebGPURenderer = this.renderer ): Promise<void> {
 
-		const compiled = this.compileAhead( r );
+		const compiled = this.precompile( r );
 		this.warmed = compiled.catch( () => undefined );
 		return compiled;
 
 	}
 
-	private async compileAhead( r: THREE.WebGPURenderer ): Promise<void> {
+	private async precompile( r: THREE.WebGPURenderer ): Promise<void> {
 
 		await r.init();
 		await this.clouds.warm( r );
@@ -837,7 +837,7 @@ export class Sky {
 
 	}
 
-	/** Back to the state before the first bake, so the next `update` bakes as a page's first does: both
+	/** Back to the state before the first bake, so the next `update` bakes as a fresh load's first bake does: both
 	 * endpoints and both environment atlases from one bake, shown without a blend (no trace of the
 	 * bakes before), and the clouds with no view yet and the viewer at its start (Clouds.restart),
 	 * set to the scene clock `time` and the wind's heading `windDirection` as the frames set them

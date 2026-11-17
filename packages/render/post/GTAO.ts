@@ -6,7 +6,7 @@ import {
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tuneUniform } from '../debug/Tune.ts';
 import { shared } from '../shared.ts';
-import { MEADOW_SHADE } from './MeadowShade.ts';
+import { MEADOW_SHADOWS } from './MeadowShadows.ts';
 import { loadTier, qualityProfile } from '../Quality.ts';
 
 type F = THREE.Node<'float'>;
@@ -14,10 +14,10 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
-// Screen-space ambient occlusion by GTAO: the metre-scale shade the probes are too coarse for.
+// Screen-space ambient occlusion by GTAO: the metre-scale occlusion the probes are too coarse for.
 //
 // Screen-space ambient occlusion: a soft, metre-scale loss of the ambient light where the grass,
-// the culms and the ground's relief close the sky over a point, the shade within the meadow's
+// the culms and the ground's relief close the sky over a point, the occlusion within the meadow's
 // blades, a grove's leaves and culms and the rock's relief, which the ambient volume's 2 m probes
 // and the terrain's vertex occlusion are too coarse to hold. Ground-truth ambient occlusion
 // (GTAO: Jimenez, Wu, Pesce and Jarabo, "Practical Realtime Strategies for Accurate Indirect
@@ -30,11 +30,11 @@ type V4 = THREE.Node<'vec4'>;
 // follows Intel's XeGTAO (MIT) as a technique; the code is
 // ours.
 //
-// The occlusion is a broad term, never a contact line: in the shade, the meadow about a sixth
+// The occlusion is a broad term, never a contact line: in shadow, the meadow about a sixth
 // darker than without it at eye height and a fourteenth from the management camera's distance,
 // the leaves under a tenth, a culm's sides a few per cent, lit surfaces a few per cent, the grass
-// at a culm's foot no darker than the shaded grass around it, and the darkest tenth of the shade
-// about a quarter darker. The ground on the turf takes the stronger of this and its roots' share of
+// at a culm's foot no darker than the shaded grass around it, and the darkest tenth of the shadowed
+// pixels about a quarter darker. The ground on the turf takes the stronger of this and its roots' share of
 // the sky, the smaller of the two factors (materials/TerrainMaterial.ts `cliffSurface`), and the
 // roots' share is set by the turf's cover alone, whatever stands on it: the soil among the blades,
 // a grove's litter and a culm's foot take none of this wherever the sky a slice leaves is above
@@ -53,12 +53,12 @@ type V4 = THREE.Node<'vec4'>;
 // lighting/AmbientSample.ts CONE_OCCLUSION measures it); `cutoff` 0.7 m (The cutoff, below);
 // `recede` 0.1 (Thin occluders, below).
 // Measured against the frame without it (at run time), in the lighting layer under an 18-degree
-// sun, on a 256 x 144 grid's cells whose direct share of the light is under a quarter (the shade)
+// sun, on a 256 x 144 grid's cells whose direct share of the light is under a quarter (in shadow)
 // or over 0.6 (lit), over seven views at eye height 4-40 m off in the frame's lower half: the
-// meadow's shade 17 % darker at the median, its darkest tenth 26 %, the leaves 8 % (the two views
+// meadow in shadow 17 % darker at the median, its darkest tenth 26 %, the leaves 8 % (the two views
 // that show shaded leaves), the rock 3 % (four views), the culms 2 % (six), the ground beside the
 // grass 1 % (six), lit cells 3 %. From the management camera's distance (two views 45 m off,
-// 30 degrees down over a grove-filled meadow) under a 50-degree sun: the meadow's shade 7 %, the
+// 30 degrees down over a grove-filled meadow) under a 50-degree sun: the meadow in shadow 7 %, the
 // ground beside it 2 %, lit cells under 1 %; under the 18-degree one 5 %, 2 % and 1 %. Shaded
 // grass one cell beside a culm is 11 % darker, less than the shaded grass three or more cells off
 // any culm (16 %), over the three views with shaded grass beside culms, and from the management
@@ -71,7 +71,7 @@ type V4 = THREE.Node<'vec4'>;
 // it into their own from root to tip, the other receivers multiply it in whole, and the ground on
 // the turf alone takes the smaller of it and its roots' share of the sky (world/Grass.ts
 // `GRASS_ROOTS`, materials/TerrainMaterial.ts `cliffSurface`; above). The depth it reads holds the
-// blades themselves, so on a blade it counts a second time the shade the blade's own term already
+// blades themselves, so on a blade it counts a second time the occlusion the blade's own term already
 // holds; the cutoff (below) keeps that count small.
 //
 // It applies to the ambient light only: the materials that take it multiply it into
@@ -84,11 +84,11 @@ type V4 = THREE.Node<'vec4'>;
 // the smaller of it and the roots' share), which reaches the same ambient occlusion. The islanders
 // and the game's props do not take it: they are not in the depth it reads (post/OpaquePrepass.ts).
 //
-// The frame (Pipeline.ts), at 4x outside the temporal modes (with the meadow's shade, whose
+// The frame (Pipeline.ts), at 4x outside the temporal modes (with the meadow's screen-space shadows, whose
 // vegetation depth pass it reads):
 //   opaqueDepth  the opaque scene's copies (post/OpaquePrepass.ts) at half resolution, single
 //                sampled, their distance along the view into a target of their own (drawn before
-//                the meadow's shade, which reads it too over the whole scene: MeadowShade.ts)
+//                the meadow's screen-space shadows, which read it too over the whole scene: MeadowShadows.ts)
 //   gtaoDepth    the view z of each half-resolution texel: the nearer of the vegetation's depth
 //                (sample 0 of its full pixel's top left) and the opaque copies' distance
 //   gtao         the slices over that depth, (occlusion, view z) at half resolution
@@ -108,7 +108,7 @@ type V4 = THREE.Node<'vec4'>;
 // relations above not at all, and the blur still averaged the pattern's phases (the floor at a
 // grove's edge a touch blotchier when zoomed in).
 //
-// Cost (tools/render/profile-frame.mjs --compare, production builds at high's baseline, four of the kept
+// Cost (tools/render/profile-frame.mjs --compare, production builds on the high tier at the baseline, four of the kept
 // scenes, with the earlier 5x5 blur in one pass): the opaque depth and the three AO passes together take about 3 % of the frame's GPU time
 // (3.8 % on the meadow close-up), half what they took with three slices over the copies drawn into
 // the scene's 4x depth (5.5-6.5 %); the opaque pass, which had tested against those copies, takes
@@ -117,7 +117,7 @@ type V4 = THREE.Node<'vec4'>;
 // No temporal filter: the slices' rotation and the steps' offsets follow a fixed 4x4 pattern of
 // the texel's position (a Bayer matrix), and the blur's 5x5 footprint averages it out in space
 // alone (its binomial weights do not weigh the pattern's phases exactly alike). A paused
-// frame is a function of its depth: it repeats exactly, the occlusion keeps no history, a scene
+// frame is a function of its depth: it is bit-identical, the occlusion keeps no history, a scene
 // jump has nothing to clear, and the `settled` signal (Settled.ts) does not wait on it.
 //
 // Thin occluders: a depth buffer cannot tell a 10 cm culm from a wall, so the ground behind a culm
@@ -138,23 +138,23 @@ type V4 = THREE.Node<'vec4'>;
 // frame's lower half whose nine texels show one kind), from 3.3 m to 0.7 m: a sunlit blade's loss
 // 0.50 stop to 0.26 (the same under a 14.5- and a 21-degree sun), the leaves' 0.19 to 0.08 (six
 // views), the culms' 0.11 to 0.03, the rock's 0.07 to 0.03 (five views), the bare ground's none at
-// either (the turf's roots, above). The meadow's shade then reads 0.99 stop over the shaded bare
+// either (the turf's roots, above). The meadow in shadow then reads 0.99 stop over the shaded bare
 // ground among it (0.78 at 3.3 m: six views of a grove's edge, 5.5 m up and 27.5 degrees down,
 // read in the lighting layer, without the albedo); a sunlit blade's direct share of its light
 // under a closed sky falls from 0.82 to 0.79 and in clear from 0.86 to 0.84, as its ambient light
 // rises.
 //
-// On by default where it can run: high's `ao` knob (Quality.ts) builds it at load, at 4x outside the
-// temporal modes with the meadow's shade. `flags=gtao:false` builds without it (nothing here is
+// On by default where it can run: the high tier's `ao` setting (Quality.ts) builds it at load, at
+// 4x outside the temporal modes with the meadow's screen-space shadows. `flags=gtao:false` builds without it (nothing here is
 // declared, compiled or drawn, and the frame is the one without it to the byte), `flags=gtao` with
-// it on a tier whose knob is off. At run time `flags.gtao = false` skips its passes and the receivers
-// read 1, so tools/render/profile-frame.mjs --toggle "s.flags.gtao = on" times it. Its knobs are
+// it on a tier whose setting is off. At run time `flags.gtao = false` skips its passes and the receivers
+// read 1, so tools/render/profile-frame.mjs --toggle "s.flags.gtao = on" times it. Its parameters are
 // `__PONLAI__.gtao` in debug builds; the AO map is shown with `fgview=gtao.r` (and the undenoised
 // one with `fgview=gtaoRaw.r`; graph/DebugView.ts).
 
-/** Built at load: at 4x outside the temporal modes with the meadow's shade, where the tier's `ao`
- * knob or `flags=gtao` asks for it. */
-export const GTAO = MEADOW_SHADE && ( debugFlags.gtao === undefined ? qualityProfile( loadTier() ).ao : debugFlags.gtao !== false );
+/** Built at load: at 4x outside the temporal modes with the meadow's screen-space shadows, where
+ * the tier's `ao` setting or `flags=gtao` asks for it. */
+export const GTAO = MEADOW_SHADOWS && ( debugFlags.gtao === undefined ? qualityProfile( loadTier() ).ao : debugFlags.gtao !== false );
 
 /** The slices per pixel and the depth steps on each side of each. */
 const SLICES = 2, STEPS = 4;
@@ -166,7 +166,7 @@ const HALF_MAX = 6e4;
  * half-resolution view z's precision, so a flat or gently sloping surface does not occlude itself. */
 const START_OFFSET = 1e-3;
 
-/** The occlusion's knobs: `cutoff` (m) how far in front of the point a sample stands when it no
+/** The occlusion's parameters: `cutoff` (m) how far in front of the point a sample stands when it no
  * longer counts, `recede` the share of the way toward a lower sample the horizon sinks over a
  * slice's side, `base` the occlusion where the slices see no sky (the result is linear in the
  * visibility above it), `edge` the blur's edge sharpness (a tap off the centre's plane by

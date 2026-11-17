@@ -39,23 +39,23 @@
 // the rain's collision map (`rain.collision.target`, read back, with its size and `xform`). The
 // ground's heights and the rain map's texels are compared in node.
 //
-// The views. The first is shot on the page as it loaded or grew (no scene jump, so state a grow
+// The views. The first is captured on the page as it loaded or grew (no scene jump, so state a grow
 // leaves behind is not cleared before it is seen); each later one is reached by the exact scene jump
 // (`establishScene`, the page's step standing for `grow`) on both pages alike. Before its own eval
 // every view puts the camera on the island view's pose: a grow leaves the player's camera where it was
-// by design, while the pose follows the land. A view is ready once `settled` holds and the image stops
-// changing (capture-browser's waitForStable); it is shot, two more frames are drawn and it is shot
-// again. A paused page leaves its settled image for single frames now and then (capture-browser's
-// header), so a view passes when its first shots on G and F, or its second shots, are the same
-// pixels: a real difference shows in both pairs, the frame noise in one at most. The pixels the sea's
-// held reflection reaches repeat from load to load only within a tolerance (docs/reference/test-mode.md),
-// so each shot also records that region (`__PONLAI__.heldRegion()`), and a pair that is not the same
+// by design, while the pose follows the land. A view is ready once `settled` holds and the rendered
+// output stops changing (capture-browser's waitForStable); it is captured, two more frames are drawn
+// and it is captured again. A paused page leaves its settled image for single frames now and then
+// (capture-browser's header), so a view passes when its first captures on G and F, or its second
+// captures, are the same pixels: a real difference shows in both pairs, the frame noise in one at
+// most. The pixels the sea's held reflection reaches are reproducible from load to load only within
+// a tolerance (docs/reference/test-mode.md), so each capture also records that region (`__PONLAI__.heldRegion()`), and a pair that is not the same
 // pixels still passes when tools/kit/diff-set.py `--held` finds it identical outside the two pages'
 // regions and within tools/kit/tolerance.py's HELD inside them. Views whose
 // load-time options differ cannot share a page (establishScene refuses them).
 //
 // The verdicts (report.json `verdicts`, each pass or fail):
-//   views      each view's first shots on G and F the same pixels, or its second shots (decoded), or
+//   views      each view's first captures on G and F the same pixels, or its second captures (decoded), or
 //              either pair within the held rule (above)
 //   hashes     the same chunks with the same hashes
 //   rain       the rain map's size and xform equal and 0 texels differing (all four half-float channels)
@@ -74,7 +74,7 @@
 // anything missing from the drawing shows in the views. The other columns are recorded only.
 //
 // Output: in --out, report.json (the query, the options, per page its record, `compare` and
-// `verdicts`), the shots (G-<view>.png, G-<view>-b.png, F-...), and for a view judged by the held rule
+// `verdicts`), the captures (G-<view>.png, G-<view>-b.png, F-...), and for a view judged by the held rule
 // held/<pair>/{G,F}/<view>.{png,json} with diff-set's output in held/<pair>/diff/; stdout: progress lines with the time
 // of day (for tools/kit/job.mjs wait) and a summary. The rain maps and ground grids are not kept
 // (megabytes per page); their comparison is in the report.
@@ -87,14 +87,14 @@
 // Cost: two page loads, N grows, each preceded by seconds to minutes of CPU preparing the piece, and
 // a few views a page.
 //
-// Exit codes: 0 every verdict passed; 1 one failed or the run broke; 2 bad usage. The shots are
+// Exit codes: 0 every verdict passed; 1 one failed or the run broke; 2 bad usage. The captures are
 // paused frames under a shared slot, which other GPU load does not change, so 3 is never returned.
 import '../kit/help.mjs';
 import '../kit/qos.mjs'; // first: the PNG decodes and the map comparisons run here
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { launchCapture, waitForStable, pngShooter, stopLoop, startLoop, decodePng, compareFrames, samePixels } from '../kit/capture-browser.mjs';
+import { launchCapture, waitForStable, pngCapturer, stopLoop, startLoop, decodePng, compareFrames, samePixels } from '../kit/capture-browser.mjs';
 import { leaseGpuLock, releaseGpuLock } from '../kit/gpu-lock.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
 import { ROOT } from '../kit/root.mjs';
@@ -311,8 +311,8 @@ async function measure( page ) {
 }
 
 /** Brings the page to `view` (`jump`: by the scene jump; otherwise as loaded), waits until it is
- * ready and shoots it twice, two frames apart. */
-async function shoot( page, side, view, jump ) {
+ * ready and captures it twice, two frames apart. */
+async function captureView( page, side, view, jump ) {
 
 	const t = Date.now();
 	await lock();
@@ -329,16 +329,17 @@ async function shoot( page, side, view, jump ) {
 		return waitForStable( page, { timeout } );
 
 	} );
-	const shooter = await pngShooter( page, { timeout } );
+	const capturer = await pngCapturer( page, { timeout } );
 	try {
 
-		// two shots two frames apart: the 12-step check saw 1 and 2 pixels change between the shots of
-		// two views of G, and G's first shots equal F's, so the pair that agrees is the verdict
-		const a = await shooter.shoot();
+		// two captures two frames apart: the 12-step check saw 1 and 2 pixels change between the
+		// captures of two views of G, and G's first captures equal F's, so the pair that agrees is the
+		// verdict
+		const a = await capturer.capture();
 		await startLoop( page );
 		await frames( page, 2 );
 		await stopLoop( page );
-		const b = await shooter.shoot();
+		const b = await capturer.capture();
 		writeFileSync( path.join( out, `${ side }-${ view }.png` ), a );
 		writeFileSync( path.join( out, `${ side }-${ view }-b.png` ), b );
 		// the region the held reflection reaches, for the held rule (the header)
@@ -349,7 +350,7 @@ async function shoot( page, side, view, jump ) {
 
 	} finally {
 
-		await shooter.close();
+		await capturer.close();
 
 	}
 
@@ -450,7 +451,7 @@ try {
 			rec.shots = {};
 			for ( const [ i, view ] of views.entries() ) {
 
-				const s = await shoot( page, side, view, i > 0 );
+				const s = await captureView( page, side, view, i > 0 );
 				shots[ side ][ view ] = s.png;
 				helds[ side ][ view ] = s.held;
 				rec.shots[ view ] = s.record;
@@ -483,7 +484,7 @@ try {
 
 const half = ( u ) => { const e = ( u >> 10 ) & 31, m = u & 1023, s = u >> 15 ? - 1 : 1; return e === 0 ? s * m * 2 ** - 24 : e === 31 ? NaN : s * ( 1 + m / 1024 ) * 2 ** ( e - 15 ); };
 
-/** Whether shot pair `k` of `view` (0 the first shots, 1 the second) holds within the held rule:
+/** Whether capture pair `k` of `view` (0 the first captures, 1 the second) holds within the held rule:
  * diff-set.py --held, exact outside the two pages' held regions (the header). */
 function withinHeld( view, k ) {
 
@@ -608,9 +609,9 @@ if ( ! failure ) {
 	const viewText = ( v ) => {
 
 		const x = c.views[ v ], noise = x.changedPixels.G + x.changedPixels.F;
-		const text = x.identical ? 'identical' : x.second ? 'second shots identical'
+		const text = x.identical ? 'identical' : x.second ? 'second captures identical'
 			: `${ x.over[ 0 ] } px differ (max ${ x.max })${ x.held ? ', within the held tolerance' : '' }`;
-		return `${ v } ${ text }${ noise ? ` (${ x.changedPixels.G } / ${ x.changedPixels.F } px changed between shots)` : '' }`;
+		return `${ v } ${ text }${ noise ? ` (${ x.changedPixels.G } / ${ x.changedPixels.F } px changed between captures)` : '' }`;
 
 	};
 	line( 'views', views.map( viewText ).join( ', ' ) );

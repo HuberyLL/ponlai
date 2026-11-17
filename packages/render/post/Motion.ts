@@ -36,14 +36,14 @@ import { preExposedRGBA, preExposedScalar } from './PreExposure.ts';
 // pixel's centre, whose NDC plus the jitter's shift is the unjittered NDC of the surface point it
 // shows. The previous position, in the material's local space:
 // - three's `positionPrevious` for a material without a positionNode: its geometry, or the
-//   skinned or instanced vertex of the frame before (three's skinning and instancing write it
+//   skinned or instanced vertex of the previous frame (three's skinning and instancing write it
 //   whenever the context MRT has a `velocity`). A skinned mesh in the attached bind mode gets its
 //   previous vertex in its CURRENT space, so its object's motion would count twice: its material
 //   rebases it (CharacterMaterial.ts, the islanders);
 // - a material whose positionNode animates (the wind's sway, the sea) assigns `positionPrevious`
 //   in its position stage and says so with `userData.previousPosition = true`;
 // - any other positionNode is taken as not moving: its displaced position now.
-// The object's own motion comes from its world matrix in the frame before (per rendered frame, not
+// The object's own motion comes from its world matrix in the previous frame (per rendered frame, not
 // per draw: an object drawn twice in a frame keeps its motion), the camera's from the previous
 // view-projection. A material can write a velocity of its own through `velocityOutput` (its MRT
 // node, merged over the context's), a fragmentNode material through `outputStruct`.
@@ -76,7 +76,7 @@ import { preExposedRGBA, preExposedScalar } from './PreExposure.ts';
 //
 // A cut (`taaCut`: a seek, a jump of the camera, a new scene) makes the previous frame the current
 // one for the camera, the objects and whatever else registers with `onTaaCut` (the wind's previous
-// state, the histories), so nothing moves across it. The page's sites ask for it through their scene
+// state, the histories), so nothing moves across it. The app's sites ask for it through their scene
 // events (SceneEvents.ts, whose table says which cut). The camera's own jumps that no event covers
 // are found here: in one rendered frame more than 8 m, more than 30 degrees, or a field of view
 // changed by more than 2 %.
@@ -88,7 +88,7 @@ export type MotionClass = keyof typeof MOTION_CLASS;
 /** The velocity's clear value: no motion, class sky (nothing drawn there), not reactive. */
 export const VELOCITY_CLEAR = [ 0, 0, 1, 0 ] as const;
 
-/** The unjittered view-projection of the frame being rendered and of the rendered frame before it,
+/** The unjittered view-projection of the frame being rendered and of the previous rendered frame,
  * and the camera's position then. */
 export const motionUniforms = {
 	viewProjection: uniform( new THREE.Matrix4() ).setGroup( renderGroup ),
@@ -180,13 +180,13 @@ export function beginMotionFrame( view: THREE.Camera ): void {
 
 }
 
-// ---- per object: its world matrix in the frame being rendered and in the rendered frame before
+// ---- per object: its world matrix in the frame being rendered and in the previous rendered frame
 
 interface Track { frame: number; current: THREE.Matrix4; previous: THREE.Matrix4 }
 const tracks = new WeakMap<THREE.Object3D, Track>();
 
 // The object's world matrix a rendered frame ago, taken at its first draw in a frame: an object not
-// drawn in the frame before (hidden, out of view) or across a cut has none and takes its matrix now.
+// drawn in the previous frame (hidden, out of view) or across a cut has none and takes its matrix now.
 function previousModelOf( object: THREE.Object3D ): THREE.Matrix4 {
 
 	const frame = motionState.frame;

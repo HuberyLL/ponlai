@@ -21,7 +21,7 @@ type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
-// Tileable noise fields for the clouds: the shape noise and the thin layer's patches.
+// Tileable noise fields for the clouds: the shape noise and the cirrus patches.
 //
 // Tileable fields for the clouds:
 //   shape    64^3 RGB  Perlin-Worley shape noise at three frequencies, with its mip chain
@@ -87,7 +87,7 @@ const gradientFbm = ( p: V2, cx: number, cy: number, seed: number ) =>
 		.add( gradientNoise2( p.add( seed * 2.3 ), cx * 4, cy * 4 ).mul( 0.15 ) ).mul( 1.6 ).add( 0.5 );
 
 
-/** Bake the synoptic field (the thin layer's patches): two fractal noises of 20 x 28 and 56 x 80
+/** Bake the synoptic field (the cirrus patches): two fractal noises of 20 x 28 and 56 x 80
  * cells over the field (sky/CloudModel.ts SYNOPTIC_SIZE), weighted 0.7 and 0.3. At half those counts a
  * low sun's view toward it held one patch across most of its sky, read as a single sheet; at these
  * its patches stand apart with sky between them. Needs an initialised renderer. */

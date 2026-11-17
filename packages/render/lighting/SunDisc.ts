@@ -1,10 +1,10 @@
 import { tune } from '../debug/Tune.ts';
 import { SUN_DISPLAY_RADIUS, SUN_DISPLAY_SOLID_ANGLE, SUN_GLINT_RADIUS, projectedSolidAngle } from './Radiometry.ts';
 
-// The sun's disk as the page draws it, the sky's disk and the glints' disk sized together.
+// The sun's disk as the app draws it, the sky's disk and the glints' disk sized together.
 //
-// The sun's disk as the page draws it, sized by one tunable (debug/Tune.ts
-// `lighting.sun.discScale`, read as the page loads): the sky's disk (Radiometry.ts
+// The sun's disk as the app draws it, sized by one tunable (debug/Tune.ts
+// `lighting.sun.discScale`, read as the app loads): the sky's disk (Radiometry.ts
 // SUN_DISPLAY_RADIUS, sky/Sky.ts, post/LightShafts.ts) and the disk the glints take their
 // representative point on (SUN_GLINT_RADIUS, lighting/SurfaceBRDF.ts `keyGlint`) scale together, so
 // the highlight on wet stone and the disk in the sky stay one size relative to each other. The
@@ -13,7 +13,7 @@ import { SUN_DISPLAY_RADIUS, SUN_DISPLAY_SOLID_ANGLE, SUN_GLINT_RADIUS, projecte
 // so what the bloom draws from it, take that share; the key light, the glints and the glare do not,
 // and the environment's bakes leave the disk out (sky/Sky.ts). The glints' disk is tunable at load
 // on its own (`lighting.sun.glintRadius`).
-// Kept out of Radiometry.ts, which node tools import without the page's modules.
+// Kept out of Radiometry.ts, which node tools import without the app's modules.
 
 const scale = tune( 'lighting.sun.discScale', 1, { min: 0.5, max: 2, scale: 'log', load: true } )();
 /** The sky's disk's angular radius (radians). */

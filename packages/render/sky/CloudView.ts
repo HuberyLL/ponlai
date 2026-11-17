@@ -237,7 +237,7 @@ export function buildView( clouds: Clouds, width: number, height: number ): void
 				const fresh = p.x.mod( 4 ).equal( int( clouds.slot.x ) ).and( p.y.mod( 4 ).equal( int( clouds.slot.y ) ) );
 				const dz = textureLoad( motionNode, tp ).toVar();
 				// Where clouds cloud point was last frame (camera motion and wind drift): the cumulus,
-				// or the thin layer, which drifts with it, where no cumulus is in front (with no layer,
+				// or the cirrus, which drifts with it, where no cumulus is in front (with no layer,
 				// the sky beyond the shells).
 				const pdC = normalize( rd.mul( dz.x ).add( clouds.camDelta ) );
 				const farHeight = select( clouds.streaks.greaterThan( 0.01 ), clouds.streakHeight, float( BEYOND_SHELLS ) );
@@ -359,7 +359,7 @@ export function sampleView( clouds: Clouds, direction: V3 ): V4 {
 /** What the dome fogs the clouds by toward `direction`, as the view holds it beside its colour
  * (the resolve's depth history): `depth`, the distance (metres) to the cumulus's light, the
  * march's opacity-weighted depth (`makeMarch`), `fallback` outside the view, before it has data,
- * or where it holds no cumulus; and `thin`, the thin layer's opacity as seen through what lies
+ * or where it holds no cumulus; and `thin`, the cirrus's opacity as seen through what lies
  * in front of it, 0 outside the view. */
 export function sampleViewFog( clouds: Clouds, direction: V3, fallback: F ): { depth: F; thin: F } {
 

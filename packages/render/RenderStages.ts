@@ -1,13 +1,13 @@
 // The render pipeline's stages: the pipeline built a stage at a time, in the entry's order.
 //
-// The render pipeline's stages: the page's render pipeline built a stage at a time, in the order
+// The render pipeline's stages: the app's render pipeline built a stage at a time, in the order
 // the entry (main.ts) calls them. Each stage is a plain function that puts what it builds on the
 // one RenderParts object, which the later stages, the island's stages (IslandStages.ts) and the
-// page read. The stages come in three groups: those that need no land (the render pipeline, the
+// app read. The stages come in three groups: those that need no land (the render pipeline, the
 // scenes, the sky, the sun's light, the environment, the sea's waves and the frame's passes), those
 // the island's data builds (the ground's bounce and the shore's waves, the ambient light's probes,
 // the water) and those that close the build (the haze's bake, the warm-up, the shared builds).
-// - The order of the statements inside a stage and of the stages is part of the image: the order
+// - The order of the statements inside a stage and of the stages is part of the rendered image: the order
 //   materials first build in decides their shader code (docs/reference/three-behaviour.md, Build order). A new
 //   statement goes where its build belongs, never at the end by habit.
 // - A stage that ends in a wait returns its promise, which the entry awaits before the next stage:
@@ -23,13 +23,13 @@
 // scene's own work goes between: whether the frame is held, the scene clock, the day and the
 // weather, the sky and its light, the local lights, the weather's effects with the sky's bake, the
 // sun's maps and the sea, the relight, the draw and the submit. The frame's tick calls them in that
-// order, once each (assemble/SceneFrame.ts), with a page's content between them (the island's:
+// order, once each (assemble/SceneFrame.ts), with an app's content between them (the island's:
 // IslandStages.ts `createIslandFrame`).
-// - The order of the statements inside a frame stage, and of the stages, is part of the image and
-//   of what a stepped clip repeats: a statement reads what the ones before it wrote in the same
+// - The order of the statements inside a frame stage, and of the stages, is part of the rendered
+//   image and of what a stepped clip reproduces: a statement reads what the ones before it wrote in the same
 //   frame (the sky's state, the wind, the scene clock). New per-frame work goes into the stage
 //   whose statements it follows, or into the scene's own between two stages.
-// - What only the page knows comes through `FrameHost`: its switches, the pacer's interval, its
+// - What only the app knows comes through `FrameHost`: its switches, the pacer's interval, its
 //   own reasons a still frame is not final, and whether the canvas shows.
 // - The cadences that count wall-clock seconds (the sky's periodic bake, the refracted sun's map)
 //   and the hold of a still scene are the stages' own state; a tool that steps the frames restarts
@@ -104,7 +104,7 @@ import type { SettleFrame } from './post/Settled.ts';
 import type { HazeFrame } from './weather/VolumetricHaze.ts';
 import { installWindMotionFlag } from './vegetation/WindMotion.ts';
 import { GTAO } from './post/GTAO.ts';
-import { SS_SHADOW } from './post/MeadowShade.ts';
+import { SS_SHADOW } from './post/MeadowShadows.ts';
 import type { Vegetation } from './vegetation/Registry.ts';
 
 /** A scene as the query names it: what a load and a scene jump both establish (`sceneOptions`). */
@@ -123,7 +123,7 @@ export interface SceneOptions {
 	clouds: number | null;
 }
 
-/** What a query leaves to the page: the day clock's hour and length (s) where it names none, and
+/** What a query leaves to the app: the day clock's hour and length (s) where it names none, and
  * whether a parked weather may load (Weather.ts `PARKED_WEATHER`: debug pages only). */
 export interface SceneDefaults { hour: number; dayLength: number; parkedWeather: boolean }
 
@@ -167,8 +167,8 @@ export function sceneOptions( options: SettingsQuery, defaults: SceneDefaults ):
 
 }
 
-/** What the page hands the render pipeline as it creates it (`createRenderer`), which the later stages
- * and the page read on RenderParts. */
+/** What the app hands the render pipeline as it creates it (`createRenderer`), which the later stages
+ * and the app read on RenderParts. */
 export interface RenderHost {
 	/** the frame profiler (?profile), loaded only then */
 	profiler: FrameProfiler | null;
@@ -266,9 +266,9 @@ export interface SceneFields { shore: THREE.TextureNode; floor: THREE.TextureNod
 export interface SubmergedWorld { group: THREE.Group; subsets?: ReadonlyMap<THREE.Object3D, SubmergedSubset> }
 
 /** What the render pipeline's stages hand one another and nothing else reads: on the same object, off the
- * RenderParts the island and the page see. */
+ * RenderParts the island and the app see. */
 interface StageParts {
-	/** the scene the page loaded */
+	/** the scene the app loaded */
 	loaded: SceneOptions;
 	runtime: { refractedSun: RefractedSun | null };
 	/** the haze's tables, made from the look (`createSky`), which `prepareHaze` reads */
@@ -277,7 +277,7 @@ interface StageParts {
 	bakeEnvironment: () => Promise<void>;
 	ambientSky: AmbientSky;
 	overlayLatents: SceneLatents;
-	/** the compiles ahead of the first frame, which `awaitWarmUp` waits for */
+	/** the pipeline precompilation before the first frame, which `awaitWarmUp` waits for */
 	warming: Promise<unknown>;
 	hazeShadowCompiled: Promise<void>;
 }
@@ -289,7 +289,7 @@ function staged( render: RenderParts ): RenderParts & StageParts {
 
 }
 
-/** The render pipeline itself, with what the page hands it. Returns its init, which the entry awaits. */
+/** The render pipeline itself, with what the app hands it. Returns its init, which the entry awaits. */
 export function createRenderer( render: RenderParts, host: RenderHost ) {
 
 	const { profiler, mark, DEBUG, qualityTier, quality, setStatus } = host;
@@ -320,8 +320,8 @@ export function setUpRenderer( render: RenderParts ) {
 		throw new Error( 'WebGPU is not available' );
 
 	}
-	// the members of three's renderer the page reaches beyond its interface: a three without one stops
-	// the page here, naming it (three/Internals.ts)
+	// the three.js internals of the renderer the app uses beyond its public interface: a three.js
+	// without one stops the app here, naming it (three/Internals.ts)
 	checkRenderer( renderer );
 	// three r186 keys its node builds and pipelines by the first attachment, not the whole layout (an
 	// MRT picks its outputs by the textures' names): patched before any material builds, so a material
@@ -346,7 +346,7 @@ export function createScenes( render: RenderParts, { viewport, dpr }: { viewport
 	render.history = new SceneHistory();
 	// The scene renders at a pixel ratio set by the quality tier (see RenderScale.ts), at most the
 	// display's and DPR_CAP (the canvas's cap: native 4K on a 2x display at high's maximum, or `dpr`,
-	// the page's explicit ratio); the canvas matches the display and the frame graph upscales to it.
+	// the app's explicit ratio); the canvas matches the display and the frame graph upscales to it.
 	// Explicit DPR captures and the full-resolution control lift the tier's pixel budget and pin a
 	// dynamic scale at its nominal.
 	render.DPR_CAP = dpr ?? OUTPUT_PIXEL_RATIO_CAP;
@@ -372,8 +372,8 @@ export function createScenes( render: RenderParts, { viewport, dpr }: { viewport
 }
 
 /**
- * The scene the page loads (`sceneOptions`), the sky, the day and the weather, the wind, the rain
- * and the sky's quality knobs. `seaFog` and `dayFog` start the deep sea fog and the day's fog layer
+ * The scene the app loads (`sceneOptions`), the sky, the day and the weather, the wind, the rain
+ * and the sky's quality settings. `seaFog` and `dayFog` start the deep sea fog and the day's fog layer
  * on. `look`: the look's tables the exposure, the day's windows, the low key's lift and the sky's
  * tables are made from (look/ExposureLook.ts `createExposure`, look/DayLook.ts `createDayWindows`,
  * look/AmbientLook.ts `createKeyLift`, look/SkyLook.ts `createSkyTables`), which the sky carries to
@@ -462,7 +462,7 @@ export function createLight( render: RenderParts, { look }: { look: LocalLightsT
 	render.lastWeatherSignature = '';
 	render.cloudOverride = loaded.clouds;
 	render.skyQuality = { value: qualityTier };
-	// The tier's runtime knobs (a debug override may replace some of them: `s.applyQuality( { ... } )`).
+	// The tier's runtime settings (a debug override may replace some of them: `s.applyQuality( { ... } )`).
 	const runtime = { refractedSun: null as RefractedSun | null };
 	staged( render ).runtime = runtime;
 	function applySkyQuality( q: Readonly<QualityProfile> = quality ): void {
@@ -637,7 +637,7 @@ export function createEnvironment( render: RenderParts ) {
 		// Explicit preset changes settle any in-flight bake first. The running clock uses a single
 		// coalesced request below, never a growing async queue or a suspended animation loop.
 		if ( sky.busy ) await sky.update();
-		// Every explicit bake bakes as the page's first does, the clouds at the scene clock (Sky.reset):
+		// Every explicit bake bakes as a fresh load's first bake does, the clouds at the scene clock (Sky.reset):
 		// a paused page keeps its products, so the load, a jump, a seek, a new hour or weather and a
 		// retune each make the ones a fresh load of the same scene makes, whatever the frames before
 		// left in the sky. It takes every value as it stands (`retuneSky`).
@@ -850,7 +850,7 @@ export function createSeaAndPipeline( render: RenderParts, { rainCeiling, extraP
 
 	// A weather change, the first bolt and the sky's first periodic bake used to build their
 	// pipelines in the frame they first drew (rain's drops and splashes, the bolt's two passes, the
-	// sky's blends and filters, the fog's passes: a dropped frame each). They are compiled ahead
+	// sky's blends and filters, the fog's passes: a dropped frame each). They are precompiled
 	// instead, through the async pipeline calls, so the GPU process builds them off the main thread
 	// while the world is generated and built; the loop starts once they are ready. The frame graph's
 	// warm-up compiles every pass the frame may run, those that run only at times included (fog, rain,
@@ -944,8 +944,8 @@ export function placeVegetation<L>( render: RenderParts, vegetation: Vegetation<
 	if ( roots.length ) scene.add( ...roots );
 	installWindMotionFlag( scene );
 	installVegetationPrepass( scene, vegetation.roots( ( kind ) => kind.prepass ) );
-	// the opaque scene's depth for the ambient occlusion (post/GTAO.ts, high's `ao` knob) and the
-	// screen-space shade over the whole scene (post/MeadowShade.ts `SS_SHADOW`): the ground, and the
+	// the opaque scene's depth for the ambient occlusion (post/GTAO.ts, the high tier's `ao` setting)
+	// and the screen-space shadows over the whole scene (post/MeadowShadows.ts `SS_SHADOW`): the ground, and the
 	// plants without a prepass of their own
 	if ( GTAO || SS_SHADOW ) installOpaquePrepass( [ ...ground, ...vegetation.roots( ( kind ) => ! kind.prepass ) ] );
 	vegetation.close( 'placeVegetation has placed the kinds in the scene and its prepasses' );
@@ -1063,16 +1063,16 @@ export function primeSharedBuilds( render: RenderParts ) {
 
 }
 
-/** What the page gives the frame's stages (`createFrameStages`). Each is read in the frame, at the
+/** What the app gives the frame's stages (`createFrameStages`). Each is read in the frame, at the
  * stage that names it. */
 export interface FrameHost {
-	/** the page's switches for the rain and the wet surfaces (`advanceWeatherAndSea`) */
+	/** the app's switches for the rain and the wet surfaces (`advanceWeatherAndSea`) */
 	weatherEffects: { readonly rain: boolean; readonly wetness: boolean };
 	/** whether the exposure follows the sky's grade (`advanceWeatherAndSea`) */
 	environmentLook: { readonly exposure: boolean };
 	/** the paced frame's interval (ms): the temporal resolve's nominal frame time (`draw`) */
 	interval(): number;
-	/** adds the page's own reasons the frame will still change without a change of its key, for the
+	/** adds the app's own reasons the frame will still change without a change of its key, for the
 	 * settled signal (`draw`; debug pages) */
 	pending( reasons: string[] ): void;
 	/** whether the canvas shows, with nothing of the page's over it (`draw`; debug pages) */
@@ -1080,7 +1080,7 @@ export interface FrameHost {
 }
 
 /**
- * A frame's stages, in the order a page calls them, every frame. The scene's own per-frame work
+ * A frame's stages, in the order an app calls them, every frame. The scene's own per-frame work
  * goes between them where its order has it (the island's: IslandStages.ts `createIslandFrame`);
  * the order inside a stage is the render pipeline's.
  */
@@ -1121,7 +1121,7 @@ export interface FrameStages {
 
 /**
  * The frame's stages on the built renderer: what advances the scene clock, the day, the weather,
- * the wind and everything that follows them, then draws. A page's tick calls them in the order
+ * the wind and everything that follows them, then draws. An app's tick calls them in the order
  * FrameStages lists them, once each a frame.
  */
 export function createFrameStages( render: RenderParts, host: FrameHost ): FrameStages {
@@ -1261,7 +1261,7 @@ export function createFrameStages( render: RenderParts, host: FrameHost ): Frame
 			applyEnvironmentFill( strikeFill );
 			shared.skyFill.value = strikeFill;
 			shared.skyIrradiance.value.set( sky.skyIrradiance.r, sky.skyIrradiance.g, sky.skyIrradiance.b ).multiplyScalar( strikeFill );
-			// the page's own wetness, in the game too (soaking and drying on the day clock)
+			// the app's own wetness, in the game too (soaking and drying on the day clock)
 			shared.wetness.value = host.weatherEffects.wetness ? weather.state.wetness : 0;
 			fft.setWind( wind.speed, wind.heading );
 			render.rain!.uniforms.rain.value = shared.rain.value;
@@ -1395,7 +1395,7 @@ export function registerSceneHistories( render: RenderParts ) {
  * ground's bounce, the underwater map's cadence, and after the jump's bake the underwater map, at its constructed size and
  * drawn at once for the jump's light (published by the bake), as the load's `prepare` draws it
  * before the first frame: left to the loop's cadence (wall time), a capture ready within a few
- * frames shot the cleared map, the sea without its refracted sun. */
+ * frames captured the cleared map, the sea without its refracted sun. */
 export function registerLightHistories( render: RenderParts ) {
 
 	const { history, pipeline, groundBounce, refractedSun } = render;

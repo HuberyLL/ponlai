@@ -23,7 +23,7 @@ export const KIND = { cloth: 0, skin: 1, hair: 2, leather: 3, metal: 4 } as cons
 // space a rendered frame ago, inverse( previous world ) x world now, so the previous world point
 // is the previous bones' and the two motions stay apart: `flags.mv.object = false` leaves the walk
 // out, `flags.mv.skin = false` the clips (the previous skinned vertex is the current one). Across
-// a cut (`taaCut`), or when the figure was not drawn in the rendered frame before, its skin does
+// a cut (`taaCut`), or when the figure was not drawn in the previous rendered frame, its skin does
 // not move either: three's previous bones are then those of whenever it was last drawn.
 
 interface SkinTrack { frame: number; current: THREE.Matrix4; previous: THREE.Matrix4; rebase: THREE.Matrix4; moving: boolean }

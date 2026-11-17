@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import { Fn, uniform, uniformArray, texture, vec4, int, float, clamp, floor, dot, max, select, mix, positionLocal, positionView, normalWorld, modelWorldMatrixInverse } from 'three/tsl';
 import { compileByRendering, compileLatentInto } from '../post/graph/Compile.ts';
 import { solarSteppedShadowVisibility, solarVolumeVisibility, solarPCFVisibility, solarDiscVisibility } from './SolarShadow.ts';
-import { screenShadowAt } from '../post/MeadowShade.ts';
+import { screenShadowAt } from '../post/MeadowShadows.ts';
 import type { CasterColumns } from './CasterFormat.ts';
 import { shadowWindOn } from '../vegetation/VegetationShadow.ts';
 import { leafThrough } from '../vegetation/LeafLight.ts';
@@ -38,14 +38,14 @@ type FilterInput = { shadowCoord: V3 };
 // The map is fitted to the island's casters; the sea floor's stones cast only into the refracted
 // map (RefractedSun.ts). Grass blades, stems, leaf stalks and twigs stay out of it (VegetationShadow.ts);
 // the meadow's layer shades the blades and the ground under and beside it where they read the map
-// (Grass.ts `meadowLayerLight`, through a material's `userData.sunShade`). Both stepped
+// (Grass.ts `meadowLayerLight`, through a material's `userData.sunOcclusion`). Both stepped
 // maps are filtered alike, each on its own, so the cross-fade stays continuous across a redraw.
-// A receiver's screen-space shade (post/MeadowShade.ts) multiplies the filter's visibility: its own
-// (`userData.sunShade`, the meadow's blades) or the whole scene's at its pixel (`receiveScreenShadow`).
+// A receiver's screen-space shadows (post/MeadowShadows.ts) multiplies the filter's visibility: its own
+// (`userData.sunOcclusion`, the meadow's blades) or the whole scene's at its pixel (`receiveScreenShadow`).
 // A tree's leaves, marked `userData.keyThrough`, take the two's product on a floor (`leafThrough`,
 // vegetation/LeafLight.ts): the map draws every leaf as black, where a crown's leaves pass on
 // a share of the sun to the leaves under them. The floor is a uniform stand-in for that light, on the
-// receivers alone; a caster that let part of the sun through would change the shade on the grove's
+// receivers alone; a caster that let part of the sun through would change the shadow on the grove's
 // ground too and cost a map of its own. The clouds' shadow multiplies it as it does the map.
 // Receivers read the maps through SolarShadow's disk filter (a fixed radius of POISSON_RADIUS
 // texels, so its penumbra does not widen with the caster's distance; see its rules on sampler types
@@ -59,7 +59,7 @@ type FilterInput = { shadowCoord: V3 };
 // not the back faces three casts for a FrontSide material. At the cliff's creases, scar-notch
 // corners and sharp arrises a wall turned away from the sun has, as its only back-face occluder,
 // the crease's other side a few millimetres off, inside the bias: such pixels read lit and showed
-// as bright specks in the shade. Back faces also read every point inside the rock as lit, and
+// as bright specks in the shadow. Back faces also read every point inside the rock as lit, and
 // submerged receivers read this map at their refracted entry point on the surface (RefractedSun),
 // which for the sea floor and walls along the cliff's foot lies inside the rock: thin lines and
 // patches of sun showed there inside the island's shadow. The front faces put the occluder at the
@@ -83,7 +83,7 @@ type FilterInput = { shadowCoord: V3 };
 // synchronously and stalled. It is made first with its pipelines compiled asynchronously
 // (graph/Compile.ts `compileByRendering`), drawing nothing, and drawn for real once they exist; until
 // then the receivers stay lit (`ready`) and `pending` holds the settled signal. The compile is the
-// redraw itself, its node builds made in its order, as three would make them: compiled ahead in
+// redraw itself, its node builds made in its order, as three would make them: precompiled in
 // another order, the receivers' and casters' shaders came out with other temporaries and moved a
 // few pixels by one level (three r186 emits from shared node state).
 //
@@ -259,11 +259,11 @@ export class SunShadow {
 			const shadowCoord = this.offsetCoordinate( unbiased, material?.userData.vegetation === true );
 			// Vegetation is told by its tag, not by alphaToCoverage, which is off without multisampling.
 			const visibility = this.surfaceVisibility( shadowCoord );
-			// A receiver's own shade on top of the map's (the meadow's blades: their screen-space
-			// shade, post/MeadowShade.ts; they and the ground under and beside them: the meadow's
-			// layer, Grass.ts `meadowLayerLight`), or the whole scene's screen-space shade at its
+			// A receiver's own shadow on top of the map's (the meadow's blades: their screen-space
+			// shadows, post/MeadowShadows.ts; they and the ground under and beside them: the meadow's
+			// layer, Grass.ts `meadowLayerLight`), or the whole scene's screen-space shadow at its
 			// pixel for one marked for it (`receiveScreenShadow`: the bamboo, the yunpeng)
-			const shade = ( material?.userData.sunShade as F | undefined ) ?? ( material?.userData.screenShadow === true ? screenShadowAt() : undefined );
+			const shade = ( material?.userData.sunOcclusion as F | undefined ) ?? ( material?.userData.screenShadow === true ? screenShadowAt() : undefined );
 			const seen = shade ? visibility.mul( shade ) : visibility;
 			// the light a shaded leaf takes through the leaves over it (`userData.keyThrough`)
 			return material?.userData.keyThrough === true ? seen.add( leafThrough.mul( float( 1 ).sub( seen ) ) ) : seen;

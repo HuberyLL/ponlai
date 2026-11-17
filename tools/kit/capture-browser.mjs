@@ -35,35 +35,35 @@
 // is ready when its image stops changing, however many frames that takes: after the evals, `min`
 // frames (1) and the loading screen gone (waitForScene), the capture stops the loop, grabs the
 // image, and then repeatedly runs `every` frames (2), stops and grabs again (waitForStable). It
-// shoots once `repeats` comparisons (1) in a row found the image unchanged, on the frame grabbed
+// captures once `repeats` comparisons (1) in a row found the image unchanged, on the frame grabbed
 // last ("exact"). A paused page still differs from frame to frame on a few views (single frames
 // that leave the settled image and come back to it, from a few pixels to 0.9 M; its source is not
 // yet found), so after `patience` frames (40) a comparison within the tolerance also counts
 // ("tolerance": at most 5000 pixels differ at all); a page still changing after `cap` frames (120)
-// is shot anyway and marked "capped". The capture's JSON keeps the record (`ready`: status, frames
+// is captured anyway and marked "capped". The capture's JSON keeps the record (`ready`: status, frames
 // waited, comparisons, the largest difference seen, per comparison its pixel counts).
-// - Change is any pixel by default because the frame noise never repeats: two equal grabs are the
-//   settled image, the frame most loads agree on. The tolerance counts pixels that differ at all,
+// - Change is any pixel by default because no two frames carry the same noise: two equal grabs are
+//   the settled image, the frame most loads agree on. The tolerance counts pixels that differ at all,
 //   not levels: a settling flowers-close differed by 1 level over 5.1 M pixels. The smallest
 //   settling step seen was 45 k pixels, the noise between consecutive frames 1 pixel to 0.9 M, so
 //   5000 accepts much of the noise and no settling step.
 // - The defaults (floor 1, every 2, one comparison) come from the offline replay over those traces
-//   (floors 0-10 x every 1-4, one comparison, task S2): one equal pair already means the settled
-//   image, so the floor only skips grabs that would differ anyway: every row shot 0 loads early,
+//   (floors 0-10 x every 1-4, one comparison): one equal pair already means the settled image, so
+//   the floor only skips grabs that would differ anyway: no combination captured a load early,
 //   and floor 1 with every 2 put 48/48 on the settled frame, all exact, mean 8.0 frames, about 2.1 s
 //   of grabbing, at most 7.8 s (floor 0: 47 exact and 1 by tolerance, 2.5 s, at most 12.3 s, since
 //   the earliest grabs of a settling page differ and each costs a decode and a cycle).
 // - Measured: traces of the 24 parity views, two loads
 //   each, every frame grabbed for 150 frames, showed every page on its settled image within 1-11
 //   frames and changing afterwards only by the single-frame noise. On the GPU, two sets of the 24
-//   views with --repeat (96 loads, then with floor 10 and two comparisons) were all shot exact, 4-32
+//   views with --repeat (96 loads, then with floor 10 and two comparisons) were all captured exact, 4-32
 //   frames after the floor (median 4, about 1.4 s of grabbing), every one on the frame most loads
 //   of the earlier tools agreed on: no A/A difference, where the fixed waits left 15-17 % of loads
 //   off it.
-// - The grab is the compositor's image through CDP (pngShooter, below: `Page.captureScreenshot`,
+// - The grab is the compositor's image through CDP (pngCapturer, below: `Page.captureScreenshot`,
 //   PNG optimised for speed, at the page's pixel ratio): about 0.27 s at 3456x2234, its pixels
 //   equal to Playwright's screenshot's (which spends 1.3 s on its PNG), and taking it does not
-//   change the next shot. Equal PNG bytes are equal pixels; only a changed frame is decoded (about
+//   change the next grab. Equal PNG bytes are equal pixels; only a changed frame is decoded (about
 //   0.12 s). Reading the canvas in the page (drawImage) gives a blank image once the frame is
 //   presented: WebGPU drops its drawing buffer.
 // - The grab's CDP session drops the page's device metrics: a clipped `Page.captureScreenshot`
@@ -71,7 +71,7 @@
 //   none, so Playwright's override (its deviceScaleFactor) is gone and `window.devicePixelRatio`
 //   reads 1. The frames drawn stay the same (the page follows the ratio only on a resize, and
 //   none fires), but anything reading the ratio afterwards is wrong, such as views.mjs's crop
-//   anchors in capture-clip. So the shooter's close() (waitForStable ends with it) takes a
+//   anchors in capture-clip. So the capturer's close() (waitForStable ends with it) takes a
 //   Playwright screenshot of one pixel (whose own clip emulation is restored to Playwright's
 //   metrics) and waits until the page reads the ratio it had before the grabs: about 35 ms per
 //   capture. Sending the same metrics again (`setViewportSize` with the same size) does nothing,
@@ -80,18 +80,18 @@
 // - Stopping the loop for each grab also waits for a sky bake in flight and drains the GPU queue,
 //   so work landing late on a busy GPU is in the next grab rather than frames later.
 // - A paused page of the temporal modes (taa, taau, fsr3, gt) is ready once its rest has converged
-//   (packages/render/post/TemporalRest.ts: a fixed jitter sequence averaged with exact weights after 8 settle
-//   frames, none while a bake or transition runs, then held), so it is not compared at all: the
-//   loop is stopped on the held rest and shot ("converged"), the way engines test a temporal
+//   (packages/render/post/TemporalRest.ts: a fixed jitter sequence averaged with exact weights
+//   after 8 settle frames, none while a bake or transition runs, then held), so it is not compared
+//   at all: the loop is stopped on the held rest and captured ("converged"), the way engines test a temporal
 //   image (a deterministic convergence, then a tolerance in the comparison: diff-set --temporal).
 //   The stability options do not apply to it (the floor's frames pass inside the rest anyway).
 //   Comparing grabs could not help: the loop's start restarts the rest, so each grab was a new rest
 //   (about 40 frames) that only sampled the frame noise again (3 views x 2 loads: 0-52 pixels apart,
 //   once 37 k; 3-13 s per capture). capture.mjs restarts the rest after the evals and waits for it.
 // - "The loading screen gone" is its computed opacity at 0, not its `done` class: the class only
-//   starts its fade (index.html: 0.8 s after a 0.2 s delay), and a shot during the fade carries
+//   starts its fade (index.html: 0.8 s after a 0.2 s delay), and a capture during the fade carries
 //   the screen over the whole frame. A temporal rest converges about 40 frames after the evals, so
-//   rests were shot through the fade's last percent: up to 2.2 % of the screen's gradient blended
+//   rests were captured through the fade's last percent: up to 2.2 % of the screen's gradient blended
 //   in, 0.3-1.9 levels darker over 3-7.7 M px, most on bright surfaces (taa A/A up to 268 against
 //   0.13 for the earlier fixed 150 frames). The
 //   wait holds on every build, older ones included, and costs at most the fade's remaining second.
@@ -99,21 +99,22 @@
 //   rendered frames instead (READY_FRAMES, 60, for a running one). `wait` and `settle` (ms) add
 //   fixed delays before and after the floor.
 // - Before the grabs a paused page also waits for its own settled signal (waitForSettled, which
-//   capture.mjs and verify-scene-jump call; verify-growth-swap waits for it too): packages/render/post/Settled.ts holds it false
-//   while a pipeline compiles asynchronously or a sun shadow redraw is due, and until 8 quiet frames
-//   share the scene's key, so the grabs start on the frame the page keeps. Stability alone met that
-//   only through the loading screen, which a fresh load lifts once the sun's map has drawn: frames
-//   drawn while a pipeline compiles repeat each other (three skips the draw), so two of them
-//   compare equal. The wait runs with the loop going, since each grab's restart of the loop starts
+//   capture.mjs and verify-scene-jump call; verify-growth-swap waits for it too):
+//   packages/render/post/Settled.ts holds it false while a pipeline compiles asynchronously or a
+//   sun shadow redraw is due, and until 8 quiet frames share the scene's key, so the grabs start on
+//   the frame the page keeps. Stability alone met that only through the loading screen, which a
+//   fresh load lifts once the sun's shadow map has drawn: frames drawn while a pipeline compiles
+//   are identical to each other (three skips the draw), so two of them compare equal. The wait runs with the loop going, since each grab's restart of the loop starts
 //   the signal's run over. Under the temporal modes the resolve's rest waits for the haze's, which
 //   the capture's own epoch bump restarts. A refresh that lands under a held rest image still
 //   leaves the signal `stale`: the wait starts the resolve's rest over then, by an epoch bump that
 //   is not a scene bump, so the haze's rest is kept.
 //
-// The shot. The PNGs a capture writes (capture.mjs's frames, capture-clip's crops and full frames)
-// are taken by the same shooter as the grab, not by Playwright's `page.screenshot`: the same pixels
-// (the compositor's image at the page's ratio, the clip trimmed to the viewport as Playwright trims
-// it), only Chrome's fast PNG encoder instead of its default one. At 3456x2234 the shot takes
+// The screenshot. The PNGs a capture writes (capture.mjs's frames, capture-clip's crops and full
+// frames) are taken by the same capturer as the grab, not by Playwright's `page.screenshot`: the
+// same pixels (the compositor's image at the page's ratio, the clip trimmed to the viewport as
+// Playwright trims it), only Chrome's fast PNG encoder instead of its default one. At 3456x2234 the
+// screenshot takes
 // about 0.26 s instead of 1.3 s (1600x900: 0.07 s instead of 0.27 s), plus 35 ms for close(),
 // and the file is 8-57 % larger (the 24 parity views'
 // two encodings of one frame decode to the same pixels). PNG is lossless, so a file's bytes
@@ -122,13 +123,13 @@
 //
 // Stopping the loop. Headless, Chrome itself back-pressures the page only once seconds of frames
 // are queued (no vsync, no frame-rate limit), so a paused page in the test mode bounds its own queue
-// to two frames (packages/render/post/FramePacer.ts, "A paused page's queue"): before that, two pages at once
-// each queued hundreds of frames of work, and every read-back and screenshot waited behind it. A
-// running page is not bounded. `stopLoop` stops the frame loop (`__PONLAI__.loop.stop()`: no more
-// frames, then the queue drained) before the shot; the pixels are the same frame's, the shot waits
-// for no queued frames (on an unbounded queue it waited for every frame queued), and the GPU is free
-// for other captures
-// meanwhile. Builds without `loop` are shot with the loop running.
+// to two frames (packages/render/post/FramePacer.ts, "A paused page's queue"): before that, two
+// pages at once each queued hundreds of frames of work, and every read-back and screenshot waited
+// behind it. A running page is not bounded. `stopLoop` stops the frame loop
+// (`__PONLAI__.loop.stop()`: no more frames, then the queue drained) before the screenshot; the
+// pixels are the same frame's, the screenshot waits for no queued frames (on an unbounded queue it
+// waited for every frame queued), and the GPU is free for other captures meanwhile. Builds without
+// `loop` are captured with the loop running.
 //
 // Importing this module raises the process to the application scheduling policy on macOS
 // (tools/kit/qos.mjs): the PNG decode and frame compare of readiness run in this process while it holds
@@ -143,7 +144,7 @@ import { createHash } from 'node:crypto';
 import PROJECT from '../project.mjs';
 import { ROOT as REPO, outputDir } from './root.mjs';
 
-// the page's globals and its loading screen, as the project's configuration names them, for the
+// the app's globals and its loading screen, as the project's configuration names them, for the
 // page code below (passed in: a closure run in the page sees nothing of node's scope)
 const PAGE = PROJECT.page;
 
@@ -474,13 +475,13 @@ export function compareFrames( a, b, level = 0 ) {
 
 }
 
-/** A PNG shooter on a CDP session of its own (see "The shot" in the header): `shoot( clip )`
+/** A PNG capturer on a CDP session of its own (see "The screenshot" in the header): `capture( clip )`
  * returns the PNG of the viewport, or of `clip` ({ x, y, width, height } in CSS px, trimmed to the
  * viewport as Playwright trims it), at the page's pixel ratio, encoded by Chrome's fast PNG
  * encoder: the pixels of Playwright's `page.screenshot` with the same clip. `close()` detaches and
- * gives the page its device metrics back (the shots dropped them); call it before anything reads
+ * gives the page its device metrics back (the screenshots dropped them); call it before anything reads
  * `devicePixelRatio`. */
-export async function pngShooter( page, { timeout = 60000 } = {} ) {
+export async function pngCapturer( page, { timeout = 60000 } = {} ) {
 
 	const cdp = await page.context().newCDPSession( page );
 	// (a CDP session of its own has no device metrics override: its scale 1 is CSS pixels, so the
@@ -489,7 +490,7 @@ export async function pngShooter( page, { timeout = 60000 } = {} ) {
 	const scale = await page.evaluate( () => devicePixelRatio );
 	return {
 		scale,
-		async shoot( clip = null ) {
+		async capture( clip = null ) {
 
 			let c = { x: 0, y: 0, width, height };
 			if ( clip ) {
@@ -516,7 +517,7 @@ export async function pngShooter( page, { timeout = 60000 } = {} ) {
 }
 
 /** Whether two PNGs hold the same pixels (equal bytes, or equal once decoded: the bytes depend on
- * the encoder, see "The shot" in the header). */
+ * the encoder, see "The screenshot" in the header). */
 export function samePixels( a, b ) {
 
 	if ( a.equals( b ) ) return true;
@@ -529,7 +530,7 @@ export function samePixels( a, b ) {
  * the paused page will draw the same frame from now on; see Readiness by stability above) and
  * returns the record a capture's JSON keeps as `ready.settled`: { settled, framesWaited, wallMs },
  * with the signal's `settle` block when it did not hold within `timeout` (ms; no error: the
- * stability wait follows and the shot is still taken), or { signal: false } on a page that has no
+ * stability wait follows and the screenshot is still taken), or { signal: false } on a page that has no
  * signal to wait for (an older build, or a temporal page without a rest, which never settles).
  * Call it before waitForStable: its grabs restart the loop, a scene event that starts the signal's
  * run over, so the signal cannot hold during them. */
@@ -581,7 +582,7 @@ export async function waitForStable( page, { every = STABLE.every, repeats = STA
 
 	}, PAGE );
 	if ( temporal ) return waitForRest( page, { timeout } );
-	const shooter = await pngShooter( page, { timeout } );
+	const capturer = await pngCapturer( page, { timeout } );
 	const ms = { cycle: 0, grab: 0, decode: 0, compare: 0 };
 	let decodes = 0;
 	// the page's current image as the compositor shows it (the loop is stopped: the frame a screenshot
@@ -589,7 +590,7 @@ export async function waitForStable( page, { every = STABLE.every, repeats = STA
 	const grab = async () => {
 
 		const t = performance.now();
-		const png = await shooter.shoot();
+		const png = await capturer.capture();
 		ms.grab += performance.now() - t;
 		return { png, pixels: null };
 
@@ -683,7 +684,7 @@ export async function waitForStable( page, { every = STABLE.every, repeats = STA
 	} finally {
 
 		// (the grabs dropped Playwright's device metrics: see the header)
-		await shooter.close();
+		await capturer.close();
 
 	}
 

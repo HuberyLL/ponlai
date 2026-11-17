@@ -43,7 +43,7 @@ import { SHELF_REACH } from '../world/Bathymetry.ts';
 //   (27 degrees) from 50 m outward, eased to 42 degrees at the closest zoom, so up close the view
 //   takes in the sky above the island while the far end keeps its miniature look. It is a function
 //   of the distance alone, set before the points under the pointer are kept there, so a zoom stays
-//   anchored under the cursor and a still camera's frames repeat (`nearFov`, `nearFovFrom` and
+//   anchored under the cursor and a still camera's frames are bit-identical (`nearFov`, `nearFovFrom` and
 //   `nearFov=off` in the query: main.ts).
 // - A mouse wheel is told from a trackpad swipe by its deltas (macOS reports a notch in multiples
 //   of 4.000244140625 px, a trackpad whole pixels with `wheelDeltaY` three times `-deltaY`); the

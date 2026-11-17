@@ -10,7 +10,7 @@
 //   options (`weather`, `hour`, `preset`, `paused`, ...) are the island page's and read the same
 //   way (render/index.ts `sceneOptions`), with a load at noon where the query names no hour.
 // - The frame is the render pipeline's frame stages with nothing of a world's between them, at the
-//   tier's nominal render scale (no dynamic scale: the scenes are shot paused). The canvas is sized
+//   tier's nominal render scale (no dynamic scale: the scenes are captured paused). The canvas is sized
 //   before the haze's bake, as it was before the assembly existed.
 // - It keeps the island page's contract with the tools: the URL options, `window.__PONLAI__` and
 //   `window.__THREE_GAME_DIAGNOSTICS__` with its `settled` signal, on the dev server or with
@@ -216,7 +216,7 @@ export async function startScenePage( name: string, look: Look ): Promise<void> 
 	}
 
 	/** The readings the shown view's frame holds: each one's box (fractions of the frame from its
-	 * top-left corner), its linear radiance before the sea, the air and the display chain (`opaque`)
+	 * top-left corner), its linear radiance before the sea, the haze and the display chain (`opaque`)
 	 * and after the composite (`hdr`), with the light they were taken under. For the frame drawn last:
 	 * on a paused page, wait for `settled` first. */
 	async function read(): Promise<unknown> {

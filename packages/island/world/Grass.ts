@@ -6,7 +6,7 @@ import {
 	positionWorld, specularColor, specularColorBlended, specularF90, vertexIndex, workgroupArray, workgroupBarrier, workgroupId,
 } from 'three/tsl';
 import { LAWN_GAIN, MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_SIZE, groundGains } from '../materials/Meadow.ts';
-import { GUST_MEAN, gustAt, gustJitter, wave, windStrength, type WindState, RESPONSE, displacementAt, runSteps, CANOPY_SHADE, transmission, vegetationMaterial, unjitteredPadded, TEMPORAL, debugFlags, MEADOW_SHADE, meadowShadeAt, meadowShadeFloor, receiveScreenAO, textureSteps, type VegetationKind, type Shared, tune, tuneApply, tuneUniform, liftKeyWorld } from '../../render/index.ts';
+import { GUST_MEAN, gustAt, gustJitter, wave, windStrength, type WindState, RESPONSE, displacementAt, runSteps, CANOPY_SHADE, transmission, vegetationMaterial, unjitteredPadded, TEMPORAL, debugFlags, MEADOW_SHADOWS, meadowShadowAt, meadowShadowFloor, receiveScreenAO, textureSteps, type VegetationKind, type Shared, tune, tuneApply, tuneUniform, liftKeyWorld } from '../../render/index.ts';
 import type { WorldData } from './types.ts';
 import { GROUND_A, HEIGHT_MAP, LIP, SINK, SWARD_DEPTH, grassSteps, type GrassPlan } from './GrassGround.ts';
 import { GROVES } from './BambooGroves.ts';
@@ -27,7 +27,7 @@ import { canopySteps, crownSteps, setCanopyTop, setSwardField, swardSteps } from
 //   the edge of the meadow is dithered rather than stepped) and where the ground lies. A cell's
 //   random values are hashes of its world cell, so a blade stays itself as the view moves. The
 //   tiles are taken near to far. Grown blades are compacted into one list (count, scan, scatter:
-//   deterministic, no atomics, so a paused frame repeats) in two segments, the near blades and
+//   deterministic, no atomics, so a paused frame is bit-identical) in two segments, the near blades and
 //   from LOW.from m on the far ones, drawn by two indirect draws, BLADES blades an instance, of
 //   VERTS and LOW.verts vertices a blade. A blade's make (`scatter`): its height from the grass-height map, its
 //   clump (a Voronoi cell) and its own hash; its facing's static sum (its own, out of its clump,
@@ -62,11 +62,11 @@ import { canopySteps, crownSteps, setCanopyTop, setSwardField, swardSteps } from
 //   `GRASS_SHADOW`): whatever lies under the top (the lower blades, the turf under them, the
 //   ground beside it where the light comes over it) takes exp( -l / s ) of the key, l its ray's
 //   length under the top (`LAYER`), the ray running along the lifted key (lighting/KeyLift.ts,
-//   the direction the sun's map is cast along). The finer shade of blade on blade is the
-//   screen-space shade (post/MeadowShade.ts, `sunShade`), held above the shade's floor by translucency
-//   (`meadowShadeFloor`); the floor does not raise the layer's.
+//   the direction the sun's map is cast along). The finer shadowing of blade on blade is the
+//   meadow's screen-space shadows (post/MeadowShadows.ts, `sunOcclusion`), held above the shadows' floor by translucency
+//   (`meadowShadowFloor`); the floor does not raise the layer's.
 // - The ground under the blades (TerrainMaterial.ts, `GRASS_ROOTS`): brown soil at every distance,
-//   seen through the gaps between the blades; darker on screen by the shade alone.
+//   seen through the gaps between the blades; darker on screen by the shadows alone.
 //
 // The ground map (`grassSteps`): over the meadow's square (MEADOW_EXTENT, MEADOW_SIZE texels), the
 // turf anchors splatted bilinearly (those on the cliff's face under the lip left out): the share of
@@ -77,7 +77,7 @@ import { canopySteps, crownSteps, setCanopyTop, setSwardField, swardSteps } from
 // visibility, and the grass-height map (HEIGHT_MAP), which shortens toward the land's edge only:
 // the grass round a clearing in the litter keeps its height up to it. Its A holds that height map
 // free of the land's edge as well as what the edge takes off it (GROUND_A): the blades read the
-// shortened one (their lengths, their layer's shade, and the shade on what is not turf), and only
+// shortened one (their lengths, their layer's shadow, and the shadow on what is not turf), and only
 // the turf's run under the layer reads the free one (`meadowGroundRuns`), so the turf along the rim,
 // under blades that shorten and thin, lies as deep in the layer as the turf inland and does not take
 // the key the layer's edge would let in. Generation
@@ -298,7 +298,7 @@ const THICKEN = { near: 5, far: 25 };
 
 /** The ground under the meadow (TerrainMaterial.ts's meadow ground): the key's and the sky's light
  * left there under the full sward (`key`, `sky`), the share of its colour the sward darkens
- * (`darkening`), the sward's depth where the meadow grows (`tall`) and the shade left under the
+ * (`darkening`), the sward's depth where the meadow grows (`tall`) and the shadow left under the
  * shortest turf (`open`). `sky` is the sky a blade's root sees (AO at the median length), so the
  * gaps render darker than the blades by their shade alone, near the eye and far alike; tunable
  * (`grass.roots.sky`, the uniform `rootsSky` the ground reads). */
@@ -927,7 +927,7 @@ const swingPush = ( s: F ): { tip: V2; middle: V2 } => {
 };
 
 /** The vertex of the blade drawn at this instance and vertex index, under the wind state `wind`
- * and the displacement field of the frame being drawn (or with `previous` of the frame before):
+ * and the displacement field of the frame being drawn (or with `previous` of the previous frame):
  * plain nodes (no function), so its values can reach varyings. After Wohllaib: vertices made from
  * the index and instance alone, 15 a blade (07:56); a short blade folded into two leaves (09:36,
  * an idea the talk credits to Outerra); a quadratic Bezier whose tip the tilt and facing place and
@@ -1148,7 +1148,7 @@ const aoCanopy = /*@__PURE__*/ tuneUniform( 'grass.ao.canopy', GROVES.shade, { m
  * from root to tip; through it (`light.extra`, Material.ts `transmission`: from behind the blade's
  * face, its forward lobe weighted by saturate( 2 t - 1 ), 0.11 at the root and 0.66 at the tip) t of
  * the diffuse, tinted `tint` (light through a leaf comes out yellower). The same t floors the
- * blades' screen-space shade (post/MeadowShade.ts `meadowShadeFloor`) and weights the ambient
+ * blades' screen-space shade (post/MeadowShadows.ts `meadowShadowFloor`) and weights the ambient
  * volume's light (lighting/AmbientSample.ts): toward the tip it flattens, brightens and turns a
  * little toward the light from behind. */
 const TRANSLUCENCY = { mask: 0.922, root: 0.6, tip: 0.9, tint: [ 1.15, 1, 0.55 ] };
@@ -1247,11 +1247,11 @@ function grassMaterial( shared: Shared, blades: MeadowBlades, low = false ): THR
 	receiveScreenAO( mat );
 	// on the sun's map, the blades' screen-space shade (floored) and their layer's (`meadowLayerLight`)
 	const shades: F[] = [];
-	if ( MEADOW_SHADE ) shades.push( max( meadowShadeAt(), meadowShadeFloor( translucency ) ) );
+	if ( MEADOW_SHADOWS ) shades.push( max( meadowShadowAt(), meadowShadowFloor( translucency ) ) );
 	if ( GRASS_SHADOW ) shades.push( meadowLayerLight( meadowLayerDepth( positionWorld, liftKeyWorld( shared.sunDir ) ) ) );
-	if ( shades.length ) mat.userData.sunShade = shades.reduce( ( a, b ) => a.mul( b ) );
+	if ( shades.length ) mat.userData.sunOcclusion = shades.reduce( ( a, b ) => a.mul( b ) );
 	// `flags=grassSunMap:false`: the blades keep their own shades but read nothing from the sun's map
-	if ( debugFlags.grassSunMap === false ) mat.userData.sunVisibility = shades.length ? mat.userData.sunShade : float( 1 );
+	if ( debugFlags.grassSunMap === false ) mat.userData.sunVisibility = shades.length ? mat.userData.sunOcclusion : float( 1 );
 	if ( GRASS_MASK_EXACT ) mat.outputNode = vec4( MASK_EXACT, 0, 0, 1 );
 	if ( GRASS_MASK_ALBEDO ) mat.outputNode = vec4( diffuseColor.rgb, 1 );
 	if ( GRASS_MASK_LEAN ) mat.outputNode = vec4( MASK_EXACT, varying( current.lean!, 'vGrassLean' ), 1 );
@@ -1328,9 +1328,9 @@ function bladeGeometry( verts = VERTS ): THREE.BufferGeometry {
 // one law, with no floor: the deeper and the lower the sun, the darker. It is the mean shade of a
 // proxy of the ground raised to the layer's top whose depths are pushed down by exponentially
 // distributed lengths along the light, as a filtered shadow map would give it, multiplied into the
-// whole key (wrap, light through, highlight); the translucency's floor raises the screen-space
-// shade only (post/MeadowShade.ts), never this one, and the two multiply: the layer is the sward's
-// mean depth, the screen-space march the shade of blade on blade. (A shadow proxy of the terrain
+// whole key light (wrap, light through, highlight); the translucency's floor raises the meadow's
+// screen-space shadows only (post/MeadowShadows.ts), never this one, and the two multiply: the layer
+// is the sward's mean depth, the screen-space march the shadowing of blade on blade. (A shadow proxy of the terrain
 // raised to the grass's height, whose filtered shadow gives the grass's shadow density, and
 // screen-space shadows for the fine detail: Wohllaib 21:14-21:47; working it out where it is
 // received, not through the map, is ours.) Drawn into the sun's map with its depth dithered over
@@ -1365,7 +1365,7 @@ export const GRASS_SHADOW = debugFlags.grassShadow !== false && ! BARE_GROUND;
 // not held to the point's own depth, lit the sparse turf inside the edge as well). `top` 0.628 and
 // `mean` 0.395 m are tunable (`grass.layer.top`, `grass.layer.mean`): the shaders read uniforms of
 // the top's terms worked out here, the numbers they read as constants at the default. The mean is
-// read once as the page loads (a new value reloads it): the shader divides by it as a constant,
+// read once as the page loads (a new value reloads the page): the shader divides by it as a constant,
 // which compiles to other code than any uniform form of it (a division, a reciprocal's product or
 // an exp2's factor all moved pixels a level).
 const LAYER = { share: 0.5, edge: 0.1, top: 0.628, mean: 0.395, least: 0.15, spread: 0.6 };
@@ -1469,8 +1469,8 @@ const FOOT = { under: 0.05, band: 0.1, up: [ MEADOW_MIN_UP - 0.25, MEADOW_MIN_UP
  * both looks and keeps its run where the walk's first look reaches the far rim (the ray's climb of
  * the layer's mean height: about a metre at a 14 degree key, a quarter of one at 45). A higher
  * sward beyond that, across a gap whose floor lies under the point, the walk does not see, and the
- * face there takes no shade of the layer. A ring's point keeps the ground's test, and takes none
- * from a sward across a gap, so there the shade is the point's own, not widened over the ring: it
+ * face there takes no shadow of the layer. A ring's point keeps the ground's test, and takes none
+ * from a sward across a gap, so there the shadow is the point's own, not widened over the ring: it
  * lies off the surface, often in the rock under the lip, where the walk climbs over the lip's turf
  * and the path's test passes it (taken for the ring as well, it put the layer back on the top 0.3 m
  * or so of the faces under the lip, a darker band along the rims at every sun height). The meadow's
@@ -1487,7 +1487,7 @@ export function meadowGroundRuns( at: V3, key: V3, up: F ): V2 {
 	const column = layerAt( at.xz );
 	const cap = column.roots.add( float( 1 ).sub( step( 1e-6, column.held ) ).mul( 1e4 ) );
 	// a ring turned off the ground map's axes, so its taps do not line up with the texels; the
-	// point's own depth where it is deeper, so the footprint widens the shade past the meadow's
+	// point's own depth where it is deeper, so the footprint widens the shadow past the meadow's
 	// edge without thinning it inside
 	let run: F = float( 0 ), turf: F = float( 0 );
 	for ( const [ x, z ] of [ [ 2, 1 ], [ - 1, 2 ], [ - 2, - 1 ], [ 1, - 2 ] ] ) {

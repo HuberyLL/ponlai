@@ -40,8 +40,8 @@ import { onSceneDispose } from '../SceneDispose.ts';
 // With `restSequence` 0 (no rest) the temporal modes never settle.
 // Whatever the mode, the page also waits for what covers the canvas without changing its frames
 // (`shown`: the loading screen until its fade has ended; a paused page lifts it at once, main.ts).
-// A converged rest alone is not enough for a shot: rests that converged about 40 frames after a
-// view's eval were shot through the fade's last percent, and only this flag told them apart.
+// A converged rest alone is not enough for a capture: rests that converged about 40 frames after a
+// view's eval were captured through the fade's last percent, and only this flag told them apart.
 //
 // It turns false on the frame anything it watches changes: a camera move, a resize or a render
 // scale change, a seek or any scene event (each bumps the epoch: SceneEvents.ts), `establishScene`
@@ -60,9 +60,9 @@ import { onSceneDispose } from '../SceneDispose.ts';
 // It reads state and changes nothing the frame draws (the pipeline counter wraps the device's
 // two async creation calls and passes them through unchanged).
 
-/** The page's per-frame inputs (main.ts). */
+/** The app's per-frame inputs (main.ts). */
 export interface SettleFrame {
-	// the page's own signature: a forced strike's version, the sun maps' redraw counts
+	// the app's own signature: a forced strike's version, the sun maps' redraw counts
 	signature: readonly number[];
 	// false while a sky bake is in flight or a sky transition runs (the temporal rest's `stable`)
 	stable: boolean;

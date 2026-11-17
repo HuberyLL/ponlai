@@ -59,7 +59,7 @@ export type AttachmentOpsMode = OpsMode | 'off';
 
 const MODES: readonly AttachmentOpsMode[] = [ 'derived', 'legacy', 'store', 'off' ];
 
-/** `fgOps` from the page's options or `params` (derived, legacy, store or off); without it `store`
+/** `fgOps` from the app's options or `params` (derived, legacy, store or off); without it `store`
  * under `post=store-scene` or `post=legacy`, else `derived`. */
 export function opsModeFromURL( params: SettingsQuery | null = settings ): AttachmentOpsMode {
 

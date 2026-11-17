@@ -7,19 +7,20 @@ fills in its own facts.
 
 ## Kinds
 
-Where each kind is written, and when to update it: `AGENTS.md`, Where things are written. The
-homes in this repository:
+Where each kind is written, and when to update it: `AGENTS.md`, Where things are written. Where
+each kind lives in this repository:
 
 | Kind | Here |
 | --- | --- |
 | Rules file | The root `AGENTS.md` (the index and the rules every change follows) and one in `packages/render/`, `packages/island/` and `tools/` (the rules of that folder alone); a `CLAUDE.md` beside each imports it, and the root's keeps Claude-only notes |
 | Skill | `skills/<name>/` (`SKILL.md`, `background.md`, reference files) |
 | Binding | `docs/bindings/<name>.md` |
-| Tool manual | The tool's header, printed by `--help`; `docs/reference/tools.md` indexes the tools by question; `tools/kit/parity/README.md` documents its folder |
+| Tool manual | The tool's header, printed by `--help`; `docs/reference/tools.md` indexes the tools by question |
 | Architecture page | `ARCHITECTURE.md`; each rule's full text in `docs/reference/architecture-rules.md`, under the same number |
 | Reference page | `docs/reference/` |
 | Design page | `docs/design/` (art direction and its subject pages, game design, game UI) |
-| How-to guide | `docs/how-to/`: one task's steps in this project that no skill covers; a method used across tasks is a skill |
+| Folder README | A `README.md` in the folder it documents: what the folder holds and one task's steps on it that no skill covers (`tools/kit/`, `tools/kit/parity/`, `packages/render/three/`, `packages/game/sim/content/`, `templates/blank/`); a method used across tasks is a skill |
+| Translation | `<name>.zh-CN.md` beside its English page, for the root `README.md` and the blank project's only; the English page is the source, and a change to it is made in the translation in the same commit (`tools/repo/verify-translations.mjs`) |
 | Module header | The header comment of each file under `packages/` and `app/` |
 | Third-party sources whose licence asks for a notice or credit | `CREDITS.md` |
 | A file's copyright and licence | SPDX tags in its `/*! ... */` notice, `REUSE.toml`, `LICENSES/` |
@@ -28,14 +29,14 @@ homes in this repository:
 - A rule in a rules file is one line. What enforces it is recorded in the file's lists (Checks,
   below); the mistake behind it goes in the commit message that adds it, never in the file.
 - A new page gets a line in the docs index, `docs/README.md`.
-- The code map is printed, not kept: `node tools/repo/code-map.mjs [folder]` lists each file with
-  its header's first line.
+- The code map is generated, not maintained by hand: `node tools/repo/code-map.mjs [folder]` lists
+  each file with its header's first line.
 
 ## Budget
 
 - The root `AGENTS.md`: at most `ROOT_LINES` lines and `ROOT_CHARS` characters, the constants of
-  `tools/repo/verify-doc-shape.mjs`, which `npm run lint:docs` runs. Take a line out first when the
-  file is at its limit.
+  `tools/repo/verify-doc-shape.mjs`, which `npm run lint:docs` runs. When the file is at its
+  limit, take a line out before you add one.
 - A folder's `AGENTS.md` holds the rules of that folder alone; it and the other pages have no hard
   limit. A page over 100 lines opens with its contents (`verify-doc-shape` checks it).
 
@@ -43,12 +44,11 @@ homes in this repository:
 
 - `npm run check`, before every commit (`tools/check.mjs`, its header lists every check). Among
   them, for docs: `tools/repo/verify-headers.mjs` (each module's header opens with one sentence),
-  `tools/repo/verify-settings.mjs` (the URL options page against the layers' settings tables; `--write`
-  rewrites its table of every option),
-  `tools/repo/verify-skill-links.mjs` (the skills' links under `.claude/`, their frontmatter, size,
-  reference files and bindings, and the root's index of them),
-  and the docs lint when a Markdown file is staged. `npm run check -- --full` runs the docs lint
-  whatever is staged; run it before a merge.
+  `tools/repo/verify-settings.mjs` (the URL options page against the layers' settings tables;
+  `--write` rewrites its table of every option), `tools/repo/verify-skill-links.mjs` (the skills'
+  links under `.claude/`, their frontmatter, size, reference files and bindings, and the root's
+  index of them), and the docs lint when a Markdown file is staged. `npm run check -- --full` runs
+  the docs lint whatever is staged; run it before a merge.
 - `npm run lint:docs`, before a commit that changes Markdown: markdownlint-cli2
   (`.markdownlint-cli2.jsonc`: prose wrapped at 100 columns), `tools/repo/verify-doc-paths.mjs`
   (every path into `docs/`, `skills/` or `tools/` in a tracked text file exists; every file the

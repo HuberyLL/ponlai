@@ -33,7 +33,7 @@
 // per frame with the last repeated; the tier's nominal by default) with the dynamic controller out of
 // the loop. `camera( i )` runs before frame i's tick and `onFrame( i )` is awaited after it (a
 // screenshot then sees that frame: nothing renders until it returns). `clock` pauses or runs the
-// scene clock for the clip; left out, it keeps the page's. The loop stays stopped afterwards:
+// scene clock for the clip; left out, it keeps the app's. The loop stays stopped afterwards:
 // `loop.start()` brings the live one back.
 // What would still follow the wall clock or the page's history is pinned too, so a clip is the
 // same however long its frames, its `onFrame` or the wait before it took:
@@ -128,7 +128,7 @@ export interface SceneFrameOptions {
 	diagnostics( now?: boolean ): void;
 }
 
-/** The canvas's size and the render scale: made before the frame, as a page's GUI may resize. */
+/** The canvas's size and the render scale: made before the frame, as an app's GUI may resize. */
 export interface SceneSizing {
 	/** sizes the canvas and the render to the window */
 	resize(): void;

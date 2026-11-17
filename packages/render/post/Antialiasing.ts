@@ -7,12 +7,12 @@
 //
 // Modes:
 // - `msaa`: the scene multisampled 4x, the vegetation's cut-outs and thin blades by alpha to
-//   coverage, upscaled by FSR 1 when the render is below the canvas (high's at 4K output, 1440p;
+//   coverage, upscaled by FSR 1 when the render is below the canvas (the high tier's at 4K output, 1440p;
 //   at 2K output it renders natively: Quality.ts);
 // - `off`: one sample, leaves alpha-tested and grass blades dithered (`msaa=1` before);
 // - `taa`, `taau`: temporal anti-aliasing at the render's size, and temporal upsampling to the
 //   canvas: one sample, jittered, with motion vectors (Jitter.ts, Motion.ts), resolved against a
-//   history (TemporalAA.ts). A tier's knob may ask for them (the parked medium tier runs taau,
+//   history (TemporalAA.ts). A tier's setting may ask for them (the parked medium tier runs taau,
 //   Quality.ts), and `aa=` or the GUI choose them on any tier. Their scene materials build one
 //   shader per MRT, through three's cache keys patched for it (three/ThreePatches.ts, which
 //   throws on a three it is not written for);
@@ -30,12 +30,12 @@
 // no 2x: `msaa=1` and `msaa=2` are read as `off`, `msaa=4` as `msaa`.
 //
 // The mode comes from the URL's `aa`, else its `msaa` alias, else `msaa` on a paused page (the test
-// mode), else the quality tier's `aa` knob (`QualityProfile.aa`, with `tier.aa=` over it), else
+// mode), else the quality tier's `aa` setting (`QualityProfile.aa`, with `tier.aa=` over it), else
 // `msaa`: the URL wins over the test mode and the tier, and
 // `AA_SOURCE` says which of them chose (main.ts reports it as `aaSource`). `gt` is taken from the
-// URL in a debug build only, never from a tier. The tier is the one the page's entry chose
+// URL in a debug build only, never from a tier. The tier is the one the app's entry module chose
 // (PageSettings.ts, Quality.ts `loadTier`), installed before any module loads, so modules that read
-// the mode when they load (vegetation/Coverage.ts, Grass.ts) take the page's. Code that differs by
+// the mode when they load (vegetation/Coverage.ts, Grass.ts) take the app's. Code that differs by
 // mode reads this module's exports (`TEMPORAL`, `SCENE_SAMPLES`, `ALPHA_TO_COVERAGE`), never the
 // tier: `aa=` picks any mode on any tier.
 import { loadTier, qualityProfile, type QualityProfile, type TemporalSettings } from '../Quality.ts';
@@ -43,7 +43,7 @@ import { settings, type SettingsQuery } from '../Settings.ts';
 
 export const AA_MODES = [ 'msaa', 'taa', 'taau', 'fsr3', 'off', 'gt' ] as const;
 export type AAMode = typeof AA_MODES[ number ];
-/** Where the page's mode came from: the URL (`aa` or its `msaa` alias), the tier's knob, or neither. */
+/** Where the app's mode came from: the URL (`aa` or its `msaa` alias), the tier's setting, or neither. */
 export type AASource = 'url' | 'test' | 'tier' | 'default';
 export type SceneSampleCount = 1 | 4;
 
@@ -63,8 +63,8 @@ export function isAAMode( value: unknown ): value is AAMode {
 
 }
 
-/** The mode requested by a page's options, and where it came from: `aa`, else the `msaa` alias,
- * else the tier's `aa` knob, else `msaa`. An unknown value warns and falls through to the next
+/** The mode requested by an app's options, and where it came from: `aa`, else the `msaa` alias,
+ * else the tier's `aa` setting, else `msaa`. An unknown value warns and falls through to the next
  * source; so does `gt` outside a debug build (`debug`: the dev server or `?debug`), and `gt` from a
  * tier (the ground truth is a measuring tool, never a tier's default). */
 export function requestedAAMode( params: SettingsQuery, profile: Pick<QualityProfile, 'aa'> | null, debug = false ): { mode: AAMode; source: AASource } {
@@ -91,9 +91,9 @@ export function requestedAAMode( params: SettingsQuery, profile: Pick<QualityPro
 	const tier = profile?.aa;
 	if ( tier !== undefined ) {
 
-		if ( tier === 'gt' ) console.warn( 'The quality tier\'s aa knob asks for gt: the ground truth is chosen by the URL only (aa=gt, debug builds); running msaa' );
+		if ( tier === 'gt' ) console.warn( 'The quality tier\'s aa setting asks for gt: the ground truth is chosen by the URL only (aa=gt, debug builds); running msaa' );
 		else if ( isAAMode( tier ) ) return { mode: tier, source: 'tier' };
-		else console.warn( `Unknown quality aa knob ${ String( tier ) }: expected one of ${ AA_MODES.join( ', ' ) }` );
+		else console.warn( `Unknown quality aa setting ${ String( tier ) }: expected one of ${ AA_MODES.join( ', ' ) }` );
 
 	}
 	return { mode: 'msaa', source: 'default' };
@@ -121,15 +121,15 @@ export function aaPlan( requested: AAMode ): AAPlan {
 
 }
 
-// The mode the page's tier (Quality.ts `loadTier`) and options ask for.
+// The mode the app's tier (Quality.ts `loadTier`) and options ask for.
 const params = settings;
 const REQUEST = requestedAAMode( params, qualityProfile( loadTier() ), import.meta.env.DEV || params.has( 'debug' ) || params.has( 'profile' ) );
-/** The mode the page asked for (before a refused one falls back). */
+/** The mode the app asked for (before a refused one falls back). */
 export const AA_REQUESTED: AAMode = REQUEST.mode;
 /** Where the requested mode came from (the URL wins over the tier). */
 export const AA_SOURCE: AASource = REQUEST.source;
 export const AA_PLAN: Readonly<AAPlan> = Object.freeze( aaPlan( AA_REQUESTED ) );
-/** The mode the page runs. */
+/** The mode the app runs. */
 export const AA_MODE: AAMode = AA_PLAN.mode;
 export const TEMPORAL: boolean = AA_PLAN.temporal;
 /** Whether FSR 3 resolves the frame (post/fsr3/Fsr3Upscaler.ts): temporal, with no TemporalAA. */

@@ -1,4 +1,4 @@
-// The fog layer's droplets: their phase toward the sun and the knobs every key shares.
+// The fog layer's droplets: their phase toward the sun and the parameters every keyframe shares.
 //
 // The haze's fog layer (VolumetricHaze.ts, whose header describes it, The fog layer) lights its
 // droplets through `dropletPhase`, two Henyey-Greenstein lobes summed over Wrenninge's octaves of
@@ -42,7 +42,7 @@ export const dropletPhase = Fn( ( [ nu, tau, lobes, octaves ]: [ F, F, V3, V3 ] 
 	{ name: 'nu', type: 'float' }, { name: 'tau', type: 'float' }, { name: 'lobes', type: 'vec3' }, { name: 'octaves', type: 'vec3' },
 ] } );
 
-// The fog layer's knobs shared by every key (see the header, The fog layer): the droplets' lobes and
+// The fog layer's parameters shared by every keyframe (see the header, The fog layer): the droplets' lobes and
 // Wrenninge's b and c.
 export const DROPLET = {
 	forward: tune( 'haze.fog.forward', 0.8, { min: 0.6, max: 0.9, onChange: markSkyRetune } ),

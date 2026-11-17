@@ -153,9 +153,9 @@ try {
 		await frames();
 		const b = await page.screenshot( { path: paths[ 1 ] } );
 		const byteStable = a.equals( b );
-		// Paused frames are repeatable, but under GPU contention two MSAA frames have differed by a few
-		// levels in a handful of pixels (the noise S1 A/A pairs show too). A few pixels is GPU noise; a
-		// repeatability bug changes whole regions: accept at most 8 levels per channel in at most
+		// Paused frames are deterministic, but under GPU contention two MSAA frames have differed by a
+		// few levels in a handful of pixels (the noise S1 A/A pairs show too). A few pixels is GPU noise;
+		// a determinism bug changes whole regions: accept at most 8 levels per channel in at most
 		// 0.01 % of the pixels, as engine regression tests do.
 		const noise = byteStable ? { max: 0, count: 0, pixels: 0 } : await page.evaluate( async ( pngs ) => {
 			const data = await Promise.all( pngs.map( async ( png ) => {

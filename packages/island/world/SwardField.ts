@@ -32,7 +32,7 @@ import { ISLAND_TOP, SWELL } from './WorldShapes.ts';
 // map's B (over CROWN_SCALE), for the turf's shade toward the light (TerrainMaterial.ts,
 // MeadowCanopy.ts `meadowGroundLight`); its world height (or BARE where none reaches, below the
 // plateau, so a gap or the sea shades nothing) into the sward's top (`canopyTop`, `canopySteps`),
-// for the shade the taller tussocks cast onto their neighbours (MeadowCanopy.ts `meadowCastLight`):
+// for the shadows the taller tussocks cast onto their neighbours (MeadowCanopy.ts `meadowCastLight`):
 // a half-float map of its own, which only the meadow's still kernel samples (Grass.ts
 // `meadowStill`), baked and swapped as the meadow map is.
 

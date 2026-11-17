@@ -1,14 +1,14 @@
-// The page's settings at its entry: the address parsed, the tier chosen and the look picked.
+// The app's settings at its entry: the URL parsed, the tier chosen and the look picked.
 //
-// The page's settings at its entry: the entry (Boot.ts) loads this module before the page
+// The app's settings at its entry: the entry (Boot.ts) loads this module before the app
 // (main.ts), so it runs before any module that reads a setting as it loads. It parses the address
 // once, reports in one form each option nobody declared and each value outside its declared range
 // (a console warning per option; the option keeps whatever its reader makes of it, as before),
 // chooses the quality tier (QualityDetect.ts) and installs both for every module (Settings.ts). It
 // also picks the look the render pipeline draws with (look/Look.ts): the island's
 // (island/look/IslandLook.ts), or on a debug page with `renderLook=neutral` the render pipeline's
-// own neutral one, which the page (main.ts) hands to the render pipeline's stages (`PAGE_LOOK`).
-// The rest of the page's own state outside the scene lives here too: the reload with changed
+// own neutral one, which the app (main.ts) hands to the render pipeline's stages (`PAGE_LOOK`).
+// The rest of the app's own state outside the scene lives here too: the reload with changed
 // options (a load setting's new value) and the browser's storage for what a page remembers between
 // visits (the dynamic resolution's scale).
 import { installSettings, parseSettings, settingProblems, NEUTRAL_LOOK, type Look } from '../packages/render/setup.ts';
@@ -22,7 +22,7 @@ for ( const problem of settingProblems( query, PAGE_SETTINGS ) ) console.warn( `
 export const QUALITY_CHOICE: QualityChoice = chooseQuality( query );
 installSettings( query, QUALITY_CHOICE.tier );
 const debugPage = import.meta.env.DEV || query.has( 'debug' ) || query.has( 'profile' );
-/** The look this load draws with, which the page (main.ts) hands to the render pipeline's stages. */
+/** The look this load draws with, which the app (main.ts) hands to the render pipeline's stages. */
 export const PAGE_LOOK: Look = debugPage && query.get( 'renderLook' ) === 'neutral' ? NEUTRAL_LOOK : ISLAND_LOOK;
 
 /** Reloads the page with options set (a string; '' names one bare) or removed (null), in order. */

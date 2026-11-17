@@ -1,23 +1,23 @@
 import type { FullKey, HazeLook } from '../../render/setup.ts';
 
-// The island's haze look: the haze's keys by the hour and the weather.
+// The island's haze look: the haze's keyframes by the hour and the weather.
 //
 // The island's haze look (packages/island/look/: the island's numbers for the render pipeline's
 // look tables, look/Look.ts; look/HazeLook.ts `createHazeTables` makes the haze's tables from
 // these). weather/HazeKeys.ts `hazeKeyAt` eases them by the hour and the weather; the haze
 // (weather/VolumetricHaze.ts) takes the result.
 //
-// The haze's keys: what the air does by the hour and the weather, set as a few quantities one sees
-// (how far the light carries, the colour it loses, how bright and how coloured the air shows) at
-// a few heights of the sun, the morning's and the evening's apart, and eased between them. A key
-// is a function of the sun's elevation, whether it is rising, the weather's blend of the four skies
+// The haze's keyframes: what the haze does by the hour and the weather, set as a few quantities one
+// sees (how far the light carries, the colour it loses, how bright and how coloured the haze shows)
+// at a few heights of the sun, the morning's and the evening's apart, and eased between them. A
+// keyframe is a function of the sun's elevation, whether it is rising, the weather's blend of the four skies
 // (Weather.ts `skyMix`), its wind and its rain, never of the path to them: a paused frame and a
 // scene jump hold one value, and a change of hour or weather writes the haze's uniforms only.
 //
-// Each key holds:
+// Each keyframe holds:
 //   - amount: the weather's haze over its preset's: 0.66 by day and 0.61 at the golden hour,
 //     0.6 before dawn and as the sun rises, a surface layer whose green optical depth reaches 1
-//     within about 1.6 km at the sea (where the air aloft is clean, Atmosphere.ts `aerosol`, the
+//     within about 1.6 km at the sea (where the atmosphere aloft is clean, Atmosphere.ts `aerosol`, the
 //     dawn's density lies in it), near 1 in the morning, 0.45 after sunset, a thin air that leaves
 //     the glow over the horizon no dark band, and by night the day's (see the night's Rayleigh).
 //     How far the light carries at a height follows from it and the medium's shape below.
@@ -38,7 +38,7 @@ import type { FullKey, HazeLook } from '../../render/setup.ts';
 //     clear and the far sea and the horizon, whose rays run long through the layer, are hazed. The
 //     day's, the golden hour's, the sunrise's and the night's are tunable, and the other hours take
 //     the day's.
-//     `skyDepth` is a thin haze that fills the air's whole height, uniform in height, which only
+//     `skyDepth` is a thin haze that fills the atmosphere's whole height, uniform in height, which only
 //     the sky dome takes (VolumetricHaze `skyHaze`): green's optical depth per kilometre of a sky
 //     ray's length, 0 in every key until tuned (the keys with a shape of their own are tunable; the
 //     other hours keep 0). Over the island's distances, a few kilometres at most, its
@@ -49,7 +49,7 @@ import type { FullKey, HazeLook } from '../../render/setup.ts';
 //   - sigma: the medium's spectral extinction, each band's weight on the density (VolumetricHaze's
 //     header), the weather's `haze` the blue's. The day's and the golden hour's were set with
 //     the sky's light (look/SkyLook.ts `skyLight`): by day red : green : blue = 0.36 : 0.53 : 1.02, at the
-//     golden hour 0.41 : 0.53 : 0.83, the air losing its blue first, and by night 0.46 : 0.53 : 0.69.
+//     golden hour 0.41 : 0.53 : 0.83, the haze losing its blue first, and by night 0.46 : 0.53 : 0.69.
 //     The hours between take these by the sun's elevation (`twilight`): the mist at sunrise the
 //     golden hour's (it stands within a degree of the golden key's elevations), the morning the
 //     day's (from where the day key starts on the evening side), and the twilight before dawn and
@@ -57,22 +57,22 @@ import type { FullKey, HazeLook } from '../../render/setup.ts';
 //     before dawn (the middle of its key's rows) and at -2.5 after sunset.
 //     The overcast's are still to be set toward grey.
 //   - desaturate: how far each of the haze's two shares of light (VolumetricHaze's header) turns
-//     toward its luminance: all of it by day (the day's air shows its sky's colour through
+//     toward its luminance: all of it by day (the day's haze shows its sky's colour through
 //     the haze's sigma, not its own), half in the morning and by night, 0.75 just after sunset and
-//     none in the deep twilight, 0.64 as the sun rises, and a third at the golden hour, whose air
+//     none in the deep twilight, 0.64 as the sun rises, and a third at the golden hour, whose haze
 //     takes most of the sun's orange. After sunset it sets the colour of the glow over the horizon
 //     toward the sun, whose chroma (Oklab) at -3.4 and -5.3 degrees rises about 0.0025 for each
 //     tenth less: one value over the whole afterglow (0.4) gave 0.128 at -3.4 and 0.105 at -5.3, the
-//     deeper glow the greyer, and the key's other knobs moved both the same
+//     deeper glow the greyer, and the keyframe's other parameters moved both the same
 //     way. So it falls with the sun, from 0.75 at -1 degrees to none at -7 (the deep twilight's key,
-//     `AFTER_SUNSET_DEEP`, the afterglow's air with the glow's colour kept, where the night's key
+//     `AFTER_SUNSET_DEEP`, the afterglow's haze with the glow's colour kept, where the night's key
 //     comes in), which
 //     gives 0.125 at -3.4 and 0.112 at -5.3, the deeper glow keeping more of its colour (from 0.75
 //     to 0.85 at -1 degrees the two read the same). Under
-//     the sunrise's cold light it decides where the air's own warmth shows: the haze's own rows
+//     the sunrise's cold light it decides where the haze's own warmth shows: the haze's own rows
 //     are red toward a low sun, so what it leaves of them lands in the band over the horizon, the
 //     high air staying blue; a fast swing, the band from blue to orange within a tenth or two of it.
-//     At 0.64 the air's warmth it leaves offsets the blue of the sky light's cool dawn key (Sky.ts
+//     At 0.64 the haze's warmth it leaves offsets the blue of the sky light's cool dawn key (Sky.ts
 //     SKY_LIGHT `dawn`) in the band, which stays a pale blue grey; 0.72 left the band too blue.
 //   - mist: a morning mist in the sea fog's units (VolumetricHaze `fogExtinction`), which thickens
 //     the haze's ground layer, soft and low over the whole island, not a sheet on the sea. The
@@ -93,9 +93,9 @@ import type { FullKey, HazeLook } from '../../render/setup.ts';
 //     too, the camera then near or inside the layer. An edge of 2 m shows as a hard line where the
 //     layer meets the sky at the horizon; one of 5 m or more does not. The clouded share turns it
 //     back into the key's own thin haze (`clouded` below), its droplets' share of the ground
-//     layer's light (`droplet`) with it: cloudy keeps its shape, and the air under a deck scatters
-//     as the air does, not as fog (the droplets' share left at the key's under cloud lifted the
-//     low air over overcast's horizon, away from the sun, about a stop and a third over the air's
+//     layer's light (`droplet`) with it: cloudy keeps its shape, and the haze under a deck scatters
+//     as haze does, not as fog (the droplets' share left at the keyframe's under cloud lifted the
+//     low haze over overcast's horizon, away from the sun, about a stop and a third over the haze's
 //     own, measured with the sun's Rayleigh beam already gone). The parked rain and storm count as
 //     clouded and lose their droplets with it; the parked fog weather counts as clouded too but
 //     keeps its droplets by its share (`hazeKeyAt`'s `fogWeather`: exact at rest and on a front
@@ -115,9 +115,9 @@ import type { FullKey, HazeLook } from '../../render/setup.ts';
 //     FogNoise.ts) moves through it. Its fields blend with the open sky's layer by the two
 //     shares. Tunable as `haze.fog.<field>@sea`.
 //   - sunRayleigh: the sun's share in the haze's Rayleigh light, beside the open sky's: 0 by day
-//     under a clear or fair sky, where the air's blue is sky light only and the sun reaches the
+//     under a clear or fair sky, where the haze's blue is sky light only and the sun reaches the
 //     haze through its aerosol share; 1 at a low sun, by night and under a cloudy sky's broken
-//     deck. Under overcast's closed deck no beam reaches the air, which takes only the light the
+//     deck. Under overcast's closed deck no beam reaches the haze, which takes only the light the
 //     deck lets down: the key's value, the hour's and the sky's together, goes by overcast's share
 //     of the deck (`overcastDeck` below), so at every hour of the day, morning and a low sun
 //     included, and fully once the deck is whole (with the beam the low air 0.5 - 4 degrees up
@@ -147,7 +147,7 @@ import type { FullKey, HazeLook } from '../../render/setup.ts';
 //     degrees (the band at -6.5 0.02 - 0.05 L over that sky; the Mie, 4.1, does not show there, the
 //     sun being under the horizon). The dawn's weights are set by least squares, with the dawn key's
 //     colour (Sky.ts), against the rows of the dawn's horizon views from -8 to 3 degrees (the band, the
-//     sky, the sea, the shade on the land) once the multiple scattering was whole (Atmosphere.ts),
+//     sky, the sea, the shadowed land) once the multiple scattering was whole (Atmosphere.ts),
 //     which lowered the aerosol's share of the bare sky over the band (0.15 to 0.12 at 3 degrees up,
 //     sun 2.4) and with it the band's forward peak (20 against 40 degrees from the sun, 1.98 to
 //     1.84 times): the sunrise's were 0.5 and 0.41 and the deep twilight's Rayleigh 1.4 before it,
@@ -158,7 +158,7 @@ import type { FullKey, HazeLook } from '../../render/setup.ts';
 //     glow at -3.3 and -5.3 degrees. It was 0.13 before the multiple scattering was whole, which left
 //     the haze about a quarter of the sky 4 degrees up toward the glow (0.23 - 0.26 at sun -3.3, its
 //     share the sky's with the haze less the sky without it, over the sky with it), the glow's
-//     orange showing through a thin air: 4.7 laid 0.9 of it, a pale veil over the glow. Its rows
+//     orange showing through a thin haze: 4.7 laid 0.9 of it, a pale veil over the glow. Its rows
 //     hold it from -1 down to -7 degrees and give way to the night's from -7 to -11, the window in
 //     which the sky's night comes in, and as it does, by stops (DayCycle.ts `skyNight`, `duskIn`:
 //     from `duskDepth.haze`, 6.75 stops under the night's key at -7, where the light it adds to the
@@ -176,38 +176,38 @@ import type { FullKey, HazeLook } from '../../render/setup.ts';
 //     clouded sky takes rows of its own (`settingClouded`, from -1 to -4 degrees, giving way to the
 //     night's by -12) by its clouded share. Their Rayleigh is the golden hour's, which the night's
 //     equals within a hundredth, so it holds from the golden hour into the night: a Rayleigh of 4.7
-//     there, eight times the golden hour's, lifted the air's Rayleigh light under cloud from -1 to
+//     there, eight times the golden hour's, lifted the haze's Rayleigh light under cloud from -1 to
 //     -4 degrees and let it fall again toward the night's, a rise as the sun went down. Its Mie, 4.7, does not show
 //     with the sun under the horizon, and the night's Mie (2.0) is the gain and weight it was set
 //     with folded into one weight, not yet tuned. The night's amount and Rayleigh are the day's
-//     (0.66 and 0.575, the weather's own amount on top as by day): the night's air is the day's
-//     medium, lit by the moon above the air as the day's is by the sun (VolumetricHaze's moon
+//     (0.66 and 0.575, the weather's own amount on top as by day): the night's haze is the day's
+//     medium, lit by the moon above the atmosphere as the day's is by the sun (VolumetricHaze's moon
 //     beam), with no brightness of its own. A night key of its own (two and a half times the haze,
 //     a Rayleigh of 8, a visible layer) gave the haze about three quarters of a clear night's sky
 //     light: the land's ambient over the moon's key rose to about three and a half times the day's
 //     over the sun's, the grass in the moon a stop and four fifths under the day's against the sky
-//     band and the rock's shade two stops over its own against the lit rock.
-//   - groundLight: the share of the air's in-scattered light laid over the land it fogs
+//     band and the rock's shadowed side two stops over its own against the lit rock.
+//   - groundLight: the share of the haze's in-scattered light laid over the land it fogs
 //     (VolumetricHaze.ts `apply`): 1 by day and in every twilight key, 0 in the night's, leaving at
 //     dawn over the evening's night rows mirrored (HazeKeys.ts `keyAlong`). The night
-//     air lays none of its own light on the land: the dark land's lift and its blue come from the
-//     rods' shift alone (post/Purkinje.ts), which lifts the near and the far land alike, and the air's
+//     haze lays none of its own light on the land: the dark land's lift and its blue come from the
+//     rods' shift alone (post/Purkinje.ts), which lifts the near and the far land alike, and the haze's
 //     light stays on the sea and the sky. Its transmittance is kept, so the far land still dims
-//     through the air. Tunable as `haze.key.groundLight@<key>`; it changes nothing but the
+//     through the haze. Tunable as `haze.key.groundLight@<key>`; it changes nothing but the
 //     composite's land.
-// The weather adds its own: under the cloudy and the overcast sky the air keeps about half the
+// The weather adds its own: under the cloudy and the overcast sky the haze keeps about half the
 // clear day's colour (0.53 times) and shows twice as bright (the key's `gain`, which the keys
 // themselves leave at 1).
 // The overcast's is taken as the cloudy's, without a direct check. Each kept sky scales the hour's
 // sigma per band, the aerosol layer's share and its scale height, and the ground layer's top and
 // width (1 under the clear and the fair sky; the cloudy's and the overcast's are
 // tunable: `sky.weather.<sigmaRed|sigmaBlue|aerosolScale|aerosolHeight|topScale|widthScale>@<cloudy|
-// overcast>`): under cloud the air turns redder in its extinction (red 1.42, blue 0.56 times).
-// Under a deck the air is dense near the sea and clear aloft, and its aerosol ends at the deck's
+// overcast>`): under cloud the haze turns redder in its extinction (red 1.42, blue 0.56 times).
+// Under a deck the haze is dense near the sea and clear aloft, and its aerosol ends at the deck's
 // base (`aerosolTop`, look/SkyLook.ts `cloudBase`, blended by the clouded skies' shares as its inverse; clear
-// and fair have none): the air between the eye and the base is what veils the deck's structure, and
+// and fair have none): the haze between the eye and the base is what veils the deck's structure, and
 // the aerosol that went on over the base laid a second veil over the deck's gaps. Each clouded sky
-// keeps an air of its own, read as the visibility under such a deck (green, 3.912 over the
+// keeps a haze of its own, read as the visibility under such a deck (green, 3.912 over the
 // extinction) and the slant transmittance from 100 m up to the base: overcast sees about 1.25 km
 // at the surface, 2 km at the layer's top and 38 km at 100 m, 0.79 / 0.89 / 0.92 to the base at
 // 10 / 20 / 30 degrees (its ground layer two thirds of the day's height, 9.2 m, and 1.2 times its
@@ -221,13 +221,13 @@ import type { FullKey, HazeLook } from '../../render/setup.ts';
 // state copies its preset only as it is established).
 // Under a clouded sky the key also carries the deck's share (`deck`, Weather.ts `deckLight`: a
 // cloudy deck's from a sun of 3 degrees, whole by 6, overcast's at every sun until the twilight),
-// under which the air is lit level by the deck, and overcast's part of it (`overcastDeck`, Weather.ts
+// under which the haze is lit level by the deck, and overcast's part of it (`overcastDeck`, Weather.ts
 // `overcastDeckLight`), whose sky is darker away from the sun (VolumetricHaze's header) and whose
-// closed deck takes the sun's beam out of the air's Rayleigh light (`sunRayleigh` above; the
+// closed deck takes the sun's beam out of the haze's Rayleigh light (`sunRayleigh` above; the
 // parked fog's share excepted, the parked rain and storm following). By night,
 // once the moon's key has come in (DayCycle.ts `moonKeyShare`), the share is the whole clouded
 // one: the deck's column then passes the island's moonlight down to its base (Clouds.ts
-// `columnKey`), as by day the sun's, so the air under it takes the deck's light by night as by day,
+// `columnKey`), as by day the sun's, so the haze under it takes the deck's light by night as by day,
 // not the open moonlit sky's.
 
 // the medium's shape every key starts from
@@ -251,7 +251,7 @@ const twilight = ( elevation: number ): Sigma => {
 
 };
 const BEFORE_DAWN = { ...key( 0.6, twilight( - 3.5 ), 0.33, 0, 1 ), rayleighWeight: 1.9, mieWeight: 4.1 };
-// the deep twilight before dawn: the same air with less of the haze's light (see the header)
+// the deep twilight before dawn: the same haze with less of the haze's light (see the header)
 const EARLY_DAWN = { ...BEFORE_DAWN, rayleighWeight: 0.965, mieWeight: 4.1 };
 const MIST = { ...key( 0.6, GOLDEN_SIGMA, 0.64, 0, 1 ), rayleighWeight: 0.72, mieWeight: 0.83, top: 14, width: 11.242, aerosolShare: 0.127, aerosolHeight: 1010,
 	fogLayer: 1, neutral: 1, scatter: 0.2, fogTop: 12, fogWidth: 2, visibility: 0.22 };
@@ -263,9 +263,9 @@ const NIGHT = { ...key( DAY.amount, NIGHT_SIGMA, 0.55, 0, 1 ), rayleighWeight: D
 const GOLDEN = { ...key( 0.606, GOLDEN_SIGMA, 0.331, 0, 1 ), rayleighWeight: 0.58, mieWeight: 3.8, top: 14, width: 11.242, aerosolShare: 0.127, aerosolHeight: 1010,
 	fogLayer: 1, neutral: 1, scatter: 0.2, fogTop: 12, fogWidth: 2, visibility: 0.29 };
 const AFTER_SUNSET = { ...key( 0.45, twilight( - 2.5 ), 0.75, 0, 1 ), rayleighWeight: 0.32, mieWeight: 4.7 };
-// the deep twilight after sunset: the afterglow's air, its light keeping the glow's colour (see the header)
+// the deep twilight after sunset: the afterglow's haze, its light keeping the glow's colour (see the header)
 const AFTER_SUNSET_DEEP = { ...AFTER_SUNSET, desaturate: 0 };
-// the afterglow's air under cloud (see the header), its light as the clear afterglow's was set
+// the afterglow's haze under cloud (see the header), its light as the clear afterglow's was set
 const AFTER_SUNSET_CLOUDED = { ...AFTER_SUNSET, desaturate: 0.4, rayleighWeight: GOLDEN.rayleighWeight };
 
 // per sky of the blend (Weather.ts MIX_SKIES: clear, fair, cloudy, overcast): the share of the light's

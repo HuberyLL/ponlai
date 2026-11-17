@@ -266,8 +266,8 @@ export class GroundBounce {
 			// a face turned away from a low key looks at the ground its object shades (a long shadow)
 			const L = shared.sunDir;
 			const Lh = L.xz.div( max( length( L.xz ), 1e-3 ) );
-			const selfShade = float( 1 ).sub( clamp( dot( N.xz, Lh ).negate(), 0, 1 ).mul( clamp( L.y.oneMinus(), 0, 1 ) ).mul( 0.6 ) );
-			E.assign( s.rgb.mul( shared.landKey ).mul( this.inputs.cloud( P ) ).mul( view.mul( fade ).mul( selfShade ).mul( this.strength ).mul( SURROUND ) ) );
+			const selfShadow = float( 1 ).sub( clamp( dot( N.xz, Lh ).negate(), 0, 1 ).mul( clamp( L.y.oneMinus(), 0, 1 ) ).mul( 0.6 ) );
+			E.assign( s.rgb.mul( shared.landKey ).mul( this.inputs.cloud( P ) ).mul( view.mul( fade ).mul( selfShadow ).mul( this.strength ).mul( SURROUND ) ) );
 
 		} );
 		return E;

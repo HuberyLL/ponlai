@@ -8,19 +8,21 @@
 // Usage:
 //   node tools/check.mjs [--full]
 //   npm run check                 the commit-time checks
-//   npm run check -- --full       also the production build and the world's chunk checks
+//   npm run check -- --full       also the production builds and the world's chunk checks
 //
 // Options:
-//   --full    adds `npm run build`, tools/island/verify-world-chunks.mjs and
-//             tools/island/verify-chunk-derived.mjs, and runs the docs' lint whatever is staged
+//   --full    adds `npm run build`, the blank project's build (`npm run build:template`:
+//             templates/blank/, the render pipeline in a project of its own),
+//             tools/island/verify-world-chunks.mjs and tools/island/verify-chunk-derived.mjs, and
+//             runs the docs' lint whatever is staged
 //
 // The commit-time list, in order (cheap and wide first, so a broken type fails before the rest):
 // the type check (`npm run typecheck`), the code lint (`npm run lint`, tools/repo/lint/plugin.mjs),
-// verify-layers, verify-exits, verify-settings, verify-file-size, verify-headers (the modules'
+// verify-layers, verify-entry-points, verify-settings, verify-file-size, verify-headers (the modules'
 // header first lines), verify-tool-manuals (the tools' manuals and `--help`),
 // verify-three-internals and verify-kit (tools/repo/), tools/verify-no-binaries.mjs (every file in
-// the index), verify-licences (REUSE and the notices' SPDX tags; it needs uv) and
-// verify-skill-links (tools/repo/), the game's verify-game, verify-i18n and verify-ink
+// the index), verify-licences (REUSE and the notices' SPDX tags; it needs uv), verify-skill-links
+// and verify-translations (tools/repo/), the game's verify-game, verify-i18n and verify-ink
 // (tools/game/), the render pipeline's verify-framegraph, verify-day-cycle, verify-weather-state,
 // verify-wind, verify-local-lights, verify-extensions, verify-look-params and verify-slope-variance
 // (tools/render/), then tools/repo/verify-lint.mjs, and the docs' lint (`npm run lint:docs`) when a
@@ -33,7 +35,7 @@
 // GPU lock and browser: neither. Nothing here renders, so it runs while another session holds the
 // GPU. Each check starts under the application scheduling policy (tools/kit/qos.mjs `appPolicy`).
 //
-// Cost: about a quarter of a minute; `--full` takes minutes (the build and the world's chunks).
+// Cost: about a quarter of a minute; `--full` takes minutes (the builds and the world's chunks).
 //
 // Exit codes: 0 every check passed; 1 a check failed or an unknown option.
 //
@@ -75,7 +77,7 @@ const checks = [
 	[ 'typecheck', npm( 'typecheck' ) ],
 	[ 'lint', npm( 'lint' ) ],
 	[ 'verify-layers', node( 'repo/verify-layers.mjs' ) ],
-	[ 'verify-exits', node( 'repo/verify-exits.mjs' ) ],
+	[ 'verify-entry-points', node( 'repo/verify-entry-points.mjs' ) ],
 	[ 'verify-settings', node( 'repo/verify-settings.mjs' ) ],
 	[ 'verify-file-size', node( 'repo/verify-file-size.mjs' ) ],
 	[ 'verify-headers', node( 'repo/verify-headers.mjs' ) ],
@@ -85,6 +87,7 @@ const checks = [
 	[ 'verify-no-binaries', node( 'verify-no-binaries.mjs' ) ],
 	[ 'verify-licences', node( 'repo/verify-licences.mjs' ) ],
 	[ 'verify-skill-links', node( 'repo/verify-skill-links.mjs' ) ],
+	[ 'verify-translations', node( 'repo/verify-translations.mjs' ) ],
 	[ 'verify-game', node( 'game/verify-game.mjs' ) ],
 	[ 'verify-i18n', node( 'game/verify-i18n.mjs' ) ],
 	[ 'verify-ink', node( 'game/verify-ink.mjs' ) ],
@@ -99,7 +102,7 @@ const checks = [
 	[ 'verify-lint', node( 'repo/verify-lint.mjs' ) ],
 ];
 if ( full || markdownStaged() ) checks.push( [ 'lint:docs', npm( 'lint:docs' ) ] );
-if ( full ) checks.push( [ 'build', npm( 'build' ) ], [ 'verify-world-chunks', node( 'island/verify-world-chunks.mjs' ) ], [ 'verify-chunk-derived', node( 'island/verify-chunk-derived.mjs' ) ] );
+if ( full ) checks.push( [ 'build', npm( 'build' ) ], [ 'build:template', npm( 'build:template' ) ], [ 'verify-world-chunks', node( 'island/verify-world-chunks.mjs' ) ], [ 'verify-chunk-derived', node( 'island/verify-chunk-derived.mjs' ) ] );
 
 const results = [];
 const start = performance.now();

@@ -1,343 +1,160 @@
+<!-- markdownlint-disable MD033 MD041 -->
+<div align="center">
+
+<!-- HEADER IMAGE: the header image's GitHub attachment link goes here. -->
+
 # Ponlai
 
-Ponlai is a physically based render pipeline for the browser, built on three.js WebGPU, for
-cinematic game visuals. It draws an FFT ocean with shore waves, foam and refraction; a physical sky
-with volumetric clouds, weather and a night sky; soft sun shadows, ambient occlusion and ambient
-light probes; vegetation that moves in the wind; and a post chain with physical bloom, tone mapping
-and FSR upscaling. With it come agent skills for making the look: building a stylised-realism
-picture on physically plausible materials and light, and fitting the light, air and image values to
-your own reference images; and the tools and skills that verify, measure and diagnose its frames.
+**A physically based render pipeline for cinematic game visuals in the browser.**
 
-The repository shows it on a small island in an open sea, lit as the sun and the sky light it, with
-deep clear water, chunky stone and a meadow that moves in the wind.
-The look is inspired by the eastern aesthetic of Ghost of Tsushima.
+**English** | [简体中文](README.zh-CN.md)
 
-<!-- SCREENSHOT: replace the next line with the image's GitHub attachment link. -->
-*Screenshot to come.*
+[![Check](https://github.com/HuberyLL/ponlai/actions/workflows/check.yml/badge.svg)](https://github.com/HuberyLL/ponlai/actions/workflows/check.yml)
+[![MIT License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![three.js r186](https://img.shields.io/badge/three.js-r186-black?logo=threedotjs)](https://threejs.org/)
+[![WebGPU](https://img.shields.io/badge/WebGPU-required-005a9c)](https://www.w3.org/TR/webgpu/)
+[![Node.js 26](https://img.shields.io/badge/Node.js-26-5fa04e?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 
-The render pipeline (`packages/render/`) is built without the island, so you can copy it into a
-project of your own, together with the capture and measuring tools (`tools/kit/`) and the agent
-skills (`skills/`).
+</div>
+<!-- markdownlint-enable MD033 -->
+
+Ponlai is a physically based render pipeline for the web, built on three.js and WebGPU. This
+repository uses it to render a small island in the open sea: deep, clear water, rugged rocks and a
+meadow swaying in the wind, all lit by a physically based sun and sky.
+Its look draws on an eastern aesthetic, inspired by Ghost of Tsushima.
+
+## Features
+
+### Rendering
+
+- **Ocean**: FFT waves, shoreline waves, foam, refraction, screen-space reflections
+- **Sky**: physically based atmosphere, volumetric clouds and cloud shadows, day-night cycle, a
+  night sky with a real star catalogue and the moon
+- **Lighting**: soft sun shadows, ambient light probes, ground bounce light, clustered local
+  lights, GTAO, god rays
+- **Fog**: volumetric distance and height fog
+- **Vegetation**: instanced plants with LOD, animated by the wind
+- **Post-processing**: auto exposure with the Purkinje shift, local tone mapping, LUT colour
+  grading, physically based bloom, TAA or MSAA, FSR upscaling, dynamic resolution
+
+### Built for AI agents to iterate on their own
+
+- **Reproducible frames**: a paused page renders the same frame on every load, within a measured
+  tolerance, so an agent can prove a change did what it meant, and nothing else, by comparing
+  screenshots.
+- **Tools**: the agent captures and compares screenshots, measures frame time and breaks down GPU
+  time by render pass itself, without a person looking at the screen.
+- **Skills**: written workflows for the agent, from building a look and matching it to reference
+  images to verifying, profiling and debugging a change.
+- **Frame graph**: every render pass declares the render targets it reads and writes, so the agent
+  can add or change a pass without breaking the others.
 
 ## Why Ponlai
 
-Ponlai's aim is that anyone working with an AI coding agent can make game visuals of the quality of
-AAA games and film. The render pipeline gives the agent a physically based ground to build on, the
-skills give it the methods a lighting artist and a graphics engineer work by, and the tools let it
-see, compare and measure what it made, so it can check its own work.
+Ponlai aims to let anyone working with an AI coding agent create game visuals on par with AAA games
+and film. The render pipeline gives the agent a physically based foundation, the skills teach it the
+craft of making game visuals, from art to engineering, and the tools let it see, compare and measure
+its results, so it can check its own work.
 
 ## Status
 
-The high quality tier at 4K output (1920x1080 CSS pixels at a device pixel ratio of 2), in the clear
-and fair weathers, is the one kept up to date. The other quality tiers (`medium`, `low`) and
-weathers (`cloudy`, `overcast`, `rain`, `storm`, `fog`) are parked: they are still in the code, but
-their look and cost are not maintained. `?game` opens an early game prototype on the island.
+Ponlai is tuned and tested on the high quality preset at 4K (1920x1080 CSS pixels at a device pixel
+ratio of 2), in clear and fair weather. The other presets (`medium`, `low`) and weathers (`cloudy`,
+`overcast`, `rain`, `storm`, `fog`) still load, but they have not been tuned recently and may look
+worse or run slower. `?game` opens an early game prototype on the island.
 
-## Requirements
+## Quick start
 
-- A browser with WebGPU, such as a current Chrome or Edge. Without WebGPU, the page shows a message.
-- Node.js 26 and npm.
-- For the tools: [uv](https://docs.astral.sh/uv/) for the Python tools, and Playwright's Chromium
-  for captures (`npx playwright install chromium`).
-
-## Run this repository
+You need Node.js 26 and a browser with WebGPU support, such as a recent Chrome or Edge.
 
 ```bash
+git clone https://github.com/HuberyLL/ponlai.git
+cd ponlai
 npm ci
 npm run dev
 ```
 
-The dev server runs at <http://127.0.0.1:5190/>. On its first start it downloads the assets (the
-textures, the sky's catalogues, the characters) from the GitHub release that `assets.lock.json`
-names, into the git-ignored `public/` folder.
+Then open <http://127.0.0.1:5190/>. The first time the dev server starts, it downloads the assets
+(textures, sky data, characters) into `public/`, which git ignores.
 
-Some pages to try:
+Pages to try:
 
-- <http://127.0.0.1:5190/?weather=fair&preset=sunset>: the island at sunset on a fair day.
-- <http://127.0.0.1:5190/?paused&t=12>: the scene paused at 12 seconds, the way the tools shoot it.
-- <http://127.0.0.1:5190/?game>: the game prototype.
-- <http://127.0.0.1:5190/scenes.html?scene=ball>: one of the render pipeline's test scenes, without
-  the island (`ball`, `empty`, `sea` or `plants`).
+| Address | What you see |
+| --- | --- |
+| <http://127.0.0.1:5190/?weather=fair&preset=sunset> | The island at sunset in fair weather |
+| <http://127.0.0.1:5190/?paused&t=12> | The scene paused at 12 seconds, as the tools capture it |
+| <http://127.0.0.1:5190/?game> | The game prototype |
+| <http://127.0.0.1:5190/scenes.html?scene=ball> | A test scene without the island (`ball`, `empty`, `sea` or `plants`) |
 
-Every option of the address is listed in [URL options](docs/reference/url-options.md).
+See [URL options](docs/reference/url-options.md) for every option.
 
-## Use the render pipeline in your own project
+## Use Ponlai in your own project
 
-The render pipeline is TypeScript that a bundler compiles with your code. It needs:
+To start a new project, copy [the blank project](templates/blank/README.md): a minimal scene with
+the sky, sea, lighting and post-processing around a single rock for you to replace, with the tools
+set up and the assets included. From your clone of this repository:
 
-- three.js 0.186.1, at exactly this version: the render pipeline reaches into three's internals in
-  `packages/render/three/`.
-- Vite 8. The render pipeline reads `import.meta.env` and starts workers with
-  `new Worker( new URL( ..., import.meta.url ) )`. Set `worker: { format: 'es' }` in your Vite
-  configuration, `vite.config.ts`:
-
-  ```ts
-  import { defineConfig } from 'vite';
-
-  export default defineConfig( { worker: { format: 'es' } } );
-  ```
-
-- An ES module project: `"type": "module"` in your `package.json`, as a Vite template sets it.
-- To type-check with TypeScript 5, a `tsconfig.json` with `allowImportingTsExtensions` (the
-  render pipeline's imports name `.ts` files) and `"types": [ "vite/client" ]`. Use this one, in
-  place of any a template made (a template's stricter options reject the render pipeline's code):
-
-  ```json
-  {
-    "compilerOptions": {
-      "target": "ES2022",
-      "module": "ESNext",
-      "moduleResolution": "bundler",
-      "lib": [ "ES2022", "DOM", "DOM.Iterable" ],
-      "types": [ "vite/client" ],
-      "strict": true,
-      "isolatedModules": true,
-      "allowImportingTsExtensions": true,
-      "skipLibCheck": true,
-      "noEmit": true
-    },
-    "include": [ "src", "vite.config.ts" ]
-  }
-  ```
-
-### Copy the render pipeline and its assets
-
-1. Copy `packages/render/` into your source folder, for example as `src/render/`.
-2. Install the packages:
-
-   ```bash
-   npm install -E three@0.186.1
-   npm install -D vite@^8 typescript@^5.9 @types/three@0.186.0
-   ```
-
-3. Copy the render pipeline's assets into your `public/` folder, at the same paths. After `npm run
-   dev` has run once in this repository, they are in its `public/` folder:
-
-   | File | What it is |
-   | --- | --- |
-   | `clouds/baseShape64.bin` | The clouds' shape noise |
-   | `sky/stars.bin` | The star catalogue |
-   | `sky/milkyway.png` | The Milky Way |
-   | `sky/moon/moon_color.jpg`, `sky/moon/moon_height.png` | The moon's colour and heights |
-
-   Their sources and licences are in [Credits](CREDITS.md), Assets. The render pipeline loads them
-   from your site's base address; to load them from elsewhere, pass `assetBase` to `startScene`.
-
-### A minimal scene
-
-A page installs its settings before any of the render pipeline loads, since the render pipeline's
-modules read them as they load. So the page's entry installs them, then loads the scene with a
-dynamic import.
-
-`index.html`:
-
-```html
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>Rock by the sea</title>
-  <link rel="icon" href="data:," />
-  <style>
-    html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
-    #app { position: fixed; inset: 0; }
-    #loading { position: fixed; inset: 0; display: grid; place-items: center; color: #ccc; background: #000; }
-    #loading.done { opacity: 0; pointer-events: none; }
-  </style>
-</head>
-<body>
-  <div id="app"></div>
-  <div id="loading">Loading…</div>
-  <script type="module" src="/src/main.ts"></script>
-</body>
-</html>
+```bash
+node tools/repo/assets.mjs pull
+cp -RL templates/blank ~/my-project
+cd ~/my-project
+npm install
+npm run dev
 ```
 
-`src/main.ts`, the entry:
+`cp -RL` follows the template's symbolic links, so the copy includes the render pipeline, the
+tools and the assets, and runs on its own. Its README explains each file, how to choose a look and
+how to set up the tools.
 
-```ts
-import { installSettings, parseSettings, settingProblems, RENDER_SETTINGS } from './render/setup.ts';
+To add the tools to an existing project, see [the tools' README](tools/kit/README.md). The agent
+skills work in any project ([see below](#agent-skills)).
 
-const query = parseSettings( location.search );
-for ( const problem of settingProblems( query, RENDER_SETTINGS ) ) console.warn( `[settings] ${ problem }` );
-installSettings( query );
+To contribute to Ponlai itself, [Contributing](.github/CONTRIBUTING.md) lists the extra programs
+the checks and tools need.
 
-const { startRock } = await import( './scene.ts' );
-await startRock();
-```
+### Agent skills
 
-`src/scene.ts`, a rock in the open sea:
+Each skill is a general workflow that works in any project; your project's specifics go in a
+separate binding file next to it (this repository's are in `docs/bindings/`). Two of them are about
+the look:
 
-```ts
-import * as THREE from 'three/webgpu';
-import { startScene, neutralFields, neutralBounceGround, neutralSeaLattice, OPEN_SEA_SHORE } from './render/index.ts';
-import { browserHost } from './render/browser.ts';
-import { NEUTRAL_LOOK } from './render/setup.ts';
+- [Building cinematic stylised realism](skills/building-cinematic-stylised-realism/SKILL.md): get a
+  stylised look without breaking physically based rendering. Materials stay realistic; the styling
+  is done through the content, a few global lighting settings per weather and time of day, and
+  post-processing.
+- [Fitting a look to reference images](skills/fitting-a-look-to-reference-images/SKILL.md): tune
+  exposure, lighting, fog and colour grading until your renders match your own reference images.
 
-export async function startRock() {
+The others cover verifying changes, measuring performance, debugging visual artifacts and frames
+that differ between runs, and writing shaders, tools and docs (see Skills in [the docs
+index](docs/README.md)).
 
-  const host = browserHost( { canvasHost: document.getElementById( 'app' )!, loading: document.getElementById( 'loading' ) } );
-  const rock = new THREE.Mesh( new THREE.DodecahedronGeometry( 2 ), new THREE.MeshStandardNodeMaterial( { color: 0x6b665e, roughness: 0.9 } ) );
-  const world = new THREE.Group();
-  world.add( rock );
-  let fields!: ReturnType<typeof neutralFields>;
-
-  return startScene( host, { look: NEUTRAL_LOOK, defaults: { hour: 15, dayLength: 2880 } }, {
-    afterSky( { render } ) {
-
-      render.camera.position.set( 8, 3, 10 );
-      render.camera.lookAt( 0, 0.5, 0 );
-
-    },
-    passes: ( { shared } ) => ( { rainCeiling: shared.waterLevel.value + 8, extraPasses: [] } ),
-    ground( { shared } ) {
-
-      const floor = shared.waterLevel.value - 3;
-      fields = neutralFields( { half: 64, shore: OPEN_SEA_SHORE, floor, xform: shared.shoreXform.value } );
-      return { fields: fields.fields, shoreData: fields.shoreData, bounceGround: neutralBounceGround( { ground: floor, albedo: [ 0.3, 0.3, 0.3 ] } ) };
-
-    },
-    afterBounce( { render, shared } ) {
-
-      rock.position.y = shared.waterLevel.value - 1;
-      render.scene.add( world );
-      world.updateMatrixWorld( true );
-
-    },
-    ambient: ( { shared } ) => ( { ambientData: neutralSeaLattice( { sea: shared.waterLevel.value } ), world: { group: world } } ),
-    afterAmbient( { render } ) {
-
-      render.sunShadow.setCasters( new THREE.Box3().setFromObject( rock ) );
-
-    },
-    water: () => ( {
-      fields: fields.fields,
-      landBox: { x0: - 2, z0: - 2, x1: 2, z1: 2 },
-      seaShape: { openSea: { from: 1e5, to: 2e5 }, reflectorTop: 3 },
-      heldOpaque: [],
-    } ),
-    afterWater( { sizing } ) {
-
-      sizing.resize();
-
-    },
-  } );
-
-}
-```
-
-`startScene( host, options, content )` runs the render pipeline's stages in their fixed order and
-calls your content in the slots between them: `passes`, `ground`, `ambient` and `water` give the
-stages their inputs, and the optional `after...` slots add your objects. The neutral inputs
-(`neutralFields`, `neutralBounceGround`, `neutralSeaLattice`, `neutralLattice`) describe a level
-floor or level ground for a scene without a world of its own. The render pipeline's camera
-(`render.camera`) has a vertical field of view of 27 degrees; place it in `afterSky`. The slots and
-options are documented in `packages/render/assemble/StartScene.ts`. The test scenes in
-`app/scenes/` are fuller examples.
-
-Run `npx vite`, then open the page. The render pipeline's own URL options work on it, for example
-`?paused&t=12` or `?weather=fair&hour=7`.
-
-### Known limits
-
-- One page holds one render pipeline at a time. To show another scene, call `dispose()` on the
-  running scene first; the next `startScene` then draws as a fresh load does.
-- Only what [Status](#status) names is kept up to date.
-- The render pipeline is not an npm package: you copy it and update it by copying again.
-
-## Use the tools and skills
-
-The kit (`tools/kit/`) captures paused frames of a page, compares them byte for byte, reads values
-from the page and measures frame time. A page assembled by `startScene` gives the kit what it reads.
-
-1. Copy `tools/kit/` to `tools/kit/` in your project, and this repository's `tools/project.mjs` to
-   `tools/project.mjs`. The kit reads nothing else of the project. It writes its logs and captures
-   under `artifacts/`: add that folder to your `.gitignore`.
-2. In your `tools/project.mjs`, set `name` to your project's name, and set `tables`,
-   `sceneOptions`, `pipelines` and `serve.prepare` to `null`: they point to this repository's
-   files. Set `reference.buildInputs` to the files your build reads. Keep `machine.gpuLock`
-   unchanged if another project renders on the same machine, so that the two share one lock. The
-   steps below read nothing else there: `url` is the page a tool opens when given no `--url`, and
-   `reference.toolFiles` and `reference.watch` serve the stored references of the capture sets and
-   clips, so point them at your own files when you use those tools.
-3. Install Playwright at the version the kit is checked with, and its browser:
-
-   ```bash
-   npm install -D playwright@1.63.0
-   npx playwright install chromium
-   ```
-
-4. Keep the project in a git repository with at least one commit: the kit's server and its stored
-   references read the commit.
-5. Start your dev server through the kit. `serve.mjs` starts Vite as a background job on the first
-   free port from 6400 on, prints the server's address and the command that stops it, and exits;
-   the server runs until you stop it. Take a capture at the address it printed, here
-   `http://127.0.0.1:6400/`:
-
-   ```bash
-   node tools/kit/serve.mjs dev
-   ```
-
-   ```bash
-   node tools/kit/gpu-lock.mjs run --shared -- node tools/kit/capture.mjs rock --url http://127.0.0.1:6400/
-   ```
-
-   The capture is `artifacts/captures/rock.png`, with the page's diagnostics in `rock.json`. It is
-   shot on a paused page (the configuration's default query, `paused&t=12&dpr=1`) once its frames
-   stop changing. Take a second capture named `rock2` and compare the two:
-
-   ```bash
-   uv run tools/kit/img.py diff artifacts/captures/rock.png artifacts/captures/rock2.png
-   ```
-
-   Then stop the server with the command `serve.mjs` printed (`node tools/kit/job.mjs stop` and the
-   server's log).
-
-Each tool's manual is its header: `node tools/kit/<tool>.mjs --help`. The tools are indexed by
-question in [Tools](docs/reference/tools.md). The kit was written on macOS. Elsewhere, the scheduling
-policy (`qos.mjs`) does nothing, the GPU lock does not see other programs' GPU use, and
-`display-gate.mjs` posts no notices. `CHROME_PATH` names another Chromium build to capture with. The
-kit's own environment variables start with the configuration's `machine.envPrefix` (`PONLAI_` in
-this repository, as in `PONLAI_GPU_SLOTS`); set a prefix of your own there.
-
-The skills in `skills/` are written for any project: each is a method, and the project's facts are in
-a binding page in `docs/bindings/`. Two of them make the look:
-[building a stylised-realism picture](skills/building-cinematic-stylised-realism/SKILL.md) keeps
-materials and light physically plausible and puts the style in the content, a few global light
-values per weather and hour, and the image;
-[fitting a look to reference images](skills/fitting-a-look-to-reference-images/SKILL.md) finds the
-light, air and image values that bring a frame to your own reference images. The others verify a
-change, measure frame time, find the cause of a defect or of a frame that does not repeat, and write
-shaders, tools and docs ([the docs' index](docs/README.md), Skills).
-
-In Claude Code, install the skills as a plugin. The `--sparse` option downloads only the folders the
-plugin needs, not the whole repository:
+To install them in Claude Code:
 
 ```bash
 claude plugin marketplace add HuberyLL/ponlai --sparse .claude-plugin plugins skills
 claude plugin install ponlai@ponlai
 ```
 
-The skills then carry the plugin's name, such as `ponlai:verifying-rendering-changes`, and update
-with `claude plugin marketplace update ponlai`. With another agent, copy a skill's folder into the
-agent's skills folder. Either way, write a binding page of your own with the same sections as this
-repository's; the plugin brings the skills, not the tools above, which you copy as the steps say.
+Update them with `claude plugin marketplace update ponlai`. For other agents, copy a skill's folder
+into the agent's skills directory. Either way, write your own binding file with the same sections
+as this repository's.
 
 ## Structure
 
-The code is in layers, lowest first: the render pipeline (`packages/render/`), the island
-(`packages/island/`), the game (`packages/game/`) and the page (`app/`). Each layer imports only from
-the layers below it. [Architecture](ARCHITECTURE.md) describes the layers, the flows and the rules
-across them, and [the docs' index](docs/README.md) lists every page.
+The code is organised in layers, from the bottom up: the render pipeline (`packages/render/`), the
+island (`packages/island/`), the game (`packages/game/`) and the app (`app/`). Each layer imports
+only from the layers below it. [Architecture](ARCHITECTURE.md) describes the layers, how data flows
+through them and the rules that span them, and [the docs index](docs/README.md) lists every page.
 
 ## Contribute
 
-Questions and ideas go to [Discussions](https://github.com/HuberyLL/ponlai/discussions), bugs and
-requests to the issues. [Contributing](.github/CONTRIBUTING.md) says how to send a change, and
-everyone who takes part follows the [Code of Conduct](.github/CODE_OF_CONDUCT.md). Report a
-security issue as [Security](.github/SECURITY.md) says.
+Ask questions and share ideas in [Discussions](https://github.com/HuberyLL/ponlai/discussions);
+report bugs and request features in the issues. [Contributing](.github/CONTRIBUTING.md) explains how
+to set up and submit a change, and everyone taking part follows the [Code of
+Conduct](.github/CODE_OF_CONDUCT.md). To report a security issue, see [Security](.github/SECURITY.md).
 
 ## Licence
 
 Ponlai is released under the [MIT License](LICENSE). [Credits](CREDITS.md) lists the third-party
-code and assets, with their licences.
+code and assets and their licences.

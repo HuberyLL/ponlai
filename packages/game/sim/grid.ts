@@ -7,7 +7,7 @@ import type { Cell, GridApi, IslandInput, Vec2 } from './types.ts';
 // The ground grid: 0.5 m cells over the land lattice's whole extent, anchored to the world, so a
 // grown island only opens cells and every index stays valid. A cell is walkable on the island top,
 // clear of the cliff rim. Everything here is derived: the island from the world's own functions on
-// the land, so a loaded game rebuilds the same grid. The page gives the island's top from the world's chunks (their walk
+// the land, so a loaded game rebuilds the same grid. The app gives the island's top from the world's chunks (their walk
 // tiles, `topFromTiles`, the same cells as the land's footprint 0.9 m inside its edge), so a grown
 // island's grid (`setIsland`, Growth.ts and Sim.addPiece) is a fresh load's; without them (the node checks) it is
 // found from the land. The game's own obstacles (the buildings) are added on top by
@@ -42,7 +42,7 @@ export function topOf( input: IslandInput ): Uint8Array {
 }
 
 /** The island's top clear of the rim from the world's chunks' walk tiles (Chunks.ts: 32 x 32 cells
- * of 0.5 m per 16 m chunk, on this grid's lattice), as the page has them: a grown island's grid
+ * of 0.5 m per 16 m chunk, on this grid's lattice), as the app has them: a grown island's grid
  * comes from the same tiles as a fresh load's (Growth.ts). */
 export function topFromTiles( tiles: readonly { ci: number; cj: number; walk: Uint8Array }[] ): Uint8Array {
 

@@ -14,7 +14,7 @@
 //   --list     prints every drifted key under its language
 //
 // It fails on a Chinese literal in the code outside ALLOWED (the content that is not the
-// interface's words: the islanders' names, the stand-in brain's lines, the debug panel's
+// interface's words: the islanders' names, the stand-in agent's lines, the debug panel's
 // placeholder lines and days), and on a source value that is not a non-empty string. The drift of
 // another language is reported, not failed: English is a snapshot not maintained while the game is
 // in development. The drift is the keys a catalogue lacks (the page shows the Chinese for them), the
@@ -43,8 +43,8 @@ const strict = process.argv.includes( '--strict' ), list = process.argv.includes
 // Chinese characters, CJK punctuation and full-width forms
 const CJK = /[　-〿㐀-䶿一-鿿豈-﫿＀-￯]/;
 // the literals that are content, not the interface's words: the islanders' names (they are the
-// save's), the stand-in brain's lines, and the debug panel's placeholder lines and days (what
-// people say, as a brain's lines will be); by file and the variable they are declared in
+// save's), the stand-in agent's lines, and the debug panel's placeholder lines and days (what
+// people say, as an agent's lines will be); by file and the variable they are declared in
 const ALLOWED = {
 	'packages/game/sim/Sim.ts': [ 'NAMES' ],
 	'packages/game/sim/standin.ts': [ 'HUNGRY_WORDS', 'THANKS_WORDS' ],

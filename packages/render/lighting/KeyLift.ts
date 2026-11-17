@@ -30,8 +30,8 @@ type V3 = THREE.Node<'vec3'>;
 // (lighting/Underwater.ts), and the shadows that bound them: the sun's map is drawn along the
 // lifted direction (main.ts passes it to SunShadow, and the figures' map follows that map:
 // characters/CharacterShadow.ts), and the meadow's layer shades its blades and the ground under
-// them along it (`liftKeyWorld`, Grass.ts `meadowLayerDepth`), as the meadow's screen-space shade
-// does (post/MeadowShade.ts). Lit faces, highlights and shadows so turn to one side together;
+// them along it (`liftKeyWorld`, Grass.ts `meadowLayerDepth`), as the meadow's screen-space shadows
+// do (post/MeadowShadows.ts). Lit faces, highlights and shadows so turn to one side together;
 // with only the diffuse lifted, the dusk's highlights and back light still faced the grazing sun,
 // apart from the ground's shading. What keeps the key's true direction is everything about where
 // the light comes from: the key's colour and brightness (Sky.ts: the atmosphere's transmittance,
@@ -72,11 +72,11 @@ type V3 = THREE.Node<'vec3'>;
 const scale = uniform( 1 ), up = uniform( 0 ), side = uniform( 0 );
 // the moon's direction (world, unit; DayCycle `moonDirection`), on the CPU and for the shaders,
 // read again at every `updateKeyLift`
-const MOON_SHADE = moonDirection( new THREE.Vector3() );
-const moonShade = uniform( MOON_SHADE.clone() );
+const MOON_SHADING_DIRECTION = moonDirection( new THREE.Vector3() );
+const moonShadingDirection = uniform( MOON_SHADING_DIRECTION.clone() );
 
 // how the key's world direction is lifted by the lift `shading`: under the sun its elevation and the
-// lifted one (radians); under the moon its own direction (MOON_SHADE); neither where nothing lifts it
+// lifted one (radians); under the moon its own direction (MOON_SHADING_DIRECTION); neither where nothing lifts it
 function lifted( shading: KeyLiftShading, key: THREE.Vector3, moon: boolean ): { elevation: number; lifted: number; lift: boolean; moon: boolean } {
 
 	const across = Math.hypot( key.x, key.z );
@@ -104,7 +104,7 @@ export function liftedKeyHeight( shading: KeyLiftShading, key: THREE.Vector3, mo
 export function liftedKeyDirection( shading: KeyLiftShading, key: THREE.Vector3, moon: boolean, target: THREE.Vector3 ): THREE.Vector3 {
 
 	const { lifted: l, lift, moon: fixed } = lifted( shading, key, moon );
-	if ( fixed ) return target.copy( MOON_SHADE );
+	if ( fixed ) return target.copy( MOON_SHADING_DIRECTION );
 	if ( ! lift ) return target.copy( key );
 	const across = Math.cos( l ) / Math.hypot( key.x, key.z );
 	return target.set( key.x * across, Math.sin( l ), key.z * across );
@@ -115,7 +115,7 @@ export function liftedKeyDirection( shading: KeyLiftShading, key: THREE.Vector3,
  * `keyLift`; RenderStages.ts `publishLighting`). */
 export function updateKeyLift( shading: KeyLiftShading, key: THREE.Vector3, moon = false ): void {
 
-	moonShade.value.copy( moonDirection( MOON_SHADE ) );
+	moonShadingDirection.value.copy( moonDirection( MOON_SHADING_DIRECTION ) );
 	const { elevation: e, lifted: l, lift, moon: fixed } = lifted( shading, key, moon );
 	if ( fixed ) {
 
@@ -140,11 +140,11 @@ export function updateKeyLift( shading: KeyLiftShading, key: THREE.Vector3, moon
 }
 
 /** The key's world direction L lifted: `liftedKeyDirection` on the GPU, the direction the sun's
- * map is drawn along (the meadow's layer shade, Grass.ts `meadowLayerDepth`, takes it, and the
+ * map is drawn along (the meadow layer's shadowing, Grass.ts `meadowLayerDepth`, takes it, and the
  * sea's metering illuminance, ocean/Water.ts, takes its level-ground cosine from it). */
 export function liftKeyWorld( L: V3 ): V3 {
 
-	return L.mul( scale ).add( vec3( 0, up, 0 ) ).add( moonShade.mul( side ) );
+	return L.mul( scale ).add( vec3( 0, up, 0 ) ).add( moonShadingDirection.mul( side ) );
 
 }
 
@@ -152,7 +152,7 @@ export function liftKeyWorld( L: V3 ): V3 {
 export function liftKey( L: V3 ): V3 {
 
 	const U = cameraViewMatrix.mul( vec4( 0, 1, 0, 0 ) ).xyz;
-	const W = cameraViewMatrix.mul( vec4( moonShade, 0 ) ).xyz;
+	const W = cameraViewMatrix.mul( vec4( moonShadingDirection, 0 ) ).xyz;
 	return L.mul( scale ).add( U.mul( up ) ).add( W.mul( side ) );
 
 }
