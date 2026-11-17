@@ -89,11 +89,12 @@ Facts to look up.
 - [Glossary](reference/glossary.md): the project's own words.
 - [Parity captures](../tools/kit/parity/README.md): the facts across the parity tools: which
   comparison is byte-exact, how a tolerance is set and how the stored references are used.
+- [The kit](../tools/kit/README.md): copying the capture and measuring tools into a project.
+- [Rock by the sea](../examples/rock/README.md): the smallest project on the render pipeline.
 
 ## How-to guides
 
 Steps for one task that no skill covers.
 
-- [Add game content](how-to/add-game-content.md): a need, an item, a place, an option or a
-  building in the game's simulation.
+- [Add game content](how-to/add-game-content.md): needs, items, places, options, buildings.
 - [Upgrade three.js](how-to/upgrade-three.md): move to another version of three.js.

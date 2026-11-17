@@ -24,9 +24,16 @@ the approach before you spend time on it.
 
 ## Set up
 
-Follow the README's [Requirements](../README.md#requirements) and
-[Run this repository](../README.md#run-this-repository). The dev server downloads the assets on its
-first start.
+Follow the README's [Quick start](../README.md#quick-start). The checks and tools need a few more
+programs: [lychee](https://lychee.cli.rs/) for the docs' lint, [uv](https://docs.astral.sh/uv/) for
+the Python tools, and Playwright's Chromium for captures:
+
+```bash
+npx playwright install chromium
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Install lychee as its page says for your system.
 
 ## Make a change
 
