@@ -20,6 +20,7 @@ homes in this repository:
 | Reference page | `docs/reference/` |
 | Design page | `docs/design/` (art direction and its subject pages, game design, game UI) |
 | Folder README | A `README.md` in the folder it documents: what the folder holds and one task's steps on it that no skill covers (`tools/kit/`, `tools/kit/parity/`, `packages/render/three/`, `packages/game/sim/content/`, `templates/blank/`); a method used across tasks is a skill |
+| Translation | `<name>.zh-CN.md` beside its English page, for the root `README.md` and the blank project's only; the English page is the source, and a change to it is made in the translation in the same commit (`tools/repo/verify-translations.mjs`) |
 | Module header | The header comment of each file under `packages/` and `app/` |
 | Third-party sources whose licence asks for a notice or credit | `CREDITS.md` |
 | A file's copyright and licence | SPDX tags in its `/*! ... */` notice, `REUSE.toml`, `LICENSES/` |

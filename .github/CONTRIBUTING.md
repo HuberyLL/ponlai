@@ -1,7 +1,10 @@
 # Contributing to Ponlai
 
 Thank you for your interest in Ponlai. This page says how to ask a question, report a bug and send
-a change. Everyone who takes part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+a change. Everyone who takes part follows the [Code of Conduct](CODE_OF_CONDUCT.md) (also in
+[Chinese](https://www.contributor-covenant.org/zh-cn/version/2/1/code_of_conduct/)).
+
+Write issues, discussions and pull requests in English or Chinese.
 
 ## Ask a question or share an idea
 

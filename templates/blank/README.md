@@ -1,5 +1,7 @@
 # Blank project
 
+**English** | [简体中文](README.zh-CN.md)
+
 The starting point for a project of your own on Ponlai's render pipeline: the render pipeline's sky,
 sea, light and post-processing, one rock in the open sea to replace with your own content, and the
 tools that capture, compare and measure its frames. Copy it to start a project, as the repository's

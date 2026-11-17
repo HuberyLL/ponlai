@@ -1,5 +1,5 @@
 name: Bug
-description: Something is wrong on screen, in a tool or in the build.
+description: Something is wrong on screen, in a tool or in the build. Write in English or Chinese.
 labels: [ bug ]
 body:
   - type: textarea

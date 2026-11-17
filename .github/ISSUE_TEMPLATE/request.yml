@@ -1,5 +1,5 @@
 name: Request
-description: A concrete change or addition to the island, the render pipeline, the tools or the docs.
+description: A concrete change or addition to the island, the render pipeline, the tools or the docs. Write in English or Chinese.
 labels: [ enhancement ]
 body:
   - type: textarea

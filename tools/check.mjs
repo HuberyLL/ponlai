@@ -21,8 +21,8 @@
 // verify-layers, verify-exits, verify-settings, verify-file-size, verify-headers (the modules'
 // header first lines), verify-tool-manuals (the tools' manuals and `--help`),
 // verify-three-internals and verify-kit (tools/repo/), tools/verify-no-binaries.mjs (every file in
-// the index), verify-licences (REUSE and the notices' SPDX tags; it needs uv) and
-// verify-skill-links (tools/repo/), the game's verify-game, verify-i18n and verify-ink
+// the index), verify-licences (REUSE and the notices' SPDX tags; it needs uv), verify-skill-links
+// and verify-translations (tools/repo/), the game's verify-game, verify-i18n and verify-ink
 // (tools/game/), the render pipeline's verify-framegraph, verify-day-cycle, verify-weather-state,
 // verify-wind, verify-local-lights, verify-extensions, verify-look-params and verify-slope-variance
 // (tools/render/), then tools/repo/verify-lint.mjs, and the docs' lint (`npm run lint:docs`) when a
@@ -87,6 +87,7 @@ const checks = [
 	[ 'verify-no-binaries', node( 'verify-no-binaries.mjs' ) ],
 	[ 'verify-licences', node( 'repo/verify-licences.mjs' ) ],
 	[ 'verify-skill-links', node( 'repo/verify-skill-links.mjs' ) ],
+	[ 'verify-translations', node( 'repo/verify-translations.mjs' ) ],
 	[ 'verify-game', node( 'game/verify-game.mjs' ) ],
 	[ 'verify-i18n', node( 'game/verify-i18n.mjs' ) ],
 	[ 'verify-ink', node( 'game/verify-ink.mjs' ) ],

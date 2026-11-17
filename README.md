@@ -7,6 +7,8 @@
 
 **A physically based render pipeline for cinematic game visuals in the browser.**
 
+**English** | [简体中文](README.zh-CN.md)
+
 [![Check](https://github.com/HuberyLL/ponlai/actions/workflows/check.yml/badge.svg)](https://github.com/HuberyLL/ponlai/actions/workflows/check.yml)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![three.js r186](https://img.shields.io/badge/three.js-r186-black?logo=threedotjs)](https://threejs.org/)
