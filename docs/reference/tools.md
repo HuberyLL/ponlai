@@ -58,6 +58,7 @@ Contents:
 | Compare a capture set with a reference set, exactly or within a tolerance | `tools/kit/diff-set.py` |
 | Keep a commit's reference captures once, for every process that checks against them | `tools/kit/reference.mjs` |
 | Capture a clip frame by frame, to judge motion | `tools/kit/parity/capture-clip.mjs` |
+| Render footage of a camera move as whole frames (`--clip shot --full all`) | `tools/kit/parity/capture-clip.mjs` |
 | Measure a clip's image-quality and temporal metrics against MSAA and a ground truth | `tools/kit/clip-metrics.py` |
 | Capture and measure a commit's MSAA baseline and ground truth for the anti-aliasing gates | `tools/kit/parity/baseline.mjs` |
 | Whether a commit can take over an earlier commit's baseline without a recapture | `tools/kit/parity/carry.mjs` |

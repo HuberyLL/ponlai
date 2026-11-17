@@ -36,6 +36,8 @@
 //   orbit( deg, subject )    around a subject, `deg` degrees a frame, looking at it (`islander`:
 //                            the walking islander's centre, followed as it moves)
 //   still                    the base pose every frame
+//   script                   the camera placed by shotCamera( i ), a function the caller's setup
+//                            code defines (capture-clip.mjs --setup); the base pose when it is absent
 //
 // A render scale schedule is given as shares of the tier's nominal ratio
 // (`__PONLAI__.nominalScale()`, 2K's pixel count on high: about 1.38 at the default size), so it
@@ -49,7 +51,7 @@
 // Groups: `special`, the clips whose view is a parked weather's (views.mjs: the rain, the storm, the
 // lightning, the fog), and `normal`, the rest; `all` is `normal` (the default), so a parked clip is
 // reached by name or by `special`. The view decides, so a clip and its view never fall into
-// different groups.
+// different groups; a clip's own `special` overrides it (`shot`, footage no group should run).
 //
 // Exported: CLIPS, CLIP_GROUPS, clipNames( group ), BASELINE_PLAN, CARRY_SPOT, GT_DENSE_MAX, GT_EVERY,
 // gtSampling( clip, frames ), clipScales( clip ), clipEval( name, { frames, dt, setup } ).
@@ -89,6 +91,9 @@ export const CLIPS = {
 	// a still frame of any view (capture-clip.mjs --view): the rest sets of tools/kit/parity/baseline.mjs
 	'rest': { view: 'island-fair-noon', clock: 'paused', frames: 1, path: [ 'still' ],
 		about: 'one paused frame of the view at its own pose: the image at rest, captured through the clip machinery so its crops and its ground truth are cut alike' },
+	// footage: a camera move written by the caller, the scene running (special: no group runs it)
+	'shot': { view: 'island-fair-noon', clock: 'running', frames: 240, path: [ 'script' ], crops: [], special: true,
+		about: 'a camera move placed each frame by shotCamera( i ), a function the --setup code defines (the view\'s pose held when it defines none), the scene running: whole frames for footage' },
 	// camera motion over a frozen scene
 	'static-jitter': { view: 'meadow-close', clock: 'paused', frames: 64, path: [ 'still' ],
 		about: 'a still camera and a paused scene: under MSAA every frame is the same; a temporal resolve shows its jitter and convergence' },
@@ -139,7 +144,7 @@ export const CLIP_GROUPS = [ 'all', 'normal', 'special' ];
 export function clipNames( group = 'all' ) {
 
 	if ( ! CLIP_GROUPS.includes( group ) ) throw new Error( `unknown clip group ${ group } (${ CLIP_GROUPS.join( ', ' ) })` );
-	return Object.keys( CLIPS ).filter( ( c ) => ( VIEWS[ CLIPS[ c ].view ].special === true ) === ( group === 'special' ) );
+	return Object.keys( CLIPS ).filter( ( c ) => ( ( CLIPS[ c ].special ?? VIEWS[ CLIPS[ c ].view ].special ) === true ) === ( group === 'special' ) );
 
 }
 
@@ -215,6 +220,7 @@ const smooth = ( x ) => { x = Math.min( Math.max( x, 0 ), 1 ); return x * x * ( 
 const subjects = { islander: () => s.characters.centre.clone() };
 const PATH = {
 	still: () => () => place( p0, t0 ),
+	script: () => typeof shotCamera === 'function' ? shotCamera : PATH.still(),
 	yaw: ( deg ) => ( i ) => turn( - deg * rad * i ),
 	flick: ( deg, start, n ) => ( i ) => turn( - deg * rad * smooth( ( i - start ) / n ) ),
 	dolly: ( k ) => ( i ) => place( t0.clone().add( p0.clone().sub( t0 ).multiplyScalar( Math.exp( - k * i ) ) ), t0 ),

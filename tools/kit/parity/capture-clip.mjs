@@ -14,12 +14,13 @@
 //
 // Options:
 //   --aa <mode>             msaa, off, taa, taau, fsr3, gt or gt-hi; default msaa
-//   --view <v>              the base view; default the clip's
+//   --view <v>              the base view; default the clip's. Also an ad-hoc view, "name:query[::js]"
+//   --views-file <f.json>   the base view from a file of one ad-hoc view (tools/kit/parity/adhoc.mjs)
 //   --frames <n>            default the clip's
 //   --every <k>             capture every k-th frame (frame 0 always); default 1
 //   --dense <a-b,c-d>       runs of frames captured every frame under --every
 //   --crops <a,b>           the anchors cropped; default the clip's, else the view's
-//   --full <0,30>           frames also captured whole
+//   --full <0,30|all>       frames also captured whole; `all`, every captured frame
 //   --anchors-from <f>      take the anchors' world points from an earlier clip.json
 //   --q "<extra&query>"     added to the page's query
 //   --setup <js>            page code (`s` the handle, `dt` the step) run before frame 0
@@ -101,6 +102,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { acquireGpuLock, releaseGpuLock, gpuUtilisation } from '../gpu-lock.mjs';
 import { viewTable, clipTable } from './tables.mjs';
+import { selectViews, viewQuery } from './adhoc.mjs';
 import { launchCapture, waitForScene, waitForStable, stableOptions, decodePng, compareFrames, pngCapturer } from '../capture-browser.mjs';
 import PROJECT from '../../project.mjs';
 import { ROOT, outputDir } from '../root.mjs';
@@ -122,7 +124,7 @@ for ( let i = 0; i < args.length; i ++ ) {
 	} else positional.push( args[ i ] );
 
 }
-const KNOWN = [ 'url', 'aa', 'clip', 'view', 'frames', 'dt', 'setup', 'every', 'dense', 'crops', 'full', 'q', 'quality', 'size', 'out', 'timeout', 'runs', 'task', 'verbose', 'anchors-from', 'gt-jitters', 'ready-frames', 'wait', 'settle',
+const KNOWN = [ 'url', 'aa', 'clip', 'view', 'views-file', 'frames', 'dt', 'setup', 'every', 'dense', 'crops', 'full', 'q', 'quality', 'size', 'out', 'timeout', 'runs', 'task', 'verbose', 'anchors-from', 'gt-jitters', 'ready-frames', 'wait', 'settle',
 	'stable-min', 'stable-every', 'stable-repeats', 'stable-tolerance', 'stable-patience', 'stable-cap', 'stable-trace', 'test-fault' ];
 const unknown = Object.keys( options ).filter( ( k ) => ! KNOWN.includes( k ) );
 const clip = CLIPS[ options.clip ];
@@ -139,7 +141,17 @@ const gt = aa === 'gt-hi';
 const gtRest = aa === 'gt';
 const quality = options.quality ?? 'high';
 if ( gt && quality !== 'high' ) { console.error( 'gt-hi exists for high only' ); process.exit( 2 ); }
-const viewName = options.view ?? clip.view;
+// an ad-hoc base view (a query and an eval of the caller's, such as a footage shot's camera) is
+// registered into VIEWS; its own query options win over the clip's common ones (adhoc.mjs)
+let viewName = options.view ?? clip.view;
+if ( options[ 'views-file' ] || viewName.includes( ':' ) ) {
+
+	let names;
+	try { names = selectViews( { view: viewName.includes( ':' ) ? [ viewName ] : [], 'views-file': options[ 'views-file' ] } ); } catch ( error ) { console.error( error.message ); process.exit( 2 ); }
+	if ( names.length !== 1 ) { console.error( `--view / --views-file: one base view, not ${ names.length }` ); process.exit( 2 ); }
+	viewName = names[ 0 ];
+
+}
 const view = VIEWS[ viewName ];
 if ( ! view ) { console.error( `unknown view ${ viewName }` ); process.exit( 2 ); }
 const size = ( options.size ?? '1728x1117@2' ).match( /^(\d+)x(\d+)(?:@([\d.]+))?$/ );
@@ -164,7 +176,9 @@ const frames = Number( options.frames ?? clip.frames );
 const gtJitters = gtRest ? Number( options[ 'gt-jitters' ] ?? ( frames <= 1 ? 64 : 32 ) ) : null;
 if ( gtRest && ! ( Number.isInteger( gtJitters ) && gtJitters > 0 ) ) { console.error( `bad --gt-jitters ${ options[ 'gt-jitters' ] }` ); process.exit( 2 ); }
 const every = Math.max( 1, Number( options.every ?? 1 ) );
-const full = new Set( ( options.full ?? '' ).split( ',' ).filter( Boolean ).map( Number ) );
+const fullAll = options.full === 'all';
+const full = new Set( fullAll ? [] : ( options.full ?? '' ).split( ',' ).filter( Boolean ).map( Number ) );
+const wholeFrame = ( i ) => fullAll || full.has( i );
 // runs of frames captured whole-clip dense under --every (the ground truth's gtDense, clips.mjs)
 const dense = ( options.dense ?? '' ).split( ',' ).filter( Boolean ).map( ( r ) => r.split( '-' ).map( Number ) );
 if ( dense.some( ( r ) => r.length !== 2 || r.some( ( x ) => ! Number.isInteger( x ) ) ) ) { console.error( `bad --dense ${ options.dense }` ); process.exit( 2 ); }
@@ -234,7 +248,7 @@ if ( aa === 'off' ) query += '&msaa=1';
 if ( gt ) query += `&dpr=${ GT_RATIO }`;
 if ( gtRest ) query += `&tier.taa.gtJitters=${ gtJitters }`;
 if ( options.q ) query += `&${ options.q }`;
-query += `&${ view.q }`;
+query = viewQuery( viewName, query );
 if ( clip.q ) query += `&${ clip.q }`;
 let base = options.url;
 if ( ! base.endsWith( '/' ) && ! base.includes( '?' ) ) base += '/';
@@ -313,7 +327,7 @@ try {
 	}, { names: crops, global: PAGE.crops } );
 	const tracked = Object.entries( anchors ).filter( ( [ , a ] ) => a.world ).map( ( [ n, a ] ) => ( { name: n, world: a.world } ) );
 	for ( const t of tracked ) await mkdir( path.join( outDir, t.name ), { recursive: true } );
-	if ( full.size ) await mkdir( path.join( outDir, 'full' ), { recursive: true } );
+	if ( full.size || fullAll ) await mkdir( path.join( outDir, 'full' ), { recursive: true } );
 
 	const boxes = [];
 	// the compositor's image, PNG encoded for speed (tools/kit/capture-browser.mjs, "The screenshot");
@@ -351,7 +365,7 @@ try {
 
 		}
 		for ( const [ n, png ] of Object.entries( crops ) ) await writeFile( path.join( outDir, n, `${ i }.png` ), png );
-		if ( full.has( i ) ) await writeFile( path.join( outDir, 'full', `${ i }.png` ), await captureRect( null ) );
+		if ( wholeFrame( i ) ) await writeFile( path.join( outDir, 'full', `${ i }.png` ), await captureRect( null ) );
 
 	} );
 	const stepped = await page.evaluate( async ( { tracked, every, dense, box, cssScale, fullFrames, gtRest, fault, g } ) => {
@@ -459,7 +473,7 @@ try {
 		if ( ! accepted ) throw new Error( `rest: no two of ${ restShots.length } captures agree within the tolerance (${ JSON.stringify( history ) }); nothing written` );
 		boxes[ 0 ].frame = accepted.frame;
 		for ( const [ n, png ] of Object.entries( accepted.crops ) ) await writeFile( path.join( outDir, n, '0.png' ), png );
-		if ( full.has( 0 ) ) await writeFile( path.join( outDir, 'full', '0.png' ), gt ? encodePng( downsample2( decodePng( accepted.raw ) ) ) : accepted.raw );
+		if ( wholeFrame( 0 ) ) await writeFile( path.join( outDir, 'full', '0.png' ), gt ? encodePng( downsample2( decodePng( accepted.raw ) ) ) : accepted.raw );
 		if ( accepted !== restShots[ 0 ] || restShots.length > 2 ) console.log( `rest: captured ${ restShots.length } times, kept capture ${ recheckRecord.accepted } (${ history.map( ( h ) => `${ h[ 0 ] } vs ${ h[ 1 ] }: ${ h[ 3 ] } px, max ${ h[ 2 ] }` ).join( '; ' ) })` );
 
 	}
@@ -468,7 +482,7 @@ try {
 	await writeFile( path.join( outDir, 'clip.json' ), JSON.stringify( {
 		name, url, clip: options.clip, clipDef: { ...clip, at: undefined, setup: undefined }, ...( options.setup ? { setup: options.setup } : {} ), view: viewName, aa, quality, ...( gtRest ? { gtJitters } : {} ),
 		viewport: { width: W * cssScale, height: H * cssScale, deviceScaleFactor: ratio }, gtFallback, downsample: gt ? 2 : 1,
-		cropPx: gt ? BOX * cssScale * ratio / 2 : BOX * ratio, scaleSchedule, frames, every, dense, full: [ ...full ],
+		cropPx: gt ? BOX * cssScale * ratio / 2 : BOX * ratio, scaleSchedule, frames, every, dense, full: fullAll ? 'all' : [ ...full ],
 		browser: session.version, slot: session.slot, ready, ...( recheckRecord ? { recheck: recheckRecord } : {} ), anchors, boxes, stepped, diagBefore, diagAfter, errors,
 		wallMinutes: ( Date.now() - started ) / 60000, gpuBusyBefore: busy,
 	}, null, 2 ) );
