@@ -6,19 +6,19 @@ sources. The cases are commits of the project this skill was distilled from, cit
 ## Why one place per fact
 
 An agent cannot tell which of two copies is current. Claude Code's memory page says that when two
-instructions contradict each other the model may pick one arbitrarily. Copies also drift: a page that
-lists every file with a line on what it does, kept by hand beside headers
-that already say it, falls behind whenever a file moves. The fix is not to
-keep the page more carefully but to print it from the headers, and to make the
-header's first line a checked sentence so the printed map stays usable.
+instructions contradict each other, the model may pick one arbitrarily. Copies also drift. Take a
+page that lists every file with a line on what it does, maintained by hand beside headers that
+already say it: it falls behind whenever a file moves. The fix is not to maintain the page more
+carefully. Generate it from the headers instead, and make each header's first line a checked
+sentence so that the generated map stays usable.
 
 ## Why the always-loaded file holds so little
 
-What a rules file holds is read on every turn, whether the turn needs it or not. A rules file
-that grows to tens of thousands of characters makes every change read the whole file map, every
+What a rules file holds is read on every turn, whether the turn needs it or not. When a rules
+file grows to tens of thousands of characters, every change reads the whole file map, every
 module's rules and a long list of pitfalls, and a rule is hard to find among them. The cure is an
-index of rules every change follows, with the detail moved to
-where it is owned: module headers, a reference page, the architecture page. Claude Code's memory
+index of the rules that every change follows, with the detail moved to where it is owned: module
+headers, a reference page, the architecture page. Claude Code's memory
 page gives the same advice for its own files (a size target, multi-step procedures and rules for
 one part of the codebase moved to skills or scoped rules) and adds that longer files reduce
 adherence. Which text goes up front and which is fetched on demand is a choice per task; the
@@ -27,12 +27,11 @@ context-engineering article describes both, used together.
 ## Why the architecture page is short
 
 The architecture page is read before a structural change, and a reader has to get through it to
-find the structure. One that grows to several hundred lines is mostly detail its modules' headers
-already state. It should hold an overview, a map of the folders
-and one sentence per rule across the layers; each rule's full text, its reason, what enforces it
-and the mistake it came from go to a reference page under the same number, and
-facts of one module go to that module's header. Numbers of dropped rules stay
-unused, so every reference by number stays true.
+find the structure. A page that grows to several hundred lines is mostly detail that its
+modules' headers already state. It should hold an overview, a map of the folders and one sentence
+per rule across the layers. Each rule's full text, its reason, what enforces it and the mistake it
+came from go to a reference page under the same number. Facts of one module go to that module's
+header. The numbers of dropped rules are not reused, so every reference by number stays true.
 
 ## Why the current state only
 
@@ -47,10 +46,10 @@ Instruction files are context, not enforced configuration (Claude Code's memory 
 is loaded when the model judges it relevant (Claude Code's skills page). A rule that must hold has
 to be held by something that runs. The order (architecture, types, lint, test, text) prefers what
 makes the mistake impossible over what catches it, and what catches it over what asks for care.
-Docs need the same: a path check that reads only Markdown paths into one folder lets a moved
-tool leave stale mentions in comments, strings and prose; one that reads every tracked text file
-finds them. Skills loaded through tracked links are
-checked so that nothing private is forced in beside them.
+Docs need the same. A path check that reads only Markdown paths into one folder lets a moved tool
+leave stale mentions in comments, strings and prose; a check that reads every tracked text file
+finds them. The tracked links that load skills are checked, so that nothing private under
+`.claude/` is committed beside them.
 
 ## Why an inventory before a rewrite
 

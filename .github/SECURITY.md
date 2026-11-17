@@ -1,7 +1,7 @@
 # Security
 
-Ponlai is a page that runs in the browser, with development tools that run on your own machine. It
-has no server of its own and handles no accounts or personal data.
+Ponlai is a web app that runs in the browser, with development tools that run on your own machine.
+It has no server of its own and handles no accounts or personal data.
 
 ## Supported versions
 

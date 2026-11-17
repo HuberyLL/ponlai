@@ -7,27 +7,27 @@ description: Turns a script that keeps being written into a tool, and a mistake 
 
 Agents solve the same question again with a new script each time, and each script makes its own
 mistakes: a sleep where a readiness signal was needed, a lock not taken, an output nobody else can
-read. A rule written only as text is broken again by the next change that never read it. The
-method: one tool per question, documented where it is called, and every rule that can be checked
-turned into a check that has been seen to fail.
+read. A rule written only as text is broken again by the next change whose author never read it.
+The method is one tool per question, documented where it is called, and every rule that can be
+checked turned into a check that has been seen to fail.
 
 ## Rules most often broken without notice
 
 - Look for the tool before you write a script. If one almost fits, add an option to it; a second
   tool for the same question splits the fixes between two copies.
-- A script needed a second time, or by another task, becomes a tool. A truly one-off script stays
-  in the task's scratch folder, never in the tools folder.
+- If a script is needed a second time, or by another task, make it a tool. A truly one-off script
+  stays in the task's scratch folder, never in the tools folder.
 - `--help` prints the manual and exits before anything else runs: no lock, no browser, no server,
   no GPU. An agent that starts a tool to read its options must not start the work.
 - Wait on what the system under test reports (a ready or settled signal, a counter of rendered
   frames), never on a sleep or a fixed count: a fixed wait passes or fails by chance on a busy
   machine.
-- A check is proven by planting the fault it is for and seeing it fail. A check never seen to fail
-  may check nothing.
+- Prove a check by planting the fault it is for and seeing it fail. A check that has never been
+  seen to fail may check nothing.
 - A list of known exceptions only shrinks. A new failure is fixed in the code, never added to the
   list, and an entry that no longer applies fails the check until it is removed.
-- A tolerance in a check is set from measured noise of the same thing compared with itself, never
-  picked to make a failure pass.
+- Set a check's tolerance from the measured noise of the same thing compared with itself. Never
+  pick it to make a failure pass.
 - A faster check keeps its guarantee: it still compares against the thing it promised (a fresh
   load, a reference), not against something cheaper that agrees with the change.
 
@@ -66,17 +66,18 @@ running it. Search the tools folder for the key words of the question too: an in
 
 ### 2. Decide: an option, a tool or a one-off (binding: Index)
 
-- A tool that already answers it, but was not found (the script was written again because the
-  index and the manual did not name the question): change nothing in the code; add the question to
-  its manual and to the index.
-- A tool that answers a neighbouring question with the same inputs: add an option to it.
+- A tool already answers it, but nobody found it (the script was written again because the index
+  and the manual did not name the question): change nothing in the code. Add the question to the
+  tool's manual and to the index.
+- A tool answers a neighbouring question with the same inputs: add an option to it.
 - No tool, and the question has been asked before or will be by another task (a script written a
   second time, a local copy of one passed between tasks): write a tool.
-- A question for this task alone: a script in the task's scratch folder, which is not reviewed,
-  kept or indexed.
+- The question is for this task alone: write a script in the task's scratch folder. It is not
+  reviewed, kept or indexed.
 
-When agents have been writing many one-off scripts, count them by question first and build the
-tools for the most frequent ones; measure where a slow tool spends its time before changing it.
+If agents have been writing many one-off scripts, count them by question first, and build the
+tools for the most frequent questions. Before you change a slow tool, measure where it spends its
+time.
 
 ### 3. Write the manual first (binding: Manual)
 
@@ -91,9 +92,9 @@ this order and each part once:
 5. Whether it takes a lock, opens a browser or needs a GPU, and its rough cost.
 6. Its exit codes, and what a failure means.
 
-Make `--help` print the purpose, Usage and Options from that header, and the whole header with a
-fuller flag, before any other code runs. A long explanation goes to a reference page the header
-links, so the header stays short.
+Make `--help` print the purpose, Usage and Options from that header before any other code runs,
+and the whole header with an extra flag. A long explanation goes to a reference page that the
+header links to, so the header stays short.
 
 ### 4. Build it on what exists (binding: Build)
 
@@ -114,8 +115,9 @@ links, so the header stays short.
   animation frames.
 - Take a shared resource (the GPU lock) per piece of work, in the mode the work needs, and never
   hold it during CPU work or while waiting for something else.
-- Store an expensive result keyed by everything that changes it (the commit's inputs, the tool's
-  own sources, the browser, the options), so it is reused only while it is still valid.
+- Store an expensive result under a key built from everything that changes it (the commit's
+  inputs, the tool's own sources, the browser, the options), so that it is reused only while it is
+  still valid.
 
 ### 5. Prove it (binding: Prove)
 
@@ -143,12 +145,13 @@ After a bug, a review's finding or a failed check, prefer in this order:
 
 Then place the check where it runs:
 
-- It needs no GPU and runs in seconds: in the command every commit passes, keeping that command
-  near a minute; a slower one goes in the fuller pass run before a merge.
-- It needs a GPU or minutes: name it beside the kind of change that needs it, in the rules file
-  and in the guide of that kind of change, and say whether it takes the lock shared or alone.
-- A rule that is text only and is broken a second time gets its check in the change that meets
-  it.
+- If it needs no GPU and runs in seconds, add it to the command that every commit passes, and
+  keep that command near a minute. A slower check goes in the fuller pass run before a merge.
+- If it needs a GPU or takes minutes, name it beside the kind of change that needs it, in the
+  rules file and in the guide for that kind of change. Say whether it takes the lock shared or
+  alone.
+- If a text-only rule is broken a second time, add its check in the change that finds the
+  breach.
 
 ### 7. Register it (binding: Register)
 

@@ -1,51 +1,54 @@
 # Background: why the layers and the order
 
-Why the skill works as it does, and the public sources it rests on. The steps are in
-[SKILL.md](SKILL.md).
+This page explains why the skill works as it does, and lists the public sources it rests on. The
+steps are in [SKILL.md](SKILL.md).
 
 ## Why materials stay physical
 
-A physically based renderer gives every surface the same light. If each material holds plausible
-values, the relations between them (how much darker wet stone is than dry sand, how a leaf glows
-against the sky) come out right without tuning one against another, and new content joins without
-tuning of its own. A material pushed to fix something the light or the image got wrong carries
-that error in its albedo. When the light is corrected later, every such material is wrong again,
-each in its own way.
+A physically based renderer gives every surface the same lighting. If each material holds
+plausible values, the relations between materials come out right without tuning one against
+another: how much darker wet stone is than dry sand, or how a leaf glows against the sky. New
+content then joins without tuning of its own. A material pushed to fix something that the lighting
+or post-processing got wrong carries that error in its albedo. When the lighting is corrected later,
+every such material is wrong again, each in its own way.
 
-The failure is common: grass, stone and wood tuned one by one against finished frames each carry
-a share of the light's errors, and every change of the light breaks them again. The fix is to keep
-the materials at measured values and move the style into global knobs on the light and the image.
+This failure is common. Grass, stone and wood tuned one by one against finished frames each carry a
+share of the lighting's errors, and every change to the lighting breaks them again. The fix is to
+keep the materials at measured values and move the style into global parameters on the lighting and
+post-processing.
 
-A second, older form of the same loop: an exposure metered from the frame's luminance reads the
-albedo too, so a dark material darkens nothing on screen; authors then push albedos darker to make
-the image read, and the exposure follows them. Metering from the illuminance (the light falling on
-the scene) breaks the loop (Patry 2021, below).
+An older form of the same loop involves exposure. An exposure metered from the frame's luminance
+also reads the albedo, so a dark material does not darken anything on screen. Authors then push
+albedos darker to make the image read, and the exposure follows them. Metering from the illuminance
+(the light falling on the scene) breaks the loop (Patry 2021, below).
 
 ## Why style goes in three places
 
-Style made globally is consistent: one knob moves every material by the same rule, under every
-weather and hour that knob covers. Style made per object is inconsistent by construction and has
-to be repeated for each new object. The three places are where a global decision can be made:
+Style applied globally is consistent: one parameter changes every material by the same rule, under
+every weather and time of day that the parameter covers. Style applied per object is inconsistent
+by construction, and it has to be repeated for each new object. The three places are where a global
+decision can be made:
 
 - the content, decided per class of things;
-- the light, as global knobs per weather and time of day over a physically based model;
-- the image, as exposure, tone mapping and grade over the whole frame.
+- the lighting, as global parameters per weather and time of day over a physically based model;
+- post-processing, as exposure, tone mapping and colour grading over the whole frame.
 
 ## Why this order
 
-Each layer takes the one before it as input: the light falls on the materials, the air takes the
-lit surfaces, the exposure meters what the air leaves, the tone curve maps what the exposure gives,
-and the grade colours what the curve gives. A downstream layer cannot be judged until its input
-is right, and a fix made downstream for an upstream fault breaks when the fault is fixed.
+Each layer takes the one before it as input. The lighting falls on the materials; the atmosphere
+acts on the lit surfaces; the exposure meters what the atmosphere leaves; the tone curve maps what
+the exposure gives; and the colour grade colours what the curve gives. You cannot judge a
+downstream layer until its input is right, and a fix made downstream for an upstream fault breaks
+when the upstream fault is fixed.
 
 The order is this skill's own arrangement by that dependency, not a published standard. It rests
 on two kinds of established practice:
 
-- Physically based rendering in games, with materials kept apart from the light and the renderer
+- Physically based rendering in games, with materials kept separate from lighting and the renderer
   checked against references: materials authored with plausible values, lights in photometric
   units, exposure from a physically based camera, and validation against measured or path-traced
   references (Lagarde and de Rousiers 2014; Patry 2020, 2021).
-- Film look development: assets are developed in a colour-controlled neutral light, with a grey
+- Film look development: assets are developed in colour-controlled neutral lighting, with a grey
   ball, a chrome ball and a colour chart, before shot lighting gives each shot its look (Amin
   2021).
 

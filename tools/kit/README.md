@@ -1,8 +1,8 @@
 # Ponlai's tools
 
-The tools in this folder take screenshots of a paused page, compare them byte for byte, read values
-from the page and measure frame time. They work in any project that sets up its page with the render
-pipeline's `startScene`. A project started from [the blank
+The tools in this folder capture screenshots of a paused page, compare them byte for byte, read
+values from the running page and measure frame time. They work in any project that sets up its scene
+with the render pipeline's `startScene`. A project started from [the blank
 project](https://github.com/HuberyLL/ponlai/blob/main/templates/blank/README.md) already has them
 set up; its Capture and compare section shows them in use.
 
@@ -22,8 +22,8 @@ set up; its Capture and compare section shows them in use.
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
-4. Commit the project to git at least once: the dev server tool and the stored reference
-   screenshots read it.
+4. Commit the project to git at least once: the dev server tool and the store of reference
+   screenshots read the commit.
 
 ## Manuals and other platforms
 

@@ -2,7 +2,7 @@
 
 What the island's land and plants look like and why, and what to avoid: its shape, the sea floor
 round it, the cliffs, the meadow, the bamboo, the yunpeng and the wind. What every subject shares
-(the light, the exposure, the image) is in [Art direction](art-direction.md); the measured readings
+(lighting, exposure, post-processing) is in [Art direction](art-direction.md); the measured values
 are in [Look values](../reference/look-values.md). The island by night: [Night](night.md).
 
 Contents:
@@ -23,12 +23,13 @@ Contents:
 - The island grows one piece of land at a time from a starting island at the world's centre
   ([Game design](game-design.md#how-the-island-grows)). Its coast is always irregular and natural,
   never drifting toward a square or a circle.
-- Its top is a plateau that rolls as an old meadow does: low mounds, banks and hollows of about half
-  a metre to a metre either way, some 18 m across, with smaller hummocks on them. The slopes stay
-  mostly under 12 degrees and never pass what the grass holds. The top is flat on average: never a
-  hill, a bowl or a tilt.
+- Its top is a rolling plateau, like an old meadow: low mounds, banks and hollows of about half a
+  metre to a metre either way, some 18 m across, with smaller hummocks on them. The slopes stay
+  mostly under 12 degrees and never get too steep for the grass to grow on. The top is flat on
+  average: never a hill, a bowl or a tilt.
 - The cliff's height follows the plateau along the coast. The contour, the slope and the weathering
-  of the stone belong to the outer rim and the cliffs.
+  of the stone are features of the outer rim and the cliffs ([The rim](#the-rim),
+  [The cliffs](#the-cliffs)).
 
 ## The sea floor
 
@@ -36,10 +37,10 @@ Contents:
   breaks the surface off the island.
 - Large blocks heap below the stretches of coast that shed them. Elsewhere the shelf is mostly
   clear sand and platform. Avoid stones sprinkled evenly round the coast.
-- The floor round the coast zones as a real rocky shore's:
+- The sea floor around the coast is zoned like a real rocky shore:
   - cobbles with an olive film close against the cliff's foot;
-  - rounded stones in a low mottle, close to the sand of their depth and a little greyer at every
-    hour, with silted sand between them that thins out within a few metres;
+  - rounded stones in a low mottle, close in colour to the sand at the same depth and a little
+    greyer at every time of day, with silted sand between them that thins out within a few metres;
   - a belt of clean sand whose ripples, a hand's width apart, run along the coast;
   - seagrass only below the swell's reach (from about 3.5 m down), in meadows tens of metres across
     with sharp edges and sand holes.
@@ -50,7 +51,7 @@ Contents:
 - The cliffs read as natural rock, never masonry: no level courses or evenly spaced joints, and no
   lumps of dissolved limestone. A weathered face has shed blocks along its joints and beds. Its
   breaks are sharp above the waves and rounded in the wave zone and at the crest.
-- No pocket reads as a black hole or a pair of eyes in the shade.
+- No pocket reads as a black hole or a pair of eyes in shadow.
 - Under the meadow the wall weathers back to an upper slope rather than jutting as a slab. It rolls
   over into the meadow in a broad convex shoulder of weathered stone, never a sharp corner: broader
   on some stretches, tighter on others, the breaks through it blunted rather than notched.
@@ -59,10 +60,10 @@ Contents:
 - Sunlit stone keeps its grain and its grey. A cliff face turned to the sun is the brightest ground
   in the frame, but never a flat cream-white sheet.
 - The stone is kept darker than real limestone, the one departure from physically plausible values
-  on record. The exposure set for the meadow would otherwise put it over the tone curve's shoulder.
-  It stays lighter than the meadow's albedo, so a face lit from the side stands out from the grass
-  as a pale cliff rather than a dark band. The albedos:
-  [Look values](../reference/look-values.md#albedo).
+  on record. Otherwise, the exposure set for the meadow would push it past the shoulder of the tone
+  curve. Its albedo stays higher than the meadow's, so a face lit from the side stands out from the
+  grass as a pale cliff rather than a dark band. The albedos: [Look
+  values](../reference/look-values.md#albedo).
 - The wall's foot, in and under the water, is the same stone wet. Under the water it keeps nearly
   all of its dry albedo, and it darkens only as the water over it dims and colours the floor beside
   it, so nothing pale runs along it at a low sun or under cloud.
@@ -71,11 +72,12 @@ Contents:
 
 - Plants and the meadow's cover are rooted on the island's top, never on the cliff faces.
 - The meadow runs out onto the shoulder and meets the stone where it steepens, with no sod rolled
-  over the edge. The sward runs to the edge on every coast, windward and lee alike. Avoid a windward
-  lip shown short, yellow, thin over gravel and bared to the stone: from above it reads as one more
-  zone.
+  over the edge. The sward runs to the edge on every coast, windward and lee alike. Avoid drawing
+  the windward lip as short, yellow grass, thin over gravel and worn down to the stone: from above
+  it reads as one more zone.
 - At the lip the turf ends on its soil over the stone, never a dark hole.
-- Never a ground mapped from above on the lip's bevel: it runs down the slope in stripes.
+- Never project the ground texture from above onto the lip's bevel: on the slope it stretches into
+  stripes.
 
 ## The meadow
 
@@ -90,8 +92,8 @@ Contents:
   taller sward there, running into each other blade by blade. From above that is a soft mottling,
   never a zone, a line, a path or a hollow. A short turf walled by tall grass, two levels, reads as
   a hole dug into the lawn.
-- No fields of tone, dryness or bare earth: they break the lawn into what reads from the island
-  view as camouflage and dark blotches. No pattern of dots on the blades.
+- Avoid large patches of different tone, dryness or bare earth: they break the lawn into what reads
+  from the island view as camouflage and dark blotches. No pattern of dots on the blades.
 
 ### Close up
 
@@ -103,7 +105,7 @@ Contents:
   lawn, and the wind moves it in broad sweeps but never combs it flat as one pile. The layering
   comes from the grass itself: each clump gives its blades their lean and its stroke its colour.
 - Avoid clumps grown as visible mounds (a quarter of them half again as tall, leaning out, each lit
-  on one side and shaded on the other): they draw the island's top as a field of lumps.
+  on one side and shaded on the other): they make the island's top read as a field of lumps.
 - Each blade reads as a rounded leaf, its light turning across its width (a short one folded into
   two leaves), and only a little apart from its neighbours in value and colour.
 - From the ground up the sward has a meadow's layers: dead leaves and the old leaves' straw sheaths
@@ -118,8 +120,8 @@ Contents:
 - The colour (fresh green, yellow green, olive, a few dry leaves) changes from stroke to stroke, a
   few clumps sharing one, a little either way, so the lawn reads as a painter's strokes of one green
   and its average stays one colour. Avoid a single dyed green, which reads as plastic, and every
-  blade and clump its own value and height, which from the island view grains the lawn into a
-  scatter of tufts over dark ground.
+  blade and clump its own value and height, which from the island view breaks the lawn into a
+  grainy scatter of tufts over dark ground.
 - The blades keep a sunlit leaf's albedo, within real ones
   ([Look values](../reference/look-values.md#albedo)).
 - The gaps between blades are a deep, cooler green, never near black, under tips that stand out
@@ -128,20 +130,21 @@ Contents:
   does not turn yellow when the sun goes in.
 - Looking toward the sun the whole lawn glows; away from it the lawn is plainer and greener.
 
-### Light in the grass
+### Lighting in the grass
 
-- The shade inside the grass is the grass's own, never painted. The blades and clumps toward the sun
-  shade those behind them and the ground under and beside them, softly, as light passes between the
-  blades, darkening toward the ground: a deep green, never black.
-- The shade of anything standing on the meadow lies soft and light.
+- The shadowing inside the grass comes from the grass itself, never from painted darkening. The
+  blades and clumps toward the sun shadow those behind them and the ground under and beside them,
+  softly, as light passes between the blades, darkening toward the ground: a deep green, never
+  black.
+- Shadows cast on the meadow by anything standing on it are soft and light.
 - The only large shadows that cross the meadow are the real clouds', drifting with the cloud layer
   overhead. No patches are painted or animated onto the island to vary its light.
 
 ### The ground
 
 - The island's ground is one soil, under the meadow and under the bamboo alike: a brown earth that
-  shows through the gaps between the blades near and far, grained
-  by a scanned ground. The meadow's colour is its blades' over that earth. The readings:
+  shows through the gaps between the blades near and far, with grain from a scanned ground texture.
+  The meadow's colour is the colour of its blades over that earth. The values:
   [Look values](../reference/look-values.md#albedo).
 - The groves' floor is the same soil and the same grass, sparser ([The bamboo](#the-bamboo)).
 
@@ -161,10 +164,10 @@ returns:
 
 - The flowers are part of the meadow, and they are Penglai's, after the texts on the immortals'
   islands, not a generic island's: whole plants among the grass, never heads floating over it.
-- The yaoxiang (遙香草, Shiyi ji: "flowers like cinnabar, leaves narrow and white, like the day
-  lily") is a day lily's clump: a fountain of narrow, pale silvery leaves and two to four scapes over
-  the sward, each holding cinnabar trumpets out at a slant, each its own way, dark in the throat,
-  with buds, a closed trumpet or a spent flower among them.
+- The yaoxiang (遙香草, Shiyi ji: "flowers like cinnabar, leaves narrow and white, like the day lily")
+  is a day lily's clump: a fountain of narrow, pale silvery leaves and two to four scapes over the
+  sward, each holding cinnabar trumpets out at a slant, each its own way, dark in the throat, with
+  buds, a closed trumpet or a spent flower among them.
 - The zhuyu (祝餘, Shanhai jing: "like chives, with blue-green flowers") is a chive's clump of dark
   blue-green leaves under round heads of sky-blue star florets, loose enough to see the stars, just
   over the sward, with tight pale buds and half-open heads among them.
@@ -178,7 +181,7 @@ returns:
 - Each swath's kind is its ground's: the zhuyu in the exposed coast's wind-cropped turf, the shallow
   pockets and on dry ground, among shorter grass; the yaoxiang over the rest of the meadow, most in
   the sheltered sward. None on the lip, and none in the bamboo's groves or their shade, where
-  flowers draw dull.
+  flowers render dull.
 - Avoid flowers scattered as small drifts or single heads: from the island view they read as specks
   or confetti, never as the island's colour.
 - They are lit as the meadow is, darker low among the blades and lighter at the top, and never
@@ -190,8 +193,8 @@ returns:
 - A herb of the sunken mountain Yuanjiao grows in the meadow: the yunpeng (芸蓬, Shiyi ji: "white as
   snow, a stem two zhang long, at night it gives a white light").
 - Single clumps of straight white stalks stand far apart (at least about 13 m) on the open meadow,
-  out of the bamboo's groves and their inner floor and in from the cliff's edge: about ten on a grown
-  island, and maybe none on the starting island, whose meadow is small.
+  out of the bamboo's groves and their inner floor and in from the cliff's edge: about ten on a
+  grown island, and maybe none on the starting island, whose meadow is small.
 - It is an accent, never a stand: tall and glowing, a drift of such clumps would hide the islanders
   by night.
 - Its glow by night stays a soft white that lights the ground round a clump, never a lamp.
@@ -203,7 +206,8 @@ returns:
   culms vary in height and girth, the taller the thicker, and whose edges run out in lobes, single
   culms ahead of them on the open meadow, and glades of meadow between. Avoid one round crown and a
   closed forest.
-- No placement rule: it stands at the cliff's edge as anywhere else.
+- No placement rule holds it back from the coast: it stands at the cliff's edge as it does anywhere
+  else.
 - Its culms are tall and slender, bare to about half their height, their leaves narrow and in loose
   drooping layers, so the culms show from above between them.
 - Its stems are a warm olive green, one family with its leaves and the meadow, and darker than the
@@ -226,13 +230,13 @@ returns:
 - Under a closed sky the crowns keep their green as the lawn does, a dark, rich green, the sky's
   light having passed through and off their leaves. At a low sun they take its warm colour instead.
 - A grove is dark inside, its canopy hiding most of the sky from its floor; its culms are lit where
-  the sun finds them. Its floor in shade reads darker than the open shade at its edge, and darker
-  still deeper in. Its culms in shade stand a little darker than the crowns over them, dark green
+  the sun finds them. Its floor in shadow reads darker than the open shade at its edge, and darker
+  still deeper in. Its culms in shadow stand a little darker than the crowns over them, dark green
   stems against the light between, and the faces toward the grove's open sides read lighter than
   those toward its inside.
 - Its floor is the meadow's ground and grass, the grass thinning over a few metres about the culm
   line to about a third of the meadow's under the culms, at its full height, along a ragged edge.
-  Nothing else grows under the groves; from the island's camera it would not be seen.
+  Nothing else grows under the groves; from the island view it would not be seen.
 
 ## What grows and what does not
 
@@ -250,4 +254,5 @@ returns:
 - The wind turns with the weather and has levels: light, gentle, fresh, strong. It is gentle most of
   the time, fresh at times, light or strong rarely. It comes mostly from within 40 degrees of the
   prevailing wind, and now and then from the opposite side.
-- The landscape keeps the prevailing wind: it sets the meadow's exposure.
+- The landscape keeps the prevailing wind: it sets which parts of the meadow are exposed to the
+  wind.

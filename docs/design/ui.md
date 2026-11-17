@@ -37,12 +37,12 @@ game behind it: [Game design](game-design.md).
   decided); the English version (its catalogue is a snapshot, not kept up until then:
   `packages/game/ui/i18n/i18n.ts`).
 - **No save menu.** With no menu, the player has no save or load control and no sign that the game
-  was saved. The page saves the game itself and resumes it when it loads (`packages/game/save.ts`
-  says when).
+  was saved. The app saves the game itself and resumes it when the page loads
+  (`packages/game/save.ts` says when).
 - **Not built yet**: a choice in an islander's bag does nothing beyond marking the slot, and the
-  stand-in brain never starts a thought from what it hears (a brain that hears does:
-  [Speaking](#speaking)).
-- **Weather**: only the kept weathers are shown, because the weather's auto chain draws only them
+  stand-in agent (`packages/game/sim/standin.ts`) never starts a thought from what it hears (an
+  agent that hears does: [Speaking](#speaking)).
+- **Weather**: only the kept weathers are shown, because the auto-weather chain picks only them
   (`packages/render/sky/Weather.ts`): 晴 (clear and fair), with a night face (the moon). 多云 and 阴
   (the parked cloudy and overcast) keep their rows, 多云 with its night face (the moon behind
   cloud), so a parked sky loaded by name still has a kind to show as. The other parked kinds (雨,
@@ -153,7 +153,7 @@ the right, the resources and the record's scroll icon (沧海录).
 - Beside it, one brush stroke spans the next 24 game hours: 9 px an hour, thick by day and thin by
   night, with a tick at midnight, flowing left as time passes. A small icon stands at each turn of
   the weather (the middle of its front). Of two turns closer than 20 px, the worse one stays.
-- The forecast is the weather's own future, not a guess: it is the engine's auto chain read ahead,
+- The forecast is the weather's own future, not a guess: it is the auto-weather chain read ahead,
   which is seeded, so the future is known (`packages/render/sky/Weather.ts`). It counts in game
   hours.
 
@@ -200,7 +200,7 @@ The player talks to the islanders in words, through the speak bar at the bottom 
 - **Thinking**: the heard characters circle above the head, at most six at a time, the whole line
   taking turns. Words heard while thinking wait until the thought ends. The ring turns round the
   head in the world: each character faces out from it, turned half toward the viewer, so the ones at
-  the sides show narrowed and the ones behind the head turn edge on and fade. Only a brain that
+  the sides show narrowed and the ones behind the head turn edge on and fade. Only an agent that
   hears thinks over the player's words.
 - **An islander speaks**: the characters pop out above the head one at a time, sized by the
   camera's distance. The line holds 2.5 s plus 0.3 s per character, then melts away character by
@@ -296,9 +296,9 @@ leader, and the top row's dividers.
 
 - The interface reads the simulation and acts only through `Game`'s methods, and asks the
   simulation for a game rule (a refusal, a cost check) instead of repeating it
-  ([Rules across the layers](../reference/architecture-rules.md), rules 3 and 6).
-- It never touches the canvas's pixels, so paused frames stay exact, and it writes the DOM only
-  where it changed. What stands in the world is DOM too, laid into the scene through the camera
+  ([Architecture rules](../reference/architecture-rules.md), rules 3 and 6).
+- It never touches the canvas's pixels, so paused frames stay bit-identical, and it writes the DOM
+  only where it changed. What stands in the world is DOM too, laid into the scene through the camera
   (`packages/game/ui/Space.ts`). What is drawn in the 3D scene itself (the placement ring) raises a
   scene event when it changes on a paused page (`packages/game/Placement.ts`).
 - Every word the player reads is a key of the catalogue, never a string in code
