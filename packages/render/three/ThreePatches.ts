@@ -28,7 +28,7 @@ import { missing } from './Internals.ts';
 // `tools/render/verify-frame-graph-gpu.mjs` checks the patches (both orders of an MRT and a plain draw, a
 // swapped layout). On another three revision, or a renderer without the members they patch, they
 // throw, naming the entry of `three-internals.json` (Internals.ts `missing`): re-check them on a
-// three upgrade (docs/how-to/upgrade-three.md).
+// three upgrade (packages/render/three/README.md).
 //
 // One more patch, of the bindings (`installBindingPatches`): a render object's bind groups are cloned
 // from its build's (NodeBuilderState.createBindings), and a cloned texture binding starts with the

@@ -14,10 +14,10 @@ clear water, chunky stone, a lush meadow that moves in the wind); `?game` opens 
   `docs/reference/architecture-rules.md`.
 - Each text has one home: decisions in `docs/design/` (art in the page it concerns), facts in
   `docs/reference/` (look values in `look-values.md`, URL options in `url-options.md`) and module
-  headers, one task's steps in `docs/how-to/`. `docs/README.md` lists every page. `AGENTS.md`,
-  `ARCHITECTURE.md`, `CREDITS.md` and `README.md` stay at the top. This file changes with a rule
-  every change follows, the reading index or the folders; a layer's `AGENTS.md`, with a rule of
-  that layer alone.
+  headers, one task's steps in the README of the folder it changes. `docs/README.md` lists every
+  page. `AGENTS.md`, `ARCHITECTURE.md`, `CREDITS.md` and `README.md` stay at the top. This file
+  changes with a rule every change follows, the reading index or the folders; a layer's `AGENTS.md`,
+  with a rule of that layer alone.
 - A fact or a rule is written in one place; other pages link to it. Docs state the current state:
   what was tried and dropped goes in the commit message. Prose follows the Google developer
   documentation style guide (<https://developers.google.com/style>).
@@ -178,11 +178,11 @@ that is broken a second time gets one in the change that meets it.
   generator: `packages/island/world/Chunks.ts`'s header; what depends on the land's shape:
   `Growth.ts`'s header. A history-dependent effect: `docs/bindings/verifying-rendering-changes.md`,
   History.
-- Gameplay: `docs/design/game-design.md`; game content: `docs/how-to/add-game-content.md`; game UI:
-  `docs/design/ui.md`. The look and what to avoid: `docs/design/art-direction.md` and the pages it
-  links, `docs/reference/look-values.md`.
-- three.js: `docs/how-to/upgrade-three.md`. A commit: `tools/check.mjs`'s header. A tool, a check, a
-  doc or a change to what renders: its skill.
+- Gameplay: `docs/design/game-design.md`; game content: `packages/game/sim/content/README.md`;
+  game UI: `docs/design/ui.md`. The look and what to avoid: `docs/design/art-direction.md` and the
+  pages it links, `docs/reference/look-values.md`.
+- three.js: `packages/render/three/README.md`. A commit: `tools/check.mjs`'s header. A tool, a
+  check, a doc or a change to what renders: its skill.
 
 ## Map
 

@@ -91,10 +91,5 @@ Facts to look up.
   comparison is byte-exact, how a tolerance is set and how the stored references are used.
 - [The kit](../tools/kit/README.md): copying the capture and measuring tools into a project.
 - [Rock by the sea](../examples/rock/README.md): the smallest project on the render pipeline.
-
-## How-to guides
-
-Steps for one task that no skill covers.
-
-- [Add game content](how-to/add-game-content.md): needs, items, places, options, buildings.
-- [Upgrade three.js](how-to/upgrade-three.md): move to another version of three.js.
+- [Reaching into three.js](../packages/render/three/README.md): the reaches and how to upgrade three.
+- [Game content](../packages/game/sim/content/README.md): adding a need, an item, a place, a building.

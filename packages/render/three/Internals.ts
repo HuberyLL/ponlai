@@ -9,13 +9,13 @@ import { REVISION } from 'three/webgpu';
 // another path: `missing` makes that error, and `checkRenderer` checks the members of the
 // renderer's instance that the functions of this directory use once the renderer is initialised
 // (the static check cannot see what three assigns at run time). An upgrade of three follows
-// docs/how-to/upgrade-three.md.
+// packages/render/three/README.md.
 
 /** The error for a dependency on three's internals that does not hold: `entry` is the list's id
  * (`three-internals.json`), `user` the function of ours that needs it. */
 export function missing( entry: string, user: string ): Error {
 
-	return new Error( `three r${ REVISION } lacks '${ entry }' (packages/render/three/three-internals.json), which ${ user } needs: see docs/how-to/upgrade-three.md` );
+	return new Error( `three r${ REVISION } lacks '${ entry }' (packages/render/three/three-internals.json), which ${ user } needs: see packages/render/three/README.md` );
 
 }
 

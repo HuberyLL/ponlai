@@ -15,11 +15,11 @@ homes in this repository:
 | Rules file | The root `AGENTS.md` (the index and the rules every change follows) and one in `packages/render/`, `packages/island/` and `tools/` (the rules of that folder alone); a `CLAUDE.md` beside each imports it, and the root's keeps Claude-only notes |
 | Skill | `skills/<name>/` (`SKILL.md`, `background.md`, reference files) |
 | Binding | `docs/bindings/<name>.md` |
-| Tool manual | The tool's header, printed by `--help`; `docs/reference/tools.md` indexes the tools by question; `tools/kit/parity/README.md` documents its folder |
+| Tool manual | The tool's header, printed by `--help`; `docs/reference/tools.md` indexes the tools by question |
 | Architecture page | `ARCHITECTURE.md`; each rule's full text in `docs/reference/architecture-rules.md`, under the same number |
 | Reference page | `docs/reference/` |
 | Design page | `docs/design/` (art direction and its subject pages, game design, game UI) |
-| How-to guide | `docs/how-to/`: one task's steps in this project that no skill covers; a method used across tasks is a skill |
+| Folder README | A `README.md` in the folder it documents: what the folder holds and one task's steps on it that no skill covers (`tools/kit/`, `tools/kit/parity/`, `packages/render/three/`, `packages/game/sim/content/`, `examples/rock/`); a method used across tasks is a skill |
 | Module header | The header comment of each file under `packages/` and `app/` |
 | Third-party sources whose licence asks for a notice or credit | `CREDITS.md` |
 | A file's copyright and licence | SPDX tags in its `/*! ... */` notice, `REUSE.toml`, `LICENSES/` |

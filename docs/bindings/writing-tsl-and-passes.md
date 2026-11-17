@@ -50,7 +50,7 @@ anti-aliasing mode reads `post/Antialiasing.ts`'s exports, never the tier.
 
 - three is pinned exactly in `package.json` (`three` 0.186.1, `@types/three` 0.186.0); the
   behaviour page marks three's own behaviour at that version **r186**.
-- After an upgrade, follow `docs/how-to/upgrade-three.md`: its step 11 goes through every r186
+- After an upgrade, follow `packages/render/three/README.md`: its step 11 goes through every r186
   entry with its check. `tools/repo/verify-three-internals.mjs` (in `npm run check`) fails on each
   internal of three the render pipeline reaches whose code changed.
 

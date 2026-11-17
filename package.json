@@ -12,8 +12,8 @@
     "typecheck": "node tools/kit/qos.mjs tsc",
     "check": "node tools/check.mjs",
     "lint": "node tools/kit/qos.mjs eslint packages app",
-    "lint:docs": "markdownlint-cli2 && node tools/repo/verify-doc-paths.mjs && node tools/repo/verify-doc-shape.mjs && lychee --offline --no-progress AGENTS.md ARCHITECTURE.md CREDITS.md README.md \"docs/**/*.md\" \"tools/**/*.md\" \"skills/**/*.md\" \"packages/*/AGENTS.md\" \"examples/*/README.md\" \".github/**/*.md\"",
-    "lint:links": "lychee --no-progress AGENTS.md ARCHITECTURE.md CREDITS.md README.md \"docs/**/*.md\" \"tools/**/*.md\" \"skills/**/*.md\" \"packages/*/AGENTS.md\" \"examples/*/README.md\" \".github/**/*.md\""
+    "lint:docs": "markdownlint-cli2 && node tools/repo/verify-doc-paths.mjs && node tools/repo/verify-doc-shape.mjs && lychee --offline --no-progress AGENTS.md ARCHITECTURE.md CREDITS.md README.md \"docs/**/*.md\" \"tools/**/*.md\" \"skills/**/*.md\" \"packages/*/AGENTS.md\" \"packages/**/README.md\" \"examples/*/README.md\" \".github/**/*.md\"",
+    "lint:links": "lychee --no-progress AGENTS.md ARCHITECTURE.md CREDITS.md README.md \"docs/**/*.md\" \"tools/**/*.md\" \"skills/**/*.md\" \"packages/*/AGENTS.md\" \"packages/**/README.md\" \"examples/*/README.md\" \".github/**/*.md\""
   },
   "dependencies": {
     "@fontsource/ma-shan-zheng": "^5.3.1",

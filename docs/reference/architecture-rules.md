@@ -160,7 +160,7 @@ numbers. The core reads the definitions by id or in the order registered, and ne
 the tick, the five actions, the perception, the needs', items', places' and buildings' systems, the
 people system, the events, the schemas or the session. The stand-in brain is a player of the content
 and may name it. The steps for adding content:
-[add-game-content.md](../how-to/add-game-content.md).
+[add-game-content.md](../../packages/game/sim/content/README.md).
 
 **Why:** the design adds content as places and items, never as new actions
 ([game-design.md](../design/game-design.md), Actions).
@@ -589,7 +589,7 @@ The extension hooks three leaves for materials, lighting models, shadows and ins
 `setup...` methods, the builder's context) are its interface, not its internals: they are used where
 they are needed, and the list names them so that an upgrade sees one go. The tools are white-box,
 and a few still reach in themselves, on a list of their own. An upgrade of three follows
-[upgrade-three.md](../how-to/upgrade-three.md).
+[upgrade-three.md](../../packages/render/three/README.md).
 
 **Why:** the reaches cannot be removed without changing the image, so they are kept where an
 upgrade can find them all. A fallback that draws a few pixels differently, or builds a pipeline

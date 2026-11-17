@@ -1,5 +1,5 @@
 # Keeps the actions the CI uses up to date. npm packages are updated by hand: three.js has its own
-# upgrade steps (docs/how-to/upgrade-three.md), and the tools are checked against pinned versions.
+# upgrade steps (packages/render/three/README.md), and the tools are checked against pinned versions.
 version: 2
 updates:
   - package-ecosystem: github-actions

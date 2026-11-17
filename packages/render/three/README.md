@@ -1,11 +1,12 @@
-# Upgrade three.js
+# Reaching into three.js
 
-This guide gives the steps for moving the project to another version of three.js. The render
-pipeline depends on parts of three that are not its public interface: private members of the
-renderer and its helpers, the WebGPU backend and its device, methods it replaces and code of three's
-it mirrors. Each of these reaches is a function of `packages/render/three/`, and
-`packages/render/three/three-internals.json` lists what they depend on. three and `@types/three` are
-pinned to exact versions, so the list holds until someone changes the pin.
+This folder holds every reach of the render pipeline into three.js, and this page gives the steps
+for moving the project to another version of three. The render pipeline depends on parts of three
+that are not its public interface: private members of the renderer and its helpers, the WebGPU
+backend and its device, methods it replaces and code of three's it mirrors. Each of these reaches is
+a function of `packages/render/three/`, and `packages/render/three/three-internals.json` lists what
+they depend on. three and `@types/three` are pinned to exact versions, so the list holds until
+someone changes the pin.
 
 An upgrade is the only time the list can stop holding, and then the code says so instead of taking
 another path:
@@ -16,11 +17,11 @@ another path:
   once it is initialised, and each function of `packages/render/three/` throws when a member it
   needs is missing. The error names the list's entry and the function that needs it.
 
-The other dependencies are on three's behaviour, with no line that reaches in:
-[three.js and WebGPU behaviour](../reference/three-behaviour.md) lists them, the entries marked
-r186, each with the check that sees it.
+The other dependencies are on three's behaviour, with no line that reaches in: [three.js and WebGPU
+behaviour](../../../docs/reference/three-behaviour.md) lists them, the entries marked r186, each
+with the check that sees it.
 
-## Steps
+## Upgrade three.js
 
 1. Create a branch. Read three's migration guide and release notes for every version between the
    pinned one and the new one, and note what touches an entry of `three-internals.json` or an

@@ -6,9 +6,9 @@ most of these behaviours fail without an error, as a shader that draws nothing, 
 the wrong time or a few pixels that move.
 
 Each entry gives the behaviour, what the code does about it, where the code meets it and the check
-that sees it. An entry marked **r186** is three's own behaviour at the pinned version: an upgrade
-of three goes through each of them ([Upgrade three.js](../how-to/upgrade-three.md), step 11). The
-code lint checks the entries that name a lint rule
+that sees it. An entry marked **r186** is three's own behaviour at the pinned version: an upgrade of
+three goes through each of them ([Upgrade three.js](../../packages/render/three/README.md), step
+11). The code lint checks the entries that name a lint rule
 (`tools/repo/lint/plugin.mjs`); the rest need judgement.
 
 Module paths are under `packages/render/` unless they say otherwise.

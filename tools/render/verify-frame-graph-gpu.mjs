@@ -5,7 +5,7 @@
 // temporal modes rest on, and the app's own materials under their passes' MRT. The graph's
 // compiler and runtime on the CPU are checked by tools/render/verify-framegraph.mjs. Run it after a
 // change to the patches, the graph's compile or warm-up, the motion MRTs, or an upgrade of three
-// (docs/how-to/upgrade-three.md).
+// (packages/render/three/README.md).
 //
 // Usage:
 //   node tools/render/verify-frame-graph-gpu.mjs [url]

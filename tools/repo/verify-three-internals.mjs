@@ -1,6 +1,6 @@
 // Checks what the code depends on of three.js beyond its public interface, against the installed three.
 //
-// Run it after an upgrade of three (docs/how-to/upgrade-three.md) and after a change that reaches
+// Run it after an upgrade of three (packages/render/three/README.md) and after a change that reaches
 // into three; it is part of `npm run check`.
 //
 // Usage:
