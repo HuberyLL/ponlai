@@ -4,7 +4,7 @@
 // existing light; it never adds a grey screen veil (docs/design/sea-and-sky.md, The parked weathers). A weather change moves
 // the whole sky from one preset's values to the next's (a front, in time alone: the clouds are one
 // model whose parameters the skies set, Clouds.ts), and the island's lighting follows its
-// progress. No tier or knob alters the weather state (Quality.ts).
+// progress. No tier or setting alters the weather state (Quality.ts).
 //
 // The wind is a dimension of its own beside the sky (`WIND_LEVELS`, a heading): any sky goes
 // with any level, as a day's wind follows the pressure pattern rather than the cloud. A real day's
@@ -36,7 +36,7 @@
 // from the frame after a front ends, so a turn comes up to a step either side of the time read
 // ahead (tools/render/verify-weather-state.mjs); the forecast is read again as the weather moves on.
 //
-// The weather the page runs is a fine day's: clear and fair. Cloud comes and goes between the two
+// The weather the app runs is a fine day's: clear and fair. Cloud comes and goes between the two
 // and no further.
 //
 // Parked weathers (`PARKED_WEATHER`: cloudy, overcast, rain, storm, fog) slowed every line of work
@@ -56,13 +56,13 @@
 //
 // Beside its fields the weather keeps the shares of four skies in the sky as it stands (`skyMix`,
 // MIX_SKIES: rain, storm and fog counting as overcast), blended by a front as the fields are, for the lighting's
-// per-weather knobs (lighting/AmbientGrade.ts).
+// per-weather parameters (lighting/AmbientGrade.ts).
 
 export type WeatherName = 'clear' | 'fair' | 'cloudy' | 'overcast' | 'rain' | 'storm' | 'fog';
 
 export const PARKED_WEATHER: ReadonlyArray<WeatherName> = [ 'cloudy', 'overcast', 'rain', 'storm', 'fog' ];
 export const isParkedWeather = ( name: string ): boolean => ( PARKED_WEATHER as readonly string[] ).includes( name );
-/** The skies whose shares `Weather.skyMix` holds, in its order: the lighting's per-sky knobs are
+/** The skies whose shares `Weather.skyMix` holds, in its order: the lighting's per-sky parameters are
  * keyed by these four, and every other sky is a blend of them (`skyShares`). */
 export const MIX_SKIES: ReadonlyArray<WeatherName> = [ 'clear', 'fair', 'cloudy', 'overcast' ];
 
@@ -221,7 +221,7 @@ export interface WeatherState {
 	// 1 casts the deck's own, less lets more of the sun through the same clouds.
 	shadowDensity: number;
 	// How far the key's glint widens toward a rough lobe (lighting/SurfaceBRDF.ts `keyGlint`): 0
-	// keeps the disk's representative point as it is, in every weather so far; a knob for wet ones.
+	// keeps the disk's representative point as it is, in every weather so far; a parameter for wet ones.
 	glintSpread: number;
 	// The sky's own light in the weather, a share of what the atmosphere and the clouds give: the
 	// drawn sky and its clouds, the environment's bake (the land's and the water's sky light), the
@@ -325,7 +325,7 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // under them the key keeps a floor on the land, the same rule under every sky (Sky.ts
 // `look.keyThroughCloud`, `keyDirectVisibility`: a share of what a layer of the sky's shell and density
 // passes down), through the sun's map: it is the direct key, so it takes the sun's map, the
-// meadow's screen-space shade and the canopy's light, and the island's cast shadows show under
+// meadow's screen-space shadows and the canopy's light, and the island's cast shadows show under
 // cloud (`castShadow` 1), soft because the sky's light is the larger share. The floor rides on the
 // moon's light by night as on the sun's by day; the sea keeps it too, its glint only the direct
 // beam, and under a closed sky the air does (Sky.ts `seaKeyVisibility`, `deckKeyFloor`). Overcast is a closed deck deep
@@ -501,7 +501,7 @@ export class Weather {
 		this.windLevel = wind.level ?? PRESET_WIND[ name ] ?? 'gentle';
 		this.windHeading = wrapHeading( wind.heading ?? PREVAILING_HEADING );
 		const preset = endpoint( name, this.windLevel, this.windHeading );
-		// Loading a rainy preset represents established weather for repeatable review captures.
+		// Loading a rainy preset represents established weather for reproducible review captures.
 		// Subsequent weather changes preserve moisture and let the independent drying model run.
 		this.current = { ...preset, wetness: preset.rain * 0.8, showers: preset.rain };
 		this.from = { ...preset };
@@ -570,7 +570,7 @@ export class Weather {
 
 	/** MIX_SKIES' shares in the sky as it stands (MIX_SKIES' order, summing to 1): a front
 	 * moves them from where they stood to its target's as it moves the state's fields; a parked sky
-	 * counts as overcast. The lighting's per-weather knobs weight their columns by it
+	 * counts as overcast. The lighting's per-weather parameters weight their columns by it
 	 * (lighting/AmbientGrade.ts). */
 	get skyMix(): readonly number[] { return this.mix; }
 

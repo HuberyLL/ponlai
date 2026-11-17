@@ -17,7 +17,7 @@ import type { WorldFields } from './WorldFields.ts';
 //   Each is placed in world coordinates (identity matrices: the derived products below are world
 //   space) and frustum-culled by its box, which the chunk's ground grid carries (the exact box of
 //   the island as meshed, which holds the drawn mesh: the chunk's job simplifies it, its border
-//   locked, IslandSimplify.ts): the page walks none of the island's vertices. A grown island (Growth.ts) takes
+//   locked, IslandSimplify.ts): the main thread walks none of the island's vertices. A grown island (Growth.ts) takes
 //   out the changed chunks' meshes and adds theirs (`islandMesh`), kept in the chunks' order
 //   ( cj, ci ), and `derive` collects what they carry again.
 // - The stones and the sea floor stay one mesh each (ChunkMerge.ts), as every small kind does; a
@@ -35,7 +35,7 @@ import type { WorldFields } from './WorldFields.ts';
 //   the GPU forms its multisampled fragments and its derivatives' pixel quads within a draw, so
 //   splitting the same triangles over several draws (even as draw ranges of one buffer, in the
 //   same order) moves results at some partly covered pixels. Byte comparisons hold between pages
-//   that split the island alike; a paused frame repeats, since the split follows the chunks.
+//   that split the island alike; a paused frame is bit-identical, since the split follows the chunks.
 
 /** The world's meshes, and what its chunks derived from them for their consumers. */
 /** What the sea takes from the island's shapes (ocean/Water.ts WaterInputs): the open sea deepens

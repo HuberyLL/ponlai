@@ -18,7 +18,7 @@ import { LOCALES, locale } from './ui/i18n/i18n.ts';
 //
 // The game's developer controls: a Game folder in the scene's lil-gui panel (H), not a player
 // interface. It pauses and resumes, saves, loads and starts a new game (the save's slot:
-// save.ts; `saved` says when the game was last saved and whether the page saves it itself), shows
+// save.ts; `saved` says when the game was last saved and whether the app saves it itself), shows
 // one islander's body as the simulation holds it (where it is, the action under way, whether a
 // thought is in flight for it) and sends that body walking to the next click on the island. Its
 // Growth folder bumps the population by an islander (how islanders arrive is not designed yet), so
@@ -28,7 +28,7 @@ import { LOCALES, locale } from './ui/i18n/i18n.ts';
 // (entries like any other, so they go into the save: a new game clears them), an agent that hears
 // the player and answers after a thought (HearingAgent), a line said by the islander inspected, and
 // their needs low and critical; and it picks the interface's language, which reloads the page with
-// `?lang=` (a load knob: ui/i18n/i18n.ts). Everything goes through the Game's methods, which the
+// `?lang=` (a load-time setting: ui/i18n/i18n.ts). Everything goes through the Game's methods, which the
 // console reaches as window.__PONLAI__.game.
 
 // placeholder answers of the hearing agent

@@ -34,7 +34,7 @@ import { SHELF_REACH } from '../world/Bathymetry.ts';
 //   that distance, the farthest, to the one that frames the land alone without its shallows from
 //   every side, the nearest, so the whole island always stays in view. The zoom is kept as a share
 //   of that range (on the log of the distance), so it holds through a turn, a growth step and a
-//   resize; the key R returns to the query's heading and the farthest zoom. The page sets
+//   resize; the key R returns to the query's heading and the farthest zoom. The app sets
 //   `wheelZoom` to 0: the island view never zooms in past its framing (IslandStages.ts `islandNearest`).
 
 /** The share of the half frame kept free round the framed island. */

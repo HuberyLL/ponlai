@@ -15,10 +15,10 @@ import type { Bounds } from '../../render/data.ts';
 // tools/kit/probe.mjs. Every sway comes from the shaders' own TSL functions (Wind.ts `windField`,
 // Grass.ts `bladeWindOffset` for the meadow's blades, each kind's constants for the plants),
 // evaluated in a compute kernel built on the first
-// call (none exists on a page that never calls it, so the page's pipelines are unchanged), for the
-// plants' own inputs: tufts grown as the page grows them (`plantGrass`, sampled). The wind is a copy of the page's (`Wind`, the same
+// call (none exists on a page that never calls it, so the app's pipelines are unchanged), for the
+// plants' own inputs: tufts grown as the app grows them (`plantGrass`, sampled). The wind is a copy of the app's (`Wind`, the same
 // speed, heading, gustiness and scene time), stepped on the CPU and handed to the kernel per step through a
-// storage buffer, so the page's own wind is never touched. Two time series: fast (64 x 0.05 s,
+// storage buffer, so the app's own wind is never touched. Two time series: fast (64 x 0.05 s,
 // the swing) and slow (40 x 0.5 s, the gusts' travel). Options: DEFAULTS below; `kinds` takes
 // 'grass', 'bamboo' and 'yunpeng' (the plants' main bend at their tops, Deform.ts `mainBend`, for
 // each kind's tallest plant: the grown culm, the 5 m stalk). The result is large and deep:
@@ -46,7 +46,7 @@ import type { Bounds } from '../../render/data.ts';
 // apart), with the meadow's gust on the same grid: each one's travel and correlation lengths, and
 // their Pearson correlation by distance from the land's box (1 where the sea's gusts are the
 // meadow's, falling to tidewater's own pattern far out). `swayRates`: each plant kind's sway
-// rate (swings a metre of the plants' travel) and its frequency in the page's wind (Hz). `w4`:
+// rate (swings a metre of the plants' travel) and its frequency in the app's wind (Hz). `w4`:
 // every vegetation mesh,
 // whether its material has a wind displacement.
 // `w5` (scene jumps and seeks, so last): for each kept weather and a few presets where every part
@@ -55,9 +55,9 @@ import type { Bounds } from '../../render/data.ts';
 // prevailing heading plus its offset), the open sea's gusts (SeaDetail.ts: the air's displacement times
 // OPEN_DRIFT; around the island they are the meadow's, `gust.sea`), the air's displacement
 // (`fog`: what drifts with the surface wind), the cumulus (their weather map
-// and shape noise drift together; `evolve` moves the shape vertically, in place) and the thin
-// layer's streaks, each by minus the change of its sampling offset (Clouds.ts `layerOffsets`). The drifts are
-// read off the page across a seek of 1 s (`setTime`), so they are the page's own, and every gap is
+// and shape noise drift together; `evolve` moves the shape vertically, in place) and the
+// cirrus streaks, each by minus the change of its sampling offset (Clouds.ts `layerOffsets`). The drifts are
+// read off the running app across a seek of 1 s (`setTime`), so they are the app's own, and every gap is
 // to the vegetation's wind.
 
 type V2 = THREE.Node<'vec2'>;
@@ -111,7 +111,7 @@ function rng( seed: number ) {
 
 }
 
-// The page's wind at its scene time, stepped `steps` times by `dt` on a copy: per step its state
+// The app's wind at its scene time, stepped `steps` times by `dt` on a copy: per step its state
 // as Wind.ts's packWindState packs it.
 function windStates( ctx: WindProbeContext, { steps, dt }: Series ): { states: Float32Array; speed: number; heading: number; direction: THREE.Vector2 } {
 

@@ -1,17 +1,17 @@
-// The quality tiers: every knob the frame's cost depends on, per tier, in one table.
+// The quality tiers: every setting the frame's cost depends on, per tier, in one table.
 //
-// `?quality` picks the tier at load; without it the page loads high (QualityDetect.ts). The GUI's
+// `?quality` picks the tier at load; without it the app loads high (QualityDetect.ts). The GUI's
 // quality control reloads the page with it.
 //
-// High is the reference image and the only active tier: every trade-off of image against time is
-// judged on it, at its standard: 4K output (1920x1080 at a device pixel ratio of 2) at 60 fps with
+// High is the reference image and the only active tier: every trade-off of image quality against
+// time is judged on it, at its performance target: 4K output (1920x1080 at a device pixel ratio of 2) at 60 fps with
 // MSAA 4x (`aa`), with a GPU budget of about 14 ms a frame in the normal scenes (island views, the
 // meadow close up), leaving about 15 % of the 16.7 ms frame for pacing and the OS. 1440p's pixel
 // count, upscaled by FSR 1 (scale 4/3), is the guaranteed level: a load starts there and a paused
 // page renders there; the dynamic render scale (`render`, post/DynamicResolution.ts) climbs toward
 // native 4K with headroom and drops to about 1080p's pixel count when busy. Native 4K takes about
 // half as much GPU time again as the baseline, about 45 fps in the normal scenes, so 60 fps there
-// is the scale's reach and not the standard. A 2K display (2560x1440 at 1x) renders the same pixels
+// is the scale's reach and not the performance target. A 2K display (2560x1440 at 1x) renders the same pixels
 // natively and drops to about 1080p's. The meadow is built for the island view's
 // distance (main.ts starts it at 45 m): its blades stay a few pixels wide there (`grass`), so MSAA
 // resolves their edges within a frame, with no history to ghost or soften. Measured at 4K output:
@@ -28,18 +28,18 @@
 // loads them; new work need not support them. Their last tuning: medium runs `taau` at a fixed
 // budget (msaa missed 60 fps there where taau held it), its TAAU sharpening softer than high's; low runs `msaa` at a smaller budget. A revival measures them again against high.
 //
-// Each tier picks its anti-aliasing (the `aa` knob, post/Antialiasing.ts; `?aa` or the GUI choose
+// Each tier picks its anti-aliasing (the `aa` setting, post/Antialiasing.ts; `?aa` or the GUI choose
 // any mode over it). Without multisampling or a temporal resolve geometric edges alias by a pixel's
 // step and the meadow's widened blades are kept whole or dropped by their hash (Grass.ts), so no
-// tier runs `off`. No knob alters the weather,
+// tier runs `off`. No setting alters the weather,
 // clock or lighting state: a tier changes the cost, never the mood.
 //
-// Two kinds of knob:
-// - load: compiled into materials or the frame graph (shader loops, pass structure, map sizes), read
-//   once while they are built, so they change only with a reload;
-// - runtime: setters the page applies through `applySkyQuality` (RenderStages.ts) at load; a debug page can
-//   override them there (`s.applyQuality( { ... } )`) to time one at a time.
-// Load knobs reach their modules as `water` (Water.ts; its `fftAnisotropy` goes to OceanFFT's
+// Two kinds of setting:
+// - load-time: compiled into materials or the frame graph (shader loops, pass structure, map
+//   sizes), read once while they are built, so they change only with a reload;
+// - runtime: setters the app applies through `applySkyQuality` (RenderStages.ts) at load; debug
+//   code can override them there (`s.applyQuality( { ... } )`) to time one at a time.
+// Load-time settings reach their modules as `water` (Water.ts; its `fftAnisotropy` goes to OceanFFT's
 // output targets), `rainShading` (`setRainShading`), `post` (`PostOptions` for
 // `new Pipeline`), `environmentSource` (`Sky.setEnvironmentSource`, before the first bake),
 // `frameRate` (FramePacer), `ao` (post/GTAO.ts, read there as it loads), `aa` (the anti-aliasing
@@ -49,9 +49,10 @@
 // (`Sky.setCloudView`), the clouds' `setDome`, `setMarch` and `setShadowRefresh`,
 // `Sky.setEnvironmentCadence`, the sky bake interval, the refracted sun's interval and
 // `angleGate`, and the rain's drop count. Every default in the modules themselves is high's.
-// `?tier.<knob>=<value>` overrides one knob for an A/B.
+// `?tier.<setting>=<value>` overrides one setting for an A/B.
 //
-// The parked medium and low traded a little of high's image for time, each knob judged in captures:
+// The parked medium and low traded a little of high's image quality for time, each setting judged
+// in captures:
 // one screen-space reflection ray (its 14 steps grow by 1.51, so it reaches as far as high's), fewer lawn blades
 // with the canopy light per vertex, a coarser haze grid and fewer depth-of-field taps, a cheaper
 // cloud march and panorama refresh, slower sky bakes with the environment's PMREM on every second
@@ -164,8 +165,8 @@ export interface TemporalSettings {
 	fsr3: { sharpness: number; restSequence: number; autoReactive: boolean };
 }
 
-// Each knob names who reads it. The table is closed: it is the render pipeline's, a new knob is a
-// new field here, and a registered definition (a plant kind, a light source, a pass of the frame)
+// Each setting names who reads it. The table is closed: it is the render pipeline's, a new setting
+// is a new field here, and a registered definition (a plant kind, a light source, a pass of the frame)
 // names the field that governs its cost, or that it has none (Extensions.ts `cost`).
 export interface QualityProfile {
 
@@ -177,7 +178,7 @@ export interface QualityProfile {
 	// read by: RenderStages.ts createSeaAndPipeline, which hands it to the Pipeline (TemporalAA.ts,
 	// TemporalRest.ts, fsr3/Fsr3Upscaler.ts)
 	taa: TemporalSettings;
-	// read by: RenderStages.ts setUpRenderer (whether the GPU is timed), the page's frame sizing
+	// read by: RenderStages.ts setUpRenderer (whether the GPU is timed), the app's frame sizing
 	// (post/RenderScale.ts `renderPixelRatio`, post/DynamicResolution.ts) and the tier's detection
 	render: RenderScaleRule;
 	// read by: RenderStages.ts createSeaAndPipeline (`fftAnisotropy`, the ocean FFT's targets) and
@@ -187,8 +188,8 @@ export interface QualityProfile {
 	// read by: RenderStages.ts createSeaAndPipeline (`postOptionsFromURL`, post/Pipeline.ts)
 	post: Pick<PostOptions, 'hazeGrid'>;
 	// the screen-space ambient occlusion and the opaque depth prepass it reads (post/GTAO.ts; built
-	// only where the meadow's shade runs, at 4x outside the temporal modes; `flags=gtao` overrides it;
-	// the screen-space shade over the whole scene builds that prepass too, post/MeadowShadows.ts)
+	// only where the meadow's screen-space shadows run, at 4x outside the temporal modes; `flags=gtao`
+	// overrides it; the screen-space shadows over the whole scene build that prepass too, post/MeadowShadows.ts)
 	// read by: post/GTAO.ts as it loads (`GTAO`)
 	ao: boolean;
 	// the rain veil's shells and the sea's ripple layers
@@ -199,11 +200,11 @@ export interface QualityProfile {
 	environmentSource: number;
 	// the frame rate the loop holds on a display faster than that (post/FramePacer.ts: 60 renders on
 	// every second refresh at 120 Hz), or 0 to render on every refresh
-	// read by: the page's frame loop (post/FramePacer.ts)
+	// read by: the app's frame loop (post/FramePacer.ts)
 	frameRate: number;
 
 	// ---- runtime: all read by RenderStages.ts `applySkyQuality`, which applies them to the parts
-	// named below, and kept as the page's runtime quality (`runtimeQuality`), which the frame reads
+	// named below, and kept as the app's runtime quality (`runtimeQuality`), which the frame reads
 	// applied to: `Sky.setCloudView`
 	cloudView: CloudViewScale;
 	// the cloud panorama's size and its refresh pattern (one texel of every strideX x strideY per frame)
@@ -215,12 +216,12 @@ export interface QualityProfile {
 	// applied to: sky/Clouds.ts `setShadowRefresh`
 	cloudShadowRows: number;
 	// seconds of wall time between periodic sky bakes, and the environment's PMREM on every nth one
-	// read by: the page's frame (the bakes' cadence); applied to: `Sky.setEnvironmentCadence`
+	// read by: the app's frame (the bakes' cadence); applied to: `Sky.setEnvironmentCadence`
 	skyUpdateInterval: number;
 	environmentEvery: number;
 	// the refracted sun's map: the least interval between redraws (s) and the key light's turn (deg)
 	// that redraws it
-	// read by: the page's frame (the interval); applied to: lighting/RefractedSun.ts `angleGate`
+	// read by: the app's frame (the interval); applied to: lighting/RefractedSun.ts `angleGate`
 	refractedSun: { interval: number; angleGate: number };
 	// applied to: weather/Rain.ts `setQuality` (the drops drawn)
 	rainDrops: number;
@@ -319,12 +320,12 @@ export function loadTier(): QualityTier {
 }
 
 /** The tier's profile with `?tier.<knob path>=<value>` options over it, for A/B captures of one
- * knob (`tier.post.hazeGrid.width=128`, `tier.water.ssrIterations=64`; `overrides` the page's). A path
- * must name an existing knob; numbers, booleans and comma lists are parsed. */
+ * setting (`tier.post.hazeGrid.width=128`, `tier.water.ssrIterations=64`; `overrides` the app's).
+ * A path must name an existing setting; numbers, booleans and comma lists are parsed. */
 export function qualityProfile( tier: QualityTier, overrides: ReadonlyArray<readonly [ string, string ]> = settings.prefixed( 'tier.' ) ): QualityProfile {
 
 	// a JSON copy, not structuredClone: that keeps the table's shared objects shared (the tiers'
-	// `taa` copies share TAA's nested arrays), so an override of one knob would change its siblings too
+	// `taa` copies share TAA's nested arrays), so an override of one setting would change its siblings too
 	const profile = JSON.parse( JSON.stringify( QUALITY[ tier ] ) ) as QualityProfile;
 	for ( const [ key, raw ] of overrides ) {
 
@@ -332,7 +333,7 @@ export function qualityProfile( tier: QualityTier, overrides: ReadonlyArray<read
 		let node = profile as unknown as Record<string, unknown>;
 		for ( const name of path.slice( 0, - 1 ) ) node = node?.[ name ] as Record<string, unknown>;
 		const last = path[ path.length - 1 ];
-		if ( ! node || typeof node !== 'object' || ! ( last in node ) ) throw new RangeError( `Unknown quality knob: ${ key }` );
+		if ( ! node || typeof node !== 'object' || ! ( last in node ) ) throw new RangeError( `Unknown quality setting: ${ key }` );
 		const parse = ( v: string ): unknown => v === 'true' ? true : v === 'false' ? false : v !== '' && Number.isFinite( Number( v ) ) ? Number( v ) : v;
 		node[ last ] = Array.isArray( node[ last ] ) ? raw.split( ',' ).map( parse ) : parse( raw );
 

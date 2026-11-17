@@ -18,20 +18,20 @@ import { Session } from './Session.ts';
 import { stockOf } from './sim/stock.ts';
 import type { EntityId, IslandInput, Items } from './sim/types.ts';
 
-// The island as a game (?game): the headless session hosted on the page, with its view and UI.
+// The island as a game (?game): the headless session hosted in the app, with its view and UI.
 //
 // The island as a game (?game): the game around its simulation runs headless in a session
 // (Session.ts: the simulation of packages/game/sim, which runs the islanders' bodies, their needs and the
 // places they act at; its record, Chronicle.ts; the agent in its slot, the stand-in of plain rules by
 // default, sim/standin.ts; the leader's words; the save's contents; the island's growth), and the
-// page hosts it here: GameView draws the islanders and the chest into the scene.
+// app hosts it here: GameView draws the islanders and the chest into the scene.
 // The player's interface is 蜃光 (ui/GameUi.ts, docs/design/ui.md): the top row (day and time, pause and play,
 // the weather and its forecast, the island's stock, the record), the islanders' tags and marks, the
 // speak bar, the build bar (which hands a building the simulation knows to the placement in the
 // scene, Placement.ts) and the record (沧海录), whose history the session keeps. The debug panel's Game folder (GameDebug.ts) and
 // the methods below, reached from the console as window.__PONLAI__.game, drive the rest. The
-// simulation's clock sets the time of day; the page's sky follows it, so pausing the game stops the
-// sky with it. The weather is the page's own, as without ?game, running on the day
+// simulation's clock sets the time of day; the app's sky follows it, so pausing the game stops the
+// sky with it. The weather is the app's own, as without ?game, running on the day
 // clock, and its auto chain read ahead is the game's forecast (`forecast`, in game hours). Waves,
 // wind and rain keep real time. The player speaks to the islanders through `speak` (Session.speak:
 // the words go into the record and, for an agent that hears, wait per listener for its next
@@ -40,7 +40,7 @@ import type { EntityId, IslandInput, Items } from './sim/types.ts';
 // never by watching the state for changes.
 //
 // A frame: `update` advances the session (a growth due asked for, the ticks, how near the next step
-// is: Session.advance) and returns the day clock's seconds the page steps the sky and the weather
+// is: Session.advance) and returns the day clock's seconds the app steps the sky and the weather
 // by; `render` draws the islanders, and the record notes the sky the weather then shows
 // (Session.look).
 //
@@ -48,7 +48,7 @@ import type { EntityId, IslandInput, Items } from './sim/types.ts';
 // new (start a new game), autosave (on, off), dayLength (real seconds per game day at 1x); see
 // docs/reference/url-options.md.
 //
-// Rules: without ?game the page stays the art-review scene, unchanged. The game follows
+// Rules: without ?game the app stays the art-review scene, unchanged. The game follows
 // docs/design/game-design.md: nothing is built ahead of that design. The agent's
 // tools are the five actions (sim/actions.ts). Thinking is asynchronous to the world: `think( id )`
 // asks the agent with the islander's perception, the simulation never waits for the answer, the
@@ -58,7 +58,7 @@ import type { EntityId, IslandInput, Items } from './sim/types.ts';
 // console may ask with `think`. Walking is the body's motor, reached by the `go` action (walkTo is
 // the debug panel's). The save is the simulation's state and the record as JSON with a version
 // number, in one slot (Session.save, save.ts, which says what is saved and how a save carries over
-// to the next build). Where the page keeps it (`keepsSave`: not in an automated browser) the game resumes it at
+// to the next build). Where the app keeps it (`keepsSave`: not in an automated browser) the game resumes it at
 // start and saves every AUTOSAVE_SECONDS while the page shows (only when something changed), and
 // when the page is hidden or left; a save it cannot read is copied aside before the first save
 // over it. The debug panel and the console save, load and start over by hand anywhere. The ground
@@ -70,13 +70,13 @@ import type { EntityId, IslandInput, Items } from './sim/types.ts';
 // again.
 //
 // The island grows with the population (docs/design/game-design.md, "How the island grows"; Session.ts):
-// the session asks the page's island to grow once a step is due (`island.grow`, world/Growth.ts's
+// the session asks the app's island to grow once a step is due (`island.grow`, world/Growth.ts's
 // instant swap) and tells it each frame how near the next step is (`island.approach`, the sea
 // floor's rise over the coming piece). The swap hands the new land to `setIsland`, which is the
 // session's (the simulation's `addPiece`: the piece is counted there, whoever asked for the growth,
 // so the simulation's piece count is always the land step shown). The pending piece's land comes to
-// `setComing` once the page has it, and the simulation exposes its cells (Sim.comingLand). A save
-// keeps the piece count, and the page loads its world at it (WorldBoot.ts; the `grow` URL
+// `setComing` once the app has it, and the simulation exposes its cells (Sim.comingLand). A save
+// keeps the piece count, and the app loads its world at it (WorldBoot.ts; the `grow` URL
 // option wins), so a game resumes on its own island; one loaded from the panel must stand on the
 // island shown.
 
@@ -90,7 +90,7 @@ export interface GameContext {
 	land: LandLattice;
 	top?: Uint8Array;
 	dayCycle: DayCycle;
-	/** the page's weather: the sky the game shows, and its auto chain read ahead (the forecast) */
+	/** the app's weather: the sky the game shows, and its auto chain read ahead (the forecast) */
 	weather: Weather;
 	characterShadow: CharacterShadow;
 	/** a skinned islander figure for a look index, with a body where the look takes one (Villagers.ts
@@ -106,7 +106,7 @@ export interface GameContext {
 	compileDraws( objects: THREE.Object3D[] ): Promise<void>;
 	/** the island's pieces the world was loaded with (its land step: the save's, or the `grow` URL option) */
 	pieces: number;
-	/** the page's growing island (world/Growth.ts): how near the next step is (0..1), and a grow that
+	/** the app's growing island (world/Growth.ts): how near the next step is (0..1), and a grow that
 	 * resolves once the next piece is in and every dependent has followed (`setIsland` included) */
 	island: { approach( p: number ): void; grow(): Promise<void> };
 }
@@ -124,7 +124,7 @@ const gameEvent = declareSceneEvents( {
 } );
 
 const MAX_FRAME = 0.25;
-// real seconds between the saves the page makes as the game runs: at most this much play is lost
+// real seconds between the saves the app makes as the game runs: at most this much play is lost
 // to a crash (a hidden or closed page saves at once)
 const AUTOSAVE_SECONDS = 60;
 
@@ -143,7 +143,7 @@ export class Game {
 	static async start( context: GameContext ): Promise<Game> {
 
 		const game = new Game( context );
-		// a new game starts at the page's hour (the `hour` URL option), on the island loaded
+		// a new game starts at the app's hour (the `hour` URL option), on the island loaded
 		const saved = resumesSave( context.params ) ? game.savedGame( game.keeps ) : null;
 		const sim = saved?.sim ?? newGame( game.session.island, { startHour: game.startHour, pieces: context.pieces, bodies: game.bodies } );
 		// (a save stands on the world loaded for it, unless the `grow` URL option chose another)
@@ -179,11 +179,11 @@ export class Game {
 	private framesDrawn = 0;
 	private compiling = false;
 
-	/** whether the page keeps the save itself: resumes it at start and saves as the game runs (save.ts) */
+	/** whether the app keeps the save itself: resumes it at start and saves as the game runs (save.ts) */
 	readonly keeps: boolean;
-	/** when the game was last saved (ms since the epoch), by hand or by the page; null: not since the page loaded */
+	/** when the game was last saved (ms since the epoch), by hand or by the app; null: not since the page loaded */
 	savedAt: number | null = null;
-	// the hour a new game starts at: the page's (the `hour` URL option)
+	// the hour a new game starts at: the app's (the `hour` URL option)
 	private readonly startHour: number;
 	// the next autosave (performance.now ms), the game as last saved (to skip a save of no change),
 	// and whether the last one failed (said once, not every minute)
@@ -227,7 +227,7 @@ export class Game {
 
 	}
 
-	/** The next piece is ready on the page (Growth.ts), with the world's chunks on it: the simulation
+	/** The next piece is ready in the app (Growth.ts), with the world's chunks on it: the simulation
 	 * sees its cells (Session.setComing). */
 	setComing( land: LandLattice, chunks: WalkTiles ): void {
 
@@ -245,7 +245,7 @@ export class Game {
 	}
 
 	/** The saved game, or null when there is none or it cannot be read. One that cannot be read is
-	 * copied aside (UNREAD_KEY) when `setAside`: the page is about to save over it. */
+	 * copied aside (UNREAD_KEY) when `setAside`: the app is about to save over it. */
 	private savedGame( setAside = false ): { sim: Sim; record: RecordSave } | null {
 
 		const json = readSlot();
@@ -297,13 +297,13 @@ export class Game {
 		const before = c.dayCycle.hour;
 		c.dayCycle.setHour( sim.hour() );
 		c.invalidateSunShadow();
-		// at start the page has just lit the sky for this hour
+		// at start the app has just lit the sky for this hour
 		if ( c.dayCycle.hour !== before ) await c.refreshEnvironment();
 
 	}
 
 	/** Advance the session by a frame (Session.advance: the island's growth, the simulation); returns
-	 * the day clock's seconds to advance the sky and the page's weather by. */
+	 * the day clock's seconds to advance the sky and the app's weather by. */
 	update( rawDt: number ): number {
 
 		const secondsPerDay = this.context.dayCycle.dayLength;
@@ -387,7 +387,7 @@ export class Game {
 
 	}
 
-	/** The page's own save, as the game runs and as the page is hidden or left: skipped when
+	/** The app's own save, as the game runs and as the page is hidden or left: skipped when
 	 * nothing changed since the last. */
 	autosave(): void {
 
@@ -406,7 +406,7 @@ export class Game {
 	}
 
 	/** Resume the saved game; says whether it was loaded. A save stands on its own island: one of
-	 * another piece count loads with the page (`?game&load`), not here. */
+	 * another piece count loads with the app (`?game&load`), not here. */
 	async load(): Promise<string> {
 
 		const pieces = savedPieces( readSlot() );
@@ -418,7 +418,7 @@ export class Game {
 
 	}
 
-	/** A new game on the island shown, at the page's start hour; where the page keeps the save it
+	/** A new game on the island shown, at the app's start hour; where the app keeps the save it
 	 * replaces the saved game at once. */
 	async startOver(): Promise<string> {
 
@@ -563,7 +563,7 @@ export class Game {
 
 	}
 
-	/** Whether every islander shows on screen and the interface's fonts are in: the page keeps its
+	/** Whether every islander shows on screen and the interface's fonts are in: the app keeps its
 	 * loading screen until then. */
 	ready(): boolean {
 

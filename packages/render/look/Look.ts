@@ -3,14 +3,14 @@ import type { GradeChanges } from '../post/GradeLut.ts';
 import type { ToneCurve } from '../post/ToneCurve.ts';
 import type { SwellParams } from '../ocean/OceanSpectrum.ts';
 
-// The look the render pipeline draws with: the types of the numbers chosen for a picture.
+// The look the render pipeline draws with: the types of the numbers chosen for a rendered image.
 //
-// The look the render pipeline draws with: the numbers chosen for a picture, one set per system,
-// handed in by whoever owns the picture. The render pipeline holds the types (here), the code that
+// The look the render pipeline draws with: the numbers chosen for a rendered image, one set per
+// system, handed in by whoever owns the image. The render pipeline holds the types (here), the code that
 // reads the numbers and registers their tunables (the modules beside this one: AmbientLook.ts,
 // ExposureLook.ts, DisplayLook.ts, HazeLook.ts, SkyLook.ts) and a neutral set (NeutralLook.ts). The
-// island's numbers are the island's (packages/island/look/). A page picks one set (the island's
-// page in PageSettings.ts, the test scenes' in ScenesBoot.ts) and hands it to the render pipeline's
+// island's numbers are the island's (packages/island/look/). An app picks one set (the island's
+// in PageSettings.ts, the test scenes' in ScenesBoot.ts) and hands it to the render pipeline's
 // stages; a tool hands the set it wants to what it creates.
 //
 // No module holds a look: every system takes its tables as an argument where it is created, so two
@@ -31,7 +31,7 @@ import type { SwellParams } from '../ocean/OceanSpectrum.ts';
 // bloom from (DisplayLook.ts `createDisplayTables`, from the same stage); and the wind on the
 // plants, in the shared uniforms' wind (weather/Wind.ts `windResponse`, from `createShared`). On a
 // debug page two of a kind still share their tunables by name (debug/Tune.ts), and the shared
-// uniforms, the grade's uniforms and the light table stay one a page.
+// uniforms, the grade's uniforms and the light table stay one per page.
 //
 // Not everything chosen rather than measured passes through the look yet. Three sets stay the
 // render pipeline's: the weathers' presets with the wind's levels (sky/Weather.ts, which the
@@ -39,10 +39,10 @@ import type { SwellParams } from '../ocean/OceanSpectrum.ts';
 // read, so a change to it rebuilds the world's cache) and the quality table (Quality.ts). A few
 // numbers that sit between a method's constants and the look stay in their modules too: the ambient
 // occlusion kernel's reach (post/GTAO.ts), the meadow canopy's depths (lighting/MeadowCanopy.ts),
-// the meadow shade's march (post/MeadowShadows.ts), the gust field's scale and evolution
+// the march of the meadow's screen-space shadows (post/MeadowShadows.ts), the gust field's scale and evolution
 // (weather/Wind.ts) and each plant part's answer to the wind (vegetation/Deform.ts).
 //
-// Headless: types and one list of names, no three.js and nothing of the page.
+// Headless: types and one list of names, no three.js and nothing of the app.
 
 /** A span of the sun's elevation (degrees): [ whole, none ] or [ from, to ], as its reader says. */
 export type Span = readonly [ number, number ];
@@ -108,7 +108,7 @@ export interface AmbientKnobs {
 }
 /** The ambient grade's columns, the skies of the weather's blend. */
 export type AmbientColumn = 'clear' | 'fair' | 'cloudy' | 'overcast';
-/** A row of the ambient grade: per sky, its changes over the knobs at no grade. */
+/** A row of the ambient grade: per sky, its changes over the parameters at no grade. */
 export type AmbientRowLook = { at: number } & Partial<Record<AmbientColumn, Partial<AmbientKnobs>>>;
 export interface AmbientLook {
 	/** The grade by the sun's elevation (degrees, descending), setting side and rising side. */
@@ -277,10 +277,10 @@ export interface SkyLook {
 	/** The light the sky lends the land by the sun's elevation (degrees, descending): the setting
 	 * side, the setting side under cloud and the rising side. */
 	landSky: { setting: readonly LandSkyRow[]; clouded: readonly LandSkyRow[]; rising: readonly LandSkyRow[] };
-	/** The clear shade (an A/B, off by default): the gain's extra share by elevation, its tint and amount. */
+	/** The clear-sky fill light (an A/B, off by default): the gain's extra share by elevation, its tint and amount. */
 	clearShade: readonly { at: number; share: number }[];
 	clearShadeTint: readonly [ number, number, number, number ];
-	/** The low sun's shade (an A/B, off by default) and its tint. */
+	/** The low sun's shadow tint (an A/B, off by default) and its colour. */
 	lowSun: { full: number; top: number; amount: number };
 	lowSunTint: Triple;
 	/** How far a deck draws the key toward white at the same luminance. */

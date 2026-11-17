@@ -3,7 +3,7 @@
 // It answers "does `__PONLAI__.establishScene( query )` (packages/render/assemble/SceneJump.ts, where its contract is
 // written) leave nothing behind": after the jump, one rendered frame at the jump's camera and the
 // view's eval, the paused frame must be the one a fresh load of the view's query draws, byte for byte
-// wherever the fresh load repeats. It is the regression probe for anything that adds state a jump
+// wherever the fresh load is reproducible. It is the regression probe for anything that adds state a jump
 // must clear (ARCHITECTURE.md, rule 4). It captures the parity views both ways, in the layout of
 // tools/kit/parity/capture-set.mjs, so tools/kit/diff-set.py judges them.
 //
@@ -41,7 +41,7 @@
 // own such as "weather=storm&preset=noon&t=5"), then each view in --order, each after the --between
 // scenes if any: `await __PONLAI__.establishScene( query )` with the view's full query (the common
 // part `debug&paused&t=12&quality=<q>`, then the view's own), a frame rendered at the jump's camera,
-// the view's eval, readiness, the shot. Only load-time options need a new page (quality, aa, size and
+// the view's eval, readiness, the capture. Only load-time options need a new page (quality, aa, size and
 // dpr), so the views must share theirs (adhoc.mjs loadSignature; establishScene refuses the others).
 // --fresh loads a new page in the same browser per view instead, as capture-set loads it.
 //
@@ -63,7 +63,7 @@
 // the list, the reverse with --suffix .repeat, then `uv run --with numpy --with pillow
 // tools/kit/diff-set.py <ref> <test> --aa-floor --held`. --held compares the region the sea's held
 // reflection reaches within tools/kit/tolerance.py's HELD and the rest of the frame exactly: each
-// shot's JSON records that region as `held` (packages/render/debug/HeldRegion.ts).
+// capture's JSON records that region as `held` (packages/render/debug/HeldRegion.ts).
 //
 // --legacy jumps with establishScene's options only (weather, preset or hour, time) and resets the
 // camera to the island view. --retune rebakes the sky on every scene visited, after the view's eval
@@ -74,12 +74,13 @@
 // finds), each bake awaited. The page must still draw the fresh load's frame (every explicit bake
 // starts from the state before a page's first: Sky.ts `reset`); after each round trip the sky's
 // irradiance must be the page's own bit for bit, and the switch must change it, else the view fails
-// (the readings in the shot's JSON as `ready.retune`).
+// (the readings in the capture's JSON as `ready.retune`).
 //
 // Readiness is capture.mjs's (tools/kit/capture-browser.mjs, "Readiness by stability"): after the
 // evals, the floor's frames and the loading screen gone, a temporal page's rest restarted and
-// converged, then the image grabbed with the loop stopped until two grabs agree. A page still
-// changing at the cap is shot anyway and printed as unstable. The loop stays stopped for the shot;
+// converged, then the rendered output grabbed with the loop stopped until two grabs agree. A page
+// still changing at the cap is captured anyway and printed as unstable. The loop stays stopped for
+// the capture;
 // the next jump starts it again. A fixed wait settled pages off their settled image under GPU load,
 // so --frames keeps that rule only by request. A persistent profile keeps the world and shader caches
 // across runs (one browser per profile at a time).
@@ -181,7 +182,7 @@ let failed = 0, lockWaited = 0;
 const started = Date.now();
 
 // the GPU slot before a view's work: kept from the view before while the lease allows, else
-// queued for (the loop is stopped meanwhile: every view ends with its shot's stopped loop)
+// queued for (the loop is stopped meanwhile: every view ends with its capture's stopped loop)
 async function slot( v ) {
 
 	const { waitMs } = await leaseGpuLock( `verify-scene-jump ${ v }${ suffix }`, { shared: true, budget: LEASE } );
@@ -204,10 +205,10 @@ async function open( q ) {
 
 // the view's evals run, then readiness as capture.mjs's by default (tools/kit/capture-browser.mjs): the
 // floor's frames and the loading screen gone, a temporal page's rest restarted and converged, the
-// page's settled signal (the fresh side's capture.mjs waits for it too: stability alone can shoot a
-// jump before the page's last change, such as a pre-exposure read back late), then the image stable
-// (or the rest held) with the loop stopped; `--frames n` waits that fixed count instead. Returns the
-// record the shot's JSON keeps as `ready`.
+// page's settled signal (the fresh side's capture.mjs waits for it too: stability alone can capture a
+// jump before the page's last change, such as a pre-exposure read back late), then the rendered
+// output stable (or the rest held) with the loop stopped; `--frames n` waits that fixed count
+// instead. Returns the record the capture's JSON keeps as `ready`.
 async function settle( page, js ) {
 
 	if ( js ) await page.evaluate( js );
@@ -287,7 +288,7 @@ async function captureView( page, view, ready, extra ) {
 	await page.screenshot( { path: file, timeout } );
 	const diag = await page.evaluate( () => ( { ...window.__THREE_GAME_DIAGNOSTICS__ } ) );
 	const crops = await page.evaluate( () => window.__PONLAI_CROPS__ ?? null );
-	// where the shot is compared within the held tolerance (tools/kit/tolerance.py)
+	// where the capture is compared within the held tolerance (tools/kit/tolerance.py)
 	const held = await page.evaluate( () => window.__PONLAI__.heldRegion?.() ?? null );
 	await writeFile( path.join( outDir, `${ view }${ suffix }.json` ), JSON.stringify( { browser, viewport: { width: W, height: H }, ...extra, ready, diag, ...( crops ? { crops } : {} ), ...( held ? { held } : {} ) }, null, 1 ) );
 

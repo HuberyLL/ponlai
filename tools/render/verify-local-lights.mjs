@@ -2,7 +2,7 @@
 //
 // It covers packages/render/lighting/LocalLightClusters.ts and the kernel and lookup in
 // packages/render/lighting/LocalLights.ts: the frame's sort of the sources in view (the view widened
-// by the refraction's guard band, by depth then index, repeatable), every slice's range in it, and
+// by the refraction's guard band, by depth then index, deterministic), every slice's range in it, and
 // a replica of the kernel's boxes and the fragments' lookup in doubles. Every fragment, on screen or
 // in the guard band, must find in its cluster every source whose range holds it; a full cluster
 // keeps the nearest sources and counts the rest. Run it after a change to the clusters, the kernel
@@ -155,7 +155,7 @@ check( 'slices: contiguous, exponential, the first FIRST_SLICE m', () => {
 
 } );
 
-check( 'sort: depth, then index, repeatable', () => {
+check( 'sort: depth, then index, deterministic', () => {
 
 	const random = stream( seed );
 	const e = lens();

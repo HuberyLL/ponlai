@@ -33,7 +33,7 @@ import { missing } from './Internals.ts';
 // One more patch, of the bindings (`installBindingPatches`): a render object's bind groups are cloned
 // from its build's (NodeBuilderState.createBindings), and a cloned texture binding starts with the
 // texture its node held when the material was built; `_createBindings` makes that texture ready on
-// the GPU before the first update moves the binding to the node's current one. Once the page has
+// the GPU before the first update moves the binding to the node's current one. Once the app has
 // put another texture in the node and disposed the first (the island's growth replaces its fields
 // and wave fields: world/Growth.ts), every new render object of the material (a grown chunk's
 // shadow draw) uploads the disposed texture again, and it stays on the GPU for good, since its
@@ -200,7 +200,7 @@ export function primeSharedNodes( renderer: WebGPURenderer, scene: Scene, camera
 /** Marks `target`'s depth as initialised for three, so r186 never clears it on its own: the frame
  * graph decides every clear and load of the depth it owns (see the header). Call as the graph binds
  * a target with depth, before it renders into it. A renderer without three's texture records (the
- * frame graph's tables run it on stand-in renderers) is left alone: on the page `checkRenderer`
+ * frame graph's tables run it on stand-in renderers) is left alone: in the app `checkRenderer`
  * (Internals.ts) has checked them at start. */
 export function ownDepthClears( renderer: unknown, target: RenderTarget ): void {
 

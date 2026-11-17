@@ -198,7 +198,7 @@ const timestampOwner = selectorRule(
 		'CallExpression[callee.type="Identifier"][callee.name=/^(timestampPools|takeTimestamps|resolveTimestamps)$/]',
 		'CallExpression > MemberExpression.callee[computed=false][property.name="resolveTimestampsAsync"]',
 	],
-	'three\'s timestamp queries (`trackTimestamp`) have one owner at a time: three resolves them into one buffer and drops what it resolves while that is mapped, so a second reader takes readings from the first. They are read only by packages/render/post/DynamicResolution.ts (`GpuFrameTimer`) and, while it times passes, the frame profiler (packages/render/debug/FrameProfiler.ts), which then feeds the first; three\'s members are reached through packages/render/three/Backend.ts. Take GPU times from DynamicResolution or the profiler instead. Read the header of DynamicResolution.ts.',
+	'three\'s timestamp queries (`trackTimestamp`) have one owner at a time: three resolves them into one buffer and drops what it resolves while that is mapped, so a second reader takes readings from the first. They are read only by packages/render/post/DynamicResolution.ts (`GpuFrameTimer`) and, while it times passes, the frame profiler (packages/render/debug/FrameProfiler.ts), which then feeds the first; three\'s internal members are used only through packages/render/three/Backend.ts. Take GPU times from DynamicResolution or the profiler instead. Read the header of DynamicResolution.ts.',
 );
 
 // ---- scene-clock
@@ -211,7 +211,7 @@ const sceneClock = selectorRule(
 		'NewExpression[callee.name="Date"][arguments.length=0]',
 		'CallExpression[callee.type="Identifier"][callee.name="Date"]',
 	],
-	'The wall clock (performance.now, Date.now, new Date()) in code that changes the scene: the simulation, the world\'s generation and growth, the weather and every per-frame update are functions of the scene clock, so a paused page, a stepped clip and a fresh load repeat. Read the scene clock\'s time or its step (the `time` and `dt` the frame stages hand on) instead. A reading that only measures how long something took, budgets a slice of work or times out a wait, and so changes when work lands but never what it produces, takes `// eslint-disable-next-line ponlai/scene-clock -- <what it measures>`. Read ARCHITECTURE.md, rule 17 (time) and rule 4.',
+	'The wall clock (performance.now, Date.now, new Date()) in code that changes the scene: the simulation, the world\'s generation and growth, the weather and every per-frame update are functions of the scene clock, so a paused page, a stepped clip and a fresh load are deterministic. Read the scene clock\'s time or its step (the `time` and `dt` the frame stages hand on) instead. A reading that only measures how long something took, budgets a slice of work or times out a wait, and so changes when work lands but never what it produces, takes `// eslint-disable-next-line ponlai/scene-clock -- <what it measures>`. Read ARCHITECTURE.md, rule 17 (time) and rule 4.',
 );
 
 // ---- vegetation-tag

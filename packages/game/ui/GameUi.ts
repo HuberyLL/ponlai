@@ -45,10 +45,10 @@ import { TopRow } from './TopRow.ts';
 // 1600 x 900 frame scaled to the window (`--k`: the smaller of its width over 1600 and its height
 // over 900; 1.2 at 1920 x 1080 CSS pixels), each part anchored to the edge it is drawn against.
 //
-// Keys: one listener ahead of the page's (capture, on the window) routes them, the record first
+// Keys: one listener ahead of the app's (capture, on the window) routes them, the record first
 // (it takes every key while open: the world behind it is still), then the build bar's (1-9, the
 // arrows, Esc, /), then Enter to the speak bar and Esc to let go of the selected islander; a key it
-// takes reaches neither the camera nor the page. Typing in a field is the field's.
+// takes reaches neither the camera nor the app. Typing in a field is the field's.
 //
 // Rules: the interface reads the simulation and acts only through the Game's methods; it never
 // duplicates a game rule but asks the simulation (a refusal: buildings.ts; a shortfall: stock.ts).
@@ -119,7 +119,7 @@ export class GameUi {
 
 	}
 
-	/** Whether the interface can show: its fonts are in (the page's loading screen waits). */
+	/** Whether the interface can show: its fonts are in (the app's loading screen waits). */
 	get ready(): boolean {
 
 		return this.fontsLoaded;
@@ -181,7 +181,7 @@ export class GameUi {
 
 	}
 
-	// The interface's keys, ahead of the page's (see the header).
+	// The interface's keys, ahead of the app's (see the header).
 	private readonly onKey = ( e: KeyboardEvent ): void => {
 
 		const take = () => {
@@ -196,7 +196,7 @@ export class GameUi {
 		if ( e.ctrlKey || e.metaKey || e.altKey ) return;
 		if ( this.record.open ) {
 
-			// the world behind is still: no other key reaches the page or the camera (their
+			// the world behind is still: no other key reaches the app or the camera (their
 			// defaults stay: Tab, a button's Enter and Space, F5)
 			if ( this.record.key( e ) ) take();
 			else e.stopImmediatePropagation();

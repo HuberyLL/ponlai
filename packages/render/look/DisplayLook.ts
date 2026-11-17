@@ -7,7 +7,7 @@ import type { BloomKey, DesaturationKey, DisplayLook, Rgb } from './Look.ts';
 
 // The display's tables built from a look's table: tone curve, grade, bloom and vignette.
 //
-// The display's tables built from a look's table (look/Look.ts `DisplayLook`): the shade's
+// The display's tables built from a look's table (look/Look.ts `DisplayLook`): the shadows'
 // contrast, the desaturation, overcast's highlights toward grey, the bloom's and the vignette's
 // strengths, the vignette's shape, the white balance, the tone curve's three settings, the base
 // grade, the bloom's keys and the rods' colour at night (`createDisplayTables`). Like the exposure
@@ -31,7 +31,7 @@ export type { BloomKey };
 
 /** The display's tables, made from a look's (`createDisplayTables`). */
 export interface DisplayTables {
-	// The shade's contrast: under a pivot each stop of the exposed luminance (the local tone's gain
+	// The shadows' contrast: under a pivot each stop of the exposed luminance (the local tone's gain
 	// in it) darkens by `slope` of a stop more (a negative slope lifts it instead), over it nothing
 	// changes; after the local tone, before the tone curve. The pivot (stops over mid grey) and slope
 	// are set per key (keyed by the sun's elevation, DayKeys.ts).

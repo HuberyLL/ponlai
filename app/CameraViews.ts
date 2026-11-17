@@ -1,9 +1,9 @@
-// The page's camera views: the island view, the review views, the free flight and the orbit.
+// The app's camera views: the island view, the review views, the free flight and the orbit.
 //
-// The page's camera views: the island view the land is framed in (placed from the query's dist /
+// The app's camera views: the island view the land is framed in (placed from the query's dist /
 // polar / az, or the land's own framing), the review views (horizon, sky), the free flight, the
 // widening of the field of view near the ground and the orbit's limits. The island's stages call
-// the island view's framing (`IslandFraming`, on the page's parts as `framing`), which the entry
+// the island view's framing (`IslandFraming`, on the app's parts as `framing`), which the entry
 // hands them, since a land that grows reframes its view.
 import { renderEvent, type RenderParts } from '../packages/render/index.ts';
 import { settings as params, type PageSettingsQuery } from './AppSettings.ts';
@@ -25,7 +25,7 @@ export function createCameraViews( render: RenderParts, island: IslandParts, pag
 
 	const { renderer, camera, sky } = render;
 	const { target, controls, initialCameraPosition, initialCameraQuaternion, initialCameraTarget, framingGlide, initialCameraFov, orbitMaxPolar, orbitMinDistance, freeControls } = island;
-	// (the options the island view was last posed at: the page's own query at first)
+	// (the options the island view was last posed at: the page's own URL query at first)
 	let viewOptions: PageSettingsQuery = params;
 	const framing: IslandFraming = { frameLand, poseIslandView, holdsFraming, followFraming, get viewOptions() { return viewOptions; } };
 	page.framing = framing;
@@ -50,8 +50,8 @@ export function createCameraViews( render: RenderParts, island: IslandParts, pag
 	// the camera on its sphere about the default pivot at that distance instead. Then a settle within
 	// the orbit's limits, the farthest zoom raised to the framing's distance (from the land's own each
 	// time, so it never only grows). At rest the pose depends only on the pivot, the position and the
-	// limits, so a scene jump (`establishScene`) repeats it on a camera and controls of its own with the
-	// page's limits, and its pose is the load's to the bit.
+	// limits, so a scene jump (`establishScene`) reproduces it on a camera and controls of its own with
+	// the app's limits, and its pose is bit-identical to the load's.
 	// The default azimuth (180: the view looks along +z, about 23 degrees east of the meridian the sun
 	// culminates on and the moon stands on) is fixed, never following the clock, so the R key always
 	// returns to the same view. It was 318, looking away from the meridian: the morning sun lit the
@@ -96,7 +96,7 @@ export function createCameraViews( render: RenderParts, island: IslandParts, pag
 
 	// The island view's pose (the R key, `setCameraView( 'island' )`) at the dist / polar / az of
 	// `options`, the heading turned by `turn` (rad) at `zoom`, placed as the load places it on a camera and
-	// controls of its own with the page's limits, the camera left where it is: a scene jump's
+	// controls of its own with the app's limits, the camera left where it is: a scene jump's
 	// (`establishScene`), and again for the same options and turn when the island grows (Growth.ts) or
 	// the window's shape changes, so the view frames the land shown, and at every step of a turn.
 	function poseIslandView( options: PageSettingsQuery, turn = 0, zoom = 0 ): void {

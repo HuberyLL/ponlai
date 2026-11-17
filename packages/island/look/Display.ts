@@ -5,9 +5,9 @@ import type { BloomKey, DesaturationKey, DisplayLook, Rgb } from '../../render/s
 //
 // The island's display look (packages/island/look/: the island's numbers for the render pipeline's
 // look tables, look/Look.ts; look/DisplayLook.ts makes the display's tables from these): the
-// shade's contrast, the desaturation, overcast's highlights toward grey, the bloom's and the
+// shadow contrast, the desaturation, overcast's highlights toward grey, the bloom's and the
 // vignette's strengths, the vignette's shape, the white balance, the tone curve's three settings,
-// the base grade, the bloom's keys and the rods' colour at night. The methods that read them are
+// the base grade, the bloom's keyframes and the rods' colour at night. The methods that read them are
 // their modules' (post/ToneCurve.ts, post/GradeLut.ts, post/PhysicalBloom.ts, post/Purkinje.ts,
 // post/PipelineDisplay.ts).
 
@@ -36,14 +36,14 @@ const BLOOM_HIGH_SUN: BloomKey = {
 
 export const DISPLAY: DisplayLook = {
 
-	// The shade's contrast: under a pivot each stop of the exposed luminance (the local tone's gain in
+	// The shadow contrast: under a pivot each stop of the exposed luminance (the local tone's gain in
 	// it) darkens by `slope` of a stop more (a negative slope lifts it), over it nothing changes;
 	// after the local tone, before the tone curve. The pivot (stops over mid grey) and slope are set
-	// per key (keyed by the sun's elevation, DayKeys.ts). By day it is light, its pivot 2 stops over
+	// per keyframe (keyed by the sun's elevation, DayKeys.ts). By day it is light, its pivot 2 stops over
 	// mid grey and its slope 0.05: on the island view a surface 1, 2, 3 and 4 stops under the sunlit
 	// meadow shows at Oklab L 0.46, 0.32, 0.26 and 0.23 (0.56 for the meadow itself). A day slope of
 	// 0.45 over a pivot 1.6 stops over mid grey took nearly the whole frame under its pivot, the lit
-	// ground too, and showed those stops at 0.39, 0.24, 0.18 and 0.16: the shade, the shaded grass
+	// ground too, and showed those stops at 0.39, 0.24, 0.18 and 0.16: the shadowed areas, the shaded grass
 	// and the rock under the sea read near black and lost half their chroma. The golden hour keeps
 	// most of the slope with its pivot nearly a stop under mid grey, so only what lies in the long
 	// shadows drops, and the sunlit cliff stays as it is. The clouded sky deepens its darks too, from
@@ -155,8 +155,8 @@ export const DISPLAY: DisplayLook = {
 	toneCurve: { toe: 2.46, mid: 0.168, white: 15.1 },
 
 	// The base grade (post/GradeLut.ts builds its tables from these changes over no grade): the day's, which the other grades build
-	// on. No contrast and no saturation over the whole frame (the contrast is the shade's,
-	// `shadeContrast`, and the tone curve's): each hue moved on its own, lightly, the neutral axis left
+	// on. No contrast and no saturation over the whole frame (the contrast is the shadow
+	// contrast's, `shadeContrast`, and the tone curve's): each hue moved on its own, lightly, the neutral axis left
 	// where it is but for a touch of cool in the highlights.
 	// - The warm hues (red to yellow) times 1.15: the earth, the bark and the low sun's light keep
 	//   their colour under the softer curve; they also turn 8 degrees toward red, so the golden hour's
@@ -182,7 +182,7 @@ export const DISPLAY: DisplayLook = {
 		},
 	},
 
-	// The bloom's keys (post/PhysicalBloom.ts, whose header gives the method they set).
+	// The bloom's keyframes (post/PhysicalBloom.ts, whose header gives the method they set).
 	// The clear high sun's key (from 9 degrees up) is set with the day's exposure and grade, its
 	// levels' weights on the halo about the sun out to some 50 degrees. The bloom stands for the
 	// lens's scatter, and the lens does not change with the sky: on the exposed image the same light
@@ -200,7 +200,7 @@ export const DISPLAY: DisplayLook = {
 	// soft glow about the moon and bright clouds). The high sun's weights rise and fall from level to
 	// level, less at 1/16 and 1/128 than at the levels either side, which sets the halo's outer rings
 	// (all positive, so the summed kernel still falls off from its centre). The finest level takes
-	// none: its spread, a pixel or two, is the image's own sharpness. The sky's share is a little
+	// none: its spread, a pixel or two, is the rendered image's own sharpness. The sky's share is a little
 	// smaller by a clear high sun (0.17) than by a low sun (0.2), so the glow round the sun stays
 	// close to it rather than spreading over the sky far from it.
 	bloom: {

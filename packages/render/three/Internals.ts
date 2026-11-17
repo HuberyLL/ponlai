@@ -1,8 +1,8 @@
 import { REVISION } from 'three/webgpu';
 
-// The checks of what the page reaches in three beyond its public interface.
+// The checks of the three.js internals the app depends on beyond three's public interface.
 //
-// What the page reaches in three beyond its public interface is listed in `three-internals.json`
+// The three.js internals the app depends on beyond three's public interface are listed in `three-internals.json`
 // (an entry per member, method or mirrored code: where it lives in three, how it is used, which of
 // our functions needs it), and `tools/repo/verify-three-internals.mjs` checks the list against the three
 // installed. A dependency that no longer holds is an error naming its entry, never a fallback to
@@ -11,7 +11,7 @@ import { REVISION } from 'three/webgpu';
 // (the static check cannot see what three assigns at run time). An upgrade of three follows
 // packages/render/three/README.md.
 
-/** The error for a dependency on three's internals that does not hold: `entry` is the list's id
+/** The error for a dependency on three.js internals that does not hold: `entry` is the list's id
  * (`three-internals.json`), `user` the function of ours that needs it. */
 export function missing( entry: string, user: string ): Error {
 

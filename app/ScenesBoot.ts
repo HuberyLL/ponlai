@@ -7,7 +7,7 @@
 // look the render pipeline draws with and hands it to the scene page: the test scenes are the
 // render pipeline's own, so the look is the render pipeline's neutral one (look/NeutralLook.ts).
 // `renderLook=ponlai` on a debug page picks the island's instead, for a scene read beside the
-// island's own numbers: this entry takes them from the island's headless exit, and the scenes
+// island's own numbers: this entry takes them from the island's headless entry point, and the scenes
 // themselves never import the island (tools/repo/verify-layers.mjs).
 import { installSettings, parseSettings, settingProblems, NEUTRAL_LOOK } from '../packages/render/setup.ts';
 import { chooseQuality } from './QualityDetect.ts';

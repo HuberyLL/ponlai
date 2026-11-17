@@ -104,7 +104,7 @@ export function declarePasses( p: Pipeline ): void {
 	else {
 
 		// the vegetation's depth first, the opaque scene's copies (post/OpaquePrepass.ts), the
-		// shade over both (MeadowShadows.ts), then the opaque scene over the vegetation's depth
+		// screen-space shadows over both (MeadowShadows.ts), then the opaque scene over the vegetation's depth
 		let { meadowCoverage, meadowDepth, meadowShadows: shade } = p.resources;
 		let { gtaoOpaque, gtaoOpaqueDepth, gtaoDepth, gtaoRaw, gtaoBlur, gtao } = p.resources;
 		const depthQuad = p.meadowDepthQuad, shadeQuad = p.meadowShadowQuad;
@@ -121,7 +121,7 @@ export function declarePasses( p: Pipeline ): void {
 
 			} );
 			// the opaque scene's distance at half resolution, for the ambient occlusion and the
-			// shade over the whole scene
+			// screen-space shadows over the whole scene
 			if ( gtaoOpaque && gtaoOpaqueDepth ) g.addPass( 'opaqueDepth', 'scene', ( b ) => {
 
 				gtaoOpaque = b.write( gtaoOpaque!, { clear: true } );
@@ -134,14 +134,14 @@ export function declarePasses( p: Pipeline ): void {
 				b.read( sceneDepth, 'samples' );
 				if ( SS_SHADOW && gtaoOpaque ) b.readOptional( gtaoOpaque );
 				meadowDepth = b.write( meadowDepth! );
-				return { label: 'meadow shade', quad: depthQuad };
+				return { label: 'meadow shadows', quad: depthQuad };
 
 			} );
 			g.addPass( 'meadowShadows', 'quad', ( b ) => {
 
 				b.read( meadowDepth! );
 				shade = b.write( shade! );
-				return { label: 'meadow shade', quad: shadeQuad };
+				return { label: 'meadow shadows', quad: shadeQuad };
 
 			} );
 
@@ -185,7 +185,7 @@ export function declarePasses( p: Pipeline ): void {
 
 			} );
 		}
-		// the receivers read the occlusion and the whole scene's shade in the opaque pass alone
+		// the receivers read the occlusion and the whole scene's shadows in the opaque pass alone
 		// (the refraction's draws of the same materials read 1)
 		if ( gtao || SS_SHADOW ) {
 
@@ -201,8 +201,8 @@ export function declarePasses( p: Pipeline ): void {
 		const occlusion = gtao;
 		g.addPass( 'opaque', 'scene', ( b ) => {
 
-			// the blades read their shade, the ground marches over the resolved depth, the
-			// receivers load the ambient occlusion and the whole scene's shade
+			// the blades read their shadows, the ground marches over the resolved depth, the
+			// receivers load the ambient occlusion and the whole scene's shadows
 			if ( shade ) b.read( shade );
 			if ( meadowDepth && ! SS_SHADOW ) b.read( meadowDepth );
 			if ( occlusion ) b.readOptional( occlusion );

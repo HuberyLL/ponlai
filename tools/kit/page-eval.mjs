@@ -25,14 +25,14 @@
 // one waits, and resolves only once it holds the slot again. So a long wait on CPU work (worker
 // generation with the loop stopped) does not keep an exclusive run waiting, and the eval's next line
 // never renders without the slot. `frames` never offers it (it waits for rendering). capture.mjs
-// passes no binding: its shots are short and leased already.
+// passes no binding: its captures are short and leased already.
 // Rendered frames, not animation frames. `frames( n )` here and `renderedFrames( page, n )` below
 // (for tools with a Playwright page of their own) count the page's own frames
 // (`renderer.info.frame`, which three's loop bumps on the animation frames the page renders). An
 // animation frame is not one: the frame pacer skips the refreshes between its frames, and a paused
 // page in the test mode holds a due frame while two rendered frames are still queued on the GPU
 // (packages/render/post/FramePacer.ts, "A paused page's queue"). A step that sets a state and waited a count of
-// animation frames read the frame before it whenever the page did not tick after the state was set:
+// animation frames read the previous frame whenever the page did not tick after the state was set:
 // the handoff check, beside another page, read the key and the exposure a frame late on 6 of its
 // 324 samples, each a sample with no rendered frame after its clock was set. Rendered frames wait for
 // the state the next tick applies; a still, converged image is waited for by `settled` (capture-
@@ -43,7 +43,7 @@ import { pathToFileURL } from 'node:url';
 import PROJECT from '../project.mjs';
 import { ROOT } from './root.mjs';
 
-// the page's globals (the project's configuration names them) and the module that gives `pipelines`
+// the app's globals (the project's configuration names them) and the module that gives `pipelines`
 // (a project without one: an eval that uses `pipelines` fails with that message)
 const { handle: HANDLE, diagnostics: DIAGNOSTICS } = PROJECT.page;
 const NO_TRACER = 'this project has no pipeline tracer (tools/project.mjs: pipelines is null)';

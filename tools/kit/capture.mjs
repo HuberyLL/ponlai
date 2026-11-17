@@ -22,17 +22,17 @@
 //   --q query             the page's query (default `paused&t=12&dpr=1`; docs/reference/url-options.md)
 //   --w, --h, --scale     the viewport in CSS pixels and its device pixel ratio (1600, 900, 1)
 //   --eval js|@file       a step run once the page is up, before readiness; repeatable
-//   --eval-ready js|@file a step run once the page is ready, on the frame the shot takes; repeatable
+//   --eval-ready js|@file a step run once the page is ready, on the frame the screenshot takes; repeatable
 //   --wait-for js         waits, up to 60 s, until the expression is truthy, before readiness
-//   --frames n --every k  n shots k rendered frames apart (1, 1)
-//   --timeout ms          each wait's limit: the load, readiness, a shot (60000)
+//   --frames n --every k  n screenshots k rendered frames apart (1, 1)
+//   --timeout ms          each wait's limit: the load, readiness, a screenshot (60000)
 //   --stable-min n        rendered frames before the first comparison (1)
 //   --stable-every n      frames between grabs (2)
 //   --stable-repeats n    unchanged comparisons in a row that make the image stable (1)
 //   --stable-patience n   frames after which --stable-tolerance counts too (40)
 //   --stable-tolerance t  `<level>:<pixels>`: at most pixels differing by more than level (0:5000);
 //                         `exact` turns it off
-//   --stable-cap n        frames after which the page is shot anyway, marked capped (120)
+//   --stable-cap n        frames after which the page is captured anyway, marked capped (120)
 //   --stable-trace        records each grab's PNG hash
 //   --ready-frames n      waits for n rendered frames instead of stability (a running page: 60)
 //   --wait, --settle ms   fixed delays before and after the floor's frames (0, 0)
@@ -42,31 +42,31 @@
 //   --worker              capture-set's worker (below); --page-per-view, --ready-reads, --lease s
 //
 // Readiness. Every capture waits until the page is up (`__PONLAI__` and the diagnostics exist, the
-// floor's frames rendered, the loading screen's fade finished: a shot during the fade has the screen
-// blended over the frame). A paused page (MSAA or off) then waits for its `settled` signal with the
-// loop running (docs/reference/test-mode.md; past --timeout it goes on and prints `unsettled`) and
-// is shot once its image stops changing: grabbed every --stable-every frames, with the loop stopped
-// for each grab, and shot once --stable-repeats comparisons in a row found it unchanged, with
-// --stable-patience and --stable-cap as above. A paused page of a temporal mode
+// floor's frames rendered, the loading screen's fade finished: a screenshot during the fade has the
+// screen blended over the frame). A paused page (MSAA or off) then waits for its `settled` signal
+// with the loop running (docs/reference/test-mode.md; past --timeout it goes on and prints
+// `unsettled`) and is captured once its image stops changing: grabbed every --stable-every frames,
+// with the loop stopped for each grab, and captured once --stable-repeats comparisons in a row
+// found it unchanged, with --stable-patience and --stable-cap as above. A paused page of a temporal mode
 // (aa=taa|taau|fsr3|gt) is not compared: its rest image is started over once the page is up (what
-// the evals changed need not be in its key), and it is shot once the rest has converged
+// the evals changed need not be in its key), and it is captured once the rest has converged
 // (`diag.taa.converged`) and `settled` holds (packages/render/post/TemporalRest.ts; the --stable-*
 // options do not apply; with `tier.taa.restSequence=0` there is no rest and the page is compared
 // like an MSAA one). A running page waits --ready-frames. The rule and its evidence:
 // tools/kit/capture-browser.mjs, "readiness by stability". The frame loop is stopped (the GPU queue
-// drained) for the shot, which is the compositor's image PNG-encoded for speed: the pixels of
+// drained) for the screenshot, which is the compositor's image PNG-encoded for speed: the pixels of
 // Playwright's screenshot, not its bytes, so compare captures by decoded pixels. Under --frames n
-// the loop runs between the shots and stops for each.
+// the loop runs between the screenshots and stops for each.
 //
 // Evals. --eval and --eval-ready take probe's forms and scope (tools/kit/page-eval.mjs: an
 // expression, a function or statements with a `return`, `await` in all three; `P`, `D`,
 // `frames( n )`, `sleep( ms )`, `until( fn, timeoutMs )`), so an eval waits with `await until( ...
 // )` instead of a polling loop. --eval runs in order once the page is up, before the floor's frames
-// and readiness: on a fresh load that is before the sun's map has drawn, so it sets the view up.
-// --eval-ready runs once the page is ready, with the loop stopped on the frame the shot then takes:
-// for readings of that frame (a render target read back, the diagnostics). It reads; one that
-// changes the scene or renders changes the shot. Under --frames n it runs once, before the first.
-// An eval that throws fails the capture, which is still shot and written.
+// and readiness: on a fresh load that is before the sun's shadow map has drawn, so it sets the view
+// up. --eval-ready runs once the page is ready, with the loop stopped on the frame the screenshot
+// then takes: for readings of that frame (a render target read back, the diagnostics). It reads;
+// one that changes the scene or renders changes the screenshot. Under --frames n it runs once,
+// before the first. An eval that throws fails the capture, which is still taken and written.
 //
 // Worker (--worker): one page for many views, driven by capture-set over the IPC channel it opens.
 // The worker asks for a view, captures it, reports and asks again until told it is done. The first
@@ -79,7 +79,7 @@
 //   older build, and with --page-per-view, the worker stops after its first view and capture-set
 //   starts a fresh worker per view.
 // - Evals the jump does not undo: the jump resets the scene's options and camera, not GUI or console
-//   changes, so a view whose message says `last` ends its page after its shot. --eval takes a page
+//   changes, so a view whose message says `last` ends its page after its capture. --eval takes a page
 //   per view, and so does --eval-ready unless `--ready-reads` says those steps only read the frame
 //   (tools/island/region-colours.mjs `capture --warm`).
 // - The GPU slot is leased (`leaseGpuLock`): the worker keeps it from one view to the next and gives
@@ -100,8 +100,8 @@
 // `window.__PONLAI_CROPS__` (tools/island/parity/views.mjs). stdout prints each eval, `unsettled` or
 // `unstable` when so, the file with the diagnostics, and the errors. A worker writes to the paths
 // capture-set names and adds `page`: the visit's index, `load` or `jump`, the view before, the world
-// time, the lock wait (`lockKept` when kept), the time to the shot and the page's memory, and
-// `held` when the page offers `heldRegion()` on its handle: the cells of the frame shot where a
+// time, the lock wait (`lockKept` when kept), the time to the screenshot and the page's memory, and
+// `held` when the page offers `heldRegion()` on its handle: the cells of the captured frame where a
 // held history-dependent effect may differ between loads, which diff-set.py --held compares within
 // a tolerance (tools/kit/tolerance.py).
 //
@@ -115,8 +115,8 @@
 // Cost: a page load (seconds warm; a cold one generates the island and compiles every shader); a
 // paused capture takes about 5-7 s alone.
 //
-// Exit codes: 0 shot; 1 an eval threw, the page threw or logged an error, a request failed (the shot
-// is still written), or a wait timed out; 2 --worker without capture-set's IPC channel.
+// Exit codes: 0 captured; 1 an eval threw, the page threw or logged an error, a request failed
+// (the screenshot is still written), or a wait timed out; 2 --worker without capture-set's IPC channel.
 import './help.mjs';
 import { acquireGpuLock, leaseGpuLock, releaseGpuLock } from './gpu-lock.mjs';
 import { launchCapture, waitForScene, waitForSettled, waitForStable, stableOptions, stopLoop, startLoop, pngCapturer, READY_FRAMES } from './capture-browser.mjs';
@@ -147,12 +147,12 @@ const W = Number( opt( 'w', 1600 ) ), H = Number( opt( 'h', 900 ) );
 // the --eval steps, in order: `eval` as given (js or @file), `js` what runs (see the header)
 const evalsOf = ( flag ) => args.flatMap( ( a, i ) => a === flag && args[ i + 1 ] ? [ { eval: args[ i + 1 ], js: evalSource( args[ i + 1 ] ) } ] : [] );
 const argEvals = evalsOf( '--eval' );
-// the --eval-ready steps: the same, run once the page is ready, before the shot (see the header)
+// the --eval-ready steps: the same, run once the page is ready, before the screenshot (see the header)
 const readyEvals = evalsOf( '--eval-ready' );
 const wait = Number( opt( 'wait', 0 ) ), settle = Number( opt( 'settle', 0 ) );
 const stable = stableOptions( ( k ) => k === 'stable-trace' ? ( args.includes( '--stable-trace' ) ? '' : undefined ) : opt( k ) );
 const baseUrl = opt( 'url', PROJECT.url );
-// the page's globals, as the project's configuration names them, for the page code below (passed
+// the app's globals, as the project's configuration names them, for the page code below (passed
 // in: a closure run in the page sees nothing of node's scope)
 const PAGE = PROJECT.page;
 const sampleCount = Number( opt( 'samples', 1 ) );
@@ -218,7 +218,7 @@ async function openPage( viewport ) {
  * The slot after the world: up to now the page's GPU use is held back (the init script in openPage
  * gates `GPUAdapter.requestDevice`), so the page starts its world, then waits in the renderer's
  * start with no device, no render, no compile; the caller then takes the slot and opens the gate,
- * and the page sets up the sky, textures and pipelines, renders and is shot under it. The world's
+ * and the page sets up the sky, textures and pipelines, renders and is captured under it. The world's
  * marker is `window.__PONLAI_WORLD__.ready` (packages/island/world/WorldStart.ts, debug pages). The
  * tool used to take the slot before the load, so on a grown island a load held a shared slot through
  * its CPU world generation (7-35 s cold) with the GPU nearly idle. The production bundle starts the
@@ -248,9 +248,9 @@ const renderedFrame = ( page ) => page.evaluate( ( n ) => window[ n.handle ]?.re
 
 /** Brings the page to the view (`load`: the fresh load of `url` loadToWorld started, its GPU gate
  * opened; `jump`: the scene jump to `query`), runs the view's `evals` (js; a throw fails the view)
- * and the --eval `steps` (recorded in the JSON's `evals`; a throw is recorded and fails the shot,
+ * and the --eval `steps` (recorded in the JSON's `evals`; a throw is recorded and fails the capture,
  * which is still taken), waits until it is ready, runs the --eval-ready `readySteps` (recorded as
- * `readyEvals`, likewise) and shoots it into `<out>.png` (and further
+ * `readyEvals`, likewise) and captures it into `<out>.png` (and further
  * frames), `<out>.json`, with the view's error record (`session.begin()`, called before the load).
  * `pageInfo` (async) adds the JSON's `page`. Returns { out, ready, diag, record, evals, readyEvals }. */
 async function captureView( session, { url, query, evals, steps, readySteps = [], out, mode, pageInfo = null } ) {
@@ -277,7 +277,7 @@ async function captureView( session, { url, query, evals, steps, readySteps = []
 		await page.waitForFunction( ( { f, handle } ) => window[ handle ].renderer.info.frame > f, { f: jumped, handle: PAGE.handle }, { timeout, polling: 'raf' } );
 
 	}
-	// the --eval and --eval-ready steps, recorded (a throw fails the shot)
+	// the --eval and --eval-ready steps, recorded (a throw fails the capture)
 	const runSteps = async ( list ) => {
 
 		const records = [];
@@ -321,7 +321,7 @@ async function captureView( session, { url, query, evals, steps, readySteps = []
 	// above); the loop is stopped
 	const ready = readyFrames === null ? await waitForStable( page, { ...stable, timeout } ) : { rule: 'frames', frames: readyFrames };
 	if ( settled ) ready.settled = settled;
-	// the --eval-ready steps, on the frame the shot takes (the loop stopped)
+	// the --eval-ready steps, on the frame the screenshot takes (the loop stopped)
 	if ( readySteps.length ) await stopLoop( page );
 	const readyRecords = await runSteps( readySteps );
 	const samples = [];
@@ -332,7 +332,7 @@ async function captureView( session, { url, query, evals, steps, readySteps = []
 
 	}
 	const frames = [];
-	// the shot: the compositor's image, PNG encoded for speed (tools/kit/capture-browser.mjs, "The shot")
+	// the screenshot: the compositor's image, PNG encoded for speed (tools/kit/capture-browser.mjs, "The screenshot")
 	const capturer = await pngCapturer( page, { timeout } );
 	for ( let i = 0; i < frameCount; i ++ ) {
 
@@ -343,7 +343,7 @@ async function captureView( session, { url, query, evals, steps, readySteps = []
 				{ f: frames[ i - 1 ].frame + frameEvery, n: PAGE }, { timeout, polling: 'raf' } );
 
 		}
-		// no frames queued behind the shot (tools/kit/capture-browser.mjs)
+		// no frames queued behind the screenshot (tools/kit/capture-browser.mjs)
 		await stopLoop( page );
 		const frame = await renderedFrame( page );
 		const file = i === 0 ? `${ out }.png` : `${ out }.f${ i }.png`;
@@ -355,8 +355,8 @@ async function captureView( session, { url, query, evals, steps, readySteps = []
 	await capturer.close();
 	const diag = await page.evaluate( ( n ) => ( { ...window[ n.diagnostics ] } ), PAGE );
 	const crops = await page.evaluate( ( n ) => window[ n.crops ] ?? null, PAGE );
-	// a set's shot: where it is compared within the held tolerance (tools/kit/tolerance.py), the frame
-	// just shot read back
+	// a set's capture: where it is compared within the held tolerance (tools/kit/tolerance.py), the frame
+	// just captured, read back
 	const held = pageInfo ? await page.evaluate( ( n ) => window[ n.handle ]?.heldRegion?.() ?? null, PAGE ) : null;
 	session.gpu ??= await page.evaluate( async () => {
 
@@ -384,7 +384,7 @@ function report( { out, ready, diag, record, evals, readyEvals } ) {
 	const line = ( e, kind ) => 'error' in e ? `${ kind } failed: ${ e.eval }: ${ e.error }` : `${ kind } ${ e.eval }: ${ JSON.stringify( e.value )?.slice( 0, 300 ) }`;
 	for ( const e of evals ) lines.push( line( e, 'eval' ) );
 	for ( const e of readyEvals ) lines.push( line( e, 'eval-ready' ) );
-	if ( ready.settled?.settled === false ) lines.push( `unsettled: the settled signal did not hold within ${ ready.settled.wallMs } ms (${ JSON.stringify( ready.settled.settle?.pending ?? [] ) }), shot once stable` );
+	if ( ready.settled?.settled === false ) lines.push( `unsettled: the settled signal did not hold within ${ ready.settled.wallMs } ms (${ JSON.stringify( ready.settled.settle?.pending ?? [] ) }), captured once stable` );
 	if ( ready.status === 'capped' ) lines.push( `unstable: still changing after ${ ready.framesWaited } frames (max ${ ready.maxSeen } levels), captured at the cap` );
 	lines.push( `${ out } ${ JSON.stringify( diag ) }` );
 	if ( record.errors.length ) lines.push( record.errors.slice( 0, verbose ? 60 : 12 ).join( '\n' ) );
@@ -393,7 +393,7 @@ function report( { out, ready, diag, record, evals, readyEvals } ) {
 
 }
 
-// the page's memory after a shot (JS heap, DOM, renderer counts), for the worker's JSON
+// the page's memory after a capture (JS heap, DOM, renderer counts), for the worker's JSON
 async function pageMemory( page ) {
 
 	const cdp = await page.context().newCDPSession( page );

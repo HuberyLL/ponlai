@@ -12,9 +12,9 @@
 // rest resolve, no clip, no cap, nothing reprojected), shown from the sequence's last frame on and
 // held while the rest lasts, the jitter staying at the sequence's last index. The running history
 // keeps updating underneath, so the frame after the rest ends continues from it. What the image shows then depends only on the scene: a paused frame
-// repeats exactly, however it was reached.
+// is bit-identical, however it was reached.
 //
-// The rest is the canvas's image: what the page lays over the canvas is not in it. A rest shot while
+// The rest is the canvas's image: what the page lays over the canvas is not in it. A rest captured while
 // the loading screen still faded out (index.html) carried up to 2 % of that screen's colour over the
 // whole frame and read as a darker rest; a paused page now lifts the loading screen at once
 // (assemble/StartScene.ts `reveal`), and the page's settled signal waits for it in any case (Settled.ts `shown`).
@@ -24,8 +24,8 @@
 //
 // The rest is tested every frame on a key of what the frame draws from: the camera's unjittered view
 // and projection, the scene clock, the render's and the output's sizes, the epoch, the resolve's live
-// settings and the page's own signature of the rest (main.ts: a forced lightning strike, which a
-// review sets while paused). The frame is not at rest while the page says it is unstable (a sky bake
+// settings and the app's own signature of the rest (main.ts: a forced lightning strike, which a
+// review sets while paused). The frame is not at rest while the app says it is unstable (a sky bake
 // in flight, a sky transition still running, the haze's own rest not done: VolumetricHaze.ts).
 // Anything else that changes the image without changing
 // the key (a GUI control, a weather jump, a seek to the same time) bumps the epoch
@@ -94,7 +94,7 @@ export class TemporalRest {
 
 	}
 
-	/** Once per rendered frame, before its jitter is chosen: the frame's key and whether the page is
+	/** Once per rendered frame, before its jitter is chosen: the frame's key and whether the app is
 	 * stable. Sets `index` (the jitter's rest index is index + 1), `completing` and `converged`. */
 	observe( key: readonly number[], stable: boolean ): void {
 

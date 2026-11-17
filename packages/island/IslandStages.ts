@@ -4,17 +4,17 @@
 // (RenderStages.ts), in the order the entry (main.ts) calls them. Each stage puts what it builds on
 // the one IslandParts object: the island's camera, the islanders' trail and shadow, the ground's
 // scans, the world's data and land, its meshes, its debug views, the vegetation, and the growth in
-// place. The rules of RenderStages.ts hold here too: the statements' order is part of the image,
-// and a stage that ends in a wait returns its promise to the entry.
+// place. The rules of RenderStages.ts hold here too: the statements' order affects the rendered
+// image, and a stage that ends in a wait returns its promise to the entry.
 // - The island's part of a frame is a set of stages too (`createIslandFrame`): the growth, the
 //   camera, the night's share of its glow, the sward's tint, its creatures and falling leaves, its
-//   islander and the trail. The page's tick calls each between the render pipeline's frame stages
-//   (RenderStages.ts `FrameStages`) where the statement stood, and their order is part of the
-//   image.
+//   islander and the trail. The app's tick calls each between the render pipeline's frame stages
+//   (RenderStages.ts `FrameStages`) where the statement stood, and their order affects the
+//   rendered image.
 // - The vegetation's stage registers every plant kind, then hands the registry to the render
 //   pipeline's `placeVegetation`, which closes it: a kind is registered before that call or not at
 //   all.
-// - The page's camera views (app/CameraViews.ts) need the document, so the page builds the island
+// - The app's camera views (app/CameraViews.ts) need the document, so the app builds the island
 //   view's framing (`IslandFraming`), which the land's changes call, and hands it to the stages that
 //   frame the land (`createVegetation`, `createGrowth`).
 import { WIND_VIEW, shared, testSources, debugFlags, TEST_MODE, declareSceneEvents, createDisplacementField, displacementField, Vegetation, defaultPlant, placeVegetation, vegetationCasters, bakeRainCollision, duskForce, nightGlowShare, type RenderParts } from '../render/index.ts';
@@ -69,7 +69,7 @@ const islandEvent = declareSceneEvents( {
 	'approach': false,
 } );
 
-/** What the page measures of a land: its box, how the views frame it and its outline. */
+/** What the app measures of a land: its box, how the views frame it and its outline. */
 type LandMeasure = { box: Bounds; framing: { centroid: { x: number; z: number }; scale: number; onLand: ( x: number, y: number, z: number ) => THREE.Vector3; pivot: THREE.Vector3 }; outline: number[] };
 
 export interface IslandParts {
@@ -127,7 +127,7 @@ export interface IslandParts {
 }
 
 /** What the island's stages hand one another and nothing else reads: on the same object, off the
- * IslandParts the page sees. */
+ * IslandParts the app sees. */
 interface StageParts {
 	t0: number;
 	/** the box of everything that casts into the sun's map (`setSunCasters`, `holdOpaque`) */
@@ -148,7 +148,7 @@ function staged( island: IslandParts ): IslandParts & StageParts {
 
 }
 
-/** The island view's framing on the land shown, which the page builds (app/CameraViews.ts) and
+/** The island view's framing on the land shown, which the app builds (app/CameraViews.ts) and
  * the land's changes call. */
 export interface IslandFraming {
 	/** places the island view on the land as the load places it */
@@ -221,7 +221,7 @@ export function createTrample( render: RenderParts, island: IslandParts ) {
 
 	// The islanders' trail through the meadow (world/Trample.ts), drawn after they move each
 	// frame into the displacement field (vegetation/Displacement.ts), made here over the land's
-	// whole lattice and drawn again each frame; across a cut its frame before is not read.
+	// whole lattice and drawn again each frame; across a cut its previous-frame data is not read.
 	island.trample = new Trample( createDisplacementField( 2 * GROWTH.half ) );
 	render.history.onCut( 'displacement field', () => displacementField?.cut() );
 
@@ -252,7 +252,7 @@ export function bakeIslandGround( render: RenderParts ) {
 }
 
 /**
- * Shows the generator's progress. Returns the world the page's start began, which the entry
+ * Shows the generator's progress. Returns the world the app's start began, which the entry
  * awaits.
  */
 export function awaitWorld( render: RenderParts, island: IslandParts, { worldJob }: { worldJob: Promise<LoadedWorld> } ) {
@@ -275,7 +275,7 @@ export function awaitWorld( render: RenderParts, island: IslandParts, { worldJob
 
 }
 
-/** The land and what the page measures of it: its box, its framing, its fields. */
+/** The land and what the app measures of it: its box, its framing, its fields. */
 export function createLand( render: RenderParts, island: IslandParts, { landOptions }: { landOptions: { worldSeed: number; step: number } } ) {
 
 	const { mark } = render;
@@ -517,7 +517,7 @@ export function createGrowth( render: RenderParts, island: IslandParts, { landOp
 	console.info( `world: ${ worldCache.hits } of ${ worldCache.chunks + 1 } records from the cache (${ worldCache.cache })`, data.timings, 'triangles', world.triangles, 'in', Math.round( performance.now() - t0 ), 'ms' );
 
 	// The island grows in place (Growth.ts): the next piece is generated ahead, and a Grow (the GUI's
-	// Island folder, `__PONLAI__.growth.grow()`) swaps it in, every dependent following. The page's own
+	// Island folder, `__PONLAI__.growth.grow()`) swaps it in, every dependent following. The app's own
 	// part of a swap: the land's framing and the fog's clearing (setLand), the sea's reflection box (and
 	// the box its gusts take the meadow's within, Water.setLand) and
 	// the sun's casters (the game's held props kept), the camera's ground; the scene event keeps the
@@ -569,7 +569,7 @@ export function createGrowth( render: RenderParts, island: IslandParts, { landOp
 	}, worldCache, { seed: landOptions.worldSeed, cache: worldCacheOn } );
 	island.growth = growth;
 	// `approach=<0..1>`: the shoal under the next piece put on that progress at once (Growth.ts
-	// `approachNow`); the loading screen stays up until it is written, so a paused load repeats.
+	// `approachNow`); the loading screen stays up until it is written, so a paused load is reproducible.
 	island.approachWritten = true;
 	if ( params.has( 'approach' ) ) {
 
@@ -606,7 +606,7 @@ export interface IslandFrame {
 	trample( walkers: readonly TrampleWalker[] | null ): void;
 }
 
-/** The island's frame stages on the built island. `view` is the page's camera view, read as each
+/** The island's frame stages on the built island. `view` is the app's camera view, read as each
  * frame comes: the island view alone turns and zooms. */
 export function createIslandFrame( render: RenderParts, island: IslandParts, { framing, view }: { framing: IslandFraming; view: { readonly camera: string } } ): IslandFrame {
 

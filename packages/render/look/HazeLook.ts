@@ -132,7 +132,7 @@ export function createHazeTables( look: HazeLook ): HazeTables {
 
 	}
 	tuneObject( mist, { mist: 'haze.key.mist@mist' }, { mist: { min: 0, max: 2, onChange: markSkyRetune } } );
-	// the fog layer's knobs on the keys that hold one:
+	// the fog layer's parameters on the keyframes that hold one:
 	// `haze.fog.<top|width|visibility|neutral|scatter>@<day|golden|mist>`, the visibility's range the key's
 	for ( const [ name, low, high ] of [ [ 'day', 0.2, 1.5 ], [ 'golden', 0.3, 2.5 ], [ 'mist', 0.2, 2 ] ] as const ) {
 

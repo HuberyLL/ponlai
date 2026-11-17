@@ -36,7 +36,7 @@
 //      `reference.watch.motion`) on the diff, plus `spot` for the clips: the first SPOT.frames
 //      frames of SPOT.clips (the clips table's CARRY_SPOT) under MSAA captured on B with A's
 //      anchors and compared pixel for pixel with A's stored baseline entries (a differing clip is
-//      captured once more, since a whole-frame outlier under a shared GPU never repeats);
+//      captured once more, since a whole-frame outlier under a shared GPU does not recur);
 //   4. the paused scene, `paused-<tier>`: B's paused set (S1 on high: the views table's default group
 //      plus every view an entry to carry is on; S2/<tier> on lower tiers: those views) matches A's
 //      with tools/kit/diff-set.py (`--aa-floor` where both sides hold repeats, else pixel identity),

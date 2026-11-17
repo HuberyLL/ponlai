@@ -1,7 +1,7 @@
 import type * as THREE from 'three/webgpu';
 import { checkDeclarations, type Declarations } from '../Extensions.ts';
 
-// The vegetation's registry: every plant kind the page draws, once, with what it takes part in.
+// The vegetation's registry: every plant kind the app draws, once, with what it takes part in.
 // The lists of vegetation roots read it (RenderStages.ts `placeVegetation`: the scene, the depth
 // prepasses; `vegetationCasters`: the sun's caster box; `bakeRainCollision`: the rain's collision
 // bake; Growth.ts: the kinds' growth and the rain's bake after a swap) instead of naming the kinds
@@ -24,10 +24,10 @@ import { checkDeclarations, type Declarations } from '../Extensions.ts';
 //   The kinds prepare and swap in registry order. A kind that writes its buffers in place at the
 //   swap stages the write ahead (`stage`, Upload.ts stagedWriteSteps): kept for the plant kinds to
 //   come; no kind uses it today (the grass takes new buffers). The next version's land data is
-//   whatever the page's world is (`L`: the island's world/types.ts WorldData); the registry only
+//   whatever the app's world is (`L`: the island's world/types.ts WorldData); the registry only
 //   passes it on.
-// - The three declarations (Extensions.ts): a kind states the quality knob that governs its cost,
-//   how it stands in the test mode and how it follows the land's growth, or `add` refuses it. A
+// - The three declarations (Extensions.ts): a kind states the quality setting that governs its cost,
+//   its test-mode behaviour and how it follows the land's growth, or `add` refuses it. A
 //   kind with a `growth` of its own names it as its follower; one that another kind's growth
 //   carries (the bamboo's leaves, swapped with its culms) names that kind.
 // - The default: a kind without art of its own gives no `root` and says where it stands (`sites`);
@@ -67,7 +67,7 @@ export interface PlantSite { x: number; y: number; z: number }
 export interface VegetationKind<P = unknown, L = unknown> extends Declarations {
 	/** 'grass', 'yunpeng', 'bamboo', ... */
 	name: string;
-	/** what the page adds to the scene; without it the kind is drawn with the default plant at its `sites` */
+	/** what the app adds to the scene; without it the kind is drawn with the default plant at its `sites` */
 	root?: THREE.Object3D;
 	/** where the default plant stands, for a kind without a `root` */
 	sites?: readonly PlantSite[];

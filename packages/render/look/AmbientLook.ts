@@ -12,8 +12,8 @@ import type { AmbientColumn, AmbientKnobs, AmbientLook, AmbientRowLook } from '.
 // them (RenderStages.ts: the tables in `createLight`, for the grade's controller and the ambient
 // light's relight; the lift in `createSky`, which the sky carries beside the key's direction), so
 // two made from two tables hold their own numbers (tools/render/verify-look-params.mjs) and this
-// module holds none at module level: only the knobs' and the columns' names and the knobs at no
-// grade, which no look changes. The land's floor under cloud is the sky's (look/SkyLook.ts
+// module holds none at module level: only the parameters' and the columns' names and the
+// parameters at no grade, which no look changes. The land's floor under cloud is the sky's (look/SkyLook.ts
 // `keyThroughCloud`). Each module's header says what its numbers do on screen.
 // - The tables register their tunables (debug/Tune.ts) as they are created, under the names they
 //   always had (`lighting.grade.sunBounce`, `lighting.relight.overcastLand`). The tune table is one
@@ -28,7 +28,7 @@ export const AMBIENT_KNOBS: ReadonlyArray<keyof AmbientKnobs> = [ 'skySpecular',
 export const AMBIENT_COLUMNS = [ 'clear', 'fair', 'cloudy', 'overcast' ] as const satisfies readonly AmbientColumn[];
 type AmbientRow = { at: number } & Record<AmbientColumn, Readonly<AmbientKnobs>>;
 
-// The knobs at no grade: a look's rows spell their changes over it.
+// The parameters at no grade: a look's rows spell their changes over it.
 export const DEFAULT_KNOBS: Readonly<AmbientKnobs> = { skySpecular: 1, skyBounce: 1, sunBounce: 1, directionality: 0.25, aoStrength: 1 };
 const D = DEFAULT_KNOBS;
 const whole = ( row: AmbientRowLook ): AmbientRow => ( { at: row.at, clear: { ...D, ...row.clear }, fair: { ...D, ...row.fair }, cloudy: { ...D, ...row.cloudy }, overcast: { ...D, ...row.overcast } } );
@@ -39,7 +39,7 @@ export interface AmbientTables {
 	 * weights, into `out`. */
 	evaluate( elevation: number, weights: readonly number[], out: AmbientKnobs, rising?: boolean ): AmbientKnobs;
 	/** A gain on the table's `sunBounce` at every hour and in every weather: scales the key's bounce
-	 * throughout without reshaping the table: the shade's level is the light the ground sends up.
+	 * throughout without reshaping the table: the shadows' level is the light the ground sends up.
 	 * Tunable: `lighting.grade.sunBounce`. */
 	readonly sunBounceGain: () => number;
 	/** The sun's part of the weather's gain under overcast's deck, per unit, on the land's ambient

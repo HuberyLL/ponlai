@@ -33,16 +33,17 @@
 //   --runs <file.csv>       append a line to a run log; default the PARITY_RUNS variable, else none
 //   --task <name>           the run log's task
 //   --verbose               print up to 60 console errors instead of 12
-//   --test-fault            test the rest's second shot (below)
+//   --test-fault            test the rest's second capture (below)
 //
 // The page loads `<url>?debug&paused&testMode=0&t=12&quality=<tier>&aa=<mode>[&<extra>]&<view's
 // query>[&<clip's query>]`. `aa=off` adds `msaa=1`; a build that does not read `aa` ignores it.
 // `testMode=0` leaves the test mode's switch out, so what it turns off moves in the clips
 // (docs/reference/test-mode.md). In a persistent profile slot the page runs the view's eval (the
-// crop anchors' setup included), waits for the scene as capture.mjs does (tools/kit/capture-browser.mjs:
-// the image stopped changing, or under a temporal mode the rest converged, or --ready-frames' fixed
-// count), runs the clip's eval and --setup, reads the crop anchors once at the base pose and steps
-// the clip. A clip's lead frames (clips.mjs) are stepped once before frame 0 and never shot. After
+// crop anchors' setup included), waits for the scene as capture.mjs does
+// (tools/kit/capture-browser.mjs: the image stopped changing, or under a temporal mode the rest
+// converged, or --ready-frames' fixed count), runs the clip's eval and --setup, reads the crop
+// anchors once at the base pose and steps the clip. A clip's lead frames (clips.mjs) are stepped
+// once before frame 0 and never captured. After
 // each captured frame each anchor's world point is projected with that frame's camera into a box
 // of 192 CSS px (384 device px at a ratio of 2, clamped into the frame); an anchor behind the camera
 // is skipped. Pass a test run's clip.json to a ground-truth run with --anchors-from: the anchors
@@ -67,15 +68,16 @@
 // MSAA sides only (clip.json: `scaleSchedule`). Judge vegetation look against MSAA, not a ground
 // truth: their blades are finer than MSAA's.
 //
-// A clip of one frame (`--clip rest`) is the image at rest. Under taa and taau it is held still until
-// the rest has converged on it. Under msaa, off and gt-hi it is stepped again with the same state
-// and shot whole until two shots agree within the readiness tolerance (--stable-tolerance), at
-// most 6 shots, else the clip fails and nothing is written: a single stepped frame can be a
-// discrete alternative image that the readiness check before it cannot see (the measurements are
-// beside RECHECK_SHOTS below). clip.json records the shots (`recheck`). `--test-fault` draws frame 0
-// half a stop brighter, so the first shot must be rejected and the crops taken from a later one.
-// Motion clips and temporal rests are not shot twice: a moving frame cannot be rendered again
-// without replaying its state, and one odd render is a small share of a temporal rest.
+// A clip of one frame (`--clip rest`) is the image at rest. Under taa and taau it is held still
+// until the rest has converged on it. Under msaa, off and gt-hi it is stepped again with the same
+// state and captured whole until two captures agree within the readiness tolerance
+// (--stable-tolerance), at most 6 captures, else the clip fails and nothing is written: a single
+// stepped frame can be a discrete alternative image that the readiness check before it cannot see
+// (the measurements are beside RECHECK_SHOTS below). clip.json records the captures (`recheck`).
+// `--test-fault` draws frame 0 half a stop brighter, so the first capture must be rejected and the
+// crops taken from a later one. Motion clips and temporal rests are not captured twice: a moving
+// frame cannot be rendered again without replaying its state, and one odd render is a small share
+// of a temporal rest.
 //
 // Output: under --out, `<crop>/<i>.png` per crop and frame, `full/<i>.png`, and clip.json (the url,
 // the clip, the boxes, camera and render size per frame, the readiness record `ready`, the page's
@@ -87,9 +89,9 @@
 // the whole clip; stepped clips are deterministic (docs/reference/gpu-lock.md).
 //
 // Cost: a page load and readiness, then a stepped frame and its crops per captured frame. The
-// rest's second shot adds one stepped frame and a whole-frame grab, under a second.
+// rest's second capture adds one stepped frame and a whole-frame grab, under a second.
 //
-// Exit codes: 0 captured; 1 a page error, a console error, the rest's shots disagreeing or another
+// Exit codes: 0 captured; 1 a page error, a console error, the rest's captures disagreeing or another
 // failure; 2 usage, an unknown option, clip or view, gt-hi on a tier other than high, or a bad
 // --size, --gt-jitters or --dense.
 import '../help.mjs';
@@ -172,7 +174,7 @@ const timeout = Number( options.timeout ?? 240000 );
 const outDir = path.resolve( options.out ?? path.join( outputDir( REPO, 'clips' ), name ) );
 // the crop box in CSS px (384 device px at a ratio of 2, as the parity crops)
 const BOX = 192;
-// A paused one-frame clip's shots before it fails for want of two that agree (see the header).
+// A paused one-frame clip's captures before it fails for want of two that agree (see the header).
 // The readiness check vouches for the frames it compared, not for the frame the clip then steps:
 // the clip's evals come after it, so the stepped frame is a new render, and a single frame can come
 // out as a discrete alternative image (measured: 0.3-1 M px of scattered vegetation pixels off by up
@@ -182,12 +184,13 @@ const BOX = 192;
 // page's stepped frames differ from its settled frame by a few to about 2000 pixels of speckle,
 // which the tolerance (by default at most 5000 pixels differ at all; `exact` asks for equal pixels)
 // accepts; the alternative image (0.87 M px on island-fair-noon) is far outside it. The crops are
-// those of an agreeing shot (the first one's, or shot again on the later frame when the first was
-// the odd one). Each further shot steps one frame at frame 0's pose and scale, without the lead
-// frames (the clock is paused, so the scene is frame 0's). Cost: one more stepped frame and one
-// whole-frame grab when the first two agree, about 0.3 s alone and 0.9 s on a shared GPU (plus the
-// whole-frame shot itself when --full does not ask for it). A temporal rest averages 32-64 renders,
-// so one odd render is a 1/32 share there, inside the temporal comparisons' tolerance.
+// those of an agreeing capture (the first one's, or cropped again on the later frame when the
+// first was the odd one). Each further capture steps one frame at frame 0's pose and scale,
+// without the lead frames (the clock is paused, so the scene is frame 0's). Cost: one more stepped
+// frame and one whole-frame grab when the first two agree, about 0.3 s alone and 0.9 s on a shared
+// GPU (plus the whole-frame screenshot itself when --full does not ask for it). A temporal rest
+// averages 32-64 renders, so one odd render is a 1/32 share there, inside the temporal
+// comparisons' tolerance.
 const RECHECK_SHOTS = 6;
 
 // ------------------------------------------------------------------ PNG (8-bit, non-interlaced)
@@ -313,9 +316,9 @@ try {
 	if ( full.size ) await mkdir( path.join( outDir, 'full' ), { recursive: true } );
 
 	const boxes = [];
-	// the compositor's image, PNG encoded for speed (tools/kit/capture-browser.mjs, "The shot"); the
-	// device metrics come back once the clip is stepped (nothing reads the ratio while stepping)
-	// The shots drop the page's device metrics until the clip has been stepped: the page reads its
+	// the compositor's image, PNG encoded for speed (tools/kit/capture-browser.mjs, "The screenshot");
+	// the device metrics come back once the clip is stepped (nothing reads the ratio while stepping)
+	// The screenshots drop the page's device metrics until the clip has been stepped: the page reads its
 	// ratio only on a resize, and none fires, so the frames are the same.
 	const capturer = await pngCapturer( page, { timeout } );
 	const captureRect = async ( clipRect ) => {
@@ -331,11 +334,11 @@ try {
 		return out;
 
 	};
-	// a paused frame without a temporal rest is shot whole until two shots agree (see the header):
-	// its shots stay in memory until then, each { raw (the whole frame as grabbed), crops, frame }
+	// a paused frame without a temporal rest is captured whole until two captures agree (see the
+	// header): its captures stay in memory until then, each { raw (the whole frame as grabbed), crops, frame }
 	const recheck = frames === 1 && clip.clock === 'paused' && ! gtRest && ! ( await page.evaluate( ( n ) => !! window[ n ].taa, PAGE.handle ) );
 	const fault = options[ 'test-fault' ] === true;
-	if ( fault && ! recheck ) throw new Error( '--test-fault tests the rest\'s second shot: a paused one-frame clip under msaa, off or gt-hi' );
+	if ( fault && ! recheck ) throw new Error( '--test-fault tests the rest\'s second capture: a paused one-frame clip under msaa, off or gt-hi' );
 	const restShots = [];
 	await page.exposeFunction( '__clipFrame', async ( i, frameBoxes, time, state ) => {
 
@@ -370,8 +373,8 @@ try {
 		// the clip's lead frames step before its frame 0, at frame 0's pose and scale, uncaptured
 		// (clips.mjs); the frames are numbered from the clip's frame 0
 		const lead = clip.lead ?? 0;
-		// --test-fault: frame 0 (and any lead frames before it, never shot) drawn half a stop
-		// brighter, the offset restored after frame 0's shots
+		// --test-fault: frame 0 (and any lead frames before it, never captured) drawn half a stop
+		// brighter, the offset restored after frame 0's captures
 		const offset = s.pipeline.settings.exposureOffset;
 		if ( fault ) s.pipeline.settings.exposureOffset = offset + 0.5;
 		const result = await s.loop.step( {
@@ -407,8 +410,8 @@ try {
 		return { ...result, pipelines: before === null ? null : s.pipelines.total - before, wallMs: performance.now() - t0, notes: window[ g.clipNotes ] ?? [] };
 
 	}, { tracked, every, dense, box: BOX, cssScale, fullFrames: [ ...full ], gtRest, fault, g: PAGE } );
-	// the rest's second shot: the frame stepped again with the same state and shot whole until a shot
-	// agrees with an earlier one; then that pair's crops (and whole frame) are written
+	// the rest's second capture: the frame stepped again with the same state and captured whole
+	// until a capture agrees with an earlier one; then that pair's crops (and whole frame) are written
 	let recheckRecord = null;
 	if ( recheck ) {
 
@@ -416,7 +419,7 @@ try {
 		const tolerance = stable.tolerance;
 		const history = [];
 		let accepted = null;
-		// [ shot, earlier shot, largest channel difference, pixels differing at all ]
+		// [ capture, earlier capture, largest channel difference, pixels differing at all ]
 		const agree = ( j, shot ) => {
 
 			const a = restShots[ j ].raw, b = shot.raw;
@@ -432,7 +435,7 @@ try {
 			for ( let j = 0; j < restShots.length && ! accepted; j ++ ) {
 
 				if ( ! agree( j, shot ) ) continue;
-				// the earlier shot's crops, or this frame's (it agrees with a shot taken without crops)
+				// the earlier capture's crops, or this frame's (it agrees with a capture taken without crops)
 				accepted = restShots[ j ].crops ? restShots[ j ] : shot;
 				accepted.crops ??= await captureCrops( boxes[ 0 ].boxes );
 
@@ -453,11 +456,11 @@ try {
 		}
 		recheckRecord = { status: accepted ? 'agreed' : 'failed', shots: restShots.length, accepted: accepted ? restShots.indexOf( accepted ) : null, tolerance,
 			history, ms: Math.round( performance.now() - t ) };
-		if ( ! accepted ) throw new Error( `rest: no two of ${ restShots.length } shots agree within the tolerance (${ JSON.stringify( history ) }); nothing written` );
+		if ( ! accepted ) throw new Error( `rest: no two of ${ restShots.length } captures agree within the tolerance (${ JSON.stringify( history ) }); nothing written` );
 		boxes[ 0 ].frame = accepted.frame;
 		for ( const [ n, png ] of Object.entries( accepted.crops ) ) await writeFile( path.join( outDir, n, '0.png' ), png );
 		if ( full.has( 0 ) ) await writeFile( path.join( outDir, 'full', '0.png' ), gt ? encodePng( downsample2( decodePng( accepted.raw ) ) ) : accepted.raw );
-		if ( accepted !== restShots[ 0 ] || restShots.length > 2 ) console.log( `rest: shot ${ restShots.length } times, kept shot ${ recheckRecord.accepted } (${ history.map( ( h ) => `${ h[ 0 ] } vs ${ h[ 1 ] }: ${ h[ 3 ] } px, max ${ h[ 2 ] }` ).join( '; ' ) })` );
+		if ( accepted !== restShots[ 0 ] || restShots.length > 2 ) console.log( `rest: captured ${ restShots.length } times, kept capture ${ recheckRecord.accepted } (${ history.map( ( h ) => `${ h[ 0 ] } vs ${ h[ 1 ] }: ${ h[ 3 ] } px, max ${ h[ 2 ] }` ).join( '; ' ) })` );
 
 	}
 	await capturer.close();

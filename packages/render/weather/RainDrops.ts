@@ -176,7 +176,7 @@ export class RainDrops {
 		const fallTenths = ( index: THREE.Node<'uint'> ) => floor( random( index, 3 ).mul( FALL_TENTHS_RANGE ) ).add( FALL_TENTHS_MIN );
 
 		// ---- simulation: every drop's state is a function of the clock, the wind's integrated
-		// displacement and the camera, so a paused frame repeats exactly and no state drifts.
+		// displacement and the camera, so a paused frame is bit-identical and no state drifts.
 		const ground = collision.groundAt;
 		const waterLevel = collision.waterLevel;
 		const ceiling = float( collision.ceiling );

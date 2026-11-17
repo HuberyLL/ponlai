@@ -123,7 +123,7 @@ function withBinding<T>( renderer: THREE.WebGPURenderer, target: THREE.RenderTar
 
 }
 
-// One copy of a double-sided mesh's material per side, kept for the page's life: disposing one
+// One copy of a double-sided mesh's material per side, kept for the app's life: disposing one
 // would release the node builds and pipelines the real draws share with it.
 const sideCopies = new WeakMap<THREE.Mesh, THREE.Mesh[]>();
 

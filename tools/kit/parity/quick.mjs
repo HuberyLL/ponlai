@@ -1,7 +1,7 @@
-// Tries knob variants on a few views in one page each, measured against a commit's stored references.
+// Tries setting variants on a few views in one page each, measured against a commit's stored references.
 //
 // This is capture-set.mjs's quick mode (`--quick`), a module run only through it, for tuning: it
-// answers how a runtime knob moves a few crops against MSAA and the ground truth, in seconds per
+// answers how a runtime setting moves a few crops against MSAA and the ground truth, in seconds per
 // variant instead of a fresh load each. It is not a gate: the gates still run full sets
 // (tools/kit/parity/capture-set.mjs --check, tools/kit/parity/baseline.mjs).
 //
@@ -18,13 +18,13 @@
 // One page per view, loaded as capture-set loads it (`?debug&paused&t=12&quality=..[&aa=..][&q]&<view>`,
 // in a profile slot, the view's eval with the crop anchors, so the crops compare with the store's
 // rest entries). On that page:
-//   1. the base: ready as capture.mjs is (below), then shot;
+//   1. the base: ready as capture.mjs is (below), then captured;
 //   2. each --variant in order: its js runs in the page (awaited; `s` is the page's handle), the
 //      loop starts again, the temporal rest restarts (an epoch bump: the variant need not be in the
-//      rest's key), ready, shot.
-// Variants apply on top of each other to the one page: give each the absolute value of every knob
-// it tunes (three variants of one knob: `s.taa.settings.sigmaRest = 0.3`, `= 0.4`, `= 0.5`; a
-// variant of another knob sets the first one back). Only runtime knobs (`s.taa.settings.*`,
+//      rest's key), ready, captured.
+// Variants apply on top of each other to the one page: give each the absolute value of every
+// setting it tunes (three variants of one setting: `s.taa.settings.sigmaRest = 0.3`, `= 0.4`,
+// `= 0.5`; a variant of another setting sets the first one back). Only runtime settings (`s.taa.settings.*`,
 // uniforms, `s.applyQuality( { ... } )`) can vary in one page: load-time ones (the tier, aa, the
 // size, the debug switches, anything read once as materials and the frame graph are built) need a
 // load, that is another quick run with `--q`.
@@ -33,23 +33,23 @@
 // the loading screen gone (waitForScene), then on a temporal page (taa, taau, fsr3, gt) the rest started
 // over and converged under the new epoch, then waitForStable: an MSAA page by stability (the image
 // stopped changing), a temporal one on its held rest; the loop is left stopped. A variant's image
-// therefore equals a fresh load with the knob in its URL within the rules sets are judged by: MSAA
-// byte-identical (`diff-set.py --aa-floor`), taau within `--temporal` (at most 3 levels on a few
-// pixels, as its own A/A). Keep this sequence in step with capture.mjs.
+// therefore equals a fresh load with the setting in its URL within the rules sets are judged by:
+// MSAA byte-identical (`diff-set.py --aa-floor`), taau within `--temporal` (at most 3 levels on a
+// few pixels, as its own A/A). Keep this sequence in step with capture.mjs.
 //
-// Shots: each crop through the screenshot's `clip` (only its pixels are encoded), a box of 192 CSS
-// px (384 device px at 2x) about the anchor's projected world point, rounded to whole CSS px, as
-// capture-clip.mjs cuts them; the anchors are the store's MSAA rest entry's (its clip.json) when
-// there is one, so the boxes match the references', else the page's own. `--full` also shoots the
-// whole frame. No repeat.
+// Screenshots: each crop through the screenshot's `clip` (only its pixels are encoded), a box of
+// 192 CSS px (384 device px at 2x) about the anchor's projected world point, rounded to whole CSS
+// px, as capture-clip.mjs cuts them; the anchors are the store's MSAA rest entry's (its clip.json)
+// when there is one, so the boxes match the references', else the page's own. `--full` also
+// captures the whole frame. No repeat.
 //
 // References (--store <root>/<sha>, a commit's directory of the store, tools/kit/reference.mjs):
 // the MSAA rest entries `baseline/<tier>/rest/<view>` and the ground truth's `gt/<tier>/rest/<view>`,
-// as baseline.mjs keeps them. Before the shots this runs `baseline.mjs --capture-only --only rest
-// --gt` for the views: entries that are stored are reused (or waited for while another process
+// as baseline.mjs keeps them. Before the screenshots this runs `baseline.mjs --capture-only --only
+// rest --gt` for the views: entries that are stored are reused (or waited for while another process
 // captures them); missing ones are captured from --ref-url (a preview of that commit) or, without
-// it, reported, and those views are shot without metrics. Without --store there are no metrics.
-// Ad-hoc views have no stored rest entries, so they are shot without metrics.
+// it, reported, and those views are captured without metrics. Without --store there are no metrics.
+// Ad-hoc views have no stored rest entries, so they are captured without metrics.
 //
 // Output: <outDir> is emptied first. Under <outDir>/<variant>/ (`base` first):
 //   <view>/<crop>/0.png, <view>/clip.json   a capture-clip folder of the one-frame clip `rest`
@@ -69,7 +69,7 @@
 // a fresh load: 3 views with a base and 2 variants take about 0.4 of the fresh loads' time under
 // MSAA and about 0.6 under taau, references reused and metrics included.
 //
-// Exit codes (main's return, which capture-set exits with): 0 every view shot; 1 a view failed. An
+// Exit codes (main's return, which capture-set exits with): 0 every view captured; 1 a view failed. An
 // unknown option, a missing view, a bad --size or variant labels that repeat throw, which
 // capture-set turns into exit 2.
 import { spawn } from 'node:child_process';
@@ -206,8 +206,8 @@ export async function main( argv ) {
 	const stored = views.filter( ( v ) => ! VIEWS[ v ].adhoc );
 	const refs = o.store && stored.length ? await references( o, stored, quality, outDir ) : null;
 	if ( refs ) for ( const v of views ) if ( VIEWS[ v ].adhoc ) refs.views[ v ] = { missing: 'an ad-hoc view' };
-	if ( refs ) for ( const [ v, r ] of Object.entries( refs.views ) ) if ( r.missing ) console.log( `${ v }: no reference, shot without metrics (${ r.missing })` );
-	if ( ! refs ) console.log( o.store ? 'ad-hoc views only (no stored references): shots only, no metrics' : 'no --store: shots only, no metrics' );
+	if ( refs ) for ( const [ v, r ] of Object.entries( refs.views ) ) if ( r.missing ) console.log( `${ v }: no reference, captured without metrics (${ r.missing })` );
+	if ( ! refs ) console.log( o.store ? 'ad-hoc views only (no stored references): screenshots only, no metrics' : 'no --store: screenshots only, no metrics' );
 
 	const record = { url: base, common, quality, aa: o.aa ?? null, q: o.q ?? null, size: o.size ?? '1728x1117@2', variants, store: o.store ?? null, references: refs, views: {}, wall: {} };
 	let failed = 0;
@@ -298,7 +298,7 @@ export async function main( argv ) {
 					boxes: [ { i: 0, time: state.time, render: state.render, frame: state.frame, ...( state.taa ? { taa: state.taa } : {} ), boxes: state.boxes } ], errors: errors.slice(),
 				}, null, 2 ) );
 				viewRecord.variants[ variant.label ] = { readyMs, shotMs, ready: { status: readiness.status, framesWaited: readiness.framesWaited } };
-				console.log( `${ view } ${ variant.label }: ${ readiness.status } after ${ readiness.framesWaited } frames, ready ${ ( readyMs / 1000 ).toFixed( 1 ) } s, shots ${ ( shotMs / 1000 ).toFixed( 1 ) } s` );
+				console.log( `${ view } ${ variant.label }: ${ readiness.status } after ${ readiness.framesWaited } frames, ready ${ ( readyMs / 1000 ).toFixed( 1 ) } s, screenshots ${ ( shotMs / 1000 ).toFixed( 1 ) } s` );
 
 			}
 
@@ -374,12 +374,12 @@ export async function main( argv ) {
 
 		}
 		const wall = views.map( ( v ) => record.views[ v ].variants[ variant.label ] ).filter( Boolean );
-		lines.push( '', `## ${ variant.label }${ wall.length ? ` (ready ${ ( wall.reduce( ( a, w ) => a + w.readyMs, 0 ) / 1000 ).toFixed( 1 ) } s, shots ${ ( wall.reduce( ( a, w ) => a + w.shotMs, 0 ) / 1000 ).toFixed( 1 ) } s)` : '' }`, '',
+		lines.push( '', `## ${ variant.label }${ wall.length ? ` (ready ${ ( wall.reduce( ( a, w ) => a + w.readyMs, 0 ) / 1000 ).toFixed( 1 ) } s, screenshots ${ ( wall.reduce( ( a, w ) => a + w.shotMs, 0 ) / 1000 ).toFixed( 1 ) } s)` : '' }`, '',
 			`| view/crop | ${ metricName ?? 'FLIP' } vs GT | change from base | MSAA's | S | B | dMSAA |`, '|---|---|---|---|---|---|---|', ...rows );
 
 	}
 	record.wall.lockSeconds = views.reduce( ( a, v ) => a + ( record.views[ v ].lockMs ?? 0 ), 0 ) / 1000;
-	lines.push( '', `${ views.length } views x ${ variants.length } shots in ${ record.wall.shotsSeconds.toFixed( 1 ) } s, ${ record.wall.lockSeconds.toFixed( 1 ) } s of it waiting for the GPU lock (references ${ refs ? refs.seconds.toFixed( 1 ) + ' s' : 'none' }, metrics ${ record.wall.metricsSeconds.toFixed( 1 ) } s, total ${ record.wall.totalSeconds.toFixed( 1 ) } s)` );
+	lines.push( '', `${ views.length } views x ${ variants.length } variants in ${ record.wall.shotsSeconds.toFixed( 1 ) } s, ${ record.wall.lockSeconds.toFixed( 1 ) } s of it waiting for the GPU lock (references ${ refs ? refs.seconds.toFixed( 1 ) + ' s' : 'none' }, metrics ${ record.wall.metricsSeconds.toFixed( 1 ) } s, total ${ record.wall.totalSeconds.toFixed( 1 ) } s)` );
 	record.metrics = results;
 	await writeFile( path.join( outDir, 'quick.json' ), JSON.stringify( record, null, 1 ) );
 	await writeFile( path.join( outDir, 'quick.md' ), lines.join( '\n' ) + '\n' );

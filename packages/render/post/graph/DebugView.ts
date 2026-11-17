@@ -102,7 +102,7 @@ const VELOCITY_FULL = 16;
 // the displacement field's size at full brightness
 const VECTOR_FULL = 10;
 
-/** `fgview` from the page's options or `params` (null: none). */
+/** `fgview` from the app's options or `params` (null: none). */
 export function debugViewFromURL( params: SettingsQuery = settings ): string | null {
 
 	const value = params.get( 'fgview' );

@@ -49,7 +49,7 @@ import type { FrameGraph } from '../post/graph/FrameGraph.ts';
 // which defocus at once, are left out) in R and G, and broad focusing from the next cascade, whose
 // tile is of another size, so the product never repeats, in B and A, each over the whole layer in
 // its own tile's coordinates. The pattern is a function of the cascades and the key's direction
-// alone, so of the scene clock: it keeps no history, a paused frame repeats, and the layer is drawn
+// alone, so of the scene clock: it keeps no history, a paused frame is bit-identical, and the layer is drawn
 // again only when the scene time, the spectrum or the key's direction changed. The splats conserve
 // the light, so the layer's mean is 1 (but for the few triangles folded past a cap).
 // The lookup (`causticsAt`): the light that lands at a floor point entered the water up-sun along

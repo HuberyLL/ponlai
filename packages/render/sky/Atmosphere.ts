@@ -1044,7 +1044,7 @@ export class Atmosphere {
 
 	/** The transmittance from `heightKm` above the sea toward a direction of elevation sine `mu`,
 	 * read from the LUT, the ray held just above the ground's horizon as the CPU twin traces it
-	 * (`sunTransmittance`): the thin layer's sunlight at each of its points (Clouds.ts
+	 * (`sunTransmittance`): the cirrus's sunlight at each of its points (Clouds.ts
 	 * `streaksAt`). */
 	transmittanceFrom( heightKm: F, mu: F ): V3 {
 

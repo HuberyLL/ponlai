@@ -46,14 +46,14 @@
 // - A chunk without island (no land within ISLAND_NEAR) has no island, anchors or lip, and carries no rim ground tile (ChunkMerge.ts fills its square): three quarters of a
 //   sea chunk's bytes went to a tile nothing reads.
 // - Arrays are ordered by world position (lattice order, or the owned items' own order), so a
-//   chunk's data and its hash repeat whatever order the chunks are built in: a chunk built alone,
+//   chunk's data and its hash are bit-identical whatever order the chunks are built in: a chunk built alone,
 //   in a block or on any thread equals itself.
 // - The island's mesh is simplified per chunk, its border locked (IslandSimplify.ts): its vertices
 //   keep their cell order and every bit, its triangles are the simplifier's (deterministic). The
 //   curvature and every attribute come from the full mesh before; the border's vertices and edges
 //   stay, so two chunks still meet bit for bit (S1, S2). A block meshed in one call (`chunkIsland`,
 //   the checks) is split by chunk before it is simplified, so it still equals its chunks.
-// - The page's derived products come with the chunk (ChunkDerived.ts): the island's caster columns
+// - The app's derived products come with the chunk (ChunkDerived.ts): the island's caster columns
 //   and ground grid on world lattices (a cell on a border is filled by both chunks, merged by min
 //   and max), taken from the island's mesh before it is simplified, and the refracted map's
 //   triangle subsets of the drawn island, the stones and the floor tile (owned with their
@@ -242,7 +242,7 @@ export function dirtyChunks( before: LandLattice, after: LandLattice ): string[]
 export interface LandField { i0: number; j0: number; nx: number; nz: number; data: Float32Array }
 
 /** The land field over `box` (by default the land's box and R + 2 m round it), once per land
- * version: the page's footprint pipeline (WorldShapes.buildFootprint) on the world lattice. */
+ * version: the app's footprint pipeline (WorldShapes.buildFootprint) on the world lattice. */
 export function landField( land: LandLattice, box: Bounds = grow( landBounds( land ), R + 2 ) ): LandField {
 
 	const N = Math.round( 2 * GROWTH.half / GROWTH.cell ), H = GROWTH.half;
@@ -357,7 +357,7 @@ export interface ChunkData {
 	ambient: Float32Array;
 	// the box round everything that casts a shadow: x0, y0, z0, x1, y1, z1 (empty: +-Infinity)
 	casters: [ number, number, number, number, number, number ];
-	// What the page derives from the meshes above, so it never walks their vertices (ChunkDerived.ts):
+	// What the app derives from the meshes above, so it never walks their vertices (ChunkDerived.ts):
 	// the island's caster columns for the sun's map, the triangles of the island, the stones and the floor tile
 	// (tileIndices) the refracted sun's map draws at `level` (null: all, or no mesh), and the
 	// island's ground grid for the camera. Empty grids where there is no island.
@@ -377,7 +377,7 @@ export interface ChunkOptions {
 	contactOcclusion?: boolean;
 	// the bamboo's canopy in the island's and the meadow's sky visibility (`underCanopy`, the
 	// anchors' `groveSky`); off where the ambient volume carries it (lighting/AmbientSample.ts
-	// CANOPY_SHADE), and off by default as the page builds it, so the node builds check that path
+	// CANOPY_SHADE), and off by default as the app builds it, so the node builds check that path
 	canopyShade?: boolean;
 }
 
@@ -422,7 +422,7 @@ function islandNets( ctx: Setup, ci: number, cj: number, span: number, columns =
 	const full = surfaceNets( sdf, {
 		min: [ 0, Y0, 0 ], max: [ 0, Y1, 0 ], voxel: VOXEL,
 		own: [ ci * CELLS, cj * CELLS, ( ci + span ) * CELLS, ( cj + span ) * CELLS ],
-		// as the page's island mesh (chunkWorker.ts)
+		// as the app's island mesh (chunkWorker.ts)
 		normalStep: VOXEL * 0.15, sharpen: cliffSharpCells( fp ), columnRange: columns ? islandColumnRange( fp ) : undefined,
 		aoSdf, contactVisibility: contacts( sdf ), owners: span > 1 ? owners : undefined,
 	} );
@@ -621,7 +621,7 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 		: new Float32Array( 0 );
 	mark( 'ambient' );
 
-	// --- what the page derives from the meshes (ChunkDerived.ts): the caster columns and the ground
+	// --- what the app derives from the meshes (ChunkDerived.ts): the caster columns and the ground
 	// from the island as meshed, which the simplified one lies within ISLAND_SIMPLIFY_ERROR of (its
 	// metre-wide plateau triangles leave cells without a vertex), the subsets from the drawn one
 	const islandPositions = full?.positions ?? new Float32Array( 0 );

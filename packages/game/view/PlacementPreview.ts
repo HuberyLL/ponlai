@@ -7,7 +7,7 @@ import type { GridApi, Vec2 } from '../sim/types.ts';
 // Where a building would stand under the pointer while the player places it: a ring the size
 // of the ground its kind blocks (its footprint radius, sim/registry.ts BuildingDef), laid on the
 // turf, light green where it can go and red where it cannot. It is drawn over the meadow (no depth
-// test), so tall grass never hides it, and casts nothing. It shows only while placing. `show` says whether the ring changed (the page's temporal
+// test), so tall grass never hides it, and casts nothing. It shows only while placing. `show` says whether the ring changed (the app's temporal
 // anti-aliasing converges a paused frame again only when told: Placement.ts).
 
 const SEGMENTS = 48;

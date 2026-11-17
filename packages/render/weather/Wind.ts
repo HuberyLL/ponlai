@@ -34,7 +34,7 @@ import type { WindLook } from '../look/Look.ts';
 //   how hard it blows reads at a glance. The gust factor enters nothing today: the gusts' share of
 //   the strength is the look's `gustGain`.
 // - the sea: the FFT's spectrum follows `speed` and `heading` (OceanFFT.setWind: tidewater's sea
-//   state at that wind), so the sea is the same function of the weather however the page reached
+//   state at that wind), so the sea is the same function of the weather however the app reached
 //   it: the wind sea turns with the weather's wind, while the swell keeps the prevailing heading
 //   (`spectrumWind`) and its own offset from it (OceanFFT `swellHeading`,
 //   `swell.directionOffset`), and the shore waves follow the swell. `gale`, the wind beyond
@@ -43,7 +43,7 @@ import type { WindLook } from '../look/Look.ts';
 //   below, read by SeaDetail.ts, so a gust crosses from the water onto the meadow and off again
 //   as one patch, at the meadow's pace; farther out tidewater's octaves drift with `displacement`.
 // - the clouds: `displacement`, which Clouds.setDrift turns into each layer's drift aloft;
-//   `direction` for the fronts, the thin layer's streaks and the tops' lean (sky/Sky.ts, Clouds.ts).
+//   `direction` for the fronts, the cirrus's streaks and the tops' lean (sky/Sky.ts, Clouds.ts).
 // - the air: `displacement` (the clouds' drift), `velocity` (rain, the storm's spray),
 //   `direction` (the storm sea's foam).
 // - the falling leaves (FallingLeaves.ts), which take several fixed steps between two of the
@@ -87,7 +87,7 @@ import type { WindLook } from '../look/Look.ts';
 //
 // Everything is a function of the wind's integrated clocks and travel (`clock`, `plantClock`,
 // `gustScroll`, `gustTime`, wrapped where every rate completes whole cycles or the noise repeats), never time * a changing speed,
-// so a paused frame and a seek repeat exactly; shadows and the rain's collision map keep the rest
+// so a paused frame and a seek are reproducible; shadows and the rain's collision map keep the rest
 // pose. For motion vectors (TAA) every displacement is a function of the wind's state alone, its
 // vertex inputs bound inside: each vegetation material records it with `setWindDisplacement`,
 // evaluated in the material's position stage (its rest inputs read `positionLocal` before three
@@ -485,7 +485,7 @@ export function wave( time: Node<'float'>, rate: number, phase: Node<'float'> | 
  * `positionNode`, world space for every vegetation mesh here) as a function of the wind's state
  * alone, the vertex's own inputs (rest position, root, amplitudes) bound inside. The material is
  * drawn with `( shared.wind )`; evaluated with `( shared.wind.previous )` in the same vertex stage
- * it gives where the vertex was in the frame before, for motion vectors. */
+ * it gives where the vertex was in the previous frame, for motion vectors. */
 export type WindDisplacement = ( wind: WindState ) => Node<'vec3'>;
 
 /** Record `displacement` on a material (and return its pose for the current frame). */

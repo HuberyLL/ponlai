@@ -64,8 +64,8 @@
 //   --report path          render summary.md again from a run's files: no browser, no lock
 //   --list                 print the scenes and exit
 //
-// High is pinned at its standard by default: 4K output at 1440p's pixel count, the render scale at
-// its dynamic rule's baseline for the viewport (`dpr` added to the query). `--accept`, `--display`,
+// By default the high tier is pinned at its performance target: 4K output at 1440p's pixel count,
+// the render scale at its dynamic rule's baseline for the viewport (`dpr` added to the query). `--accept`, `--display`,
 // `--scales` and a `dpr` in the url or `--q` are never pinned. `--compare` and `--accept` load
 // their pages with `drsStore=off` and `frameFallback=0`, so both sides start alike and hold one
 // rate. A/B decisions rest on GPU time; frame rates for final numbers come from a run with
@@ -124,8 +124,8 @@ const opt = ( name, fallback ) => {
 };
 const positional = argv.filter( ( a, i ) => ! a.startsWith( '--' ) && ! ( i > 0 && VALUE_FLAGS.has( argv[ i - 1 ].slice( 2 ) ) ) );
 
-// Every scene runs its clock (a paused, still scene settles its clouds once and skips the march
-// and the shadow steps, so it under-measures) with fixed weather, the camera moving as in play.
+// Every scene runs its clock with fixed weather, the camera moving as in play. A paused, still
+// scene settles its clouds once and skips the march and the shadow steps, so it measures too little.
 // Scenes sharing a query run in one page load unless --fresh; `change` scenes run last. The parked
 // weathers' scenes (`parked: true`; packages/render/sky/Weather.ts PARKED_WEATHER) are left out of the default
 // matrix and of --accept's: name them with --scenes (?profile reaches them on a production build).
@@ -276,10 +276,10 @@ if ( DISPLAY ) requireDisplayAllowed( 'profile-frame --display' );
 if ( ( ACCEPT || SCALES.length ) && ( COMPARE || TOGGLE ) ) throw new Error( '--accept and --scales are for profile runs, not --compare or --toggle' );
 // the page reads the first of a repeated option, so a dpr in the url or --q would win over --scales
 if ( SCALES.length && [ new URL( URL_A ).search.slice( 1 ), EXTRA_Q ].some( ( q ) => new URLSearchParams( q ).has( 'dpr' ) ) ) throw new Error( '--scales sets the dpr option itself: remove dpr from the url and --q' );
-// High's standard pin: a profile or --compare of high times at its standard (packages/render/Quality.ts: 1440p's
-// pixel count, the baseline of its dynamic rule for the viewport: 4/3 at the default 1920x1080@2, 1
-// at 2560x1440@1), its render scale pinned by the page's `dpr`, so every run measures the level
-// trade-offs are judged at.
+// Pinning the high tier at its performance target: a profile or --compare of high is timed at that
+// target (packages/render/Quality.ts: 1440p's pixel count, the baseline of its dynamic rule for the
+// viewport: 4/3 at the default 1920x1080@2, 1 at 2560x1440@1). Its render scale is pinned by the
+// page's `dpr`, so every run measures the level that trade-offs are judged at.
 // `--unpinned` leaves the dynamic resolution steering (where it settles); --accept (the frame rate
 // a player sees), --display, --scales and a dpr in the url or --q are never pinned.
 const UNPINNED = flags.has( '--unpinned' );
@@ -2489,7 +2489,7 @@ function markdownProfile( meta, runs ) {
 		if ( warm.length ) lines.push( `Startup (later loads, median of ${ warm.length }): ${ startupLine( medianStartup( warm ) ) }`, '' );
 
 	} );
-	// repeats at one render scale: their spread
+	// repeated runs at one render scale: their spread
 	for ( const scale of [ ...new Set( runs.map( ( r ) => r.scale ) ) ] ) {
 
 		const same = runs.filter( ( r ) => r.scale === scale );

@@ -161,7 +161,7 @@ export interface SimState {
  */
 export interface IslandInput {
 	land: LandLattice;
-	/** the island's top clear of the rim, a byte per ground cell (grid.ts `topFromTiles`: the page
+	/** the island's top clear of the rim, a byte per ground cell (grid.ts `topFromTiles`: the app
 	 * takes it from the world's chunks); without it the grid finds it from the land */
 	top?: Uint8Array;
 }

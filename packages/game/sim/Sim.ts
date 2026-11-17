@@ -28,7 +28,7 @@ import './content/index.ts';
 // (places.ts) keep their own state here too (the buildings). The core here names no piece of
 // content: the needs, items, kinds of place and of building are read from registry.ts. An agent
 // may think for them (agent.ts) beside the world, never holding up a tick. The weather is the
-// page's own: nothing in the simulation depends on it.
+// app's own: nothing in the simulation depends on it.
 //
 // What happens is emitted as events (events.ts), at the tick it happens, by the rule that makes
 // it: here a landing, a death, a need falling critical, a blueprint placed and the island grown;
@@ -45,11 +45,11 @@ import './content/index.ts';
 // The island grows with the population (docs/design/game-design.md, "How the island grows"): the
 // population is the islanders' count, and each step of GROWTH_STEPS (types.ts) is one piece. The
 // simulation only says when growth is due (`growthDue`) and how near the next step is
-// (`approach`); the session's host grows the island (../Session.ts; on the page world/Growth.ts)
+// (`approach`); the session's host grows the island (../Session.ts; in the app world/Growth.ts)
 // and hands the new land back as `addPiece`, which opens its cells (every index stays valid:
 // grid.ts), finds each walk under way again on the new ground and counts the piece
 // (SimState.pieces: the land step the game stands on, so a save loads its world at it). The piece
-// to come is known ahead: its cells are `comingLand` from the moment the page has it, for planning.
+// to come is known ahead: its cells are `comingLand` from the moment the app has it, for planning.
 //
 // A new game starts with three grown islanders: a man, a woman and one of either, each 20 to 35
 // years old, from the seed. An islander who dies leaves the roll for the list of the dead
@@ -85,7 +85,7 @@ export class Sim {
 	private readonly thoughts = new Map<EntityId, Promise<ToolResult[]>>();
 	/** what happened since the session last took it, in order */
 	private events: SimEvent[] = [];
-	/** the cells the next piece opens (1 per ground cell, on the grid's indices), once the page has
+	/** the cells the next piece opens (1 per ground cell, on the grid's indices), once the app has
 	 * the piece; null until then and after it arrived. Derived from the world, not saved. */
 	comingLand: Uint8Array | null = null;
 
@@ -123,7 +123,7 @@ export class Sim {
 
 	}
 
-	/** The next piece is known (the page's pending land, Growth.ts): its cells become `comingLand`,
+	/** The next piece is known (the app's pending land, Growth.ts): its cells become `comingLand`,
 	 * those on its top not on the island's now. */
 	setComing( input: IslandInput ): void {
 

@@ -3,21 +3,21 @@ import { positionView, vec4 } from 'three/tsl';
 import { followPlantDraw } from '../vegetation/PlantInstances.ts';
 import { onSceneDispose } from '../SceneDispose.ts';
 
-// The opaque scene's depth prepass, for the screen-space occlusion and the screen-space shade.
+// The opaque scene's depth prepass, for the screen-space occlusion and the screen-space shadows.
 //
 // The opaque scene's depth prepass, for the screen-space ambient occlusion (post/GTAO.ts) and the
-// screen-space shade over the whole scene (post/MeadowShadows.ts `SS_SHADOW`): the island's chunks,
+// screen-space shadows over the whole scene (post/MeadowShadows.ts `SS_SHADOW`): the island's chunks,
 // the submerged stones, the sea floor, the bamboo's culms and the yunpeng drawn before the opaque
 // scene, at the occlusion's half resolution into a target of their own, so that both read the whole
 // scene's depth (theirs beside the vegetation's, VegetationPrepass.ts) before the materials that
-// take them are shaded. It is built with either (GTAO.ts `GTAO`: high's `ao` knob, `flags=gtao`;
+// take them are shaded. It is built with either (GTAO.ts `GTAO`: the high tier's `ao` setting, `flags=gtao`;
 // `SS_SHADOW`: unless `flags=ssShadow:false`), and drawn while either runs: otherwise nothing here
 // is made.
 //
 // - A copy draws with a material that shares its mesh's position node and side and writes the
 //   distance along the view (-z in view space; 0, the clear, where none drew) into a single-sampled
 //   half-resolution target with a depth of its own; meshes whose materials agree on these share
-//   one, so the copies build a few pipelines in all. Over the whole scene's screen-space shade the
+//   one, so the copies build a few pipelines in all. With screen-space shadows over the whole scene the
 //   target holds a second channel, the depth a surface runs behind its front where a material marks
 //   it thinner than the march assumes (`userData.screenThickness`, post/MeadowShadows.ts
 //   `screenThickness`: the bamboo's culms), 0 elsewhere; a thickness is part of the copy's key.

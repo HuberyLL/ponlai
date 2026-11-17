@@ -1,10 +1,10 @@
-// Reads what colour the frame shows per kind of surface and per kind of light, as final-pixel Oklab rows.
+// Reads what colour the frame shows per kind of surface and per kind of light, as final-pixel Oklab measurements.
 //
 // It answers "what colour is the sunlit rock, the shaded grass, the sky in this view, before and
 // after a change", where a hand-placed box mixes sun and shade: final-pixel Oklab L, C and h per
 // view, per kind of surface and per kind of light, with the sky, the sea, the land's darkest 5 % and
-// any boxes. It prints what the frames hold and judges nothing: it knows no ranges. For the light in
-// scene units over the meadow's blades use tools/island/meadow-light.mjs; for the day as a whole,
+// any boxes. It prints what the frames hold and judges nothing: it knows no ranges. For the lighting
+// in scene units over the meadow's blades use tools/island/meadow-light.mjs; for the day as a whole,
 // tools/island/day-sweep.mjs (which runs this tool).
 //
 // Usage:
@@ -28,7 +28,7 @@
 //     --sky-mask-deg N     with --own: leaves the sky cells within N degrees of the sun or the moon out (0)
 //     --boxes f.json       boxes to read: { "<base view>": { "<name>": [ x, y, w, h ] } } in the PNG's pixels
 //     --views a,b          only these views (every view captured)
-//     --sky-bands e0,e1,.. a row `sky <a>-<b>` per pair of rising elevations in degrees (frames captured with --scene)
+//     --sky-bands e0,e1,.. a measurement `sky <a>-<b>` per pair of rising elevations in degrees (frames captured with --scene)
 //     --out f.json         the output file (<dir>/rows.json)
 //     --json               prints the JSON instead of the table
 //
@@ -54,8 +54,8 @@
 //   sun       land cells with d at or over 0.7 of the land's 95th percentile of d
 //   shade     land cells with d at or under 0.2 of it (the penumbra between is in neither)
 //   sky, sea  cells more than 0.99 sky or sea
-// A variant is read through the sort of its base view, so a row is the same cells before and after a
-// change, whatever the change does to the light: a view `<base>--<variant>` takes the sort of `<base>`
+// A variant is read through the sort of its base view, so a measurement covers the same cells before
+// and after a change, whatever the change does to the lighting: a view `<base>--<variant>` takes the sort of `<base>`
 // in the `--sort` directory, or its own name if that holds it, and needs only the normal page.
 //
 // `--own` sorts each view by its own normal page's depth read (sky and sea cells more than 0.99 so,
@@ -64,21 +64,22 @@
 // p95 or shares, and needs no other page. `--sky-mask-deg` works by angle, from the page's read of
 // the lights and the camera; a light more than a degree under the horizon has no disc to leave out.
 //
-// The rows, each { n, L, C, h, rgb, card }: `<kind> sun`, `<kind> shade` and `<kind>` for each kind that
-// shows; `land sun` and `land shade` over every kind; `land`, `sky`, `sea`; `floor`, the darkest 5 %
-// of the frame's own land cells. rgb is the row's mean linear pixel, L, C, h the Oklab of that mean.
-// card is the mean luminance of the same cells on the light page, in scene units (null without a
-// light page). A row of fewer than 8 cells keeps its n and has null values. A box gives the medians
-// of its pixels' L, C, h (as `img.py stats --oklab`), p5 and p90 of L, and the rows `mean`, `dark`
-// and `lit` (the pixels under and over its median L: a crown's two halves).
+// The measurements (the JSON's `rows`), each { n, L, C, h, rgb, card }: `<kind> sun`, `<kind> shade`
+// and `<kind>` for each kind that shows; `land sun` and `land shade` over every kind; `land`, `sky`,
+// `sea`; `floor`, the darkest 5 % of the frame's own land cells. rgb is the measurement's mean linear
+// pixel, L, C, h the Oklab of that mean. card is the mean luminance of the same cells on the light
+// page, in scene units (null without a light page). A measurement over fewer than 8 cells keeps its n
+// and has null values. A box gives the medians of its pixels' L, C, h (as `img.py stats --oklab`), p5
+// and p90 of L, and the measurements `mean`, `dark` and `lit` (the pixels under and over its median
+// L: a crown's two halves).
 //
-// With `capture --scene`, measure adds to every row `scene` { Y, med, hdr } (the cells' luminance in scene
-// units before the display chain, packages/render/debug/Radiance.ts) and the rows that need the cells'
-// direction: `sky band`, `sea away`, `<kind> flat`, `<kind> sun flat`, `land flat` and `land sun
+// With `capture --scene`, measure adds to every measurement `scene` { Y, med, hdr } (the cells'
+// luminance in scene units before the display chain, packages/render/debug/Radiance.ts) and the
+// measurements that need the cells' direction: `sky band`, `sea away`, `<kind> flat`, `<kind> sun flat`, `land flat` and `land sun
 // flat`; the view's record adds `E`, pi times the sky's irradiance (the probe's: on a clear or fair
 // day it takes the fog layer's haze, which the land's own sky light leaves out,
-// packages/render/sky/Sky.ts `fogEnvironment`), and `preExposure`. A `--sky-bands` row read over
-// fewer than 64 cells has null values and `note: 'too few cells'`. The rows' definitions are beside
+// packages/render/sky/Sky.ts `fogEnvironment`), and `preExposure`. A `--sky-bands` measurement read
+// over fewer than 64 cells has null values and `note: 'too few cells'`. The measurements' definitions are beside
 // the code that sorts them (`sortOf`).
 //
 // Each view's record also holds `ev` and `exposure` (packages/render/post/Exposure.ts), the key light's
@@ -107,7 +108,7 @@ import { ROOT } from '../kit/root.mjs';
 const REPO = ROOT;
 const NX = 256, NY = 144, CELL = 3;
 const MIN_CELLS = 8;
-// the least cells a --sky-bands row is read over
+// the least cells a --sky-bands measurement is read over
 const SKY_BAND_CELLS = 64;
 const KINDS = [ 'sky', 'sea', 'ground', 'rock', 'grass', 'leaves', 'wood', 'figure', 'other' ]; // packages/render/debug/Classes.ts
 const FIRST_LAND = KINDS.indexOf( 'ground' );
@@ -249,10 +250,10 @@ function oklab( r, g, b ) {
 
 const round = ( v, digits = 4 ) => Number( v.toFixed( digits ) );
 
-// the row of a mean linear colour. L, C and h are the Oklab of the cells' mean linear colour, so a
-// row's hue is the hue of its average colour, steady where single pixels are near neutral. A row's
-// card (cellsRow) reads the light where its rgb reads the frame: `land sun` over `land shade` cards
-// is the contrast of the light itself.
+// the measurement of a mean linear colour. L, C and h are the Oklab of the cells' mean linear colour,
+// so a measurement's hue is the hue of its average colour, steady where single pixels are near
+// neutral. A measurement's card (cellsRow) reads the lighting where its rgb reads the frame: `land
+// sun` over `land shade` cards is the contrast of the lighting itself.
 function rowOf( n, r, g, b ) {
 
 	const [ L, A, B ] = oklab( r, g, b );
@@ -327,7 +328,7 @@ function cellRays( camera ) {
 
 }
 
-// The sky's bands (measure --sky-bands e0,e1,...): a row `sky <a>-<b>` per pair of neighbouring edges,
+// The sky's bands (measure --sky-bands e0,e1,...): a measurement `sky <a>-<b>` per pair of neighbouring edges,
 // the sky cells whose ray stands at least a and under b degrees up (half open, [a, b)) and turns more
 // than 90 degrees in azimuth from the key light's, as `sky band` takes them. Each cell's elevation
 // is its centre's ray through the camera's matrices as the scene page read them, between frames:
@@ -335,13 +336,13 @@ function cellRays( camera ) {
 // jitter). These are not `sky band` (4 to 15 degrees), which stays as it is.
 const skyBandRow = ( a, b ) => `sky ${ a }-${ b }`;
 
-// The rows that need the cells' direction (frames captured with --scene): `sky band`, the sky cells
+// The measurements that need the cells' direction (frames captured with --scene): `sky band`, the sky cells
 // whose ray stands 4 to 15 degrees up and turns more than 90 degrees in azimuth from the key
 // light's (the sun's, by night the moon's); `sea away`, the sea cells whose ray lies 0 to 5 degrees
 // under the horizon on that side; `<kind> flat`, `<kind> sun flat`, `land flat` and `land sun
 // flat`, the cells whose normal (RadianceAov.ts `normal`) stands within about 25 degrees of straight
 // up: a flat open card's light, under a sky alone, is read against the view's `E`. A view read
-// through another's sort takes these rows from the base's normals and camera.
+// through another's sort takes these measurements from the base's normals and camera.
 // the sort of a view (see the header): { land, cells: { row: [ cell indices ] }, p95 }
 function sortOf( dir, view, skyBands = [] ) {
 
@@ -385,8 +386,8 @@ function sortOf( dir, view, skyBands = [] ) {
 		}
 
 	}
-	// the rows that need each cell's direction (the scene's read: see the header)
-	if ( skyBands.length && ! normal.camera ) throw new Error( `${ view }: --sky-bands needs frames shot with --scene` );
+	// the measurements that need each cell's direction (the scene's read: see the header)
+	if ( skyBands.length && ! normal.camera ) throw new Error( `${ view }: --sky-bands needs frames captured with --scene` );
 	if ( normal.camera && normal.normal ) {
 
 		const rays = cellRays( normal.camera ), [ kx, , kz ] = normal.key.dir, DEG = Math.PI / 180;
@@ -415,7 +416,7 @@ function sortOf( dir, view, skyBands = [] ) {
 
 }
 
-// a row over some cells of the frame, with its card from the light page's cells (`light`, or null)
+// a measurement over some cells of the frame, with its card from the light page's cells (`light`, or null)
 // and, from the scene's read (`scene`: the normal page's `opaque` and `hdr` grids, or null), its
 // radiance in scene units
 function cellsRow( colours, list, light, scene ) {

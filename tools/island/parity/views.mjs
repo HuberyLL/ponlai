@@ -300,16 +300,16 @@ export const VIEWS = {
 
 	// extra views
 	// the low suns whose clouds' shadow is cast over the sun's disc (the byte checks' reach into it,
-	// packages/render/sky/SkyTrack.ts SHADOW_DISC, SHADOW_AIR_NARROW): 4.8 degrees, the air reading the
-	// whole disc; 5.3, halfway through the air's fade to the centre rays; 9.3, the disc fading to one
+	// packages/render/sky/SkyTrack.ts SHADOW_DISC, SHADOW_AIR_NARROW): 4.8 degrees, the haze reading the
+	// whole disc; 5.3, halfway through the haze's fade to the centre rays; 9.3, the disc fading to one
 	// ray. Their elevations are chosen by what they reach, which depends on where the clouds sit at
 	// t=12 and where the sun stands along its path (the 52 degree path, DayCycle.ts NOON_ELEVATION).
 	// The share of the frame's pixels moved over one level when a uniform of `s.sky.clouds` is pinned
 	// and the map redrawn (`invalidate()`):
 	//   view                       shadowRays 1           shadowAirNarrow 0      shadowAirNarrow 1
-	//   island-cloudy-low-sun      0.043 % (3290 px)      0 (the air's share 0)  0.009 % (690 px)
+	//   island-cloudy-low-sun      0.043 % (3290 px)      0 (the haze's share 0) 0.009 % (690 px)
 	//   island-cloudy-sun-rising   78 %                   0.006 % (430 px)       0.004 % (340 px)
-	//   island-cloudy-disc-fade    0.13 % (9700 px)       0.002 % (150 px)       0 (the air's share 1)
+	//   island-cloudy-disc-fade    0.13 % (9700 px)       0.002 % (150 px)       0 (the haze's share 1)
 	// So on this path they barely guard two of the pins: `shadowAirNarrow` moves at most 690 pixels in
 	// any of them, next to no byte guard, and `shadowRays` is guarded by island-cloudy-sun-rising
 	// alone. Elevations at which each pin moves about 1 % of the frame are still to be chosen. A change

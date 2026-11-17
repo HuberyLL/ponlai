@@ -37,7 +37,7 @@ type V4 = THREE.Node<'vec4'>;
 //   from the render's size.
 // - The kernels: one per level, each reading the level under it (level 1 the linear depth), in
 //   8 x 8 workgroups dispatched by the level's size at run time (`renderer.compute( kernel, [ x, y,
-//   1 ] )`), so a step of high's dynamic scale changes the dispatch, not the pipeline (three-behaviour,
+//   1 ] )`), so a step of the high tier's dynamic scale changes the dispatch, not the pipeline (three-behaviour,
 //   Compute kernels). Successive dispatches see each other's writes (WebGPU orders storage writes
 //   between dispatches).
 // - The buffer is sized for the render's size; a larger render takes a new buffer (a storage buffer

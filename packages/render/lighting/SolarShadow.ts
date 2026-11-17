@@ -13,7 +13,7 @@ type B = THREE.Node<'bool'>;
 // The sun's soft shadow: a rotated Poisson disk of comparison samples with a fixed penumbra.
 //
 // The sun's soft shadow: a Poisson disk of POISSON_POINTS points of POISSON_RADIUS map texels' radius,
-// turned per screen pixel by a fixed hash (the same every frame, so a paused frame repeats), each
+// turned per screen pixel by a fixed hash (the same every frame, so a paused frame is bit-identical), each
 // point one hardware comparison sample (a 2x2 bilinear comparison) whose comparison depth is the
 // receiver's moved along its plane to the point (the depth slope from the coordinate's screen
 // derivatives). The penumbra is the same width whatever the caster's distance: a contact-hardening
@@ -198,7 +198,7 @@ export function solarVolumeVisibility( depth: THREE.Texture | THREE.TextureNode,
 }
 
 // three's PCFShadowFilter: five bilinear comparisons on a Vogel disk of one texel's radius, the disk
-// turned per pixel by interleaved gradient noise (fixed per pixel, so a paused frame repeats). Each
+// turned per pixel by interleaved gradient noise (fixed per pixel, so a paused frame is bit-identical). Each
 // comparison gathers its footprint's comparisons (solarVolumeVisibility), so it runs in any control
 // flow.
 export function solarPCFVisibility( depth: THREE.Texture | THREE.TextureNode, coordinate: V3, mapSize: V2, active?: B, layer?: number ): F {
@@ -223,7 +223,7 @@ export function solarPCFVisibility( depth: THREE.Texture | THREE.TextureNode, co
 
 // A soft read over a disc of the receiver's surface, metres wide, for the vertex stage: DISC_TAPS
 // gathers on a Vogel spiral at fixed angles, so every vertex takes the same disc and a still scene
-// repeats, each gather's four comparisons meaned (at this width a bilinear weight is nothing). A
+// is bit-identical, each gather's four comparisons meaned (at this width a bilinear weight is nothing). A
 // point outside the map or the map's depth, or before the first map (`ready` 0), is lit: the far sea
 // lies beyond the map's depth range, where the comparison would read shadow and move the meter.
 // The bounds are the disc's, not each tap's: the map's rim is empty, so a tap past it reads lit.

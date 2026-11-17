@@ -129,8 +129,8 @@ export function declareToday( options = {} ) {
 	h.display = g.color( 'display', { size: RENDER, format: 'RGBA', type: 'Float' } );
 	if ( o.fsrPort ) h.easu = g.color( 'FSR.easu', { size: CANVAS, format: 'RGBA', type: 'HalfFloat' } );
 	h.canvas = g.import( 'canvas', { size: CANVAS }, true );
-	// the meadow's shade: the coverage the vegetation's depth pass draws beside the scene's depth
-	// (never read), the depth's nearest view z and the shade
+	// the meadow's screen-space shadows: the coverage the vegetation's depth pass draws beside the
+	// scene's depth (never read), the depth's nearest view z and the shadows
 	if ( o.meadowShadows ) {
 
 		h.meadowCoverage = g.color( 'meadowCoverage', { size: RENDER, format: 'RGBA', type: 'UnsignedByte', samples: 'scene' } );
@@ -139,7 +139,7 @@ export function declareToday( options = {} ) {
 
 	}
 
-	// the vegetation's depth into the scene's depth, its nearest sample resolved, the shade marched
+	// the vegetation's depth into the scene's depth, its nearest sample resolved, the shadows marched
 	// over it; the opaque pass then loads that depth instead of clearing it
 	if ( h.meadowShadows ) {
 
@@ -154,14 +154,14 @@ export function declareToday( options = {} ) {
 
 			b.read( h.sceneDepth, 'samples' );
 			h.meadowDepth = b.write( h.meadowDepth );
-			return { label: 'meadow shade' };
+			return { label: 'meadow shadows' };
 
 		} );
 		g.addPass( 'meadowShadows', 'quad', ( b ) => {
 
 			b.read( h.meadowDepth );
 			h.meadowShadows = b.write( h.meadowShadows );
-			return { label: 'meadow shade' };
+			return { label: 'meadow shadows' };
 
 		} );
 
@@ -419,8 +419,8 @@ export function declarePipeline( options = {} ) {
 			return { label: 'vegetation depth' };
 
 		} );
-		g.addPass( 'meadowDepthResolve', 'quad', ( b ) => ( b.read( h.sceneDepth, 'samples' ), h.meadowDepth = b.write( h.meadowDepth ), { label: 'meadow shade' } ) );
-		g.addPass( 'meadowShadows', 'quad', ( b ) => ( b.read( h.meadowDepth ), h.meadowShadows = b.write( h.meadowShadows ), { label: 'meadow shade' } ) );
+		g.addPass( 'meadowDepthResolve', 'quad', ( b ) => ( b.read( h.sceneDepth, 'samples' ), h.meadowDepth = b.write( h.meadowDepth ), { label: 'meadow shadows' } ) );
+		g.addPass( 'meadowShadows', 'quad', ( b ) => ( b.read( h.meadowDepth ), h.meadowShadows = b.write( h.meadowShadows ), { label: 'meadow shadows' } ) );
 
 	}
 	g.addPass( 'opaque', 'scene', ( b ) => {
@@ -555,11 +555,11 @@ const R = 'render:1:0:0', C = 'canvas:1', H = 'render:0.5:0:1', HZ = 'fixed:160x
 const w = ( name, size, format, type, samples = 1 ) => ( { name, size, format, type, samples } );
 const BLOOM = bloomTable( [ 'hdr@1:sample' ], [ 'surfaceDepth@1:sample' ] );
 export const TODAY = [
-	// the meadow's shade: the vegetation's depth into the scene's depth, beside a coverage it never
-	// reads, then the depth's nearest view z and the shade over it
+	// the meadow's screen-space shadows: the vegetation's depth into the scene's depth, beside a
+	// coverage it never reads, then the depth's nearest view z and the shadows over it
 	{ name: 'meadowDepth', kind: 'scene', label: 'vegetation depth', when: null, size: R, writes: [ w( 'meadowCoverage', R, 'RGBA', 'UnsignedByte', 4 ) ], depth: { ...w( 'sceneDepth', R, null, 'Float', 4 ), write: true }, target: 'meadowCoverage|sceneDepth' },
-	{ name: 'meadowDepthResolve', kind: 'quad', label: 'meadow shade', when: null, size: R, writes: [ w( 'meadowDepth', R, 'Red', 'Float' ) ], depth: null, target: 'meadowDepth|-' },
-	{ name: 'meadowShadows', kind: 'quad', label: 'meadow shade', when: null, size: R, writes: [ w( 'meadowShadows', R, 'Red', 'UnsignedByte' ) ], depth: null, target: 'meadowShadows|-' },
+	{ name: 'meadowDepthResolve', kind: 'quad', label: 'meadow shadows', when: null, size: R, writes: [ w( 'meadowDepth', R, 'Red', 'Float' ) ], depth: null, target: 'meadowDepth|-' },
+	{ name: 'meadowShadows', kind: 'quad', label: 'meadow shadows', when: null, size: R, writes: [ w( 'meadowShadows', R, 'Red', 'UnsignedByte' ) ], depth: null, target: 'meadowShadows|-' },
 	{ name: 'opaque', kind: 'scene', label: 'opaque scene', when: null, size: R, writes: [ w( 'sceneColor', R, 'RGBA', 'HalfFloat', 4 ) ], depth: { ...w( 'sceneDepth', R, null, 'Float', 4 ), write: true }, target: 'sceneColor|sceneDepth' },
 	{ name: 'underwaterPyramid', kind: 'quad', label: 'underwater pyramid', when: null, size: R, writes: [ w( 'underwater', R, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'underwater|-' },
 	{ name: 'refractionReach', kind: 'quad', label: 'refraction', when: 'refraction', size: 'fixed:64x1', writes: [ w( 'refractionReach', 'fixed:64x1', 'RGBA', 'HalfFloat' ) ], depth: null, target: 'refractionReach|-' },

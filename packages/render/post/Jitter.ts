@@ -39,7 +39,7 @@ import { ffxFsr3UpscalerGetJitterPhaseCount } from './fsr3/Host.ts';
 //
 // Under fsr3 (Antialiasing.ts) the sequence is FSR 3's own (post/fsr3/Host.ts): its length is
 // `ffxFsr3UpscalerGetJitterPhaseCount( render width, canvas width )`, int( 8 r^2 ) without a clamp
-// (18 at 4K output rendered at 1440p, high's baseline there), and frame k takes Halton index
+// (18 at 4K output rendered at 1440p, the high tier's baseline there), and frame k takes Halton index
 // ( k mod L ) + 1 as above, but negated: `px = -( h - 0.5 )`. FSR's offset J places pixel i's
 // sample at i + 0.5 - J, where `px` places it at the centre plus `px`, so J = -px is upstream's own offset and the shifted projection
 // equals upstream's bit for bit. Its rest runs the same plain offsets, from index 0 and repeating
@@ -83,7 +83,7 @@ export function haltonMean( n: number ): THREE.Vector2 {
 
 }
 
-/** Whose sequence the jitter runs (Pipeline sets it for the page's mode). */
+/** Whose sequence the jitter runs (Pipeline sets it for the app's mode). */
 export type JitterMode = 'taa' | 'taau' | 'fsr3';
 
 /** The temporal modes' rest sequence length (its indices are 1..REST_SEQUENCE). */
@@ -125,7 +125,7 @@ export class Jitter {
 		unjitteredProjection: uniform( new THREE.Matrix4() ).setGroup( renderGroup ),
 		unjitteredProjectionInverse: uniform( new THREE.Matrix4() ).setGroup( renderGroup ),
 	};
-	/** TAA's sequence, TAAU's or FSR 3's (Pipeline sets it for the page's mode). */
+	/** TAA's sequence, TAAU's or FSR 3's (Pipeline sets it for the app's mode). */
 	mode: JitterMode = 'taa';
 	private readonly projection = new THREE.Matrix4();
 	private readonly projectionInverse = new THREE.Matrix4();
@@ -188,5 +188,5 @@ export class Jitter {
 
 }
 
-/** The page's jitter: one, since the materials that read its uniforms are built once. */
+/** The app's jitter: one, since the materials that read its uniforms are built once. */
 export const jitter = new Jitter();

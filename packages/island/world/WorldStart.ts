@@ -1,8 +1,8 @@
-// The world's generation started as the page's modules load, chunk by chunk, nearest first.
+// The world's generation started as the app's modules load, chunk by chunk, nearest first.
 //
-// The world's generation needs nothing from the page, so its workers start as the page's modules
-// load: the page's entry calls `startWorld` (WorldBoot.ts, which main.ts imports early, after the
-// page's settings), so they run while the adapter, renderer, sky, textures and frame graph are set
+// The world's generation needs nothing from the app, so its workers start as the app's modules
+// load: the app's entry calls `startWorld` (WorldBoot.ts, which main.ts imports early, after the
+// app's settings), so they run while the adapter, renderer, sky, textures and frame graph are set
 // up; main.ts awaits the result. It comes in chunks (WorldChunks.ts), nearest the camera's pivot
 // first, each from the browser's IndexedDB cache while the generator, its options and the land in
 // the chunk's reach are unchanged (WorldCache.ts); ?worldCache=off generates every chunk
@@ -14,9 +14,9 @@
 // the entry gives the pieces a resumed game's land has grown (`pieces`), which the land starts
 // with unless the `grow` option says.
 //
-// Its options (`seed`, `grow`, `worldCache`) are the page's settings (packages/render/Settings.ts).
+// Its options (`seed`, `grow`, `worldCache`) are the app's settings (packages/render/Settings.ts).
 //
-// It touches nothing of the page: the entry says whether the browser has WebGPU (`webgpu`) and
+// It touches nothing of the app: the entry says whether the browser has WebGPU (`webgpu`) and
 // mounts the world's readiness for the capture tool (WorldBoot.ts).
 import * as THREE from 'three/webgpu';
 import { loadWorld, type LoadedWorld } from './WorldChunks.ts';
@@ -57,7 +57,7 @@ export const worldProgress = { text: '', show: null as ( ( text: string ) => voi
 /** Whether the world's chunks come from and go to the cache (`worldCache=off`: never). */
 export const worldCacheOn = ! params.getAll( 'worldCache' ).some( ( v ) => v === 'off' || v === '0' );
 
-/** Starts the world's generation, once, as the page's modules load: `pieces` is the land's step
+/** Starts the world's generation, once, as the app's modules load: `pieces` is the land's step
  * when the `grow` option does not give one (the pieces a resumed game's save grew; 0 the starting
  * island), `webgpu` whether the browser has it. Returns the land's options and the job main.ts
  * awaits. */

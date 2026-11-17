@@ -29,7 +29,7 @@ import type { ActionResult, Villager } from './types.ts';
 // Content is registered before any simulation is made (a body's needs are made at its landing, so
 // a need registered later is missing from the bodies already there). Registering takes all of a
 // call's definitions or none, and returns its undoing, so a check can add content of its own and
-// take it away again (tools/game/verify-game.mjs); the game's content stays for the page's life.
+// take it away again (tools/game/verify-game.mjs); the game's content stays for the app's life.
 
 /** A need of the body: 0..NEED_MAX (needs.ts), starting at `start` and falling `perDay` a game
  * day. */

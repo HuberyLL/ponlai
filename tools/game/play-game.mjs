@@ -1,6 +1,6 @@
 // Plays the game headless in node and writes what happened, day by day.
 //
-// A designer can read days of play without a browser, and an agent can be judged offline on the
+// A designer can read days of play without a browser, and an AI agent can be judged offline on the
 // same island, the same day clock and the same record the page keeps. It answers what the islanders
 // do over days of play, how the needs and the stock run, and how an agent plays from what it
 // perceives; it replaces a loop over the simulation of one's own. To assert the rules instead, use
@@ -28,7 +28,7 @@
 //                   island's middle (as verify-game's chests)
 //   --script F      the leader's lines, JSON: [ { "at": "d1 08:30", "to": "all" | [ "v1" ],
 //                   "words": "..." } ], said as the speak bar says them (Session.speak)
-//   --agent B       `standin` (sim/standin.ts, the default), or a module's path: its `createAgent`
+//   --agent A       `standin` (sim/standin.ts, the default), or a module's path: its `createAgent`
 //                   or default export is called with the context below and returns an Agent (or a
 //                   Promise of one)
 //   --latency G     the game seconds an asynchronous thought takes (default 90: three real seconds
@@ -57,7 +57,7 @@
 // up the page's world, so headless the world runs on for --latency game seconds after a thought is
 // asked and only then waits, however long the answer takes in real time, before it applies the
 // answer and steps on: the timing of every answer is a function of the options, and an agent whose
-// answers are a function of its perceptions plays a repeatable game too. An answer that comes
+// answers are a function of its perceptions plays a reproducible game too. An answer that comes
 // sooner in real time still lands at its tick.
 //
 // The agent module's context: `heard( id )` and its session name `takeHeard( id )` (the leader's

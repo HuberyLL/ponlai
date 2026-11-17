@@ -1010,12 +1010,12 @@ def unflatten( d ):
 #                 "band": [lo, hi]  PASS if lo <= test / b <= hi; with |b| <= floor (b about 0, where
 #                               a ratio means nothing) PASS if |test| <= floor
 #               "floor" (default 0) is an absolute allowance in the metric's own units, not an MSAA
-#               value: under MSAA a paused clip's frames repeat, so its F and TI are exactly 0.
+#               value: under MSAA a paused clip's frames are identical, so its F and TI are exactly 0.
 #   conditions  "tiers": [..] judges the rule only for those tiers (the first part of --key);
 #               "requires": { metric: least } only where the baseline's metric reaches it (a count
 #               large enough to measure); "except": [ key, .. ] not for those --key entries (a view
-#               whose image does not repeat between two loads, so the gate's precision is out of
-#               reach). Elsewhere the rule gives no verdict.
+#               whose image is not reproducible between two loads, so the gate's precision is out
+#               of reach). Elsewhere the rule gives no verdict.
 #   difference  for the signed, integer and absolute-difference metrics: fringe and dMSAA (levels),
 #               edgeW, edgeWgt, shiftX and shiftY (px), holes (pixels), L and Rec (frames):
 #                 "diff": [lo, hi]  PASS if lo <= test - b <= hi; with "floor": f the baseline is
@@ -1038,7 +1038,7 @@ OPTION_KEYS = { 'gtPlus' }
 # conditions under which a rule is judged at all (applies()): `tiers` (the tiers of --key) and
 # `requires` ({ metric: least baseline value }: a count too small to measure, such as a crop with a
 # handful of flower heads whose count moves by a third between two loads) and `except` (--key
-# entries the rule skips: a view that does not repeat between two loads)
+# entries the rule skips: a view that is not reproducible between two loads)
 CONDITION_KEYS = { 'tiers', 'requires', 'except' }
 META_KEYS = { 'floor', 'kind', 'gate', 'note', 'id', 'section', 'gtSource', 'provisional', 'pending', 'judge' }
 

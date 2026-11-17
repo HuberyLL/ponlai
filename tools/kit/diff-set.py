@@ -1,7 +1,7 @@
 """Compares a capture set with a reference set view by view, exactly or within a tolerance.
 
 It answers whether a set of paused captures (tools/kit/parity/capture-set.mjs) holds the
-reference's pixels: identical, within the reference's own repeatability (--aa-floor), or within
+reference's pixels: identical, within the reference's own run-to-run spread (--aa-floor), or within
 the temporal tolerance (--temporal). capture-set.mjs --check runs it. Which rule fits which set is
 method: tools/kit/parity/README.md. For two single images, use `tools/kit/img.py diff`.
 
@@ -15,7 +15,7 @@ Options:
     --max-px1 <n>        pass: fewer than n pixels over 1 level and none over 2; default 200, 0 for identity
     --crops <n>          worst regions saved per differing view; default 3
     --crop <px>          their size; default 256
-    --aa-floor           judge by each view's own repeatability (both sets captured with --repeat)
+    --aa-floor           judge by each view's own run-to-run spread (both sets captured with --repeat)
     --temporal           judge temporal AA captures by the tolerance (not with --aa-floor)
     --held               MSAA sets: two captures also count as equal within the held tolerance (below)
     --flip               with --temporal: add the mean NVIDIA FLIP, reported only (--with flip-evaluator)
@@ -30,11 +30,11 @@ the decoded pixels: a PNG's bytes depend on the encoder (the capture tools' fast
 Playwright's default one), its pixels do not, so sets written by either encoder compare alike.
 
 --aa-floor: a view passes when the test frame is pixel-identical to the reference frame (either
-capture of each side), or when the reference does not repeat (its A/A pair differs) and the cross
-difference stays within the larger of the two sides' A/A differences (max level and the count of
-pixels over 1 and 2 levels). A test that repeats while the reference does not passes when its frame
-lies within the reference's spread (noted as such). A view that repeats on the reference must
-repeat on the test side, and must match it pixel for pixel. Comparing a set with itself (refDir =
+capture of each side), or when the reference is nondeterministic (its A/A pair differs) and the
+cross difference stays within the larger of the two sides' A/A differences (max level and the count
+of pixels over 1 and 2 levels). A test that is deterministic while the reference is not passes when
+its frame lies within the reference's spread (noted as such). A view that is deterministic on the
+reference must be deterministic on the test side, and must match it pixel for pixel. Comparing a set with itself (refDir =
 testDir) lists its A/A floor.
 
 --temporal judges temporal AA captures (taa, taau) by the tolerance in tools/kit/tolerance.py, whose
@@ -48,7 +48,7 @@ measurement / threshold ratio of the best pairing (pass: at most 1). The crops a
 --crops-from, else of the test side's JSON. FLIP is reported only: a frame's mean hides a missing
 flower entirely. MSAA sets stay pixel-exact (the default and --aa-floor).
 
---held: MSAA paused frames repeat pixel for pixel, but for the region a held history-dependent
+--held: MSAA paused frames are bit-identical between runs, but for the region a held history-dependent
 effect reaches (the sea's reflection: packages/render/debug/HeldRegion.ts), which each capture of a
 set records in its JSON (`held`). With --held, two captures count as equal (in the exact rule and in
 every comparison --aa-floor makes) when they are identical, or identical outside the union of the
@@ -344,16 +344,16 @@ def compare(v):
                         cross = st
         if cross.get("identical"):
             ok = not (ra and ra["equal"] and ta and not ta["equal"])
-            note = ("within the held tolerance" if cross.get("held") else "identical") if ok else "test does not repeat where the reference does"
+            note = ("within the held tolerance" if cross.get("held") else "identical") if ok else "test is nondeterministic where the reference is deterministic"
         elif ra is not None and ta is not None:
             if ra["equal"]:
-                ok, note = False, "differs where the reference repeats"
+                ok, note = False, "differs where the reference is deterministic"
             else:
                 floor = {k: max(ra[k] if k == "max" else ra["over"][k], ta[k] if k == "max" else ta["over"][k]) for k in ("max", "1", "2")}
                 ok = cross["max"] <= floor["max"] and cross["over"]["1"] <= floor["1"] and cross["over"]["2"] <= floor["2"]
                 note = "within the A/A floor" if ok else f"over the A/A floor (max {floor['max']}, {floor['1']} px>1, {floor['2']} px>2)"
                 if ta["equal"]:
-                    note += "; test repeats, the reference does not"
+                    note += "; test is deterministic, the reference is not"
         r["cross"] = {k: cross[k] for k in ("max", "over") if k in cross} | {"identical": bool(cross.get("identical"))}
         r["note"] = note
     elif a.temporal:

@@ -43,9 +43,9 @@ import { onSceneDispose } from '../SceneDispose.ts';
 //   it saves far less.
 // URL options, read at load: vegPrepass=0, vegPrepass=coverage (vegPrepassOpaque = false).
 //
-// With the meadow's shade (post/MeadowShadows.ts: at 4x outside the temporal modes) the depth copies
+// With the meadow's screen-space shadows (post/MeadowShadows.ts: at 4x outside the temporal modes) the depth copies
 // are not their meshes' children but live in a scene of their own (`prepassScene`), drawn in a pass
-// of its own before the opaque scene, into the same depth, which the shade's march reads and the
+// of its own before the opaque scene, into the same depth, which the shadows' march reads and the
 // opaque pass loads: the equal test holds as before. Before each of its renders the scene takes its
 // copies' transforms and visibility from their meshes, ancestors included, as children would.
 //
@@ -124,7 +124,7 @@ function depthMaterial( source: THREE.MeshStandardNodeMaterial ): THREE.MeshBasi
 
 }
 
-/** The depth copies' scene with the meadow's shade (post/MeadowShadows.ts): drawn in a pass of its
+/** The depth copies' scene with the meadow's screen-space shadows (post/MeadowShadows.ts): drawn in a pass of its
  * own before the opaque scene, into the same depth (Pipeline.ts). */
 export const prepassScene = new THREE.Scene();
 prepassScene.name = 'vegetation prepass';
@@ -209,7 +209,7 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 			followPlantDraw( depth, mesh );
 
 		};
-		// a child: it follows the mesh's transform and visibility; with the meadow's shade, in the
+		// a child: it follows the mesh's transform and visibility; with the meadow's screen-space shadows, in the
 		// scene of its own pass, following them there (`prepassScene`)
 		if ( MEADOW_SHADOWS ) {
 

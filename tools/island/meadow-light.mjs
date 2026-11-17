@@ -29,11 +29,11 @@
 //   --w, --h, --scale     the viewport's CSS size and device pixel ratio (1920, 1080, 2)
 //   --timeout ms          each wait in the page (60000)
 //   --out dir             the output folder (artifacts/meadow-light/<UTC stamp>)
-//   --pages a,b|none      the pages shot; the rest are read from --reuse (the seven below; `lean` only when named)
+//   --pages a,b|none      the pages captured; the rest are read from --reuse (the seven below; `lean` only when named)
 //   --save dir            writes each page read (frame, depth, camera, the normal page's canvas) to dir
 //   --reuse dir           reads the pages --pages leaves out from a --save run of the same views and size
 //
-// Views. Each elevation is shot from each view. `name=tilt,dist,fov` is a camera `dist` m from
+// Views. Each elevation is captured from each view. `name=tilt,dist,fov` is a camera `dist` m from
 // --target (its height the ground's), looking down `tilt` degrees with a vertical field of `fov`
 // degrees, its heading turned from the direction toward the sun by each --azimuth (180 the sun
 // straight behind, 135 behind and to the side, the framing the look is judged in, 90 side-on, 0
@@ -41,7 +41,7 @@
 // compare like for like. A views file's views take their `q` into the query and run their eval as
 // capture-set does (tools/island/parity/views.mjs's helpers); without --view they are the only ones.
 //
-// Pages. Every view is shot on seven pages, each a fresh load of its flags (flags are read at load),
+// Pages. Every view is captured on seven pages, each a fresh load of its flags (flags are read at load),
 // the views reached in it by the exact scene jump and a camera move, each read once `settled` holds,
 // from the resolved opaque colour at the render's size (the frame graph's `opaque` source: linear,
 // before the sea, the haze and the post chain):
@@ -55,13 +55,13 @@
 //   matte    `lightOnly:2`: the light page without the specular (optional when reused)
 //   lean     `grassMask:lean`, hidden as mask: each leaf's lean from upright (only when --pages names it)
 // All the pages draw the same blades, so their pixels line up. The blades' shading moves only light,
-// normal and matte: `--pages light,normal,matte --reuse dir` shoots those three; their geometry,
+// normal and matte: `--pages light,normal,matte --reuse dir` captures those three; their geometry,
 // albedo or the turf move the others. `--pages none` reads every page from --reuse, with no browser.
 //
 // The sort. Lawn: pixels within a hundredth of the frame's width of blades covering at least 2 % of
 // them (the mask page's: behind an occluder too). Open lawn: the lawn where the mask and light pages'
 // depths agree within 2 cm; every measure but the cover reads it only. Leaf: fully covered pixels.
-// Sun and shade by the bare ground's share of direct light d = 1 - ambient / bare: sunlit where d is
+// Sunlit and shaded by the bare ground's share of direct light d = 1 - ambient / bare: sunlit where d is
 // at least 0.7 of the open lawn's 95th percentile of d, shaded at most 0.2 of it, the penumbra left out.
 //
 // The measures (each view; Y is luminance, Rec. 709 linear; the definitions are beside `measure`):
@@ -192,7 +192,7 @@ const PAGES = [
 	{ name: 'matte', flags: [ 'lightOnly:2' ], optional: true },
 	{ name: 'lean', flags: [ 'grassMask:lean' ], hide: true, optional: true, extra: true },
 ];
-// the pages shot (`--pages`); the rest are read from `--reuse`'s run
+// the pages captured (`--pages`); the rest are read from `--reuse`'s run
 // (`none`: every page read from it, so a changed measure runs on a saved run without the browser)
 const capturePages = options.pages === 'none' ? [] : options.pages ? options.pages.split( ',' ).filter( ( s ) => s !== '' ) : PAGES.filter( ( p ) => ! p.extra ).map( ( p ) => p.name );
 if ( ! capturePages.every( ( n ) => PAGES.some( ( p ) => p.name === n ) ) ) { console.error( `--pages: of ${ PAGES.map( ( p ) => p.name ).join( ', ' ) }` ); process.exit( 2 ); }
@@ -561,7 +561,7 @@ const BANDS = [ [ 0, 10 ], [ 10, 20 ], [ 20, 40 ], [ 40, 80 ], [ 80, 190 ] ];
 //                  ground reads at the same sun (another framing: the lit grass and ground in front
 //                  of an eye-height camera). Its window: the header, key:ambient
 // Under a sun so low or a view so shaded that a class is empty its measures are null. A placed view
-// shot at several azimuths also gets, per elevation, the mean of its ratios, cover and screen colour
+// captured at several azimuths also gets, per elevation, the mean of its ratios, cover and screen colour
 // over them (`means`, `<view>-e<elevation>-mean`), as one framing alone carries the sun's side of
 // the camera with it.
 // The sort: a leaf is a fully covered pixel only, since a partly covered one mixes the blade with the

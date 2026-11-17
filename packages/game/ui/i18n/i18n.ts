@@ -11,7 +11,7 @@ import { settings } from '../../GameSettings.ts';
 // maintained while the game is in development, so a key it lacks shows the Chinese (i18next's
 // fallback, key by key). An English version made for release fills it (docs/design/ui.md: never mixed).
 //
-// The language is a load knob, read once from `?lang=` (zh-CN or en; none or another: zh-CN): the
+// The language is a load-time setting, read once from `?lang=` (zh-CN or en; none or another: zh-CN): the
 // data tables resolve their rows' words when they load (data/*.ts) and the parts build their fixed
 // labels once, so a change of language reloads the page (the debug panel's Interface folder does).
 // The English page is laid out with the Chinese page's measures and letter spacing, untuned.

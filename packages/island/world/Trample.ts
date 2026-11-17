@@ -51,7 +51,7 @@ import { debugFlags, type DisplacementField } from '../../render/index.ts';
 // - Order: the walkers nearest the camera's point of interest (at most TRAMPLE.walkers, more than
 //   the island's population at its largest), by distance then by their index, each one's strips
 //   from the newest stretch to the oldest, then its half disc and its disc: a fixed order, so the
-//   field's sums repeat from frame to frame. Sprites whose push is 0 (past the trail's end, or the
+//   field's sums are bit-identical from frame to frame. Sprites whose push is 0 (past the trail's end, or the
 //   disc of a walker on its way) are left out.
 // - `debugFlags.trample = false` at load builds no field (Displacement.ts `displacementField` null,
 //   the blades reading none); set at run time it empties the walkers (profile-frame's --toggle).

@@ -25,7 +25,7 @@ import type { Sky, SkyEndpoint } from './Sky.ts';
 // (presets, seeks, weather jumps, the first bake) and any bake while the scene clock is paused run
 // whole, so paused frames stay exact. A paused page keeps its last explicit bake's products, and
 // every explicit bake (the load's, a scene jump's, a seek's, a retune's) starts from the state
-// before a page's first bake, the clouds set to the scene clock (`reset`), so each makes the ones
+// before a fresh load's first bake, the clouds set to the scene clock (`reset`), so each makes the ones
 // a fresh load of its scene makes. A bake waits for the warm-up's
 // pipelines (`warm`) before it draws: three r186 skips a draw whose pipeline an asynchronous
 // compile is still creating, so a bake drawn meanwhile left its products empty (the irradiance

@@ -46,7 +46,7 @@ export const RIM_REACH = 1.5;
 export const RIM_PAD = 2;
 const PAD_TEXELS = Math.round( RIM_PAD / RIM_CELL );
 
-// The world's grid of boxes the page builds the rim in (a chunk's box, in the worker for now).
+// The world's grid of boxes the app builds the rim in (a chunk's box, in the worker for now).
 export const RIM_BOX = 16;
 
 const grow = ( b: Bounds, m: number ): Bounds => ( { x0: b.x0 - m, z0: b.z0 - m, x1: b.x1 + m, z1: b.z1 + m } );
@@ -493,7 +493,7 @@ function resamplePiece( piece: ChainPiece, step: number ): ChainPoint[] {
 // (retreat pockets, where the turf already gives way to soil and stone, hold none). Most of the
 // coast is covered; the rest is thinner in stretches of one to a few metres, and a finer field
 // breaks the longest runs. Nothing is placed by hand, so it follows any coast the island takes.
-// Each lip sample carries it; the page reads none of the lip today (it was built for blades draped
+// Each lip sample carries it; the app reads none of the lip today (it was built for blades draped
 // over the edge, which the meadow no longer has).
 export function rimLipPresence( x: number, z: number, retreat: number ): number {
 
@@ -521,7 +521,7 @@ export function topAt( sdf: SDF, x: number, z: number ): number | undefined {
 
 // Per lip sample, a root span on the meadow's ground just inside the lip: LIP_POINTS points
 // ( x, y, z ) from LIP_SPAN[ 0 ] to LIP_SPAN[ 1 ] (m, inside the traced coast), a centimetre above
-// the ground (the page reads none of it today, as with the presence).
+// the ground (the app reads none of it today, as with the presence).
 export const LIP_POINTS = 2;
 const LIP_SPAN = [ - 0.16, - 0.02 ];
 // Per lip sample: its place on the coast ( x, z ), the outward direction ( x, z ), presence, the

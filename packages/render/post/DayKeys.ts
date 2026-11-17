@@ -8,13 +8,13 @@
 // over both by the night's weight (Pipeline.ts `night`, from the daylight). A look's clouded values are one set where they
 // hold at every sun, or keys by the elevation of their own, read as the day's are, where a flat set
 // would leave the land as bright at sunset as in the afternoon. Each look sets its own keys: the
-// shade's contrast holds one value from the noon down to a 9 degree sun, the local tone moves
+// shadows' contrast holds one value from the noon down to a 9 degree sun, the local tone moves
 // between 40, 12 and 3 degrees, and the exposure between keys from 40 degrees down to the dusk
 // (0.4 and -0.4 degrees, and a clouded day's from 12 down to -1). A look whose morning is not its evening has keys of its own
 // for the rising sun (`rising`), which take the place of the clear day's while the sun climbs, and
 // share the day's key objects from where the two sides of the day are one, so a key holds one value
 // there and the change of side at noon moves nothing. Read on the CPU once a frame into uniforms, so a
-// value is a function of the clock and the weather alone and a paused frame repeats. A key may carry
+// value is a function of the clock and the weather alone and a paused frame is bit-identical. A key may carry
 // a `name` (`golden`), which names its values as tunables (debug/Tune.ts `tuneKeys`:
 // `<prefix>.<value>@<name>`, else `@day<i>`, `@cloudy<i>`, `@rising<i>`).
 

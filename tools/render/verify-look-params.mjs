@@ -404,24 +404,24 @@ console.log( `Wind: three responses from three tables, each its own (${ WIND_SPE
 //
 // The ambient light's look (packages/render/look/AmbientLook.ts `createAmbientTables`,
 // `createKeyLift`), in plain node, made from the island's ambient table, the neutral one and a copy
-// of the island's with every knob of every row moved, both gains under overcast's deck and the gain
+// of the island's with every parameter of every row moved, both gains under overcast's deck and the gain
 // on the sun's bounce raised, and the lift's rows and corner moved. Guarantees, each a failure:
 // - Each set holds its own table's numbers: the gain on the sun's bounce, the sun's and the moon's
 //   parts of the land gain under overcast's deck, the grade (setting and rising) at every row's
-//   elevation in every sky alone (the knobs at no grade under a row's changes), held beyond the end
-//   rows, and the knobs at no grade under no sky; the lift's shading at every row's elevation, held
+//   elevation in every sky alone (the parameters at no grade under a row's changes), held beyond the
+//   end rows, and the parameters at no grade under no sky; the lift's shading at every row's elevation, held
 //   below the first, the key's own elevation well above the last, and none at all from the neutral
 //   set (every elevation shading as itself: its single row's slopes and its corner of no width
 //   divide by nothing).
 // - Making the others leaves the island's as it was: the grade over a grid of elevations, skies and
 //   both sides, and the lift over a grid of elevations, are the same numbers bit for bit before and
 //   after.
-// - The changed copy differs from the island's in every knob and every gain, and in the lift.
+// - The changed copy differs from the island's in every parameter and every gain, and in the lift.
 // - The lifted key (packages/render/lighting/KeyLift.ts) follows the lift it is given: its height
 //   and its direction's elevation for a sun key are the lift's shading elevation, the key's own
 //   under the neutral set.
 
-// the island's ambient table changed: every knob of every row moved (by its column), the gains raised,
+// the island's ambient table changed: every parameter of every row moved (by its column), the gains raised,
 // the lift's rows and corner moved
 function changedAmbient( look ) {
 
@@ -496,7 +496,7 @@ for ( const [ name, { tables, lift } ] of Object.entries( ambients ) ) ownAmbien
 ambientReadings( islandAmbient.tables, islandAmbient.lift ).forEach( ( v, i ) => assert.ok( Object.is( v, islandAmbientBefore[ i ] ), `the island's ambient reading ${ i } moved: ${ islandAmbientBefore[ i ] } -> ${ v }` ) );
 // the neutral set lifts nothing: every elevation shades as itself
 for ( const e of LIFT_ELEVATIONS ) assert.equal( ambients.neutral.lift( e ), e, `neutral lift: at ${ e }` );
-// the changed copy differs from the island's in every knob, every gain and the lift
+// the changed copy differs from the island's in every parameter, every gain and the lift
 {
 
 	const knobs = { ...DEFAULT_KNOBS }, island = { ...DEFAULT_KNOBS };
@@ -532,7 +532,7 @@ for ( const [ name, { lift } ] of Object.entries( ambients ) ) for ( const e of 
 }
 assert.ok( [ 0.5, 3, 5.5 ].every( ( e ) => islandAmbient.lift( e ) !== e ), 'the island\'s lift lifts a low sun' );
 
-console.log( `Ambient light: three sets from three tables, each its own (${ islandAmbientBefore.length } readings), the island's unmoved by the others, the changed copy off the island's in every knob, gain and the lift, the neutral set lifting nothing, the lifted key on its own lift (${ liftedKeys } keys): passed.` );
+console.log( `Ambient light: three sets from three tables, each its own (${ islandAmbientBefore.length } readings), the island's unmoved by the others, the changed copy off the island's in every parameter, gain and the lift, the neutral set lifting nothing, the lifted key on its own lift (${ liftedKeys } keys): passed.` );
 
 // the island's sky tables (the sky's look, below), made here for the haze's key, which reads their
 // clouds' base
@@ -739,7 +739,7 @@ console.log( `Haze: three sets from three tables, each its own, the haze's key o
 // failure:
 // - Each set holds its own table's numbers: every field as the table wrote it (the base grade the
 //   table's changes over no grade, each change read back), and each table keyed by the sun and the
-//   weather (the shade's contrast, the desaturation, the white balance, the bloom: DayKeys.ts
+//   weather (the shadow contrast, the desaturation, the white balance, the bloom: DayKeys.ts
 //   `keyed`) read at every key's elevation on both sides, under a full cloud at every clouded key
 //   and at full night is that key's, the clouded day's and the night's values.
 // - Making the others leaves the island's as it was: its table, and every keyed table over a grid of
@@ -885,7 +885,7 @@ console.log( `Display: three sets from three tables, each its own (${ displayRea
 //   luminance), and each function that reads them at every row of the table that row's numbers: the
 //   light lent to the island (`landSky`) at every setting row, every clouded row under a full
 //   cloud and every rising row, under no cloud and a full one; the clear shade's and the low key's
-//   rows; the sky's light, the clear day's gain and the thin layer's colours (DayKeys.ts `keyed`) at
+//   rows; the sky's light, the clear day's gain and the cirrus colours (DayKeys.ts `keyed`) at
 //   every key on both sides, under a full cloud at every clouded key and at full night; the clouds'
 //   rows and base (`cloudBase`) per sky, and the shadow's share the weather's; each store's night
 //   range (`storeNight`) under each sky alone and with no blend; the sea's knee, the key under cloud

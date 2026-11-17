@@ -54,7 +54,7 @@ import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from './Prob
 //     bounced   the probe's bounced sky visibility (the world lit by a uniform white sky, one
 //               bounce) times the sky's average radiance, its constant band Y0 c0 (p. 25), gain
 //               1 (the sky's harmonics hold the upper half only, so this is half the upper half's
-//               mean) times the scale and the grade's `skyBounce` (a style knob, 1); plus the sea's bounce: the probe's
+//               mean) times the scale and the grade's `skyBounce` (a style parameter, 1); plus the sea's bounce: the probe's
 //               sea visibility (world/AmbientProbes.ts) times the radiance of a level diffuse
 //               surface at the sea's level, SEA_ALBEDO times the irradiance it takes over pi: the
 //               sky's harmonics convolved and evaluated straight up (times the sea's scale,
@@ -91,17 +91,17 @@ import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from './Prob
 //               edge at 50 to 62 degrees, 1.8 at 30, 1.35 at 20 and 1.1 at 13 and 10.
 //   The groves' in-scatter (the light their leaves and culms scatter toward the probe, a part of
 //   the bounced visibility the bake keeps apart: world/AmbientProbes.ts) is baked under the sky
-//   over the crowns, which lights the shade a grove casts as it lights its sunward side; the key
+//   over the crowns, which lights the shadow a grove casts as it lights its sunward side; the key
 //   lights only the second. So the key's bounce takes the in-scatter through a gate, by how much
 //   of the sky toward the key the probe sees (`seen`: its sky visibility at the key's true
 //   direction, over open level ground's there, 0.5 + 0.75 ly): all of it from SCATTER_GATE's upper
 //   end up, none from its lower end down, a smoothstep between. The sky's bounce keeps all of it.
 //   With `sunBounce` at 4.5 under the clear sky, without the gate the key's bounce made 22 to 33 %
-//   of the light in a grove edge's shade at 50 degrees, more than its 19.5 % in the open meadow's
-//   shade, and 11 to 18 % at 20 (10 % in the open); with it, 5 to 10 % at 50 (13.6 % in the open)
-//   and 4 to 6 % at 20 (8 %), and that shade's colour lies 0.005 to 0.009 from the sky's light
+//   of the light in a grove edge's shadow at 50 degrees, more than its 19.5 % in the open meadow's
+//   shadow, and 11 to 18 % at 20 (10 % in the open); with it, 5 to 10 % at 50 (13.6 % in the open)
+//   and 4 to 6 % at 20 (8 %), and that shadow's colour lies 0.005 to 0.009 from the sky's light
 //   alone (Oklab a b) at 50 degrees, 0.021 to 0.030 without it. A grove's floor 2 to 6 m in from
-//   its edge takes 0.43 to 0.46 of the light in the shade outside that edge at 50 degrees (0.67 to
+//   its edge takes 0.43 to 0.46 of the light in the shadow outside that edge at 50 degrees (0.67 to
 //   0.73 without the gate) and 0.40 to 0.44 at 20 (0.52 to 0.58).
 //   The key's bounce fades out as it sets (GroundBounce.ts's fade) and takes the key's irradiance
 //   on level ground, the key's light times the sine of the elevation level ground takes its diffuse
@@ -120,7 +120,7 @@ import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from './Prob
 //   (Ramamoorthi and Hanrahan 2001) and deringed (p. 46) by the window that leaves its luminance
 //   nowhere below DERING_MARGIN.grid (0.006) of its mean, applied to the three channels. The bounced
 //   visibility is baked under a uniform white sky, so the key's bounce does not know where the
-//   sun's shadow falls round the probe (Patry's own limit, p. 60): the shade a grove casts on the
+//   sun's shadow falls round the probe (Patry's own limit, p. 60): the shadow a grove casts on the
 //   open meadow takes the bounce off the ground as the lit meadow beside it does. Only the groves'
 //   in-scatter is weighed by the probe's view toward the key (the gate above).
 // - The output (AmbientVolume `irradiance`): a 3D texture of ( nx + 1 ) x IRRADIANCE_SLABS ny x nz
@@ -129,7 +129,7 @@ import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from './Prob
 //   The coefficients are the irradiance's, already convolved: E( n ) = sum c_i Y_i( n ) (three.js's
 //   basis and order, Harmonics.ts), the value three's lighting models take as `irradiance` (as
 //   three's `shGetIrradianceAt` returns it from radiance coefficients), in the scene's units, with
-//   the sky's fill and the grade's knobs applied (not its `aoStrength`), divided by the storage
+//   the sky's fill and the grade's parameters applied (not its `aoStrength`), divided by the storage
 //   scale g (`storageGain`), which every reader multiplies back: half floats keep their relative
 //   precision only between about 6e-5 and 65504, and the night's light would sink below that range.
 //   g is the sky's geometric mean rounded to a power of two, so the division and the readers'
@@ -325,7 +325,7 @@ const _probeSky = { skyGain: 1 }, _probeDeck = { skyGain: 1 }, _probeMoon = { sk
  * The lift: `size` stops from `floorFull` up to `from` degrees, falling along a smoothstep to none at
  * `to` above and at `floor` below. It is 1 under cloud (by the clouded share, Weather.ts
  * `cloudedShare`), where the key no longer outruns the sky. A function of the sun's height and the
- * weather alone, so it is continuous along the day and a paused frame repeats; a uniform, so no
+ * weather alone, so it is continuous along the day and a paused frame is bit-identical; a uniform, so no
  * pipeline. Tunable: `lighting.relight.lowSun` (the size, stops), `lowSunFloor`, `lowSunFloorFull`,
  * `lowSunFrom`, `lowSunTo` (its heights). */
 const LOW_SUN_SKY = { size: 0.3, floor: 8, floorFull: 17, from: 20, to: 35 };
@@ -419,7 +419,7 @@ interface Projection {
 }
 
 /** The sky's harmonics: the environment sources' projections, a slot per environment atlas (see
- * the header). Made before the page's first bake, which it projects. */
+ * the header). Made before the app's first bake, which it projects. */
 export class AmbientSky {
 
 	/** per slot: nine coefficients ( r, g, b, 0 ), then ( 0, 0, 0, the log2 of the geometric mean

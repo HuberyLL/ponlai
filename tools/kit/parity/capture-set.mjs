@@ -41,15 +41,16 @@
 //   -- <options>             passed to every capture.mjs page (tools/kit/capture.mjs)
 //
 // Every view is the frame of `<baseUrl>?debug&paused&t=12&quality=<tier>[&aa=<mode>][&<extra>]&<the
-// view's query>` (the page reads the first of a repeated option), shot after the view's eval once
-// capture.mjs finds it ready. The default size renders 2K's pixel count on high (2388x1543), which
+// view's query>` (the page reads the first of a repeated option), captured after the view's eval
+// once capture.mjs finds it ready. The default size renders 2K's pixel count on high (2388x1543), which
 // FSR 1 brings to 3456x2234. A temporal mode (taa, taau, fsr3, and the ground truth gt: 64 jitters
-// at the canvas's resolution) is shot once its paused rest has converged.
+// at the canvas's resolution) is captured once its paused rest has converged.
 //
 // One page per set: only load-time options (tier, aa, size and ratio, the debug switches in --q)
 // need a new page. Each page loads the first view it is given and reaches each later one by
-// `__PONLAI__.establishScene( <the view's full query> )`, whose contract (packages/render/assemble/SceneJump.ts) is that the
-// frame equals a fresh load's, byte for byte wherever the fresh load repeats. The jump resets the
+// `__PONLAI__.establishScene( <the view's full query> )`, whose contract
+// (packages/render/assemble/SceneJump.ts) is that the frame equals a fresh load's, byte for byte
+// wherever the fresh load is deterministic. The jump resets the
 // scene's options and camera, not what an eval changed besides (GUI settings, Tune, debug flags, a
 // uniform). So after a view with an eval of its own (an ad-hoc view's js; adhoc.mjs `jumpClean`) the
 // page ends and the next view loads fresh, and an `--eval` or `--eval-ready` after `--` takes a page
@@ -67,7 +68,7 @@
 // view's repeat is reached from another scene than its first capture: the A/A also shows anything a
 // jump left behind. The two are compared by decoded pixels (PNG bytes depend on the encoder). The
 // frames do not depend on --jobs. A view that differs only by sparse single-frame speckle on the
-// vegetation while other pages render is GPU noise: shoot it again.
+// vegetation while other pages render is GPU noise: capture it again.
 //
 // --reference reuses the stored set when its manifest matches and covers the views, waits for a
 // live process capturing it, or captures what is missing; the store's rules and layout are in
@@ -75,8 +76,8 @@
 // does the same for the reference (captured only from --ref-url), captures the test side with the
 // same options and runs `uv run tools/kit/diff-set.py <ref> <testDir> --views <the views>` with
 // --diff's options, by default `--temporal` for taa, taau, fsr3 and gt, else `--aa-floor --held`
-// with --repeat, else `--max-px1 0 --held` (--held: the region a held effect reaches, which each shot
-// records in its JSON as `held`, is compared within tools/kit/tolerance.py's HELD).
+// with --repeat, else `--max-px1 0 --held` (--held: the region a held effect reaches, which each
+// capture records in its JSON as `held`, is compared within tools/kit/tolerance.py's HELD).
 //
 // A failed view (a timeout, a page or console error, a crash) ends its page; it is retried on a
 // fresh page and the views still to come go on there. A page silent for three times --timeout plus
@@ -87,7 +88,7 @@
 // Output: `<outDir>/<view>.png`, `<view>.json` (diagnostics, crop anchors, `ready`, and `page`: the
 // visit, load or jump, the view before, the GPU lock wait, the page's memory) and `<view>.log`
 // (capture.mjs's output, its last attempt); `<view>.repeat.*` with --repeat; `views.json` with the
-// ad-hoc views' definitions. Stdout: a line per capture, a `-- repeatability` list (identical or
+// ad-hoc views' definitions. Stdout: a line per capture, a `-- reproducibility` list (identical or
 // DIFFERS), a summary line; with --check the diff table, also in `<testDir>/diff.txt`, the diff's
 // crops in `<testDir>/diff/` and a PASS or FAIL line. The run log gets a line per run and one per
 // reference (date, task, procedure, sha, wall minutes, whether the GPU was busy, captures, failures,
@@ -126,7 +127,7 @@ import { ROOT } from '../root.mjs';
 
 const REPO = ROOT;
 const { viewEval } = viewTable;
-// --quick: knob variants on a few views, against the stored references (quick.mjs)
+// --quick: setting variants on a few views, against the stored references (quick.mjs)
 if ( process.argv.includes( '--quick' ) ) {
 
 	const { main } = await import( './quick.mjs' );
@@ -370,7 +371,7 @@ async function captureGroup( url, dir, list ) {
 async function repeatability( dir, list, quiet ) {
 
 	const out = {};
-	if ( ! quiet ) console.log( '-- repeatability' );
+	if ( ! quiet ) console.log( '-- reproducibility' );
 	for ( const v of list ) {
 
 		const a = path.join( dir, `${ v }.png` ), b = path.join( dir, `${ v }.repeat.png` );

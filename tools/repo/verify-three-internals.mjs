@@ -1,22 +1,22 @@
 // Checks what the code depends on of three.js beyond its public interface, against the installed three.
 //
-// Run it after an upgrade of three (packages/render/three/README.md) and after a change that reaches
-// into three; it is part of `npm run check`.
+// Run it after an upgrade of three (packages/render/three/README.md) and after a change that uses
+// three.js internals; it is part of `npm run check`.
 //
 // Usage:
 //   node tools/repo/verify-three-internals.mjs [--verbose] [--fingerprints]
 //
 // Options:
-//   --verbose        prints where each entry was found and each file's reaches into three
+//   --verbose        prints where each entry was found and each file's uses of three.js internals
 //   --fingerprints   prints every fingerprinted entry's current fingerprint, to record after
 //                    re-checking the code that depends on it on an upgrade of three
 //
-// The renderer reaches into three where no public path gives what it needs: private members of the
-// renderer and of its helpers, the WebGPU backend and its device, methods it replaces or wraps,
-// and code of three's it mirrors. Those reaches cannot be removed without changing the image, so
-// they are listed and checked, and an upgrade of three finds every one of them at once.
-// `packages/render/three/three-internals.json` is that list: for each entry, the file of three it lives in (under
-// node_modules/three), its class (`owner`), its name, what it is there (`kind`), how we use it
+// The renderer uses three.js internals where no public path gives what it needs: private members
+// of the renderer and of its helpers, the WebGPU backend and its device, methods it replaces or
+// wraps, and code of three's it mirrors. Those uses cannot be removed without changing the
+// rendered image, so they are listed and checked, and an upgrade of three finds every one of them
+// at once. `packages/render/three/three-internals.json` is that list: for each entry, the file of
+// three it lives in (under node_modules/three), its class (`owner`), its name, what it is there (`kind`), how we use it
 // (`use`) and which of our files use it (`users`). Its categories: 1, three's private members and
 // the code we replace or mirror; 2, the backend and the device; 3, the extension hooks three
 // leaves for materials, lighting models, shadows and inspectors, which @types/three does not
@@ -34,10 +34,11 @@
 //   (`use`: replace, wrap, mirror, relies) carries a fingerprint of its source text: when three
 //   changes the function, our patch, wrapper or copy is read again against the new code and the
 //   fingerprint updated (`--fingerprints` prints the current ones).
-// - Location. No file under packages/ or app/ outside packages/render/three/ reaches into three: no `.backend`, no cast to
-//   a structural type with a member whose name starts with an underscore, and no name of a
-//   category 1 or 2 entry that starts with one (comments are not read): each reach is a
-//   function of packages/render/three/, named for what it does, and SRC_KNOWN is empty.
+// - Location. No file under packages/ or app/ outside packages/render/three/ uses three.js
+//   internals: no `.backend`, no cast to a structural type with a member whose name starts with an
+//   underscore, and no name of a category 1 or 2 entry that starts with one (comments are not
+//   read): each use is a function of packages/render/three/, named for what it does, and
+//   SRC_KNOWN is empty.
 //   tools/ is white-box (its tools run scripts in the page) and keeps a list of its own,
 //   TOOLS_KNOWN, which only shrinks too.
 //
@@ -69,13 +70,13 @@ const USES = [ 'read', 'call', 'write', 'hook', 'replace', 'wrap', 'mirror', 're
 const FINGERPRINTED = new Set( [ 'replace', 'wrap', 'mirror', 'relies' ] );
 const KINDS = [ 'method', 'member', 'declaration', 'text' ];
 
-// The files under packages/ and app/ that reach into three, outside packages/render/three/ (repository
-// paths): none. A new
-// reach goes into a function of packages/render/three/; never add an entry.
+// The files under packages/ and app/ that use three.js internals, outside packages/render/three/
+// (repository paths): none. A new use goes into a function of packages/render/three/; never add an
+// entry.
 const SRC_KNOWN = [];
 
-// The tools that reach into three (paths under tools/). Remove an entry with the change that
-// removes its reach; never add one.
+// The tools that use three.js internals (paths under tools/). Remove an entry with the change that
+// removes its use; never add one.
 const TOOLS_KNOWN = [
 	'island/dusk-grid.mjs',
 	// a mock renderer with the members graph/Compile.ts builds through
@@ -366,23 +367,23 @@ function checkPlace( dir, known, skip, listName, remedy ) {
 	const knownSet = new Set( known );
 	for ( const [ rel, found ] of seen ) {
 
-		if ( ! knownSet.has( rel ) ) failures.push( `location: ${ dir }/${ rel } reaches into three (${ found.join( ', ' ) }): ${ remedy }` );
+		if ( ! knownSet.has( rel ) ) failures.push( `location: ${ dir }/${ rel } uses three.js internals (${ found.join( ', ' ) }): ${ remedy }` );
 
 	}
-	for ( const rel of known ) if ( ! seen.has( rel ) ) failures.push( `location: ${ listName } lists ${ rel }, which no longer reaches into three: remove the entry` );
+	for ( const rel of known ) if ( ! seen.has( rel ) ) failures.push( `location: ${ listName } lists ${ rel }, which no longer uses three.js internals: remove the entry` );
 	return seen;
 
 }
-const inPackages = checkPlace( 'packages', SRC_KNOWN, ( rel ) => rel.startsWith( 'render/three/' ), 'SRC_KNOWN', 'reach it through a function of packages/render/three/' );
-const inApp = checkPlace( 'app', SRC_KNOWN, () => false, 'SRC_KNOWN', 'reach it through a function of packages/render/three/' );
+const inPackages = checkPlace( 'packages', SRC_KNOWN, ( rel ) => rel.startsWith( 'render/three/' ), 'SRC_KNOWN', 'use them through a function of packages/render/three/' );
+const inApp = checkPlace( 'app', SRC_KNOWN, () => false, 'SRC_KNOWN', 'use them through a function of packages/render/three/' );
 const inSrc = new Map( [ ...[ ...inPackages ].map( ( [ rel, f ] ) => [ `packages/${ rel }`, f ] ), ...[ ...inApp ].map( ( [ rel, f ] ) => [ `app/${ rel }`, f ] ) ] );
 const inTools = checkPlace( 'tools', TOOLS_KNOWN, ( rel ) => `tools/${ rel }` === SELF, 'TOOLS_KNOWN', 'drive the page through its debug objects, or call a function of packages/render/three/' );
-if ( options.verbose ) for ( const [ dir, seen ] of [ [ '.', inSrc ], [ 'tools', inTools ] ] ) for ( const [ rel, found ] of seen ) console.log( `  reach ${ dir }/${ rel }: ${ found.join( ', ' ) }` );
+if ( options.verbose ) for ( const [ dir, seen ] of [ [ '.', inSrc ], [ 'tools', inTools ] ] ) for ( const [ rel, found ] of seen ) console.log( `  internals used by ${ dir }/${ rel }: ${ found.join( ', ' ) }` );
 
 // ---- summary
 
 const byCategory = [ 1, 2, 3 ].map( ( c ) => list.entries.filter( ( e ) => e.category === c ).length );
-console.log( `verify-three-internals: three ${ list.three } (r${ list.revision }), ${ list.entries.length } entries (${ byCategory.join( ' / ' ) } by category), ${ current.length } fingerprinted; reaches in ${ inSrc.size } code files (${ SRC_KNOWN.length } known), ${ inTools.size } tools (${ TOOLS_KNOWN.length } known)` );
+console.log( `verify-three-internals: three ${ list.three } (r${ list.revision }), ${ list.entries.length } entries (${ byCategory.join( ' / ' ) } by category), ${ current.length } fingerprinted; internals used in ${ inSrc.size } code files (${ SRC_KNOWN.length } known), ${ inTools.size } tools (${ TOOLS_KNOWN.length } known)` );
 for ( const w of warnings ) console.log( `  warning ${ w }` );
 if ( failures.length ) {
 

@@ -20,7 +20,7 @@ import { hasGpuFeature } from '../three/Backend.ts';
 // that pass, in their original order, plus each batch's indirect draw arguments. The draw then
 // runs the vertex stage only for those records. The compaction is a scan, not an atomic append:
 // the surviving records keep the order every record drew in before, so depth ties and the
-// alpha-to-coverage result are those of the full draw, and a paused frame repeats exactly.
+// alpha-to-coverage result are those of the full draw, and a paused frame is bit-identical.
 //
 // Two dispatches: the first counts each workgroup's visible records, the second sums the counts of
 // the batch's earlier workgroups, scans its own and scatters. Each batch is padded to whole

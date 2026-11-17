@@ -16,8 +16,8 @@ import { releaseAttribute } from '../three/Attributes.ts';
 // up (AmbientSample.ts `ambientField`, the front face's, in the scene's units as three's
 // `iblIrradiance`) and its sky visibility. The open ones are
 // those whose visibility reaches the `open` quantile of the points'; `eUp` is their mean
-// irradiance's luminance. Evaluated in a compute kernel built on the call (none exists on a page that
-// never calls it, so the page's pipelines are unchanged). The volume is relit every frame, so on a
+// irradiance's luminance. Evaluated in a compute kernel built on the call (none exists in an app that
+// never calls it, so the app's pipelines are unchanged). The volume is relit every frame, so on a
 // paused page the read is the frame's.
 
 const DEFAULTS = { step: 2, lift: 0.5, slope: 15, open: 0.9 };

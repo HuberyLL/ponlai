@@ -256,9 +256,9 @@ interface ResolveTextures {
 	near: { stats: THREE.Texture; clip: THREE.Texture; nearest: THREE.Texture } | null;
 }
 
-/** Per-frame inputs from the page: what else keys the rest, and whether the page is stable. */
+/** Per-frame inputs from the app: what else keys the rest, and whether the app is stable. */
 export interface TemporalFrame {
-	// the page's own signature of the rest (a forced strike), as numbers
+	// the app's own signature of the rest (a forced strike), as numbers
 	signature?: readonly number[];
 	// false while something changes the image on its own (a sky bake in flight, a transition)
 	stable?: boolean;
@@ -294,7 +294,7 @@ interface Variants { pass: string; kind: 'quad' | 'chain'; quads: THREE.QuadMesh
 
 export class TemporalAA {
 
-	/** The page's resolve, once built (the debug view asks for it while the graph compiles). */
+	/** The app's resolve, once built (the debug view asks for it while the graph compiles). */
 	static current: TemporalAA | null = null;
 	readonly mode: TemporalMode;
 	/** The live settings (the GUI tunes them; the uniforms follow every frame). */
@@ -308,7 +308,7 @@ export class TemporalAA {
 	/** The sharpening this frame (RCAS stops) and the one it eases toward. */
 	readonly sharpness = uniform( 1 );
 	sharpnessTarget = 1;
-	/** Live knobs of the resolve outside the tier's table. */
+	/** Live parameters of the resolve outside the tier's table. */
 	readonly knobs = {
 		// disocclusion: relative and absolute depth tolerance (m)
 		disoccludeRelative: uniform( 0.02 ), disoccludeAbsolute: uniform( 0.05 ),
@@ -1262,7 +1262,7 @@ export class TemporalAA {
 		this.rest.sequence = Math.max( 0, Math.round( this.mode === 'gt' ? this.settings.gtJitters : this.settings.restSequence ) );
 		this.rest.observe( key, frame.stable !== false );
 		// (while converged the jitter stays at the sequence's last index, as under FSR 3: what the display
-		// chain reads of the live frame beside the held image then repeats too)
+		// chain reads of the live frame beside the held image is then bit-identical too)
 		jitter.restIndex = this.rest.index !== null ? this.rest.index + 1 : this.rest.converged ? this.rest.sequence : null;
 		jitter.restLength = this.rest.sequence;
 		// the sharpening, eased to its new value over SHARPNESS_EASE seconds after a scale change; at
@@ -1283,7 +1283,7 @@ export class TemporalAA {
 		this.sharpnessTime = resting ? SHARPNESS_EASE : Math.min( this.sharpnessTime + Math.max( frame.dt ?? 0, 0 ), SHARPNESS_EASE );
 		const k = this.sharpnessTime / SHARPNESS_EASE;
 		this.sharpness.value = k >= 1 ? this.sharpnessTarget : this.sharpnessFrom + ( this.sharpnessTarget - this.sharpnessFrom ) * k;
-		// the camera this frame and the rendered frame before (a cut makes them equal: onTaaCut)
+		// the camera this frame and in the previous rendered frame (a cut makes them equal: onTaaCut)
 		const u = this.u;
 		if ( this.hasLast ) {
 

@@ -81,9 +81,9 @@ type V4 = THREE.Node<'vec4'>;
 //   velocity is cleared, so it leaves the bound from rest.
 //   The state, one RGBA32F texel: ( EV, v, EV_t, moved ), stops, stops per second, stops, and 1
 //   where this frame's EV differs from the previous frame's (as floats, exactly), else 0. A reset
-//   (the page's first frame, a scene event that cuts), a paused clock (dt 0) and so the test mode,
+//   (the app's first frame, a scene event that cuts), a paused clock (dt 0) and so the test mode,
 //   a paused page, put EV = EV_t and v = 0: a paused frame equals a fresh load's. `moved` is a
-//   diagnostic (the page's exposure readout): after a snap it is 1 for one frame, until EV stands
+//   diagnostic (the app's exposure readout): after a snap it is 1 for one frame, until EV stands
 //   still. Nothing in the frame reads the previous frame's exposure before the meter.
 // - A stepped clip (capture-clip.mjs, `window.__PONLAI_CLIP__` set) snaps the same way on every
 //   frame: a temporal rest converged on a stopped clock jumps to its target while running frames

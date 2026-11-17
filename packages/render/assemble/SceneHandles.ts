@@ -1,12 +1,12 @@
 // A running scene's diagnostics and debug handles for the tools and the console, on debug pages only.
 //
-// A running scene's diagnostics and debug handles (StartScene.ts), the page's contract with the
+// A running scene's diagnostics and debug handles (StartScene.ts), the app's contract with the
 // capture, probe and profiling tools (docs/bindings/writing-tools-and-checks.md, Build): the
 // diagnostics global (`__THREE_GAME_DIAGNOSTICS__` by default), wholly refreshed every 30 frames
 // and, every frame, in the fields the capture tools wait on (`settled`, `taa`, `preExposure`), and
 // the handles global (`__PONLAI__` by default): the scene's parts, the scene jump, the loop and its
 // step, the tunables, the radiance reader. Both exist only on debug pages (the dev server, `?debug`,
-// `?profile`). A page adds its own fields to both (`SceneHandlesContent`).
+// `?profile`). An app adds its own fields to both (`SceneHandlesContent`).
 import * as THREE from 'three/webgpu';
 import type { RenderParts } from '../RenderStages.ts';
 import type { QualityProfile } from '../Quality.ts';
@@ -49,11 +49,11 @@ export const DEFAULT_GLOBALS: SceneGlobals = Object.freeze( {
 } );
 
 export interface SceneHandlesContent {
-	/** the page's fields of the whole snapshot (every 30 frames) */
+	/** the app's fields of the whole snapshot (every 30 frames) */
 	diagnostics?(): Record<string, unknown>;
-	/** the page's fields refreshed every frame */
+	/** the app's fields refreshed every frame */
 	everyFrame?(): Record<string, unknown>;
-	/** the page's handles, added to the scene's (`jump`: the scene's jump, for handles that move it) */
+	/** the app's handles, added to the scene's (`jump`: the scene's jump, for handles that move it) */
 	handles?( jump: SceneJump ): Record<string, unknown>;
 }
 
@@ -173,7 +173,7 @@ export function createSceneDiagnostics( render: RenderParts, shared: Shared, hos
 			// the scene's anti-aliasing, the pipelines created so far and the frame graph's state and
 			// dev counters, for the clip and first-use tools
 			aa: AA_MODE,
-			// where the mode came from: the URL (`aa`, `msaa`) or the quality tier's `aa` knob
+			// where the mode came from: the URL (`aa`, `msaa`) or the quality tier's `aa` setting
 			aaSource: AA_SOURCE,
 			pipelines: pipelineCount?.total ?? 0,
 			graph: graphDiagnostics(),
@@ -210,13 +210,13 @@ export function exposeSceneHandles( render: RenderParts, shared: Shared, host: S
 		// the local lights (lighting/LocalLights.ts): `sources`, `gain`, `enabled`, `info()` (a promise: the
 		// sources in view, the fullest cluster, the clusters that overflowed)
 		localLights: render.localLights,
-		// the screen-space ambient occlusion's knobs (post/GTAO.ts `gtaoUniforms`: cutoff, recede, base, maxTexels, fullDistance)
+		// the screen-space ambient occlusion's parameters (post/GTAO.ts `gtaoUniforms`: cutoff, recede, base, maxTexels, fullDistance)
 		gtao: gtaoUniforms,
 		// the ambient light's probes (lighting/AmbientVolume.ts): `info()` and `hash()`
 		ambientVolume: ambient,
 		// their relight (lighting/AmbientRelight.ts): `readback()` and `hash()` of its output
 		ambientRelight,
-		// the look's knobs from a script (the GUI's raise their own events): the first table's grade
+		// the look's parameters from a script (the GUI's raise their own events): the first table's grade
 		// (GradeLut.ts), the leaves' albedo (shared.leafGain)
 		setGrade: ( changes?: GradeChanges ) => { pipeline.setGrade( changes ); renderEvent( 'retune' ); },
 		setLeafGain: ( gain: number ) => { shared.leafGain.value = gain; renderEvent( 'retune' ); },
@@ -244,9 +244,9 @@ export function exposeSceneHandles( render: RenderParts, shared: Shared, host: S
 		// medium's amount and shape, the light's weights, the deck's shares; read, never written
 		hazeKey,
 		quality, dynamicResolution, pacer, submitBatch, jitter, motion: motionState, taaCut, motionCheck: () => motionCheck( motionPasses() ), applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ),
-		// the temporal resolve (TemporalAA.ts, TemporalRest.ts): its live settings and knobs, the rest, the
+		// the temporal resolve (TemporalAA.ts, TemporalRest.ts): its live settings and parameters (`knobs`), the rest, the
 		// epoch, and `restart()`, which starts the history and the rest over (a cut and an epoch bump)
-		// (under fsr3 the same handles from FSR 3's upscaler, which has no knobs: the capture tools wait on
+		// (under fsr3 the same handles from FSR 3's upscaler, which has no such parameters: the capture tools wait on
 		// its rest through them)
 		taa: pipeline.resolver ? {
 			resolve: pipeline.resolver, settings: pipeline.resolver.settings, knobs: pipeline.temporal?.knobs ?? null, rest: pipeline.resolver.rest, epoch: restEpoch,

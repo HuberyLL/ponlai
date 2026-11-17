@@ -35,7 +35,7 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
-// The air's haze and the sea's fog: a froxel volume lit by the atmosphere, over the scene.
+// The atmospheric haze and the sea's fog: a froxel volume lit by the atmosphere, over the scene.
 // The sine of the elevation the sun's rows are read at under a deck (see the header)
 const DECK_ROW = 0.5;
 // The elevation (17 degrees) under which the haze reads the earth's shadow as at it (see the header)
@@ -59,8 +59,8 @@ const DECK_DIFFUSE = [
 	[ 0.0476, - 0.2387, 0.327 ],
 	[ - 0.3245, 1.3378, - 1.5456 ],
 ];
-// Measuring knobs for the fog's light in the light kernel: the sun's visibility scaled (1 as it is,
-// 0 the air all in shade) and the island's and the clouds' shadow lifted (1 none).
+// Debug parameters for measuring the fog's light in the light kernel: the sun's visibility scaled
+// (1 as it is, 0 the air all in shadow) and the island's and the clouds' shadow lifted (1 none).
 const LIGHT_DEBUG = {
 	sun: tuneUniform( 'haze.debug.sun', 1, { min: 0, max: 1 } ),
 	noShadow: tuneUniform( 'haze.debug.noShadow', 0, { min: 0, max: 1 } ),
@@ -80,7 +80,7 @@ const DRIFT_REACH = 8;
 // SEEN_SKY). See the header.
 const SEEN_AIR = { near: 200, far: 2000 } as const;
 
-// The air's haze and the sea's fog as one participating medium in a froxel volume, after Patry,
+// The atmospheric haze and the sea's fog as one participating medium in a froxel volume, after Patry,
 // "Real-Time Samurai Cinema", SIGGRAPH 2021 (its volumetric haze, built on Wronski, SIGGRAPH 2014,
 // and Drobot, Digital Dragons 2017):
 //   - the medium's density is analytic and integrable along any ray: a ground layer, the talk's
@@ -118,7 +118,7 @@ const SEEN_AIR = { near: 200, far: 2000 } as const;
 //     through the band-to-display matrix (sky/BandMatrix.ts, the identity by default): the light
 //     kernel's slice weights, the composite's opacity and the CPU `transmittance`.
 //   - a froxel grid over the view in slices each deeper than the one before by a fixed share (the
-//     talk's PS4 grid is 128 x 64 x 64; high's 160 x 90 makes a froxel about 16 render pixels
+//     talk's PS4 grid is 128 x 64 x 64; the high tier's 160 x 90 makes a froxel about 16 render pixels
 //     across at 1440p). Its size is fixed, so no kernel follows the render's scale. The talk's slices
 //     (10 cm to 100 km, each 20 % deeper) serve a camera a few metres from its subject; the island's
 //     camera looks from 20 - 200 m, where they were 6 - 20 m deep and averaged the cliffs' and the
@@ -162,7 +162,7 @@ const SEEN_AIR = { near: 200, far: 2000 } as const;
 //     sun gives, not the beam through the air below it, which the land's key keeps too; under
 //     overcast's closed deck it sets with the land's key, by the disk's visible share); the sun's Rayleigh
 //     colour is the aerosol's times the key's `sunRayleigh`. Each share has one weight, keyed
-//     (HazeKeys.ts), the weather's gain over both (2 under cloud) and `gain` (1, an A/B knob) over
+//     (HazeKeys.ts), the weather's gain over both (2 under cloud) and `gain` (1, an A/B parameter) over
 //     the sum; the rows, the phases and the colours being the sky's own, a weight is about the
 //     share's light per unit of opacity over the sky's (at noon and an evening sun of 12 the
 //     Rayleigh share's, at a weight of 1, about 1.0 - 1.3 of the sky's 60 - 90 degrees from the
@@ -306,7 +306,7 @@ const SEEN_AIR = { near: 200, far: 2000 } as const;
 //     over pi (Sky.ts `deckIrradianceNode`) from above and the sea's reflection of it (SEA_DIFFUSE)
 //     from below, scattered evenly, times the ambient visibility; both times the albedo. A froxel
 //     takes the air's light and the droplets' by the fog's share of its density, so the sun's side
-//     of a lit fog is white and the shade under the island and the bamboo stays dark: the octaves
+//     of a lit fog is white and the shadow under the island and the bamboo stays dark: the octaves
 //     bring the lit fog's level up, the island's and the clouds' shadows still cut it. The dome,
 //     the seen panorama and the probe's (`openSky`) take the same light by the ground layer's
 //     share of the mean density along their rays, without the drift. The land's sky light (the
@@ -381,7 +381,7 @@ const SEEN_AIR = { near: 200, far: 2000 } as const;
 //     (Atmosphere.ts `mieScale`) are not taken out of them, the sky's fog being the volume's on top
 //     of the atmosphere. The ground layer closes over the horizon, so the far sea and the horizon's
 //     sky end in the same haze. The light the sky lends (Sky.ts's bakes, the probes) is the
-//     atmosphere's alone: the haze is laid over the image only.
+//     atmosphere's alone: the haze is laid over the rendered image only.
 //     By night the moon's open sky light and the deck's that the light volume's air scatters come to
 //     the night sky as the dome draws it (`moonColourSeen`, `deckShareSeen`: shared.ts `seenNight`,
 //     Weather.ts `seenNight`) by the froxel's distance: the near air keeps the sky's own light, the
@@ -421,7 +421,7 @@ const SEEN_AIR = { near: 200, far: 2000 } as const;
 // and takes the new sample alone where the history falls outside the grid, after a cut (the key
 // light turns more than CUT in a frame, the camera jumps) and after `invalidate`. A scene at rest
 // (the key TemporalRest tests: the camera, the clock, the sizes, the epoch's scene count, which a
-// restart of the frame loop leaves, the page's signature and the haze's own inputs, the medium's
+// restart of the frame loop leaves, the app's signature and the haze's own inputs, the medium's
 // among them) converges once, the way the temporal resolve's rest does: after its settle
 // frames it averages a fixed sequence of jitters with exact weights, from nothing, then holds the
 // result and skips the shadow kernel. A paused frame is then a function of the scene alone,
@@ -470,12 +470,12 @@ const MOON_AEROSOL = {
 // the planet's radius and the atmosphere's top (m from its centre)
 const ATMOSPHERE_BOTTOM = PLANET_RADIUS * 1e3, ATMOSPHERE_TOP = ATMOSPHERE_RADIUS * 1e3;
 
-/** The froxel grid's size, fixed when the page loads (the quality tier's `post.hazeGrid`). */
+/** The froxel grid's size, fixed when the app loads (the quality tier's `post.hazeGrid`). */
 export interface HazeGrid { width: number; height: number; depth: number }
 
 export const DEFAULT_HAZE_GRID: Readonly<HazeGrid> = { width: 160, height: 90, depth: 64 };
 
-/** The haze's knobs (the GUI's Haze folder, `__PONLAI__.pipeline.air.settings`). The shadow's
+/** The haze's parameters (the GUI's Haze folder, `__PONLAI__.pipeline.air.settings`). The shadow's
  * temporal filter and the composite's filters are the talk's, the slices fitted to the island's
  * camera (see the header; the medium's shape is the hour's key's, HazeKeys.ts), the phases from how
  * the air brightens toward the sun, the shares' weight and the gain by eye on a few points of the sky
@@ -545,12 +545,12 @@ export interface HazeCover {
 	late?: boolean;
 }
 
-/** What the page tells the haze each frame (main.ts): the rest's signature (what changes the
+/** What the app tells the haze each frame (main.ts): the rest's signature (what changes the
  * frame without changing the camera or the clock: a forced strike, the sun maps' redraws) and
  * whether the scene may rest (no sky bake in flight, no transition running). */
 export interface HazeFrame { time: number; signature: readonly number[]; stable: boolean }
 
-/** The air's haze and the sea's fog: a froxel volume lit by the atmosphere and shadowed by the sun's
+/** The atmospheric haze and the sea's fog: a froxel volume lit by the atmosphere and shadowed by the sun's
  * maps and the clouds, composited over the scene and the sky (see the header). */
 export class VolumetricHaze {
 
@@ -586,7 +586,7 @@ export class VolumetricHaze {
 	readonly keyFloor = uniform( 0 );
 	// the moon's aerosol lobe (MOON_AEROSOL)
 	private readonly moonAnisotropy = tuneUniform( 'haze.moon.mieG', MOON_AEROSOL.anisotropy, { min: 0.7, max: 0.82, onChange: markSkyRetune } );
-	// the medium's and the light's tunable knobs (debug/Tune.ts; the sun's aerosol share takes
+	// the medium's and the light's tunable parameters (debug/Tune.ts; the sun's aerosol share takes
 	// the sky's lobe, the moon's its own: `moonAnisotropy`, MOON_AEROSOL)
 	readonly settings: HazeSettings = tuneObject( { ...HAZE_DEFAULTS },
 		{ anisotropy: 'sky.atmosphere.mieG', ambientFloor: 'haze.ambient.floor' },
@@ -1600,7 +1600,7 @@ export class VolumetricHaze {
 	}
 
 	/** Once per frame, before the graph runs: the camera (its view, and its projection without the
-	 * temporal modes' jitter), the render's and the output's sizes, and the page's frame. Sets the
+	 * temporal modes' jitter), the render's and the output's sizes, and the app's frame. Sets the
 	 * medium and the light from the weather and the settings, and the shadow's filter for the
 	 * frame: at rest, running, or held. */
 	update( camera: THREE.Camera, projection: THREE.Matrix4, width: number, height: number, outputWidth: number, outputHeight: number, frame: HazeFrame ): void {

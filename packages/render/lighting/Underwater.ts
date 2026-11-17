@@ -75,7 +75,7 @@ type B = THREE.Node<'bool'>;
 // the column apply to it as to the key's own beam, and the seabed under a deck is lit by the key
 // the water drawn over it takes.
 //
-// A material calls `underwaterLight` with its own key above the water (the terrain's canopy shade;
+// A material calls `underwaterLight` with its own key above the water (the terrain's canopy shadowing;
 // nothing for a material that never reaches the surface) and installs `UnderwaterLightingModel` as
 // its lighting model; it also sets `userData.refractedSolarReceiver`,
 // so RefractedSun.bindTerrain gives it the refracted sun's shadow map.
@@ -103,7 +103,7 @@ export interface UnderwaterLight {
 }
 
 export interface UnderwaterOptions {
-	// the key's multiplier above the water (the terrain's canopy shade); 1 without one
+	// the key's multiplier above the water (the terrain's canopy shadowing); 1 without one
 	aboveSun?: V3;
 	// the specular's share below the surface, the material's reflectance against water over its
 	// reflectance against air; 1 without one

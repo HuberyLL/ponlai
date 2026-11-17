@@ -28,7 +28,7 @@ import { onSceneDispose, onSceneStart } from '../SceneDispose.ts';
 //   edits too) into accessors of the registry.
 // - Options: `min` / `max`, the range a script may move the value in (a hint: nothing is clamped
 //   here, the script may give its own); `scale` 'linear' (the default) or 'log' (a script moves the
-//   value in log space); `load`, the value is read once as the page builds (an array length, a
+//   value in log space); `load`, the value is read once as the app builds (an array length, a
 //   branch, a material choice), so a new value needs a reload (`?tune=`) to show; `onChange`, called
 //   with the new value (a cache to invalidate).
 // - A value set runs no new pipeline: a shader reads a uniform (`tuneUniform`), the CPU reads the
@@ -43,12 +43,12 @@ import { onSceneDispose, onSceneStart } from '../SceneDispose.ts';
 //   load-time values take effect too.
 // - At run time (assemble/SceneHandles.ts `__PONLAI__.tune`, `tuneApi`): `set( { name: value } )` (returns the names
 //   applied, those not registered (kept for when they do), the load-time ones that need a reload and
-//   `invalid`, the failing checks over the values now held ({ names, why }); raises the page's
+//   `invalid`, the failing checks over the values now held ({ names, why }); raises the app's
 //   `retune` scene event, so `settled` waits for the new frame), `get( name )`,
 //   `list()` (name, value, default, min, max, scale, load, kind: 'cpu' | 'uniform'), `reset()` (every
 //   value back to its default) and `query( values )` (the `tune=` parameter for those values).
 // - A disposed scene's part goes with it (SceneDispose.ts): the entries, nodes, listeners and
-//   checks it registered, and the values set since it started; what the page registered as it
+//   checks it registered, and the values set since it started; what the app registered as it
 //   loaded stays, at the value it started with, and `?tune=` applies again to the next scene.
 
 export interface TuneOptions {
@@ -234,7 +234,7 @@ export function tuneObject<T extends object>( target: T, names: { [ K in keyof T
 
 }
 
-// what the page held as the scene started: each entry's value and the lengths of its lists, the
+// what the app held as the scene started: each entry's value and the lengths of its lists, the
 // checks' count and the values still pending
 let atStart: { entries: Map<string, { value: number; nodes: number; listeners: number }>; checks: number; pending: Map<string, number> } | null = null;
 onSceneStart( 'tune', () => {

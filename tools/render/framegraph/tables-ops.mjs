@@ -38,7 +38,8 @@ const REFRACTION_ROW = row( 'refraction', [ col( 'refraction', 'load', 'store' )
 const MASK_ROW = row( 'refractionMask', [ col( 'refraction', 'clear', 'store' ) ], dep( 'refractionDepth', true, 'clear', 'store' ) );
 // and the lookups' reach it reads
 const REACH_ROW = row( 'refractionReach', [ col( 'refractionReach', 'clear', 'store' ) ] );
-// the meadow's shade (at 4x): the depth's nearest view z and the shade, both read by the next pass
+// the meadow's screen-space shadows (at 4x): the depth's nearest view z and the shadows, both read
+// by the next pass
 const MEADOW_ROWS = [
 	row( 'meadowDepthResolve', [ col( 'meadowDepth', 'clear', 'store' ) ] ),
 	row( 'meadowShadows', [ col( 'meadowShadows', 'clear', 'store' ) ] ),

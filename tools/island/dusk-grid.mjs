@@ -1,6 +1,6 @@
 // Reads the scene's light at a grid of sun elevations through the dusk and the dawn, and judges its fall.
 //
-// It answers "does the land, the sky, the sea or the air brighten anywhere as the sun goes down or
+// It answers "does the land, the sky, the sea or the haze brighten anywhere as the sun goes down or
 // comes up, by how much, and which of the dusk's shares does it", where a few views at fixed hours
 // miss a step in between. Each point is read off the running page in scene units, reached by the
 // exact scene jump and baked explicitly, and the rule that a lower sun never makes a judged quantity
@@ -454,7 +454,7 @@ const hazeReadJs = () => `async () => { ${ PAGE }
 
 // The reads (scene units, luminance).
 //   CPU: E (pi times the sky's irradiance), Edeck (the deck's, read back), mS (the sky's metering
-//   log2) and mS2 = 2^mS, the far sea's seaBody / seaRadiance / seaNight / seaSun, the air's
+//   log2) and mS2 = 2^mS, the far sea's seaBody / seaRadiance / seaNight / seaSun, the haze's
 //   airAmb0 / airAmb1 / airMie0 / airDeckShare / airKeyFloor, keyIsMoon, keyColour, keyCloudFloor,
 //   deckKeyFloor, landKeyFloor = keyCloudFloor x keyColour, airKey = deckKeyFloor x keyColour,
 //   skyScale, landA = skyScale x E (E the probe's irradiance), landSky, sunBounce, daySky,
@@ -465,19 +465,19 @@ const hazeReadJs = () => `async () => { ${ PAGE }
 //   sea's half).
 //   Per view, on a 256 x 144 grid of cells (3 x 3 texels each; land = cells with no sky and no sea):
 //   <view>.EV, .EVt (the exposure, and the value it adapts toward, `exposure.target`), .kappa,
-//   .kappaH, .beta (the exposure's keys), .mM and .mH (the meter's trimmed means, computed from its
+//   .kappaH, .beta (the exposure keyframes' values), .mM and .mH (the meter's trimmed means, computed from its
 //   histograms as Metering.ts does, P taken out), .mS (the sky's log, the term the meter reads beside
 //   them), .eM, .eH, .eS, .eG (the target's terms as Exposure.ts takes them: the scene's, the
 //   highlight's, the sky's and the guarded scene's) with .highlightDecides (1 where e_H lies under
 //   e_M, so the soft minimum follows it) and .EVt2 (the target recomputed from them, to check against
 //   .EVt), .M and .Mfar (the metering illuminance over the land, and over the land outside the
 //   yunpeng's lights' reach), .Yland, .Yfar, .Ysky, .Ysea (the opaque source), .hYland, .hYsky,
-//   .hYsea (hdr: with the sea and the air), .yunInner, .yunRing, .yunMInner, .yunMRing (the cells a
+//   .hYsea (hdr: with the sea and the haze), .yunInner, .yunRing, .yunMInner, .yunMRing (the cells a
 //   clump covers, and the ring to three times its size: radiance and M).
 //   Weights (reported, never judged): the snapshot's moonKeyGain, handoff, daylight,
 //   nightVisibility, nightSkyLevel, moonVisibility, overcastAdaptation; gradeNight (the display's
 //   night) and gradeExposureNight (the exposure's: the `exposureNight` force sets the weight the
-//   exposure's keys take, apart from the display's); moonKeyShare, nightAmbientShare, displayNight,
+//   exposure keyframes take, apart from the display's); moonKeyShare, nightAmbientShare, displayNight,
 //   exposureNight, starNight at this sun; and `share.<name>`, each forced share's value as the code
 //   made it (DayCycle.ts `duskShares`: a number, or [ least, greatest ] when its readers took several).
 const readJs = ( view, cpu ) => `async () => { ${ PAGE }
@@ -866,7 +866,7 @@ async function measure( point, query, how ) {
 				prev = cur;
 
 			}
-			// bit for bit, but for the reads of the hdr source (the sea and the air over the opaque
+			// bit for bit, but for the reads of the hdr source (the sea and the haze over the opaque
 			// scene): the haze's rest after other states lands a cell's fourth digit apart now and then
 			let drift = 0;
 			const off = Object.keys( q.values ).filter( ( k ) => {
@@ -1230,7 +1230,7 @@ if ( options.fit ) writeFileSync( path.join( options.out, 'fit.txt' ), fitDusk( 
 
 // ---- the comparison
 // Why the views' reads take a tolerance: two pages loaded on the same commit, one walking the clock
-// and one jumping, read a mean of the hdr source (the sea, the land through the air) a few 1e-8
+// and one jumping, read a mean of the hdr source (the sea, the land through the haze) a few 1e-8
 // apart at a point in ten, and an opaque cell can land a unit apart in its fourth significant digit
 // (Radiance.ts rounds each cell to four), while one page reaching a point twice by the jump reads it
 // again bit for bit. With --night-split in both runs, the lift is the island view's metered EV with

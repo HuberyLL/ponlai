@@ -21,7 +21,7 @@ export function createGui( render: RenderParts, island: IslandParts, page: PageP
 	const { controls, freeControls, chunkView, showChunkBorders, SCENE_LOOK, islanderBuild, sceneBody, buildIslander, growth } = island;
 	const { ground, qualityChoice, cameraSettings, reviewView, fovWidening, applyOrbitLimit, unwidenFov, setCameraMode, setCameraView, resize } = page;
 	page.reloadWithQuality = reloadWithQuality;
-	// A tier change rebuilds materials and the frame graph: reload with the tier and the page's options.
+	// A tier change rebuilds materials and the frame graph: reload with the tier and the page's URL options.
 	function reloadWithQuality( tier: QualityTier | null ): void {
 
 		reloadWith( { quality: tier, ...( params.get( 'autoQuality' ) === 'detect' ? { autoQuality: null } : {} ), gui: gui._hidden ? null : '' } );
@@ -72,9 +72,9 @@ export function createGui( render: RenderParts, island: IslandParts, page: PageP
 	const environmentLook = { exposure: true };
 	page.environmentLook = environmentLook;
 	const W = render.water!.uniforms;
-	// The quality tier sets every knob of the frame's cost (Quality.ts); a change reloads the page. It
-	// lists the active tiers (high alone while medium and low are parked), and the page's own tier when
-	// `?quality` loaded a parked one.
+	// The quality tier sets every setting that governs the frame's cost (Quality.ts), and changing it
+	// reloads the page. The list holds the active tiers (high alone while medium and low are parked),
+	// and the loaded tier when `?quality` loaded a parked one.
 	const performanceF = gui.addFolder( 'Performance' );
 	const qualityChoices = ACTIVE_QUALITY.includes( qualityTier ) ? [ ...ACTIVE_QUALITY ] : [ ...ACTIVE_QUALITY, qualityTier ];
 	performanceF.add( skyQuality, 'value', qualityChoices ).name( 'quality (reloads)' ).onFinishChange( ( tier: QualityTier ) => { if ( tier !== qualityTier ) reloadWithQuality( tier ); } );
@@ -118,7 +118,7 @@ export function createGui( render: RenderParts, island: IslandParts, page: PageP
 		reloadWith( { aa: mode, msaa: null, gui: gui._hidden ? null : '' } );
 
 	} );
-	// The temporal resolve's knobs (TemporalAA.ts), live: the tier's `taa` table is where they start. A
+	// The temporal resolve's parameters (TemporalAA.ts), live: the tier's `taa` table is where they start. A
 	// change restarts the rest of a paused scene (the rest's key holds them).
 	// FSR 3's sharpness (RCAS: 0 the least, 1 the most), live: a change restarts its rest
 	if ( pipeline.fsr3 ) antialiasingF.add( pipeline.fsr3.settings.fsr3, 'sharpness', 0, 1, 0.01 ).name( 'FSR sharpness' );

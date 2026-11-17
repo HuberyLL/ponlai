@@ -107,7 +107,7 @@ export interface ShoreFields { shoreField: ShoreField; boundary: THREE.DataTextu
 //
 // A grown island (Growth.ts) brings a new shore field: its wave fields are built in a worker
 // (`fieldsFor`: shoreFieldWorker.ts, ShoreWaveField's plain-data functions, on a copy of the
-// field the caller makes and hands over: the page keeps its own; their textures the caller
+// field the caller makes and hands over: the app keeps its own; their textures the caller
 // uploads) and set in place
 // (`setFields`: the base nodes' values, the surface targets resized to the field), so no material
 // changes and no pipeline is built.

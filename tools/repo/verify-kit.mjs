@@ -3,7 +3,7 @@
 // The kit's tools import nothing from packages/, app/ or the other groups of tools (render, island,
 // game, repo), only each other and the project's configuration (tools/project.mjs), and no page
 // global, output folder or name of the project's own is written in their code. The configuration
-// holds what a kit tool needs to know of this project: the page's globals and loading screen, the
+// holds what a kit tool needs to know of this project: the app's globals and loading screen, the
 // project's name, the output folders and the names shared on the machine (the GPU lock, the jobs'
 // registry, the temp folders' prefix), the dev server's address and the default query, what a stored
 // reference depends on, where the views' and clips' tables are, and the module that adds the
@@ -23,7 +23,7 @@
 //   configuration is how a kit tool reaches a project module, and is not an import of one here.
 // - Python: an import of a module beside it only (no `sys.path` entry other than its own folder).
 // - Both: no string in the code (comments and docstrings left out) names `packages/`, `app/` or
-//   `tools/<another group>/`, and no name of the form `__NAME__` in capitals (the page's globals
+//   `tools/<another group>/`, and no name of the form `__NAME__` in capitals (the app's globals
 //   take that form, the configuration's `page` lists them) appears in the code; no string names the
 //   output folder (`artifacts/`, or `'artifacts'` alone: the configuration's `output`), and the
 //   project's name (`ponlai`, in any case) appears nowhere in the code, environment variables'

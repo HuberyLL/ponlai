@@ -40,7 +40,7 @@ import { AttributeType, freeAttribute, uploadSteps } from '../util/Upload.ts';
 //   side sees the whole sky); `bounce` the bounced sky visibility likewise (eight times brighter);
 //   `irradiance` the relight's output (times its storage scale), E( n ) / pi, the light a white Lambertian surface would
 //   reflect lit by the probes alone, in the scene's units. Red where invalid in the first two (the
-//   third shows the fill's value). Built on first show, so its pipeline exists only on a page that
+//   third shows the fill's value). Built on first show, so its pipeline exists only in an app that
 //   shows it.
 
 /** The debug view's modes. */

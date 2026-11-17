@@ -18,7 +18,7 @@ import type { SDF } from './types.ts';
 const grow = ( b: Bounds, m: number ): Bounds => ( { x0: b.x0 - m, z0: b.z0 - m, x1: b.x1 + m, z1: b.z1 + m } );
 
 export interface Footprint {
-	// the footprint's corners rounded, at 0.08 m over its window (the page's footprint; a chunk's,
+	// the footprint's corners rounded, at 0.08 m over its window (the app's footprint; a chunk's,
 	// Chunks.ts, holds its window of the land field instead)
 	fine?: Field2D;
 	// the land lattice's own signed distance (0.25 m), over the whole lattice (likewise)
@@ -38,7 +38,7 @@ export const ISLAND_BOTTOM = - 5.6;
 // mounds run out in banks and lobes, its wavelength `scale` (m), with smaller hummocks (`hummock`,
 // m, `share` of it) over them; its level standardised once over a fixed stretch of the world (never
 // over the land, so a grown island keeps its ground) to a mean of 0, and eased to at most `height`
-// (m) above or below ISLAND_TOP. A load knob of the generator: the worker reads the same values.
+// (m) above or below ISLAND_TOP. A load-time setting of the generator: the worker reads the same values.
 export const SWELL = { height: 1, scale: 18, warp: 5, hummock: 7, share: 0.35 };
 /** The highest the island's top reaches (m): its swells' and its fine noise's peaks over its level. */
 export const ISLAND_PEAK = ISLAND_TOP + SWELL.height + 0.2;

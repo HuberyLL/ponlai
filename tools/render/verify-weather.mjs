@@ -1,13 +1,13 @@
-// Checks on a page that the weathers drive the sky, the light, the air and the scene coherently.
+// Checks on a page that the weathers drive the sky, the lighting, the atmosphere and the scene coherently.
 //
 // It loads a paused debug page at the golden hour from a fixed camera and checks, from the page's
 // readings and pixels: five weather states (clear, fair, cloudy, overcast, rain) that are
-// deterministic and drive a coherent sky, scene and water lighting and air perspective; fog's
+// deterministic and drive a coherent sky, scene and water lighting and aerial perspective; fog's
 // crops changing the distant sea more than the foreground; rain finite and differentiated between
 // afternoon and night; a live five-second transition interrupted continuously while the day clock
 // stays paused; and twelve repeated changes keeping the GPU's resources bounded. The weather's state
 // on the CPU is checked by tools/render/verify-weather-state.mjs. Run it after a change to how the
-// weather reaches the sky, the light or the air.
+// weather reaches the sky, the lighting or the atmosphere.
 //
 // Usage:
 //   node tools/render/verify-weather.mjs [url] [--coupling]

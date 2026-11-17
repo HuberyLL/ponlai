@@ -15,7 +15,7 @@ type V4 = THREE.Node<'vec4'>;
 // Local tone mapping: a gain on the frame's large-scale brightness that leaves its detail alone,
 // after Patry, "Real-Time Samurai Cinema" (SIGGRAPH 2021), on the bilateral grid of Chen, Paris and
 // Durand, "Real-time Edge-Aware Image Processing with the Bilateral Grid" (SIGGRAPH 2007). Large
-// regions are drawn toward each other (the sky and the sunlit sand against the shade) while every
+// regions are drawn toward each other (the sky and the sunlit sand against the shadows) while every
 // local texture keeps its full contrast. In stops of the base B (log2 of the exposed luminance's
 // large-scale level over mid grey, 0.18, below) over a hinge h (stops over mid grey), b = B - h,
 // the pixel's colour is multiplied by 2^G( b ), a smooth hinge on a hyperbola:
@@ -24,13 +24,13 @@ type V4 = THREE.Node<'vec4'>;
 // ( ( b + sqrt( b^2 + w^2 ) ) / 2 tends to b above the hinge and to 0 below it, and is w / 2 at the
 // hinge itself). The gain is a function of the base
 // alone: a bright pixel inside a dark region keeps its offset from its base, and nothing local
-// loses contrast, as a global curve's would. In every key (LOCAL_TONE, DayKeys.ts) s_hi is a
+// loses contrast, as a global curve's would. In every keyframe (LOCAL_TONE, DayKeys.ts) s_hi is a
 // negative slope, small but for the night's (at its bound, -0.6), so everything brighter than the
 // hinge (mid grey itself) is drawn down a little per stop; s_lo is keyed either way: negative under
-// the low and the high sun, where the shade is lifted toward the hinge (a negative slope times a
-// negative b), positive in the golden hour, under cloud and at night, where it is pressed down.
-// s_hi = s_lo = 0 turns it off, which any key may do, and is where the uniforms start. The shade's
-// contrast (look/DisplayLook.ts `shadeContrast`) reads its pivot after this gain.
+// the low and the high sun, where the shadows are lifted toward the hinge (a negative slope times a
+// negative b), positive in the golden hour, under cloud and at night, where they are pressed down.
+// s_hi = s_lo = 0 turns it off, which any keyframe may do, and is where the uniforms start. The
+// shadows' contrast (look/DisplayLook.ts `shadeContrast`) reads its pivot after this gain.
 // The base is 40 % the bilateral grid's value at the pixel and 60 % a wide Gaussian blur of the
 // frame (B-spline upsampled), the blend of the talk above: the grid alone rings on smooth gradients
 // (clouds, soft shadows, highlights), the blur alone haloes at edges.
@@ -70,7 +70,7 @@ type V4 = THREE.Node<'vec4'>;
 // and where none does, the frame's mean, each blended in by the cell's weight against EMPTY, so the
 // base has no step where a cell empties: the pixel's own luminance never enters its base, so an
 // isolated pixel is compressed with the cells about it, not made its own base.
-// It reads nothing from an earlier frame: a function of the frame, so a paused frame repeats.
+// It reads nothing from an earlier frame: a function of the frame, so a paused frame is bit-identical.
 
 const GRID = { width: 64, height: 32, depth: 64 };
 const TILE = 8;

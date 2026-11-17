@@ -12,9 +12,9 @@
 // Options: none.
 //
 // Guarantees, each a failure (exit 1) when broken:
-// - The three declarations (packages/render/Extensions.ts): a definition without its cost knob, its stand in
-//   the test mode or how it follows the land's growth is refused by `checkDeclarations`, which
-//   names what is missing, and so by every registry below.
+// - The three declarations (packages/render/Extensions.ts): a definition without the quality setting
+//   that governs its cost, its test-mode behaviour or how it follows the land's growth is refused by
+//   `checkDeclarations`, which names what is missing, and so by every registry below.
 // - A plant kind (packages/render/vegetation/Registry.ts): a kind of this tool's, with sites and no art,
 //   registers and is drawn with the default plant (DefaultPlant.ts: two cards a site, on a
 //   material tagged as vegetation), and the registry's lists hold its root. A kind with a growth

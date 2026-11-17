@@ -106,7 +106,7 @@ export const HORIZON_START = 20000, HORIZON_RAMP = 45000, HORIZON_AMOUNT = 0.12;
 export const FAR_FADE = [ 25000, 45000 ] as const;
 export const AMBIENT = 0.7 * ( 1 + 0.99 );
 // The march's lighting terms (makeMarch), tidewater's Sky Pro values: the powder's weight looking
-// away from the key; the shade of the bases, whole at the shell's floor and gone BASE_SHADOW_HEIGHT
+// away from the key; the shadowing of the bases, whole at the shell's floor and gone BASE_SHADOW_HEIGHT
 // of the shell up; the horizon's share of the sky's light at the floor; the sea's albedo for the
 // light it sends back up; and the two reads of the cloud straight above a sample that stand for the
 // sky's way down to it, each a rise (m) and the stretch of column (m) it stands for.
@@ -137,13 +137,13 @@ export const MAX_LIGHT_TAPS = 6, FULL_LIGHTING_ALPHA = 0.5, LIGHT_REUSE_STEPS = 
 export const AP_DIST = 30000; // aerial perspective scale toward the horizon
 export const FAR = 250000;
 // The clouds drift with the wind aloft, derived from the surface wind's integrated displacement
-// (setDrift), so they follow the weather's wind: the cumulus and the thin layer at LOW_DRIFT times
+// (setDrift), so they follow the weather's wind: the cumulus and the cirrus at LOW_DRIFT times
 // the surface wind, turned LOW_VEER to its right (veering with height, as the wind aloft does north
 // of the equator), the layer's fibres combed along that drift. Steering winds at 4 to 9 km
 // run two to three times the 10 m wind; at 0.21 times it the cumulus all but stood still.
 export const LOW_DRIFT = 2.25, LOW_VEER = 12 * Math.PI / 180;
 export const SYNOPTIC_SIZE = 409600;
-// The thin layer (`streaksAt`): its height (m, `sky.streaks.height`), the vertical optical depth
+// The cirrus (`streaksAt`): its height (m, `sky.streaks.height`), the vertical optical depth
 // of its densest fibres per unit of the weather's amount (`sky.streaks.peak`), the floor of the
 // vertical cosine its slant path divides by (`sky.streaks.muFloor`), and the ambient light's share
 // per unit of opacity (`sky.streaks.ambient`). Set on the clear and fair noon's horizon and sky
@@ -174,7 +174,7 @@ export const STREAK_LIT = { radius: EARTH_RADIUS / 2, width: 2 };
 // `sampleStreaks`).
 export const STREAK_PATCHES = { low: 0.2, high: 0.8 };
 export const FIBRE_FINE = { tile: 40000, turn: 0 }, FIBRE_BROAD = { tile: 92000, turn: 0.5 };
-// Where no thin layer is (cloudy and overcast skies), the view's history behind thin cumulus is
+// Where there is no cirrus (cloudy and overcast skies), the view's history behind thin cumulus is
 // reprojected from this height (m), above every shell's top: the sky, far beyond the clouds.
 export const BEYOND_SHELLS = 10000;
 // The panorama (see setDome): its size and refresh pattern, one texel of every strideX x strideY
@@ -467,7 +467,7 @@ export const weatherFbm = ( q: V2, profile: number[] ) => {
 export interface ViewTextures {
 	trace: THREE.StorageTexture; depth: THREE.StorageTexture; high: THREE.StorageTexture; motion: THREE.StorageTexture; flash: THREE.StorageTexture;
 	boxMin: THREE.StorageTexture; boxMax: THREE.StorageTexture; history: THREE.StorageTexture[];
-	// the cumulus's depth and the thin layer's opacity beside the history, accumulated with it
+	// the cumulus's depth and the cirrus's opacity beside the history, accumulated with it
 	// (`sampleViewFog`)
 	depthHistory: THREE.StorageTexture[];
 }

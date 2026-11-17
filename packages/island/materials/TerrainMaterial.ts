@@ -385,8 +385,8 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 		// The stone stays darker than real limestone (about 0.1 linear albedo against 0.2 - 0.35):
 		// the exposure is set for the meadow, and an afternoon sun meets the vertical faces almost
 		// head on, so a paler stone ran into the tone curve's shoulder, where its grain flattened
-		// into one cream-white face (a third of the sunlit face's pixels at 0.85 of display white
-		// or above, against about 6 % now, its local contrast up by about 40 %).
+		// into one cream-white face (a third of the sunlit face's pixels at a display value of 0.85
+		// of white or above, against about 6 % now, its local contrast up by about 40 %).
 		const convex = vegetation ? smoothstep( 1.2, 4.0, vCurv ) : smoothstep( 1.6, 5.0, vCurv );
 		// The island's blocks meet in sharp creases: only the deepest of them count as hollows.
 		const concave = ( vegetation ? smoothstep( - 1.5, - 6.0, vCurv ) : smoothstep( - 0.5, - 3.0, vCurv ) ).toVar();

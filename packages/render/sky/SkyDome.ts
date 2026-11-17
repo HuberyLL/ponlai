@@ -186,7 +186,7 @@ export function bakeColour( sky: Sky, haze?: SkyHaze ): V4 {
  * direction and a distance along it (the sky's own by default) that returns the light the haze
  * adds and its transmittance (VolumetricHaze.ts `skyHaze`). The clouds are fogged at the
  * distance to the shell's middle height, under the low deck's share at the march's depth, and
- * under the thin layer's share of their opacity at the distance to the layer, the sky behind
+ * under the cirrus's share of their opacity at the distance to the layer, the sky behind
  * them along the whole way. */
 export function domeColour( sky: Sky, haze?: SkyHaze ): V4 {
 
@@ -245,7 +245,7 @@ export function domeColour( sky: Sky, haze?: SkyHaze ): V4 {
 		// the deck at 5 - 12 degrees about twice as densely as its distance does.
 		const fog = sky.clouds.sampleViewFog( d, mid );
 		const reach = mix( mid, fog.depth, sky.clouds.lowShare ).toVar();
-		// The thin layer lies above the cumulus' middle (the clear and fair skies' 6.6 km
+		// The cirrus lies above the cumulus' middle (the clear and fair skies' 6.6 km
 		// against its 8.5), so farther along a ray: where its fibres make the opacity, out to
 		// the layer instead, so the haze between fades them toward the horizon by their own
 		// distance. One distance per pixel, mixed by the layer's share of the opacity there:
@@ -260,7 +260,7 @@ export function domeColour( sky: Sky, haze?: SkyHaze ): V4 {
 		const fogged = cloudHaze.light.mul( float( 1 ).sub( through ) ).add( cloudHaze.transmittance.mul( clouds ) );
 		const result = open.light.add( open.transmittance.mul( behind ) ).mul( through ).add( fogged ).toVar();
 		if ( debugFlags.streakMask !== true ) return vec4( result, 1 );
-		// (`flags=streakMask`: the thin layer's pixels where its opacity as seen passes 0.1 in a
+		// (`flags=streakMask`: the cirrus's pixels where its opacity as seen passes 0.1 in a
 		// red of the same luminance, those where it lies between 0.02 and 0.1 in such a green,
 		// for `img.py stats --mask`)
 		const luminance = dot( result, vec3( 0.2126, 0.7152, 0.0722 ) ).toVar();

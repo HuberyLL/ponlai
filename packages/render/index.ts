@@ -1,14 +1,14 @@
-// The render pipeline's exit for the page: the only names other packages take from the render pipeline.
+// The render pipeline's main entry point: the only names other packages import from the render pipeline.
 //
-// The render pipeline's exit for the page: the names the island, the game and the page take from
-// the render pipeline, and no others. Another package imports the render pipeline through this file
-// (or through render/data.ts, for its plain code, or render/setup.ts, for what the page installs
+// The render pipeline's main entry point: the names the island, the game and the app layer import
+// from the render pipeline, and no others. Another package imports the render pipeline through this
+// file (or through render/data.ts, for its plain code, or render/setup.ts, for what the app installs
 // before the render pipeline loads), never one of its modules by its path
 // (tools/repo/verify-layers.mjs). It holds re-exports only, so loading it loads the whole renderer,
 // whose modules declare and register as they load and do nothing else: no top-level await and no
-// page global read at load (tools/repo/verify-entry-points.mjs). The debug modules the page loads on
-// demand are not here: they are lazy exits (tools/repo/layers.json), imported dynamically or for
-// their types only.
+// browser global read at load (tools/repo/verify-entry-points.mjs). The debug modules the app loads
+// on demand are not here: they are lazy entry points (tools/repo/layers.json), imported dynamically
+// or for their types only.
 export { placeVegetation, vegetationCasters, bakeRainCollision } from './RenderStages.ts';
 export type { RenderParts } from './RenderStages.ts';
 export { startScene } from './assemble/StartScene.ts';

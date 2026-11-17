@@ -231,7 +231,7 @@ export function* grassSteps( veg: Float32Array, rim: RimGroundField ): Generator
 
 }
 
-/** The plan for the turf anchors `veg`, at once (the page's load and the tools). */
+/** The plan for the turf anchors `veg`, at once (the app's load and the tools). */
 export function plantGrass( veg: Float32Array, rim: RimGroundField ): GrassPlan {
 
 	return runSteps( grassSteps( veg, rim ) );

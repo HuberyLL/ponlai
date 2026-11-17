@@ -37,17 +37,17 @@ export const SWARD_HEIGHT = 0.45;
 interface MeadowSample { growth: number; tone: number }
 
 // Linear albedo of the lawn as a whole, a deep olive green: the blades' mean (Grass.ts BLADE_COLOUR)
-// over LAWN_GAIN. The tone's knob (`groundGains.lawnGain`) lightens or darkens the blades (Grass.ts)
+// over LAWN_GAIN. The tone's parameter (`groundGains.lawnGain`) lightens or darkens the blades (Grass.ts)
 // and the turf together. The land's bounce reads it (BounceGround.ts), and the ambient light's
 // bake holds a copy (AmbientProbes.ts LAWN_TOP).
 const LAWN = new THREE.Color( 0.0700, 0.0978, 0.0109 );
 /** The lawn's colour (linear albedo), before its tone. */
 export const LAWN_COLOUR = LAWN.toArray() as [ number, number, number ];
-/** The meadow's albedo against LAWN_COLOUR on load (`groundGains.lawnGain`, a knob): LAWN_COLOUR times it
+/** The meadow's albedo against LAWN_COLOUR on load (`groundGains.lawnGain`, a parameter): LAWN_COLOUR times it
  * is the blades' mean. The blades' colours and the turf set against them (TerrainMaterial.ts,
  * Grass.ts GRASS_ROOTS) are divided by it, so at LAWN_GAIN they are their own. */
 export const LAWN_GAIN = 0.926;
-/** The knobs on the island's ground albedos, one uniform each, read by every material that uses
+/** The parameters on the island's ground albedos, one uniform each, read by every material that uses
  * it. */
 export const groundGains = {
 	// the meadow's albedo against its lawn colour (LAWN): the blades', the turf's under them and the
@@ -59,7 +59,7 @@ export const groundGains = {
 	// SUBMERGED_ROCK of it (TerrainMaterial.ts), darker only by the water round it
 	rockGain: uniform( 1.6 ),
 };
-/** Sets a ground albedo's gain: the page's debug handles do (`setLawnGain`, `setRockGain`). */
+/** Sets a ground albedo's gain: the app's debug handles do (`setLawnGain`, `setRockGain`). */
 export function setGroundGain( name: keyof typeof groundGains, gain: number ): void {
 
 	groundGains[ name ].value = gain;

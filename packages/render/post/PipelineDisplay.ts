@@ -75,7 +75,7 @@ const VEIL_REACTIVE = { gain: 1.5, max: 0.6 };
 // of the pixels their prefiltered quads touch (RainDrops.ts).
 const AFTER_COVERAGE = 0.65;
 // The rain layer's grade table (`gradeTable`): colours per channel, and the range they span (stops of
-// the scene colour times the exposure, display white at 0).
+// the scene colour times the exposure, the display's white level at 0).
 export const GRADE_TABLE = { size: 64, low: - 14, high: 7 };
 
 // The tone curve, each channel through one curve in the curve's space: `input` takes the exposed
@@ -94,7 +94,7 @@ const toneCurve = Fn( ( [ c, input, output, num, den ]: [ V3, THREE.Node<'mat3'>
 
 } ).setLayout( { name: 'toneCurve', type: 'vec3', inputs: [ { name: 'c', type: 'vec3' }, { name: 'input', type: 'mat3' }, { name: 'output', type: 'mat3' }, { name: 'num', type: 'vec3' }, { name: 'den', type: 'vec3' } ] } );
 // The BT.709 OETF (ITU-R BT.709): 4.5 l under 0.018, 1.099 l^0.45 - 0.099 over it. Its code shown
-// as sRGB is darker in the shade than the linear value it encodes: the output's contrast.
+// as sRGB is darker in the shadows than the linear value it encodes: the output's contrast.
 const bt709 = Fn( ( [ l ]: [ V3 ] ) => {
 
 	// (per channel: a 0/1 weight rather than a select of vectors)
@@ -131,8 +131,8 @@ const coolShare = Fn( ( [ c, coolFrom, coolTo ]: [ V3, F, F ] ) => {
 // meadow's yellow-green albedo kept it a dark olive under them, and a light blue enough to turn it
 // turned the stone, sand and skin blue too. 0.4 radians takes the meadow to about 143 degrees, a
 // cool green toward blue-green (0.65 read as teal). The tint is drawn toward at `tint` and keeps
-// the luminance. The shade's readability is the sky light's (look/SkyLook.ts `clearShade`), not a lift.
-// Off by default with the clear shade, as the night keeps the moon's own light (`flags=filmNight:true`
+// the luminance. The shadows' readability comes from the sky light (look/SkyLook.ts `clearShade`),
+// not a lift. Off by default with the clear-sky fill light (`clearShade`), as the night keeps the moon's own light (`flags=filmNight:true`
 // at load for A/Bs).
 export const NIGHT = debugFlags.filmNight === true ? { greenTurn: 0.4, tint: [ 0.84, 0.96, 1.16 ] as const, amount: 0.3, bloom: 1.5 } : { greenTurn: 0, tint: [ 0.84, 0.96, 1.16 ] as const, amount: 0, bloom: 0 };
 const nightGreenTurn = Fn( ( [ c0, turn ]: [ V3, F ] ) => {
@@ -328,7 +328,7 @@ export function buildDisplay( p: Pipeline, c: DisplayBuild ): void {
 		// the desaturation (`desaturation`), before the local gain
 		c.addAssign( vec3( luminance( c ) ).sub( c ).mul( u.desaturate.mul( mix( float( 1 ), coolShare( u.balance.mul( c ), COOL_FROM, COOL_TO ), u.desaturateCool ) ) ) );
 		if ( localTone && at ) c.assign( localTone.apply( c, at ) );
-		// the shade's contrast (`shadeContrast`)
+		// the shadows' contrast (`shadeContrast`)
 		c.mulAssign( exp2( min( log2( max( luminance( c ), 1e-6 ) ).sub( log2( u.shadePivot ) ), 0 ).mul( u.shadeSlope ) ) );
 		// the night's grade (NIGHT): the greens turned toward blue-green, a silver-blue tint
 		If( u.night.greaterThan( 0.001 ), () => {
@@ -337,7 +337,7 @@ export function buildDisplay( p: Pipeline, c: DisplayBuild ): void {
 			c.mulAssign( mix( vec3( 1 ), vec3( NIGHT_TINT ), u.night.mul( NIGHT.amount ) ) );
 
 		} );
-		// the tone (TONE): lights a touch golden and the shade a touch teal, the contrast round mid
+		// the tone (TONE): highlights a touch golden and shadows a touch teal, the contrast round mid
 		// grey softer
 		const lights = smoothstep( 0.04, 0.9, luminance( c ) );
 		c.mulAssign( mix( vec3( 0.95, 1.0, 1.04 ), vec3( 1.06, 1.0, 0.9 ), lights ).sub( 1 ).mul( u.tone ).add( 1 ) );

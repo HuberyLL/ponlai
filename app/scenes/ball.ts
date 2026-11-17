@@ -2,13 +2,13 @@
 //
 // The material balls: the light on plain surfaces. On level grey ground stand a row of balls whose
 // roughness runs from 0 to 1, a row whose albedo runs from 0.03 to 0.8, an 18 % grey card and a
-// white card lying flat, and an upright post that casts a shadow. It shows the key against the
-// ambient light, the shade on flat ground, the specular's answer to the sky and the exposure a
+// white card lying flat, and an upright post that casts a shadow. It shows the key light against the
+// ambient light, the shadow on flat ground, the specular's answer to the sky and the exposure a
 // grey card lands at, by day, at a low sun and by night.
 //
 // The layout (m, x to the east): the rows run along x, so the long shadows of a low sun, which
 // fall east or west, run along the rows and miss the cards in front of them; the post stands
-// apart to the north-east, and its shade's reading follows the key.
+// apart to the north-east, and its shadow's reading follows the key light.
 import * as THREE from 'three/webgpu';
 import type { ReadingContext, SceneReading, TestScene, Triple } from './TestScene.ts';
 import { groundDisc, surface } from './TestScene.ts';
@@ -29,10 +29,10 @@ const ballX = ( k: number ) => ( k - ( BALLS - 1 ) / 2 ) * STEP;
 // the albedo row's albedos: even steps of lightness (a geometric run)
 const albedoAt = ( k: number ) => ALBEDO[ 0 ] * ( ALBEDO[ 1 ] / ALBEDO[ 0 ] ) ** ( k / ( BALLS - 1 ) );
 
-// Where the post's shade lies on the ground: the shadow of the point half way up the post, at
-// most 2.5 m from it (a key near the horizon throws it farther, behind the balls as the front view
-// sees them). The post is a metre wide, so the reading's box lies inside the shade, clear of its
-// soft edges. `aside` moves the point out of the shade, to the side the views look from.
+// Where the post's shadow lies on the ground: the shadow of the point half way up the post, at
+// most 2.5 m from it (a key light near the horizon throws it farther, behind the balls as the front
+// view sees them). The post is a metre wide, so the reading's box lies inside the shadow, clear of
+// its soft edges. `aside` moves the point out of the shadow, to the side the views look from.
 function shade( { key }: ReadingContext, aside = 0 ): Triple {
 
 	const flat = Math.hypot( key.x, key.z ) || 1;

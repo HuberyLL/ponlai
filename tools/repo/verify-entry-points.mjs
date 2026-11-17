@@ -1,11 +1,11 @@
-// Checks that the packages' entry points load without doing work or reading the page, the headless ones in plain node.
+// Checks that the packages' entry points load without side effects or browser globals, the headless ones in plain node.
 //
 // An entry point is a file of re-exports through which another package imports a package
-// (tools/repo/layers.json `entryPoints`; tools/repo/verify-layers.mjs checks that every import across
-// packages goes through one). Loading an entry point loads its whole package, so a module that did work as
-// it loaded would make the order of the imports part of the program, and a package that read the
-// page at load could not be loaded anywhere else. Run it after a change to what an entry point loads; it
-// is part of `npm run check`.
+// (tools/repo/layers.json `entryPoints`; tools/repo/verify-layers.mjs checks that every import
+// across packages goes through one). Loading an entry point loads its whole package. A module that
+// did work as it loaded would make the order of the imports part of the program, and a package that
+// read browser globals at load could not be loaded anywhere else. Run it after a change to what an
+// entry point loads; it is part of `npm run check`.
 //
 // Usage:
 //   node tools/repo/verify-entry-points.mjs
@@ -14,21 +14,21 @@
 //
 // What it checks, each a failure when broken:
 // - Each headless entry point (packages/render/data.ts, packages/island/land.ts,
-//   packages/game/sim/index.ts) and the setup entry point (packages/render/setup.ts, which the headless game
-//   loads for its settings) loads in plain node, with its types stripped and nothing installed first,
-//   without throwing, and every value name it re-exports is defined once it has loaded. The page
-//   entry points do not load in node, nor need to: modules of theirs read `import.meta.env`, which the
-//   bundler provides.
-// - Every file a main entry point (packages/render/index.ts, packages/island/index.ts,
+//   packages/game/sim/index.ts) and the setup entry point (packages/render/setup.ts, which the
+//   headless game loads for its settings) loads in plain node, with its types stripped and nothing
+//   installed first, without throwing, and every value name it re-exports is defined once it has
+//   loaded. The main entry points do not load in node, and need not: some of their modules read
+//   `import.meta.env`, which the bundler provides.
+// - Every file that a main entry point (packages/render/index.ts, packages/island/index.ts,
 //   packages/game/index.ts) or the setup entry point loads, followed through its static imports and
 //   re-exports with `import type` left out, has no `await` at module scope and names none of the
-//   page's globals in PAGE (the address, the storage, the document, window, the browser's
+//   browser globals in PAGE (the address, the storage, the document, window, the browser's
 //   description, the frame callbacks, workers, IndexedDB, fetch) at module scope. Module scope is
 //   the code that runs as the module loads: its top-level statements, the initialisers of its
 //   classes' static fields and static blocks, and the bodies of functions called where they are
 //   written. A function's body, a method or an instance field's initialiser runs later and is not
-//   read. A name counts unless it is a property's name (`x.document`, `{ window: ... }`) or the file
-//   declares it at its top level; type positions are not code and pass.
+//   read. A name counts unless it is a property's name (`x.document`, `{ window: ... }`) or the
+//   file declares it at its top level; type positions are not code and pass.
 //
 // Output: a line per entry point, then the failures.
 //
@@ -45,7 +45,7 @@ import { ROOT } from '../kit/root.mjs';
 const SRC = ROOT;
 const { entryPoints } = JSON.parse( readFileSync( path.join( ROOT, 'tools', 'repo', 'layers.json' ), 'utf8' ) );
 
-// The page's globals a module must not read as it loads: the address, the storage, the document,
+// The browser globals a module must not read as it loads: the address, the storage, the document,
 // window, the browser's description, the frame callbacks, workers, IndexedDB and fetch.
 const PAGE = new Set( [ 'location', 'localStorage', 'sessionStorage', 'document', 'window', 'navigator', 'requestAnimationFrame', 'cancelAnimationFrame', 'Worker', 'indexedDB', 'fetch' ] );
 
@@ -106,8 +106,8 @@ function valueNames( file ) {
 
 }
 
-/** What a file does at module scope that a module must not do as it loads: `await`, and the page's
- * globals it names. */
+/** What a file does at module scope that a module must not do as it loads: `await`, and the
+ * browser globals it names. */
 function atLoad( file ) {
 
 	const source = parse( file );
@@ -158,7 +158,7 @@ function atLoad( file ) {
 
 			const parent = node.parent;
 			const property = ( ts.isPropertyAccessExpression( parent ) && parent.name === node ) || ( ( ts.isPropertyAssignment( parent ) || ts.isPropertyDeclaration( parent ) || ts.isMethodDeclaration( parent ) ) && parent.name === node );
-			if ( ! property ) hits.push( `${ file }:${ at( node ) }: reads the page's \`${ node.text }\` at load` );
+			if ( ! property ) hits.push( `${ file }:${ at( node ) }: reads the browser global \`${ node.text }\` at load` );
 
 		}
 		ts.forEachChild( node, visit );
@@ -197,7 +197,7 @@ for ( const [ pkg, sides ] of Object.entries( entryPoints ) ) for ( const [ side
 		failures.push( ...atLoad( file ) );
 
 	}
-	lines.push( `${ pkg }: ${ entry } loads ${ files.size } files, none awaits or reads the page at load` );
+	lines.push( `${ pkg }: ${ entry } loads ${ files.size } files, none awaits or reads browser globals at load` );
 
 }
 

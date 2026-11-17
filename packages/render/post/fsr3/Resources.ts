@@ -18,7 +18,7 @@
 // keeps in R8_UNORM, R16_FLOAT or R16G16_FLOAT takes that format (r8unorm, r16float, rg16float:
 // storable, filterable, the same values as the wide formats below hold in their first channels,
 // at a quarter or half of their bytes), except NEW_LOCKS, which stays r32float (read-write: as
-// r8unorm under `texture-formats-tier2` the accumulation took 2.2 ms more at high's baseline). WebGPU
+// r8unorm under `texture-formats-tier2` the accumulation took 2.2 ms more on the high tier at the baseline). WebGPU
 // core can store to rgba8unorm, rgba16float, r32float / r32uint / r32sint, rg32float, rgba32float
 // and a few integer formats, and can filter rgba8unorm and rgba16float but not the 32-bit floats.
 // So without the feature (`format`):

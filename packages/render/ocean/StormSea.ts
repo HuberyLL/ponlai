@@ -45,7 +45,7 @@ type IV2 = THREE.Node<'ivec2'>;
 // stage already binds as many sampled textures as WebGPU guarantees. It fades out toward the
 // window's edge, and where a pixel covers several cells (the pixel's own fold takes over there).
 //
-// Determinism: a paused frame must be exactly repeatable, so the state is a function of scene
+// Determinism: a paused frame must be bit-identical, so the state is a function of scene
 // time and weather. A jump in time, or a change of the weather while the clock stands still,
 // rebuilds the state by replaying the last seconds at fixed steps (the FFT is a closed-form
 // function of time); live frames integrate their own time step. The window follows the camera with

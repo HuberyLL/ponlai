@@ -1,11 +1,11 @@
-// Shoots, reads and checks the render pipeline's test scenes as paused pages in the test mode.
+// Captures, reads and checks the render pipeline's test scenes as paused pages in the test mode.
 //
 // A test scene (scenes.html, app/scenes/; docs/reference/url-options.md, The test scenes) is a few
 // objects on level ground under the sky or in the open sea, built from the render pipeline alone,
-// so it loads in a second or two and a whole scene is shot in a minute or two. Run it first after a
-// change to the render pipeline, before the island is loaded at all: `--check` against the
-// reference answers whether anything moved, and the readings give the scene's radiance, exposure
-// and light.
+// so it loads in a second or two and a whole scene is captured in a minute or two. Run it first
+// after a change to the render pipeline, before the island is loaded at all: `--check` against the
+// reference answers whether anything changed, and the readings give the scene's radiance, exposure
+// and lighting.
 //
 // Usage:
 //   node tools/render/scenes.mjs <baseUrl> <outDir> [--scenes ball,sea] [--times a,b] [--views a,b]
@@ -14,16 +14,18 @@
 //   node tools/render/scenes.mjs http://127.0.0.1:5190/ artifacts/scenes/run --check
 //
 // Options:
-//   baseUrl       the server (the dev server or a production preview) outDir        the output
-//   folder; the look's folder is made in it --scenes a,b  the scenes to shoot (default
-//   ball,empty,plants) --times a,b   only these of each scene's times (default every one) --views
-//   a,b   only these of each scene's views (default every one) --look l      neutral (the render
-//   pipeline's neutral look, the default) or ponlai (the island's look) --verify      takes every
-//   shot three ways, which must agree to the pixel --rebuild n   on each scene's page, disposes the
-//   scene and starts it again n times, then takes
-//                 every shot again, which must equal the first to the pixel
-//   --check       compares every shot with the reference image of its name
-//   --write-ref   writes the run's shots as the reference (with --verify, only when it passed)
+//   baseUrl       the server (the dev server or a production preview)
+//   outDir        the output folder; the look's folder is made in it
+//   --scenes a,b  the scenes to capture (default ball,empty,plants)
+//   --times a,b   only these of each scene's times (default every one)
+//   --views a,b   only these of each scene's views (default every one)
+//   --look l      neutral (the render pipeline's neutral look, the default) or ponlai (the island's
+//                 look)
+//   --verify      takes every capture three ways, which must agree to the pixel
+//   --rebuild n   on each scene's page, disposes the scene and starts it again n times, then takes
+//                 every capture again, which must equal the first to the pixel
+//   --check       compares every capture with the reference image of its name
+//   --write-ref   writes the run's captures as the reference (with --verify, only when it passed)
 //   --ref dir     the reference folder (default artifacts/scenes/reference/<look>/, git-ignored)
 //   --q query     extra URL options for every page
 //   --size WxH@s  the viewport in CSS pixels and its pixel ratio (default 1920x1080@2)
@@ -31,63 +33,63 @@
 //
 // For each scene it opens one page, and for each of the scene's times and views jumps to the time
 // (`__PONLAI__.establishScene`, the first by the load itself), renders a frame at the jump's
-// camera, moves to the view (`scenePage.setView`), waits until the page is ready and shoots it.
+// camera, moves to the view (`scenePage.setView`), waits until the page is ready and captures it.
 // The scenes, their views, times and readings are the page's own (`__PONLAI__.scenePage`): this
 // tool names none. `--scenes`, `--times` and `--views` take the named ones only (a name no scene
 // has is an error).
 //
-// The scenes it shoots without `--scenes` are those whose shots repeat to the pixel: `ball`,
-// `empty` and `plants`. `sea` is shot only when `--scenes` names it, and is read by its readings:
-// its shots differ between two loads by a level or so in scattered pixels over the water, so they
-// are not compared with a reference and `--verify` does not hold for it. Named, it takes every
-// option as the others do.
+// Without `--scenes` it captures the scenes whose captures are bit-identical between runs: `ball`,
+// `empty` and `plants`. `sea` is captured only when `--scenes` names it, and is judged by its
+// readings: its captures differ between two loads by a level or so in scattered pixels over the
+// water, so they are not compared with a reference and `--verify` does not hold for it. Named, it
+// takes every option as the others do.
 //
 // Guarantees:
-// - A shot is a paused page in the test mode (`debug&paused&t=12&quality=high`;
-//   docs/reference/test-mode.md), taken once the page's settled signal holds and its image has
-//   stopped changing (tools/kit/capture-browser.mjs, "Readiness by stability"), with the loop
-//   stopped. A shot still changing at the cap fails the run.
+// - A capture is a paused page in the test mode (`debug&paused&t=12&quality=high`;
+//   docs/reference/test-mode.md), taken once the page's settled signal holds and its rendered
+//   output has stopped changing (tools/kit/capture-browser.mjs, "Readiness by stability"), with the
+//   loop stopped. A capture still changing at the cap fails the run.
 // - Images are compared by their decoded pixels, exactly: no tolerance anywhere.
-// - `--verify`: every shot is taken on one page in the listed order, on a second page in the
-//   reverse order (so each shot is taken twice, each time after another scene before it), and on a
-//   fresh page loaded at that time. So a shot repeats, and a jump to a time draws what a load of
-//   that time draws.
-// - `--rebuild n`: after the first page's shots, the page disposes its scene and starts a new one
-//   n times (`__PONLAI__.rebuild()`: packages/render/assemble/StartScene.ts `dispose`,
-//   packages/render/SceneDispose.ts), then every shot is taken again in the same order. Each must
-//   equal the first to the pixel, with the same draw calls, triangles, geometries and textures in
-//   the diagnostics (not the compute calls, which a bake in the frame shot adds to): so a scene
-//   started after another's dispose draws as the page's first did, and the disposed one left
+// - `--verify`: every capture is taken on one page in the listed order, on a second page in the
+//   reverse order (so each capture is taken twice, each time after another scene before it), and on
+//   a fresh page loaded at that time. This proves that a capture is reproducible, and that a jump to
+//   a time draws what a load of that time draws.
+// - `--rebuild n`: after the first page's captures, the page disposes its scene and starts a new
+//   one n times (`__PONLAI__.rebuild()`: packages/render/assemble/StartScene.ts `dispose`,
+//   packages/render/SceneDispose.ts), then every capture is taken again in the same order. Each
+//   must equal the first to the pixel, with the same draw calls, triangles, geometries and textures
+//   in the diagnostics (not the compute calls, which a bake in the captured frame adds to): so a
+//   scene started after another's dispose draws as the page's first did, and the disposed one left
 //   nothing drawing.
-// - `--check`: a shot without a reference fails. `--write-ref` writes a `reference.json` in each
+// - `--check`: a capture without a reference fails. `--write-ref` writes a `reference.json` in each
 //   scene's folder (the commit served, the browser and the size), so a run that writes some scenes
 //   leaves the others' records as they were. A reference holds for the browser and the size it was
-//   shot with.
+//   captured with.
 // - `--look ponlai` loads the scenes with `renderLook=ponlai`; each look has its own output folder
 //   and reference.
 //
-// Readings: with the loop stopped on the shot's frame, `scenePage.read()` gives each reading the
+// Readings: with the loop stopped on the captured frame, `scenePage.read()` gives each reading the
 // view's frame holds: its box, the scene's linear radiance there before the display chain
-// (`opaque`: before the air; `hdr`: after the composite), the exposure and the light (the key's
-// direction, colour and elevation, the sky's irradiance); this tool adds `code`, the mean of the
-// shot's pixels over the box as fractions of 255 (the display's code values).
+// (`opaque`: before the atmosphere; `hdr`: after the composite), the exposure and the lighting (the
+// key light's direction, colour and elevation, the sky's irradiance); this tool adds `code`, the
+// mean of the capture's pixels over the box as fractions of 255 (the display values).
 //
 // Output, under <outDir>/<look>/:
-//   <scene>/<time>.<view>.png, .json     the shot, and its readiness record, diagnostics and readings
+//   <scene>/<time>.<view>.png, .json     the capture, and its readiness record, diagnostics and readings
 //   readings.json                        every reading of the run: scene, time, view, light, readings
 //   readings.tsv                         the same as a table: luminance (opaque, hdr) and code per reading
-//   verify/<scene>/<time>.<view>.<reverse|fresh>.png   a shot of `--verify` that differs from the first
-// stdout: a line per shot, the failures, a summary.
+//   verify/<scene>/<time>.<view>.<reverse|fresh>.png   a capture of `--verify` that differs from the first
+// stdout: a line per capture, the failures, a summary.
 //
-// GPU lock and browser: takes the GPU lock shared and leased from shot to shot
-// (docs/reference/gpu-lock.md; tools/kit/gpu-lock.mjs `leaseGpuLock`), since a paused shot's pixels
-// do not depend on what else renders. It opens the capture tools' headless browser in a profile
-// slot (tools/kit/capture-browser.mjs `launchCapture`).
+// GPU lock and browser: takes the GPU lock shared and leased from capture to capture
+// (docs/reference/gpu-lock.md; tools/kit/gpu-lock.mjs `leaseGpuLock`), since a paused capture's
+// pixels do not depend on what else renders. It opens the capture tools' headless browser in a
+// profile slot (tools/kit/capture-browser.mjs `launchCapture`).
 //
-// Cost: a second or two per page load, a minute or two per scene; `--verify` takes every shot three
-// times, `--rebuild` twice and n scene starts more.
+// Cost: a second or two per page load, a minute or two per scene; `--verify` takes every capture
+// three times, `--rebuild` twice and n scene starts more.
 //
-// Exit codes: 0 passed; 1 a check failed (a difference, a missing reference, a shot still
+// Exit codes: 0 passed; 1 a check failed (a difference, a missing reference, a capture still
 // changing, a page error); 2 bad usage.
 import '../kit/help.mjs';
 import { execFileSync } from 'node:child_process';
@@ -133,8 +135,8 @@ const outDir = path.join( path.resolve( positional[ 1 ] ), look );
 const refDir = path.resolve( options.ref ?? path.join( 'artifacts/scenes/reference', look ) );
 const list = ( text ) => text === undefined ? null : text.split( ',' ).map( ( s ) => s.trim() ).filter( Boolean );
 const wanted = { scenes: list( options.scenes ), times: list( options.times ), views: list( options.views ) };
-// the scenes shot where none is named: the page's scenes (the `scene` option's values:
-// packages/render/Settings.ts) whose shots repeat to the pixel, so all but `sea`
+// the scenes captured where none is named: the page's scenes (the `scene` option's values:
+// packages/render/Settings.ts) whose captures are bit-identical between runs, so all but `sea`
 const DEFAULT_SCENES = [ 'ball', 'empty', 'plants' ];
 const sceneNames = wanted.scenes ?? DEFAULT_SCENES;
 
@@ -150,7 +152,7 @@ const queryOf = ( scene, time ) => {
 
 };
 
-// the slot lease from shot to shot (ms), as capture.mjs's worker's
+// the slot lease from capture to capture (ms), as capture.mjs's worker's
 const LEASE = 20000;
 let lockWaited = 0;
 async function slot( label ) {
@@ -193,7 +195,7 @@ async function jump( page, query ) {
 }
 
 // Moves to a view, waits until the page is ready (the floor's frames and the loading screen gone,
-// the settled signal, the image stable with the loop stopped) and shoots it. Returns the PNG, the
+// the settled signal, the rendered output stable with the loop stopped) and captures it. Returns the PNG, the
 // readiness record, the diagnostics and the readings.
 async function captureView( page, view ) {
 
@@ -228,7 +230,7 @@ function codeOver( image, [ bx, by, bw, bh ] ) {
 
 }
 
-// how two shots differ, for a failure's line
+// how two captures differ, for a failure's line
 function difference( a, b ) {
 
 	const c = compareFrames( decodePng( a ), decodePng( b ) );
@@ -246,7 +248,7 @@ const selected = ( names, wantedNames, what, scene ) => {
 };
 
 const all = [], shots = new Map(), counts = new Map();
-// what the diagnostics count of a shot's frame: the work drawn and the memory held
+// what the diagnostics count of a captured frame: the work drawn and the memory held
 const countsOf = ( diag ) => JSON.stringify( [ 'calls', 'triangles', 'geometries', 'textures' ].map( ( k ) => [ k, diag[ k ] ] ) );
 const verifyDir = path.join( outDir, 'verify' );
 let shotCount = 0;
@@ -255,7 +257,7 @@ try {
 	for ( const scene of sceneNames ) {
 
 		await mkdir( path.join( outDir, scene ), { recursive: true } );
-		// ---------------------------------------------------------------- the scene's page: every shot
+		// ---------------------------------------------------------------- the scene's page: every capture
 		await slot( scene );
 		let t0 = Date.now();
 		// (the page's lists first, from a load at the scene's defaults: the first time's query follows)
@@ -283,7 +285,7 @@ try {
 			await writeFile( path.join( outDir, `${ key }.png` ), shot.png );
 			await writeFile( path.join( outDir, `${ key }.json` ), JSON.stringify( { browser: capture.version, viewport: { width: W, height: H, scale }, ...record, ready: shot.ready, diag: shot.diag, errors }, null, 1 ) );
 			console.log( `${ key } ${ shot.ready.status } ${ ( ( Date.now() - t0 ) / 1000 ).toFixed( 1 ) } s` );
-			if ( shot.ready.status !== 'exact' ) fail( `${ key }: not still when shot (${ shot.ready.status } after ${ shot.ready.framesWaited } frames, ${ shot.ready.maxSeen } levels)` );
+			if ( shot.ready.status !== 'exact' ) fail( `${ key }: not still when captured (${ shot.ready.status } after ${ shot.ready.framesWaited } frames, ${ shot.ready.maxSeen } levels)` );
 
 		}
 		// ---------------------------------------------------------------- the same page, its scene started again
@@ -308,7 +310,7 @@ try {
 
 					await mkdir( path.dirname( path.join( verifyDir, key ) ), { recursive: true } );
 					await writeFile( path.join( verifyDir, `${ key }.rebuilt.png` ), shot.png );
-					fail( `${ key }: the shot after ${ rebuilds } scene starts differs from the first: ${ difference( shots.get( key ), shot.png ) }` );
+					fail( `${ key }: the capture after ${ rebuilds } scene starts differs from the first: ${ difference( shots.get( key ), shot.png ) }` );
 
 				}
 				const now = countsOf( shot.diag );
@@ -401,7 +403,7 @@ if ( options.check ) {
 		else fail( `${ key }: differs from its reference: ${ difference( ref, png ) }` );
 
 	}
-	console.log( `check: ${ same } of ${ shots.size } shots equal their reference (${ refDir })` );
+	console.log( `check: ${ same } of ${ shots.size } images equal their reference (${ refDir })` );
 
 }
 if ( options[ 'write-ref' ] ) {
@@ -425,12 +427,12 @@ if ( options[ 'write-ref' ] ) {
 			await writeFile( path.join( refDir, scene, 'reference.json' ), JSON.stringify( { sha, dirty, browser: capture.version, viewport: { width: W, height: H, scale }, look, query: common, shots: keys }, null, 1 ) );
 
 		}
-		console.log( `reference: ${ shots.size } shots written to ${ refDir }` );
+		console.log( `reference: ${ shots.size } images written to ${ refDir }` );
 
 	}
 
 }
 
-console.log( `${ shots.size } shots (${ shotCount } captures) in ${ ( ( Date.now() - started ) / 1000 ).toFixed( 1 ) } s (${ ( lockWaited / 1000 ).toFixed( 1 ) } s of it waiting for the GPU lock), readings in ${ path.join( outDir, 'readings.tsv' ) }` );
-console.log( failures.length ? `scenes FAIL: ${ failures.length } failures` : `scenes PASS${ options.verify ? ' (each shot twice and from a fresh load, to the pixel)' : '' }` );
+console.log( `${ shots.size } images (${ shotCount } captures) in ${ ( ( Date.now() - started ) / 1000 ).toFixed( 1 ) } s (${ ( lockWaited / 1000 ).toFixed( 1 ) } s of it waiting for the GPU lock), readings in ${ path.join( outDir, 'readings.tsv' ) }` );
+console.log( failures.length ? `scenes FAIL: ${ failures.length } failures` : `scenes PASS${ options.verify ? ' (each image twice and from a fresh load, to the pixel)' : '' }` );
 if ( failures.length ) process.exitCode = 1;

@@ -30,8 +30,8 @@ type V3 = THREE.Node<'vec3'>;
 // (lighting/Underwater.ts), and the shadows that bound them: the sun's map is drawn along the
 // lifted direction (main.ts passes it to SunShadow, and the figures' map follows that map:
 // characters/CharacterShadow.ts), and the meadow's layer shades its blades and the ground under
-// them along it (`liftKeyWorld`, Grass.ts `meadowLayerDepth`), as the meadow's screen-space shade
-// does (post/MeadowShadows.ts). Lit faces, highlights and shadows so turn to one side together;
+// them along it (`liftKeyWorld`, Grass.ts `meadowLayerDepth`), as the meadow's screen-space shadows
+// do (post/MeadowShadows.ts). Lit faces, highlights and shadows so turn to one side together;
 // with only the diffuse lifted, the dusk's highlights and back light still faced the grazing sun,
 // apart from the ground's shading. What keeps the key's true direction is everything about where
 // the light comes from: the key's colour and brightness (Sky.ts: the atmosphere's transmittance,
@@ -140,7 +140,7 @@ export function updateKeyLift( shading: KeyLiftShading, key: THREE.Vector3, moon
 }
 
 /** The key's world direction L lifted: `liftedKeyDirection` on the GPU, the direction the sun's
- * map is drawn along (the meadow's layer shade, Grass.ts `meadowLayerDepth`, takes it, and the
+ * map is drawn along (the meadow layer's shadowing, Grass.ts `meadowLayerDepth`, takes it, and the
  * sea's metering illuminance, ocean/Water.ts, takes its level-ground cosine from it). */
 export function liftKeyWorld( L: V3 ): V3 {
 

@@ -10,7 +10,7 @@ import { onSceneDispose } from './SceneDispose.ts';
 //
 // Uniforms shared by the water, the terrain and the vegetation (one node each, read by every
 // material that uses it).
-// - The page's entry creates the object (`createShared`) and installs it (`installShared`) before
+// - The app's entry module creates the object (`createShared`) and installs it (`installShared`) before
 //   it builds anything: no module makes the uniforms as it loads, and a tool that builds materials
 //   under node installs its own (tools/render/wgsl-build.mjs). The modules that take it as a parameter
 //   are handed the same object; `shared` below is the installed one, for those that read it as

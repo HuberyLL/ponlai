@@ -11,20 +11,20 @@ import { checkArgs } from './sim/schema.ts';
 import { StandInAgent } from './sim/standin.ts';
 import type { EntityId, IslandInput } from './sim/types.ts';
 
-// The game around its simulation, without the page: the record, agent, commands and save.
+// The game around its simulation, without the browser: the record, agent, commands and save.
 //
-// The game around its simulation, without the page: the simulation installed (sim/Sim.ts) and its
-// record (Chronicle.ts), the agent in the islanders' slot, the stream of what happened handed to
+// The game around its simulation, without the browser: the simulation installed (sim/Sim.ts) and
+// its record (Chronicle.ts), the agent in the islanders' slot, the stream of what happened handed to
 // its listeners, the player's commands checked at the entrance, the leader's words as each
 // listener hears them, the island's growth asked of a host, and the save of the simulation with its
-// record (save.ts). The page's game (Game.ts) hosts it beside the view, the
+// record (save.ts). The app's game (Game.ts) hosts it beside the view, the
 // interface, the scene events and the autosave; tools/game/play-game.mjs hosts it headless, so a run in
-// node plays the game the page plays, with nothing copied. No three.js or DOM: node runs it by
+// node plays the game the app plays, with nothing copied. No three.js or DOM: node runs it by
 // stripping types, as it runs sim/.
 //
 // What happened is one stream (sim/events.ts): the rules emit events at the tick they happen, and
 // the session takes them from the simulation and hands each, in order, to its listeners (`listen`):
-// the record first (Chronicle.note), then the page's interface and the play tool. It hands them on
+// the record first (Chronicle.note), then the app's interface and the play tool. It hands them on
 // after every call that can make them (`install`, `advance`, `look`, `speak`, `act`, `place`,
 // `setIsland`, `save`), so a listener hears what a call did before the call returns; a late
 // agent's answer (Sim.think) comes between calls, and its events go with the next one, as do those
@@ -32,7 +32,7 @@ import type { EntityId, IslandInput } from './sim/types.ts';
 // set). Events carry their own tick, so when they are handed on changes nothing they say.
 //
 // A frame: `advance` asks for a growth that is due, runs the simulation's ticks (Sim.advance) and
-// tells the host how near the next step is; the host shows the frame (on the page the day clock and
+// tells the host how near the next step is; the host shows the frame (in the app the day clock and
 // the weather step by the seconds `advance` returns), and then `look` notes the sky shown over its
 // ticks in the record. The look is a call of its own because the sky it notes is the one shown
 // after the weather's step. What the host does between frames comes in through the session's
@@ -57,21 +57,21 @@ import type { EntityId, IslandInput } from './sim/types.ts';
 // a step is due and none is under way, `advance` asks the host's `grow`, before the frame's ticks,
 // so on the state the last frame showed. The host hands the piece back through `setIsland`, which
 // is the simulation's `addPiece` (the piece is counted there, whoever asked for it): at once
-// (headless) or once its promise resolves (the page's swap, world/Growth.ts). A grow that brought
+// (headless) or once its promise resolves (the app's swap, world/Growth.ts). A grow that brought
 // no piece (the growth horizon, a failed generation, a headless run that does not grow) is not
 // asked again. The pending piece comes to `setComing` once the host has it, and goes to a
 // simulation installed later too.
 //
-// Rules: nothing here reads the page, and only the save reads the wall clock (the time it was
+// Rules: nothing here reads the browser, and only the save reads the wall clock (the time it was
 // written, save.ts); the rest is a function of the host's calls, so a headless run with an agent
-// that answers at once repeats byte for byte.
+// that answers at once is reproducible byte for byte.
 
-/** What a session asks of its host (the page's game, a headless run). */
+/** What a session asks of its host (the app's game, a headless run). */
 export interface SessionHost {
 	/** Grow the island by the next piece, a step being due: the host hands it back through
-	 * `setIsland`, before returning or by the time the promise resolves (the page's swap). */
+	 * `setIsland`, before returning or by the time the promise resolves (the app's swap). */
 	grow(): Promise<void> | void;
-	/** How near the next step is (0..1, Sim.approach), after each frame's ticks: the page's sea
+	/** How near the next step is (0..1, Sim.approach), after each frame's ticks: the app's sea
 	 * floor rises over the coming piece. */
 	approach?( p: number ): void;
 }
@@ -200,7 +200,7 @@ export class Session {
 
 	}
 
-	/** The island grew by a piece (the host's grow, or a grow of the page's own): the simulation's
+	/** The island grew by a piece (the host's grow, or a grow of the app's own): the simulation's
 	 * ground follows the new land and counts the piece (Sim.addPiece); a game installed later
 	 * stands on it. */
 	setIsland( input: IslandInput ): void {
@@ -212,7 +212,7 @@ export class Session {
 
 	}
 
-	/** The next piece is known (the page's pending land, Growth.ts): the simulation sees its cells
+	/** The next piece is known (the app's pending land, Growth.ts): the simulation sees its cells
 	 * (Sim.comingLand). */
 	setComing( input: IslandInput ): void {
 

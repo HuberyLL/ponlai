@@ -30,7 +30,7 @@ import { Fn, float, vec2, vec4, ivec2, texture, textureLoad, floor, min, max, cl
 // still pixel's fetch is exact (the nearest weight 1, every other 0), so a still camera's image and
 // the rest do not change.
 //
-// Cost (profile-frame at high's baseline, the resolve at the 4K canvas): upstream's 16 texel loads
+// Cost (profile-frame on the high tier at the baseline, the resolve at the 4K canvas): upstream's 16 texel loads
 // took about 0.9 ms more than the five bilinear taps, whatever the weights cost (FSR 1's polynomial
 // approximation saved nothing there): the loads bound it. Here the 2 x 2 nearest texels are loaded
 // (the deringing needs them) and each edge's two middle texels are one bilinear tap at their weights'
