@@ -244,12 +244,12 @@ export function exposeSceneHandles( render: RenderParts, shared: Shared, host: S
 		// medium's amount and shape, the light's weights, the deck's shares; read, never written
 		hazeKey,
 		quality, dynamicResolution, pacer, submitBatch, jitter, motion: motionState, taaCut, motionCheck: () => motionCheck( motionPasses() ), applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ),
-		// the temporal resolve (TemporalAA.ts, TemporalRest.ts): its live settings and parameters (`knobs`), the rest, the
+		// the temporal resolve (TemporalAA.ts, TemporalRest.ts): its live settings and parameters (`params`), the rest, the
 		// epoch, and `restart()`, which starts the history and the rest over (a cut and an epoch bump)
 		// (under fsr3 the same handles from FSR 3's upscaler, which has no such parameters: the capture tools wait on
 		// its rest through them)
 		taa: pipeline.resolver ? {
-			resolve: pipeline.resolver, settings: pipeline.resolver.settings, knobs: pipeline.temporal?.knobs ?? null, rest: pipeline.resolver.rest, epoch: restEpoch,
+			resolve: pipeline.resolver, settings: pipeline.resolver.settings, params: pipeline.temporal?.params ?? null, rest: pipeline.resolver.rest, epoch: restEpoch,
 			get converged() { return pipeline.resolver!.converged; },
 			restart: () => renderEvent( 'restart' ),
 		} : null,

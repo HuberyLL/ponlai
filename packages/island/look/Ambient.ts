@@ -7,7 +7,7 @@ import type { AmbientLook, AmbientRowLook } from '../../render/setup.ts';
 // from these): the ambient grade's table by the sun's elevation and the weather's skies, with the
 // gains under overcast's deck, and the low key's lift. lighting/AmbientGrade.ts's and
 // lighting/KeyLift.ts's headers say what the numbers do on screen. A row spells only its changes
-// over the parameters at no grade (look/AmbientLook.ts DEFAULT_KNOBS).
+// over the parameters at no grade (look/AmbientLook.ts DEFAULT_AMBIENT_SETTINGS).
 
 // The key's bounce by day under the clouded skies, against 1 at no grade: the cloudy sky's about
 // half (8 / 15), overcast's a third (the header). Overcast's keeps 0.33 from 2 degrees down.

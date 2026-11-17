@@ -285,7 +285,7 @@ import { buildDisplay, GRADE_TABLE, NIGHT, TONE_SPACE } from './PipelineDisplay.
 //   tone mapping, curve space and white balance after Patry, "Real-Time Samurai Cinema" (SIGGRAPH
 //   2021), in this order: the desaturation (`desaturation`) and the local tone mapping first
 //   (LocalTone.ts: a function of the frame, nothing kept between frames), one
-//   curve and grade (the shadows' contrast, `shadeContrast`; the tone, TONE, and the night's grade, NIGHT, over it are off by default), then
+//   curve and grade (the shadows' contrast, `shadowContrast`; the tone, TONE, and the night's grade, NIGHT, over it are off by default), then
 //   the grade's tables (GradeLut.ts, indexed by the square root of the curve's linear output: the first generated from the grade's parameters, `grade` and
 //   `setGrade`, the second the identity), then overcast's highlights toward grey (`highlightGrey`).
 //   The curve maps each channel in the
@@ -383,9 +383,9 @@ export interface PipelineSettings {
 // round mid grey softens by a tenth and the bloom strengthens by a quarter. It lifts no black: a
 // constant fill in the grade greyed everything below mid grey alike and veiled the frame; the
 // shadows' openness comes from the sky light the island takes instead (look/SkyLook.ts
-// `clearShade`). 0.5 of the full step was chosen over 0 and 1 by eye. It is off by default
+// `clearSkyFill`). 0.5 of the full step was chosen over 0 and 1 by eye. It is off by default
 // (docs/design/art-direction.md, Lighting: the lighting keeps the sun's and the sky's own
-// balance): with the clear-sky fill light (`clearShade`) it took the light's direction out of the
+// balance): with the clear-sky fill light (`clearSkyFill`) it took the light's direction out of the
 // meadow. `flags=tone:<t>` sets it at load for A/Bs.
 const TONE = Number( debugFlags.tone ?? 0 );
 
@@ -505,7 +505,7 @@ export class Pipeline {
 	readonly luts = lutNodes();
 	/** The first table's grade (GradeLut.ts): `setGrade` changes it and fills the table anew. */
 	readonly grade: GradeParams;
-	// the shadows' contrast this frame (`shadeContrast`)
+	// the shadows' contrast this frame (`shadowContrast`)
 	private readonly shade = { pivot: 0, slope: 0 };
 	private readonly desaturation = { amount: 0, cool: 0 };
 	private readonly white = { r: 1, g: 1, b: 1 };
@@ -517,7 +517,7 @@ export class Pipeline {
 		// tidewater's grade (the bloom's strength the display's: the constructor sets it)
 		bloom: uniform( 0 ), tone: uniform( 0 ), night: uniform( 0 ),
 		vignette: uniform( 1 ),
-		// the shadows' contrast (`shadeContrast`): its pivot as an exposed luminance, and its slope
+		// the shadows' contrast (`shadowContrast`): its pivot as an exposed luminance, and its slope
 		shadePivot: uniform( 0.8 ), shadeSlope: uniform( 0 ),
 		// the desaturation before the local gain (`desaturation`)
 		desaturate: uniform( 0 ), desaturateCool: uniform( 0 ),
@@ -1252,7 +1252,7 @@ export class Pipeline {
 		mu.up.value = ex.adaptUp; mu.down.value = ex.adaptDown;
 		u.bloom.value = S.bloom * ( 1 + S.tone * 0.5 ) * ( 1 + night * NIGHT.bloom );
 		const D = this.look;
-		const shade = keyed( D.shadeContrast, this.sky.elevation, night, this.shade, cloud );
+		const shade = keyed( D.shadowContrast, this.sky.elevation, night, this.shade, cloud );
 		u.shadePivot.value = 0.18 * 2 ** shade.pivot; u.shadeSlope.value = shade.slope;
 		const desaturation = keyed( D.desaturation, this.sky.elevation, night, this.desaturation, cloud, this.sky.rising );
 		u.desaturate.value = desaturation.amount; u.desaturateCool.value = desaturation.cool;

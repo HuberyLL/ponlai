@@ -53,8 +53,8 @@ export const DISPLAY: DisplayLook = {
 	// local tone cannot set them apart from the moonlit land; this lift does it per pixel, the grass in
 	// the moon's shadow about half a stop nearer the moonlit grass while that grass and the sea move by
 	// an eighth of a stop or less.
-	// Tunable on debug pages (debug/Tune.ts): `post.shade.<value>@golden`, `@day`, `@cloudy`, `@night`.
-	shadeContrast: {
+	// Tunable on debug pages (debug/Tune.ts): `post.shadowContrast.<value>@golden`, `@day`, `@cloudy`, `@night`.
+	shadowContrast: {
 		day: [ { at: 4, name: 'golden', values: { pivot: - 0.86, slope: 0.37 } }, { at: 9, name: 'day', values: { pivot: 2, slope: 0.05 } } ],
 		cloudy: { pivot: 0.902, slope: 0.18 },
 		night: { pivot: - 2, slope: - 0.25 },
@@ -156,7 +156,7 @@ export const DISPLAY: DisplayLook = {
 
 	// The base grade (post/GradeLut.ts builds its tables from these changes over no grade): the day's, which the other grades build
 	// on. No contrast and no saturation over the whole frame (the contrast is the shadow
-	// contrast's, `shadeContrast`, and the tone curve's): each hue moved on its own, lightly, the neutral axis left
+	// contrast's, `shadowContrast`, and the tone curve's): each hue moved on its own, lightly, the neutral axis left
 	// where it is but for a touch of cool in the highlights.
 	// - The warm hues (red to yellow) times 1.15: the earth, the bark and the low sun's light keep
 	//   their colour under the softer curve; they also turn 8 degrees toward red, so the golden hour's

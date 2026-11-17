@@ -99,7 +99,7 @@ export interface DayLook {
 
 // ---- the environment light (AmbientLook.ts)
 
-export interface AmbientKnobs {
+export interface AmbientSettings {
 	skySpecular: number;
 	skyBounce: number;
 	sunBounce: number;
@@ -109,7 +109,7 @@ export interface AmbientKnobs {
 /** The ambient grade's columns, the skies of the weather's blend. */
 export type AmbientColumn = 'clear' | 'fair' | 'cloudy' | 'overcast';
 /** A row of the ambient grade: per sky, its changes over the parameters at no grade. */
-export type AmbientRowLook = { at: number } & Partial<Record<AmbientColumn, Partial<AmbientKnobs>>>;
+export type AmbientRowLook = { at: number } & Partial<Record<AmbientColumn, Partial<AmbientSettings>>>;
 export interface AmbientLook {
 	/** The grade by the sun's elevation (degrees, descending), setting side and rising side. */
 	grade: readonly AmbientRowLook[];
@@ -169,7 +169,7 @@ export type BloomKey = {
 };
 export type DesaturationKey = { amount: number; cool: number };
 export interface DisplayLook {
-	shadeContrast: DayKeys<{ pivot: number; slope: number }>;
+	shadowContrast: DayKeys<{ pivot: number; slope: number }>;
 	desaturation: DayKeys<DesaturationKey>;
 	coolShare: { from: number; to: number };
 	highlightGrey: { amount: number; from: number; to: number };
@@ -278,8 +278,8 @@ export interface SkyLook {
 	 * side, the setting side under cloud and the rising side. */
 	landSky: { setting: readonly LandSkyRow[]; clouded: readonly LandSkyRow[]; rising: readonly LandSkyRow[] };
 	/** The clear-sky fill light (an A/B, off by default): the gain's extra share by elevation, its tint and amount. */
-	clearShade: readonly { at: number; share: number }[];
-	clearShadeTint: readonly [ number, number, number, number ];
+	clearSkyFill: readonly { at: number; share: number }[];
+	clearSkyFillTint: readonly [ number, number, number, number ];
 	/** The low sun's shadow tint (an A/B, off by default) and its colour. */
 	lowSun: { full: number; top: number; amount: number };
 	lowSunTint: Triple;

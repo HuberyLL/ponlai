@@ -40,7 +40,7 @@ export type { RefractedSun } from './lighting/RefractedSun.ts';
 export { solarVolumeVisibility } from './lighting/SolarShadow.ts';
 export { UnderwaterLightingModel, underwaterLight } from './lighting/Underwater.ts';
 export type { UnderwaterLight, UnderwaterModelOptions } from './lighting/Underwater.ts';
-export { AMBIENT_KNOBS } from './look/AmbientLook.ts';
+export { AMBIENT_SETTINGS } from './look/AmbientLook.ts';
 export { heightBlend, hexReadScan } from './materials/HexTiling.ts';
 export type { HexScan } from './materials/HexTiling.ts';
 export { DETAIL_SIZE, bakeProceduralTextures } from './materials/ProceduralTextures.ts';

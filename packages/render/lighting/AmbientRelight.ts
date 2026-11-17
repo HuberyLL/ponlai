@@ -867,7 +867,7 @@ export class AmbientRelight {
 			const centre = vec3( this.seaPoint ).toVar();
 			const at = select( inBox, lattice, centre ).toVar();
 			const shade = cloud( at ).toVar();
-			const seaShade = seaCloud( at ).toVar();
+			const seaCloudShadow = seaCloud( at ).toVar();
 			// the sky between the displayed environment's two slots
 			const a = this.slotA.mul( uint( SKY_VEC4S ) ).toVar(), b = this.slotB.mul( uint( SKY_VEC4S ) ).toVar();
 			const S = Array.from( { length: SKY_VEC4S }, ( _, n ) => mix( slots.element( a.add( uint( n ) ) ), slots.element( b.add( uint( n ) ) ), this.blend ).toVar() as unknown as V4 );
@@ -878,7 +878,7 @@ export class AmbientRelight {
 			const bounceScale = average.mul( this.skyScale ).mul( ambient.skyBounce ).toVar();
 			const sunScale = vec3( shared.landKey ).mul( shade ).mul( ambient.sunBounce ).div( Math.PI ).toVar();
 			// the sea's radiance as a level bounce surface
-			const seaLight = this.seaRadiance( Array.from( { length: 9 }, ( _, n ) => S[ n ].xyz as V3 ), this.seaScale.sub( this.seaGapScale.mul( seaShade ) ).toVar(), shade );
+			const seaLight = this.seaRadiance( Array.from( { length: 9 }, ( _, n ) => S[ n ].xyz as V3 ), this.seaScale.sub( this.seaGapScale.mul( seaCloudShadow ) ).toVar(), shade );
 			// the share of its in-scatter the key's bounce keeps: the probe's sky toward the key, over open
 			// level ground's, through SCATTER_GATE
 			const seen = coefficients( visibility ).reduce( ( sum: F, c, n ) => sum.add( c.mul( this.toward[ n >> 2 ][ ( [ 'x', 'y', 'z', 'w' ] as const )[ n & 3 ] ] ) ), float( 0 ) );

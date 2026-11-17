@@ -84,7 +84,7 @@ export const USER_DATA = {
 		on: 'material', sets: 'SunShadow.ts', reads: 'RainCollision.ts',
 		means: 'the sun\'s map wrapped the material\'s cast position with its push along the light, which the rain\'s bake must not take',
 	},
-	sunShade: {
+	sunOcclusion: {
 		on: 'material', sets: 'the island\'s terrain and meadow materials', reads: 'SunShadow.ts',
 		means: 'a node of the material\'s own shadowing of the key light, taken instead of the screen-space shadow',
 	},

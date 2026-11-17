@@ -100,7 +100,7 @@ export type ChunkJob =
 	| { kind: 'land'; seed: number; step: number; key: string | null }
 	| { kind: 'field'; land: Uint8Array; copies: number }
 	| { kind: 'use'; land: Uint8Array; field: LandField }
-	| { kind: 'chunk'; ci: number; cj: number; version: number; key: string | null; contactOcclusion: boolean; canopyShade: boolean }
+	| { kind: 'chunk'; ci: number; cj: number; version: number; key: string | null; contactOcclusion: boolean; canopyShadow: boolean }
 	| { kind: 'keep'; keys: string[] }
 	| { kind: 'close' };
 
@@ -194,7 +194,7 @@ async function run( job: ChunkJob ): Promise<void> {
 			}
 			if ( ! land || ! field ) { post( { kind: 'need', ci: job.ci, cj: job.cj } ); break; }
 			await simplifierReady;
-			const data = buildChunk( landWindow( field, job.ci, job.cj ), land, job.ci, job.cj, { version: job.version, contactOcclusion: job.contactOcclusion, canopyShade: job.canopyShade } );
+			const data = buildChunk( landWindow( field, job.ci, job.cj ), land, job.ci, job.cj, { version: job.version, contactOcclusion: job.contactOcclusion, canopyShadow: job.canopyShadow } );
 			if ( cache ) track( cache.write( job.key!, data ) );
 			// eslint-disable-next-line ponlai/scene-clock -- a chunk's build time, a readout
 			post( { kind: 'chunk', data, cache: cache ? 'miss' : job.key !== null ? 'error' : 'off', ms: performance.now() - t } );

@@ -116,7 +116,7 @@ export const RENDER_SETTINGS = {
 	windView: { type: 'choice', default: 'off', values: [ '', 'arrows', 'plants' ], debug: true, about: 'makes the vegetation\'s wind visible' },
 } as const satisfies SettingsTable;
 
-/** Options read by a prefix: `tier.<knob path>=<value>` (Quality.ts `qualityProfile`). */
+/** Options read by a prefix: `tier.<setting path>=<value>` (Quality.ts `qualityProfile`). */
 export const SETTING_PREFIXES = {
 	'tier.': { type: 'text', default: 'the tier\'s', about: 'overrides one setting of the tier (`tier.post.hazeGrid.width=128`)' },
 } as const satisfies SettingsTable;

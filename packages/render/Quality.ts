@@ -319,7 +319,7 @@ export function loadTier(): QualityTier {
 
 }
 
-/** The tier's profile with `?tier.<knob path>=<value>` options over it, for A/B captures of one
+/** The tier's profile with `?tier.<setting path>=<value>` options over it, for A/B captures of one
  * setting (`tier.post.hazeGrid.width=128`, `tier.water.ssrIterations=64`; `overrides` the app's).
  * A path must name an existing setting; numbers, booleans and comma lists are parsed. */
 export function qualityProfile( tier: QualityTier, overrides: ReadonlyArray<readonly [ string, string ]> = settings.prefixed( 'tier.' ) ): QualityProfile {

@@ -309,7 +309,7 @@ export class TemporalAA {
 	readonly sharpness = uniform( 1 );
 	sharpnessTarget = 1;
 	/** Live parameters of the resolve outside the tier's table. */
-	readonly knobs = {
+	readonly params = {
 		// disocclusion: relative and absolute depth tolerance (m)
 		disoccludeRelative: uniform( 0.02 ), disoccludeAbsolute: uniform( 0.05 ),
 	};
@@ -794,7 +794,7 @@ export class TemporalAA {
 	// 3x3's statistics from that pass and reconstruct the frame from the 2x2 nearest samples.
 	private resolve( t: ResolveTextures, history: THREE.TextureNode, state: THREE.Texture | null, kind: 'running' | 'rest' | TemporalDebugView, inputSize: Uniform2, outputSize: Uniform2, encoded = false, smoothTex: THREE.Texture | null = null ): V4 {
 
-		const O = this.options, S = this.settings, u = this.u, K = this.knobs;
+		const O = this.options, S = this.settings, u = this.u, K = this.params;
 		const rest = kind === 'rest';
 		const box = rest && this.mode === 'gt';
 		const lite = S.lite;
@@ -1146,7 +1146,7 @@ export class TemporalAA {
 	// depth in `nearest`).
 	private neighbourhood( t: { display: THREE.Texture; velocity: THREE.Texture; depth: THREE.Texture }, inputSize: Uniform2, outputSize: Uniform2 ): V4 {
 
-		const K = this.knobs;
+		const K = this.params;
 		// (one body for the three attachments: an output struct is the material's own node, so the
 		// three are a matrix's columns, as the resolve's second attachment is its first's)
 		const m = Fn( () => {
@@ -1315,7 +1315,7 @@ export class TemporalAA {
 	private applySettings(): void {
 
 		const S = this.settings, u = this.u;
-		const k = JSON.stringify( S ) + JSON.stringify( [ this.knobs.disoccludeRelative.value, this.knobs.disoccludeAbsolute.value ] );
+		const k = JSON.stringify( S ) + JSON.stringify( [ this.params.disoccludeRelative.value, this.params.disoccludeAbsolute.value ] );
 		if ( k === this.settingsKey ) return;
 		this.settingsKey = k;
 		this.settingsVersion ++;

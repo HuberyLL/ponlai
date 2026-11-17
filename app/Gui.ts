@@ -5,7 +5,7 @@
 // Its handlers call the render pipeline's and the island's operations; the game adds its own folder
 // between them (main.ts).
 import { reloadWith } from './PageSettings.ts';
-import { DAY_PRESETS, type DayPreset, WEATHER_PRESETS, isParkedWeather, type WeatherName, WIND_LEVELS, type WindLevel, LOCAL_TONE, FrameStats, shared, AMBIENT_KNOBS, type AmbientView, markSkyRetune, type AAMode, AA_MODE, renderEvent, debugViewChoices, type RenderParts } from '../packages/render/index.ts';
+import { DAY_PRESETS, type DayPreset, WEATHER_PRESETS, isParkedWeather, type WeatherName, WIND_LEVELS, type WindLevel, LOCAL_TONE, FrameStats, shared, AMBIENT_SETTINGS, type AmbientView, markSkyRetune, type AAMode, AA_MODE, renderEvent, debugViewChoices, type RenderParts } from '../packages/render/index.ts';
 import { numberSetting, type QualityTier, ACTIVE_QUALITY } from '../packages/render/setup.ts';
 import { settings as params } from './AppSettings.ts';
 import GUI from 'lil-gui';
@@ -208,10 +208,10 @@ export function createGui( render: RenderParts, island: IslandParts, page: PageP
 	// whose sliders replace them while it is on, for live tuning
 	const ambientF = gui.addFolder( 'Ambient' );
 	const ambientGrade = render.ambientGrade;
-	for ( const key of AMBIENT_KNOBS ) ambientF.add( ambientGrade.current, key ).name( key ).listen().disable();
+	for ( const key of AMBIENT_SETTINGS ) ambientF.add( ambientGrade.current, key ).name( key ).listen().disable();
 	const retuneAmbient = () => renderEvent( 'retune' );
 	ambientF.add( ambientGrade, 'override' ).name( 'override' ).onChange( retuneAmbient );
-	for ( const key of AMBIENT_KNOBS ) ambientF.add( ambientGrade.manual, key, 0, key === 'directionality' || key === 'aoStrength' ? 1 : 3, 0.01 ).name( `${ key } (override)` ).onChange( retuneAmbient );
+	for ( const key of AMBIENT_SETTINGS ) ambientF.add( ambientGrade.manual, key, 0, key === 'directionality' || key === 'aoStrength' ? 1 : 3, 0.01 ).name( `${ key } (override)` ).onChange( retuneAmbient );
 	ambientF.close();
 	// the local lights (lighting/LocalLights.ts): on or off, and the art gain over the sources' light
 	const localLights = render.localLights;

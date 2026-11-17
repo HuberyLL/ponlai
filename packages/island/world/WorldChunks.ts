@@ -118,10 +118,10 @@ export function generateVersion( options: WorldOptions = {}, { cache = true, piv
 
 	// eslint-disable-next-line ponlai/scene-clock -- the load's timings, a readout
 	const t0 = performance.now();
-	const { worldSeed = 1, step = 0, contactOcclusion = true, canopyShade = CANOPY_SHADE } = options;
+	const { worldSeed = 1, step = 0, contactOcclusion = true, canopyShadow = CANOPY_SHADE } = options;
 	const generator = cache ? WORLD_GENERATOR_HASH : null;
 	const key = ( ...parts: unknown[] ) => generator === null ? null
-		: JSON.stringify( [ CACHE_FORMAT, generator, { worldSeed, contactOcclusion, canopyShade }, cacheBrowser(), ...parts ] );
+		: JSON.stringify( [ CACHE_FORMAT, generator, { worldSeed, contactOcclusion, canopyShadow }, cacheBrowser(), ...parts ] );
 	const threads = wanted ?? Math.min( 6, Math.max( 1, ( navigator.hardwareConcurrency || 4 ) - 2 ) );
 
 	return new Promise( ( resolve, reject ) => {
@@ -170,7 +170,7 @@ export function generateVersion( options: WorldOptions = {}, { cache = true, piv
 				}
 				const next = field ? needs.shift() ?? queue.shift() : generator !== null ? queue.shift() : undefined;
 				if ( ! next ) continue;
-				send( slot, { kind: 'chunk', ci: next.ci, cj: next.cj, version: step, key: key( next.ci, next.cj, next.steps ), contactOcclusion, canopyShade } );
+				send( slot, { kind: 'chunk', ci: next.ci, cj: next.cj, version: step, key: key( next.ci, next.cj, next.steps ), contactOcclusion, canopyShadow } );
 
 			}
 

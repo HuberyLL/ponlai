@@ -107,7 +107,7 @@ const ISLAND_SKY_RISING: readonly LandSkyRow[] = [
 
 // Off by default (docs/design/art-direction.md, Lighting: the lighting keeps the sun's and the sky's
 // own balance): with the meadow's own soft light the lifted shadows left a shaded clump within a
-// quarter of a lit one and the meadow showed no side the light came from. `flags=clearShade:<k>`
+// quarter of a lit one and the meadow showed no side the light came from. `flags=clearSkyFill:<k>`
 // (or `true`) brings it back for A/Bs. What it did: shadowed areas stayed clear, never black. Shadow is lit by
 // the sky alone, so the sky light lent to the island (as ISLAND_SKY's: the environment's source
 // and the islanders' fill) takes a gain and turns a touch cooler: the skylit faces of the cliffs
@@ -122,7 +122,7 @@ const ISLAND_SKY_RISING: readonly LandSkyRow[] = [
 // whole island in shadow, where a gain only brightens it: the share fades with the direct
 // visibility, none by overcast. A noon gain of 1.8 was chosen over 2.5 by eye (at 2.5 the shadows
 // turned cold).
-const CLEAR_SHADE = [
+const CLEAR_SKY_FILL = [
 	{ at: 45, share: 0.8 },
 	{ at: 26, share: 0.55 },
 	{ at: 13, share: 0.35 },
@@ -132,11 +132,11 @@ const CLEAR_SHADE = [
 	{ at: - 18, share: 0.6 },
 ];
 // the sky light's tint and how far it is drawn toward it at a share of 1
-const CLEAR_SHADE_TINT = [ 0.86, 1, 1.1, 0.44 ] as const;
+const CLEAR_SKY_FILL_TINT = [ 0.86, 1, 1.1, 0.44 ] as const;
 
 // Off by default with the clear shadows (`flags=lowSun:<k>` or `true` for A/Bs). What it did: a low
 // sun's light golden and its shadows cool blue-violet. The shadows' half: from about 12 degrees down to the horizon the sky light lent to the
-// island turns from CLEAR_SHADE's cool cyan toward blue-violet, drawn toward it by up to
+// island turns from CLEAR_SKY_FILL's cool cyan toward blue-violet, drawn toward it by up to
 // LOW_SUN.amount whatever the gain (a low sun's share of the gain is small), so only the island's
 // shade takes it, never the sea or the sky. It fades out above LOW_SUN.top, and below the horizon
 // into ISLAND_SKY's warm evening cast; cloud takes it out with the direct sun. (The light's half,
@@ -461,8 +461,8 @@ const KEY_THROUGH_CLOUD = 3;
 export const SKY: SkyLook = {
 	cloudLightTint: CLOUD_LIGHT_TINT,
 	landSky: { setting: ISLAND_SKY, clouded: ISLAND_SKY_CLOUDED, rising: ISLAND_SKY_RISING },
-	clearShade: CLEAR_SHADE,
-	clearShadeTint: CLEAR_SHADE_TINT,
+	clearSkyFill: CLEAR_SKY_FILL,
+	clearSkyFillTint: CLEAR_SKY_FILL_TINT,
 	lowSun: LOW_SUN,
 	lowSunTint: LOW_SUN_TINT,
 	keyDeckWhite: KEY_DECK_WHITE,

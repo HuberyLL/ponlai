@@ -20,7 +20,7 @@ import type { BloomKey, DesaturationKey, DisplayLook, Rgb } from './Look.ts';
 // are their modules' (post/ToneCurve.ts, post/GradeLut.ts, post/PhysicalBloom.ts,
 // post/Purkinje.ts).
 // - The tables register their tunables (debug/Tune.ts) as they are created, under their names
-//   (`post.shade.*`, `post.desaturate.*`, `post.white.*`, `post.bloom.*`,
+//   (`post.shadowContrast.*`, `post.desaturate.*`, `post.white.*`, `post.bloom.*`,
 //   `post.purkinje.<retina|strength>@night`); the cool share's edges and overcast's highlights
 //   register where the display chain builds the uniforms that hold them (post/PipelineDisplay.ts),
 //   and the tone curve and the two strengths on the pipeline's settings (post/Pipeline.ts
@@ -35,8 +35,8 @@ export interface DisplayTables {
 	// in it) darkens by `slope` of a stop more (a negative slope lifts it instead), over it nothing
 	// changes; after the local tone, before the tone curve. The pivot (stops over mid grey) and slope
 	// are set per key (keyed by the sun's elevation, DayKeys.ts).
-	// Tunable on debug pages (debug/Tune.ts): `post.shade.<value>@<key>`.
-	readonly shadeContrast: DayKeys<{ pivot: number; slope: number }>;
+	// Tunable on debug pages (debug/Tune.ts): `post.shadowContrast.<value>@<key>`.
+	readonly shadowContrast: DayKeys<{ pivot: number; slope: number }>;
 	// The desaturation before the local tone's gain: each colour drawn toward its own luminance by
 	// `amount` (0 keeps it, 1 grey), c + ( Y( c ) - c ) amount, keyed by the sun and the weather
 	// (DayKeys.ts); below 0 it saturates. `cool` is the share of the fade that only cool colours take
@@ -95,7 +95,7 @@ export interface DisplayTables {
 /** The display's tables from `display`, a look's (see the header): its tunables register here. */
 export function createDisplayTables( display: DisplayLook ): DisplayTables {
 
-	const shadeContrast = tuneKeys( 'post.shade', display.shadeContrast, { pivot: { min: - 3, max: 4 }, slope: { min: - 0.3, max: 0.5 } } );
+	const shadowContrast = tuneKeys( 'post.shadowContrast', display.shadowContrast, { pivot: { min: - 3, max: 4 }, slope: { min: - 0.3, max: 0.5 } } );
 	const desaturation = tuneKeys( 'post.desaturate', display.desaturation, { amount: { min: - 0.5, max: 1 }, cool: { min: 0, max: 1 } } );
 	const whiteRange = { r: { min: 0.2, max: 1.5 }, g: { min: 0.5, max: 1.5 }, b: { min: 0.5, max: 3 } };
 	const whiteBalance = tuneKeys( 'post.white', display.whiteBalance, whiteRange );
@@ -105,7 +105,7 @@ export function createDisplayTables( display: DisplayLook ): DisplayTables {
 	const purkinje = tuneObject( { ...display.purkinje }, { retina: 'post.purkinje.retina@night', strength: 'post.purkinje.strength@night' },
 		{ retina: { min: 1, max: 2000, scale: 'log' }, strength: { min: 0, max: 0.4 } } );
 	return {
-		shadeContrast, desaturation,
+		shadowContrast, desaturation,
 		coolShare: { ...display.coolShare },
 		highlightGrey: { ...display.highlightGrey },
 		strengths: display.strengths,

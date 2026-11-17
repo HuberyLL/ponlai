@@ -41,8 +41,8 @@
 // when set at load (`flags=trample:false`: no displacement field, no sprites, the blades read
 // none), and empties its walkers when set at run time (--toggle "s.flags.trample = !on" times the
 // sprites' draw).
-// `clearShade` (a number, or `true` for 1; off unless set) scales the sky light the island takes
-// for its clear-sky fill light (look/SkyLook.ts `clearShade`), read whenever the sky tracks the clock (an
+// `clearSkyFill` (a number, or `true` for 1; off unless set) scales the sky light the island takes
+// for its clear-sky fill light (look/SkyLook.ts `clearSkyFill`), read whenever the sky tracks the clock (an
 // environment bake later, `refreshEnvironment()` while paused).
 // `skyGain = false` leaves the sun's in-scattered sky light as the atmosphere gives it (sky/Sky.ts
 // `look.skyLight`), read whenever the sky tracks the clock (an environment bake later,
@@ -65,7 +65,7 @@
 // builds the display chain without its local tone mapping (post/LocalTone.ts).
 // The meadow's light, each on unless false: `meadowShadows` (its screen-space shadows and the
 // vegetation's depth pass, post/MeadowShadows.ts), `groundCast` (the crowns' shadow on the turf,
-// materials/TerrainMaterial.ts), `groundShade` (the blades' screen-space shadow on the turf, the
+// materials/TerrainMaterial.ts), `groundShadow` (the blades' screen-space shadow on the turf, the
 // same), `grassClumps` (the blades' clumps, world/Grass.ts CLUMP);
 // `grassShadow = false` (at load) turns off the shadowing by the meadow's layer on its blades and the
 // ground under and beside it (world/Grass.ts GRASS_SHADOW); `grassSunMap = false` (at load) keeps
@@ -95,7 +95,7 @@
 // Read at load (lighting/AmbientSample.ts): `ambientVolume = false` (or 0) builds the lit materials
 // on the environment's irradiance as before the ambient volume, the ground bounce whole;
 // `groundBounceLand = true` (or 1) keeps the ground bounce's land beside the volume;
-// `canopyShade = true` (or 1) keeps the bamboo canopy's baked shadowing beside it (the chunks' sky
+// `canopyShadow = true` (or 1) keeps the bamboo canopy's baked shadowing beside it (the chunks' sky
 // visibility and the culms'), which the volume carries; `ambientVolumeOff = 'terrain/meadow'`
 // sends the receivers named back to the environment's irradiance (the A/B of each one's cost; for
 // timing only: the bakes and the ground bounce's land stay the volume's, and `ambientVolume = false`

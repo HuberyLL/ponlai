@@ -3,7 +3,7 @@ import { negateOnBackSide, normalView, normalViewGeometry, positionViewDirection
 import { floorOcclusion, screenAOAt } from '../post/GTAO.ts';
 import { ambientEnvironment, ambientVolumeOn, specularOcclusion, type AmbientReceiver } from './AmbientSample.ts';
 import { meterAmbient } from './MeterLight.ts';
-import { AMBIENT_KNOBS, DEFAULT_KNOBS as D, type AmbientKnobs, type AmbientTables } from '../look/AmbientLook.ts';
+import { AMBIENT_SETTINGS, DEFAULT_AMBIENT_SETTINGS as D, type AmbientSettings, type AmbientTables } from '../look/AmbientLook.ts';
 import { overcastDeckLight, withMoon } from '../sky/Weather.ts';
 
 // The ambient grade: one table of parameters on the ambient light, per sun elevation and weather.
@@ -156,19 +156,19 @@ export const ambient = {
 	seaSky: uniform( 1 ),
 };
 
-const _moonRow = { ...D } as AmbientKnobs;
+const _moonRow = { ...D } as AmbientSettings;
 
 /** The grade's controller: the values it wrote last, and the GUI's override. */
 export interface AmbientGrade {
 	/** The tables it reads (look/AmbientLook.ts `createAmbientTables`). */
 	readonly tables: AmbientTables;
 	/** The values in the uniforms. */
-	readonly current: AmbientKnobs;
+	readonly current: AmbientSettings;
 	/** While on, `manual` replaces the table's output. */
 	override: boolean;
-	readonly manual: AmbientKnobs;
+	readonly manual: AmbientSettings;
 	/** The table's output (whatever the override) at the last update. */
-	readonly table: AmbientKnobs;
+	readonly table: AmbientSettings;
 	/** Once a frame: the sun's elevation (degrees), the weather's column weights (Weather `skyMix`),
 	 * whether the sun is rising, and the moon's elevation (degrees) and its share of the key (Sky.ts
 	 * `moonElevation`, `moonKeyShare`). */
@@ -192,7 +192,7 @@ export function createAmbientGrade( tables: AmbientTables ): AmbientGrade {
 			// the key's bounce: the moon's part takes the rows at the moon's height, on the evening's side
 			this.table.sunBounce = withMoon( this.table.sunBounce, evaluate( moonElevation, weights, _moonRow ).sunBounce, moonShare );
 			Object.assign( this.current, this.override ? this.manual : this.table );
-			for ( const key of AMBIENT_KNOBS ) ambient[ key ].value = this.current[ key ];
+			for ( const key of AMBIENT_SETTINGS ) ambient[ key ].value = this.current[ key ];
 			ambient.sunBounce.value *= sunBounceGain();
 			// the weather's land gain under overcast's deck (`overcastLand`), the override's value too:
 			// the moon's part of the key at the moon's height, as the bounce's rows above

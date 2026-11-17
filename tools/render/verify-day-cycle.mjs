@@ -201,7 +201,7 @@ for ( const hour of [ 0, 6, 12, 18, 24 ] ) {
 }
 // The moon stands fixed in the sky at every hour and phase. By default its direction is, to within
 // rounding, the night's shading direction before the moon was fixed (lighting/KeyLift.ts
-// MOON_SHADE then, printed with String()).
+// MOON_SHADING_DIRECTION then, printed with String()).
 const FIXED_MOON = [ 0.3696658004048259, 0.3420201433256687, 0.8639267431736032 ];
 cycle.setHour( 0 );
 cycle.moonPhase = 0.5;

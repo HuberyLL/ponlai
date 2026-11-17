@@ -33,10 +33,10 @@ export function lowSun( look: SkyTables, elevation: number, direct: number ): nu
 
 }
 
-// The tables' `clearShade` share at `elevation` under a sky of direct visibility `direct`.
-function clearShade( look: SkyTables, elevation: number, direct: number ): number {
+// The tables' `clearSkyFill` share at `elevation` under a sky of direct visibility `direct`.
+function clearSkyFill( look: SkyTables, elevation: number, direct: number ): number {
 
-	const rows = look.clearShade;
+	const rows = look.clearSkyFill;
 	let share = rows[ rows.length - 1 ].share;
 	if ( elevation >= rows[ 0 ].at ) share = rows[ 0 ].share;
 	else for ( let i = 1; i < rows.length; i ++ ) if ( elevation >= rows[ i ].at ) {
@@ -47,7 +47,7 @@ function clearShade( look: SkyTables, elevation: number, direct: number ): numbe
 
 	}
 	// (off unless a number is set: the lifted shadows took the light's direction out of the meadow)
-	const scale = typeof debugFlags.clearShade === 'number' ? debugFlags.clearShade : debugFlags.clearShade === true ? 1 : 0;
+	const scale = typeof debugFlags.clearSkyFill === 'number' ? debugFlags.clearSkyFill : debugFlags.clearSkyFill === true ? 1 : 0;
 	return share * THREE.MathUtils.smoothstep( direct, 0.3, 0.95 ) * scale;
 
 }
@@ -266,12 +266,12 @@ export function trackSky( sky: Sky, celestial: DayCycleSnapshot | null, weather:
 		sky.grade.daylight = celestial.daylight;
 		sky.landGain.value = landSky( look, celestial.elevation, sky.rising, sky.landTint.value, cloud );
 		const direct = weather?.directVisibility ?? 1;
-		const shade = clearShade( look, celestial.elevation, direct ), low = lowSun( look, celestial.elevation, direct );
+		const shade = clearSkyFill( look, celestial.elevation, direct ), low = lowSun( look, celestial.elevation, direct );
 		const tint = sky.landTint.value;
 		if ( shade > 0 ) {
 
 			sky.landGain.value *= 1 + shade;
-			tint.set( look.clearShadeTint[ 0 ], look.clearShadeTint[ 1 ], look.clearShadeTint[ 2 ], look.clearShadeTint[ 3 ] * shade );
+			tint.set( look.clearSkyFillTint[ 0 ], look.clearSkyFillTint[ 1 ], look.clearSkyFillTint[ 2 ], look.clearSkyFillTint[ 3 ] * shade );
 
 		}
 		if ( low > 0 ) tint.set( tint.x + ( look.lowSunTint[ 0 ] - tint.x ) * low, tint.y + ( look.lowSunTint[ 1 ] - tint.y ) * low,

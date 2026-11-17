@@ -38,10 +38,10 @@ type FilterInput = { shadowCoord: V3 };
 // The map is fitted to the island's casters; the sea floor's stones cast only into the refracted
 // map (RefractedSun.ts). Grass blades, stems, leaf stalks and twigs stay out of it (VegetationShadow.ts);
 // the meadow's layer shades the blades and the ground under and beside it where they read the map
-// (Grass.ts `meadowLayerLight`, through a material's `userData.sunShade`). Both stepped
+// (Grass.ts `meadowLayerLight`, through a material's `userData.sunOcclusion`). Both stepped
 // maps are filtered alike, each on its own, so the cross-fade stays continuous across a redraw.
 // A receiver's screen-space shadows (post/MeadowShadows.ts) multiplies the filter's visibility: its own
-// (`userData.sunShade`, the meadow's blades) or the whole scene's at its pixel (`receiveScreenShadow`).
+// (`userData.sunOcclusion`, the meadow's blades) or the whole scene's at its pixel (`receiveScreenShadow`).
 // A tree's leaves, marked `userData.keyThrough`, take the two's product on a floor (`leafThrough`,
 // vegetation/LeafLight.ts): the map draws every leaf as black, where a crown's leaves pass on
 // a share of the sun to the leaves under them. The floor is a uniform stand-in for that light, on the
@@ -263,7 +263,7 @@ export class SunShadow {
 			// shadows, post/MeadowShadows.ts; they and the ground under and beside them: the meadow's
 			// layer, Grass.ts `meadowLayerLight`), or the whole scene's screen-space shadow at its
 			// pixel for one marked for it (`receiveScreenShadow`: the bamboo, the yunpeng)
-			const shade = ( material?.userData.sunShade as F | undefined ) ?? ( material?.userData.screenShadow === true ? screenShadowAt() : undefined );
+			const shade = ( material?.userData.sunOcclusion as F | undefined ) ?? ( material?.userData.screenShadow === true ? screenShadowAt() : undefined );
 			const seen = shade ? visibility.mul( shade ) : visibility;
 			// the light a shaded leaf takes through the leaves over it (`userData.keyThrough`)
 			return material?.userData.keyThrough === true ? seen.add( leafThrough.mul( float( 1 ).sub( seen ) ) ) : seen;

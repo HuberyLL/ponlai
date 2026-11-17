@@ -63,7 +63,7 @@ import { canopySteps, crownSteps, setCanopyTop, setSwardField, swardSteps } from
 //   ground beside it where the light comes over it) takes exp( -l / s ) of the key, l its ray's
 //   length under the top (`LAYER`), the ray running along the lifted key (lighting/KeyLift.ts,
 //   the direction the sun's map is cast along). The finer shadowing of blade on blade is the
-//   meadow's screen-space shadows (post/MeadowShadows.ts, `sunShade`), held above the shadows' floor by translucency
+//   meadow's screen-space shadows (post/MeadowShadows.ts, `sunOcclusion`), held above the shadows' floor by translucency
 //   (`meadowShadowFloor`); the floor does not raise the layer's.
 // - The ground under the blades (TerrainMaterial.ts, `GRASS_ROOTS`): brown soil at every distance,
 //   seen through the gaps between the blades; darker on screen by the shadows alone.
@@ -1249,9 +1249,9 @@ function grassMaterial( shared: Shared, blades: MeadowBlades, low = false ): THR
 	const shades: F[] = [];
 	if ( MEADOW_SHADOWS ) shades.push( max( meadowShadowAt(), meadowShadowFloor( translucency ) ) );
 	if ( GRASS_SHADOW ) shades.push( meadowLayerLight( meadowLayerDepth( positionWorld, liftKeyWorld( shared.sunDir ) ) ) );
-	if ( shades.length ) mat.userData.sunShade = shades.reduce( ( a, b ) => a.mul( b ) );
+	if ( shades.length ) mat.userData.sunOcclusion = shades.reduce( ( a, b ) => a.mul( b ) );
 	// `flags=grassSunMap:false`: the blades keep their own shades but read nothing from the sun's map
-	if ( debugFlags.grassSunMap === false ) mat.userData.sunVisibility = shades.length ? mat.userData.sunShade : float( 1 );
+	if ( debugFlags.grassSunMap === false ) mat.userData.sunVisibility = shades.length ? mat.userData.sunOcclusion : float( 1 );
 	if ( GRASS_MASK_EXACT ) mat.outputNode = vec4( MASK_EXACT, 0, 0, 1 );
 	if ( GRASS_MASK_ALBEDO ) mat.outputNode = vec4( diffuseColor.rgb, 1 );
 	if ( GRASS_MASK_LEAN ) mat.outputNode = vec4( MASK_EXACT, varying( current.lean!, 'vGrassLean' ), 1 );

@@ -375,7 +375,7 @@ brackets.
 - Tone curve: `post.tone.midGrey`, `post.tone.blackSlope`, `post.tone.white`.
 - Desaturation: `post.desaturate.amount@golden` (`cool`; `@dawn`, `@day`, `@cloudy`, `@night`), and
   the edges of its cool share, `post.desaturate.coolFrom` and `coolTo`.
-- Contrast in shadowed areas: `post.shade.pivot@day` and `slope` (`@golden`, `@day`, `@cloudy`,
+- Contrast in shadowed areas: `post.shadowContrast.pivot@day` and `slope` (`@golden`, `@day`, `@cloudy`,
   `@night`).
 - Bloom and glare: the bloom's `post.bloom.strength`, and the sun's glare `post.glare`.
 - White balance: `post.white.r@high` (`g`, `b`; `@day`, `@golden`, `@dawn`, `@cloudy`,
@@ -526,7 +526,7 @@ the island's or the game's.
   - `flags=meadowShadows:false` turns off the meadow's screen-space shadows
     (`packages/render/post/MeadowShadows.ts`) and their depth pass. `fgview=meadowShadows` shows
     their shadow map.
-  - `groundCast:false`, `groundShade:false`, `grassShadow:false`, `grassClumps:false`.
+  - `groundCast:false`, `groundShadow:false`, `grassShadow:false`, `grassClumps:false`.
   - `shadowWind:false` makes the plants cast their shadows in their rest pose, and the sun's shadow
     map goes back to its stepped redraws. It is live, so `--toggle "s.flags.shadowWind = on"` times
     the swaying shadows.
@@ -537,7 +537,7 @@ the island's or the game's.
     radiance, so each pixel's coverage is exact in the opaque colour. `grassMask:albedo` draws them
     unlit in their own diffuse colour. Both are for `tools/island/meadow-light.mjs`.
 - The colour grading and display switches:
-  - Look adjustments that were taken out come back with `clearShade:true`, `lowSun:true`,
+  - Look adjustments that were taken out come back with `clearSkyFill:true`, `lowSun:true`,
     `tone:0.5` and `filmNight:true`.
   - `localTone:false` builds the display chain without its local tone mapping.
   - `streaks:<n>` scales the amount of cirrus (0 turns it off), and `streakMask:true` paints its
@@ -621,7 +621,7 @@ the island's or the game's.
   - `flags=groundBounceLand` keeps the ground bounce's land term alongside the volume
     (`packages/render/lighting/GroundBounce.ts`). By default, the volume carries the land's bounce,
     and the ground bounce carries only the sea's.
-  - `flags=canopyShade` keeps the bamboo canopy's own shadowing of the sky light alongside the
+  - `flags=canopyShadow` keeps the bamboo canopy's own shadowing of the sky light alongside the
     volume: the island's and the meadow's baked sky visibility, and the culms'. By default the
     volume carries it, since its probes see the groves. The chunks bake it, so with the flag they
     are generated again, or read from their own cache entries.

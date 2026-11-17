@@ -110,7 +110,7 @@ export const NEUTRAL_LOOK: Look = {
 	},
 
 	display: {
-		shadeContrast: { day: [ { at: 0, name: 'day', values: { pivot: 0, slope: 0 } } ], night: { pivot: 0, slope: 0 } },
+		shadowContrast: { day: [ { at: 0, name: 'day', values: { pivot: 0, slope: 0 } } ], night: { pivot: 0, slope: 0 } },
 		desaturation: { day: [ { at: 0, name: 'day', values: { amount: 0, cool: 0 } } ], night: { amount: 0, cool: 0 } },
 		// (no desaturation takes it; the edges only have to differ)
 		coolShare: { from: 0, to: 1 },
@@ -155,8 +155,8 @@ export const NEUTRAL_LOOK: Look = {
 	sky: {
 		cloudLightTint: [ 1, 1, 1, 0 ],
 		landSky: { setting: [ { at: 0 } ], clouded: [ { at: 0 } ], rising: [ { at: 0 } ] },
-		clearShade: [ { at: 0, share: 0 } ],
-		clearShadeTint: [ 1, 1, 1, 0 ],
+		clearSkyFill: [ { at: 0, share: 0 } ],
+		clearSkyFillTint: [ 1, 1, 1, 0 ],
 		// (the elevations only have to differ: the amount is 0)
 		lowSun: { full: 0, top: 1, amount: 0 },
 		lowSunTint: [ 1, 1, 1 ],

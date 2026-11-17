@@ -135,7 +135,7 @@ import { onSceneDispose } from '../SceneDispose.ts';
 // environment's irradiance as before the volume, the ground bounce whole (the shaders those
 // materials built before this module); `groundBounceLand` keeps the ground bounce's land
 // (GroundBounce.ts) beside the volume, which carries the key's bounce off the land itself;
-// `canopyShade` keeps the canopy's shadowing beside it (the A/B of the double darkening; the world's
+// `canopyShadow` keeps the canopy's shadowing beside it (the A/B of the double darkening; the world's
 // chunks are baked with it, so the flag is part of their cache key: world/WorldChunks.ts);
 // `ambientVolumeOff:<kinds>` sends the receivers named (`/` between them; `all` every one) back to
 // the environment's irradiance, the rest unchanged, to time each one's read of the volume
@@ -154,8 +154,8 @@ export const AMBIENT_VOLUME = debugFlags.ambientVolume !== false && debugFlags.a
 export const GROUND_BOUNCE_LAND = ! AMBIENT_VOLUME || debugFlags.groundBounceLand === true || debugFlags.groundBounceLand === 1;
 /** The bamboo's canopy darkens the sky light of what stands under it on its own (the island's and
  * the meadow's baked sky visibility, world/Chunks.ts; the culms' by their height,
- * world/BambooMaterials.ts): without the volume, or with `flags=canopyShade`. */
-export const CANOPY_SHADE = ! AMBIENT_VOLUME || debugFlags.canopyShade === true || debugFlags.canopyShade === 1;
+ * world/BambooMaterials.ts): without the volume, or with `flags=canopyShadow`. */
+export const CANOPY_SHADE = ! AMBIENT_VOLUME || debugFlags.canopyShadow === true || debugFlags.canopyShadow === 1;
 
 // receivers sent back to the environment's irradiance (`flags=ambientVolumeOff:terrain/meadow`)
 const OFF = new Set( typeof debugFlags.ambientVolumeOff === 'string' ? debugFlags.ambientVolumeOff.split( '/' ) : [] );

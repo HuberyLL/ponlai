@@ -57,7 +57,7 @@ type V4 = THREE.Node<'vec4'>;
 // tidewater's display chain (PostFX.js, 4811ba4), as it has become: its physical bloom
 // (PhysicalBloom.ts) added to the image; its grade in linear light (the vignette; its saturation
 // and contrast left for the grade table's hue bands, look/DisplayLook.ts `baseGrade`, and the
-// shade's contrast, `shadeContrast`); our tone curve (ToneCurve.ts) on the exposed colour, in the
+// shade's contrast, `shadowContrast`); our tone curve (ToneCurve.ts) on the exposed colour, in the
 // curve space of ToneSpace.ts with the white balance folded into its input matrix; the grade's
 // tables; overcast's highlights toward grey (`highlightGrey`); the BT.709 OETF shown as sRGB, and a
 // blue-noise dither (BlueNoise.ts; its luminance-weighted grain is gone). tidewater meters its
@@ -131,8 +131,8 @@ const coolShare = Fn( ( [ c, coolFrom, coolTo ]: [ V3, F, F ] ) => {
 // meadow's yellow-green albedo kept it a dark olive under them, and a light blue enough to turn it
 // turned the stone, sand and skin blue too. 0.4 radians takes the meadow to about 143 degrees, a
 // cool green toward blue-green (0.65 read as teal). The tint is drawn toward at `tint` and keeps
-// the luminance. The shadows' readability comes from the sky light (look/SkyLook.ts `clearShade`),
-// not a lift. Off by default with the clear-sky fill light (`clearShade`), as the night keeps the moon's own light (`flags=filmNight:true`
+// the luminance. The shadows' readability comes from the sky light (look/SkyLook.ts `clearSkyFill`),
+// not a lift. Off by default with the clear-sky fill light (`clearSkyFill`), as the night keeps the moon's own light (`flags=filmNight:true`
 // at load for A/Bs).
 export const NIGHT = debugFlags.filmNight === true ? { greenTurn: 0.4, tint: [ 0.84, 0.96, 1.16 ] as const, amount: 0.3, bloom: 1.5 } : { greenTurn: 0, tint: [ 0.84, 0.96, 1.16 ] as const, amount: 0, bloom: 0 };
 const nightGreenTurn = Fn( ( [ c0, turn ]: [ V3, F ] ) => {
@@ -328,7 +328,7 @@ export function buildDisplay( p: Pipeline, c: DisplayBuild ): void {
 		// the desaturation (`desaturation`), before the local gain
 		c.addAssign( vec3( luminance( c ) ).sub( c ).mul( u.desaturate.mul( mix( float( 1 ), coolShare( u.balance.mul( c ), COOL_FROM, COOL_TO ), u.desaturateCool ) ) ) );
 		if ( localTone && at ) c.assign( localTone.apply( c, at ) );
-		// the shadows' contrast (`shadeContrast`)
+		// the shadows' contrast (`shadowContrast`)
 		c.mulAssign( exp2( min( log2( max( luminance( c ), 1e-6 ) ).sub( log2( u.shadePivot ) ), 0 ).mul( u.shadeSlope ) ) );
 		// the night's grade (NIGHT): the greens turned toward blue-green, a silver-blue tint
 		If( u.night.greaterThan( 0.001 ), () => {

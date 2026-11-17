@@ -99,5 +99,5 @@ export interface WorldOptions {
 	contactOcclusion?: boolean;
 	// the bamboo's canopy in the sky visibility the chunks bake (Chunks.ts ChunkOptions); by default
 	// the app's (lighting/AmbientSample.ts CANOPY_SHADE)
-	canopyShade?: boolean;
+	canopyShadow?: boolean;
 }

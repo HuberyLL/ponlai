@@ -23,7 +23,7 @@ import type { LandSkyRow, Rgb, SkyLook, Span, StreakKeys } from './Look.ts';
 // each frame, sky/SkyBake.ts the sea's knee at each bake and weather/HazeKeys.ts the clouds' base
 // each frame; every function here that reads them takes them as its first argument. A name in
 // backticks with no file is a field of the tables or sky/Sky.ts's. The A/B switches that turn a
-// table off (`flags=clearShade`, `lowSun`, `clearSky`, `skyGain`, `lowKey`) stay with their readers
+// table off (`flags=clearSkyFill`, `lowSun`, `clearSky`, `skyGain`, `lowKey`) stay with their readers
 // in sky/SkyTrack.ts.
 // - The tables register their tunables (debug/Tune.ts) as they are created, under the names they
 //   always had (`sky.light.*`, `sky.clear.*`, `sky.weather.shadowDensity@*`, `sky.clouds.*`,
@@ -63,12 +63,12 @@ export interface SkyTables {
 	// luminance), how far, and the gain; rows interpolate linearly and the end rows hold beyond them.
 	// The setting sun's rows, the setting sun's under cloud and the rising sun's (`landSky`).
 	readonly landSky: SkyLook[ 'landSky' ];
-	// The clear-sky fill light, off by default (`flags=clearShade:<k>` or `true` brings it back for A/Bs): the
+	// The clear-sky fill light, off by default (`flags=clearSkyFill:<k>` or `true` brings it back for A/Bs): the
 	// sky light lent to the land (as `landSky`'s) takes a gain and a tint. The gain's extra share
 	// per sun elevation (degrees, descending; linear between rows, the end rows held beyond).
-	readonly clearShade: readonly { at: number; share: number }[];
+	readonly clearSkyFill: readonly { at: number; share: number }[];
 	// the sky light's tint (unit luminance) and how far it is drawn toward it at a share of 1
-	readonly clearShadeTint: Tint;
+	readonly clearSkyFillTint: Tint;
 	// The low sun's shadow tint, off by default with the clear-sky fill light (`flags=lowSun:<k>` or `true` for
 	// A/Bs): from `full` degrees down to the horizon the sky light lent to the land is drawn toward
 	// `lowSunTint` by up to `amount`, fading out above `top`.
@@ -220,8 +220,8 @@ export function createSkyTables( look: SkyLook ): SkyTables {
 	return {
 		cloudLightTint: unitTint( look.cloudLightTint ),
 		landSky: look.landSky,
-		clearShade: look.clearShade,
-		clearShadeTint: unitTint( look.clearShadeTint ),
+		clearSkyFill: look.clearSkyFill,
+		clearSkyFillTint: unitTint( look.clearSkyFillTint ),
 		lowSun: look.lowSun,
 		keyDeckWhite: look.keyDeckWhite,
 		lowSunTint: unit( ...look.lowSunTint ),

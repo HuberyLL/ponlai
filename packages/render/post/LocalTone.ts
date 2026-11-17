@@ -30,7 +30,7 @@ type V4 = THREE.Node<'vec4'>;
 // the low and the high sun, where the shadows are lifted toward the hinge (a negative slope times a
 // negative b), positive in the golden hour, under cloud and at night, where they are pressed down.
 // s_hi = s_lo = 0 turns it off, which any keyframe may do, and is where the uniforms start. The
-// shadows' contrast (look/DisplayLook.ts `shadeContrast`) reads its pivot after this gain.
+// shadows' contrast (look/DisplayLook.ts `shadowContrast`) reads its pivot after this gain.
 // The base is 40 % the bilateral grid's value at the pixel and 60 % a wide Gaussian blur of the
 // frame (B-spline upsampled), the blend of the talk above: the grid alone rings on smooth gradients
 // (clouds, soft shadows, highlights), the blur alone haloes at edges.
