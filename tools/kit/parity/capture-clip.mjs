@@ -315,7 +315,7 @@ try {
 		s.taa?.epoch.bump( 'clip' );
 
 	}, { gt: gt || gtRest, g: PAGE } );
-	if ( gtRest && ! ( await page.evaluate( ( g ) => window[ g.diagnostics ]?.aa === 'gt' && window[ g.handle ].taa, PAGE ) ) ) throw new Error( 'this build has no aa=gt (or it fell back to another mode)' );
+	if ( gtRest && ! ( await page.evaluate( ( g ) => window[ g.diagnostics ]?.aa === 'gt' && !! window[ g.handle ].taa, PAGE ) ) ) throw new Error( 'this build has no aa=gt (or it fell back to another mode)' );
 	const scaleSchedule = clip.scale ? ( gt || gtRest ? 'ignored: the ground truth renders at its fixed ratio' : 'applied' ) : 'none';
 	const diagBefore = await page.evaluate( ( n ) => ( { ...window[ n ] } ), PAGE.diagnostics );
 	// the anchors' world points at the base pose, then their boxes per frame in CSS px
