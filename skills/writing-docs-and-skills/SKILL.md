@@ -170,7 +170,9 @@ A rewrite is harder to check than a move, so the inventory comes before the writ
 
 ## Prose
 
-Plain words, short sentences, one idea each. One term per thing, the same term throughout. The
+Plain words, short sentences, one idea each. One term per thing, the same term throughout. Use the
+field's standard term (post-processing, fog, colour grading); describe a thing in other words only
+when the field has no term for it. Write for a newcomer to the project, not for the team. The
 present tense, the second person and the active voice; a condition before the instruction it
 governs. Repository text is in the project's language whatever the language of the conversation.
 

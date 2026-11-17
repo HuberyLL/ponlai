@@ -28,7 +28,7 @@ the approach before you spend time on it.
 ## Set up
 
 Follow the README's [Quick start](../README.md#quick-start). The checks and tools need a few more
-programs: [lychee](https://lychee.cli.rs/) for the docs' lint, [uv](https://docs.astral.sh/uv/) for
+programs: [lychee](https://lychee.cli.rs/) for the docs lint, [uv](https://docs.astral.sh/uv/) for
 the Python tools, and Playwright's Chromium for captures:
 
 ```bash
@@ -52,9 +52,9 @@ Install lychee as its page says for your system.
    npm run check
    ```
 
-   The pull request's CI also runs the docs' lint (`npm run lint:docs`, which needs
+   The pull request's CI also runs the docs lint (`npm run lint:docs`, which needs
    [lychee](https://lychee.cli.rs/)) and the production build (`npm run build`). A change to the
-   world generator also passes `npm run check -- --full`, which adds the world's chunk checks.
+   world generator also passes `npm run check -- --full`, which adds the world generator's checks.
 5. If your change touches what renders, run the checks for it by hand on a machine with WebGPU
    ([AGENTS.md](../AGENTS.md#checks-run-by-hand)), and compare captures from before and after
    your change ([Verifying rendering changes](../skills/verifying-rendering-changes/SKILL.md)). If

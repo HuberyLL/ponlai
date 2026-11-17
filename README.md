@@ -18,52 +18,52 @@
 </div>
 <!-- markdownlint-enable MD033 -->
 
-Ponlai is a physically based render pipeline for the browser, built on three.js and WebGPU. This
-repository shows it on a small island in an open sea, with deep clear water, chunky stone and a
-meadow that moves in the wind, lit by the sun and the sky.
+Ponlai is a physically based render pipeline for the web, built on three.js and WebGPU. This
+repository uses it to render a small island in the open sea: deep, clear water, rugged rocks and a
+meadow swaying in the wind, all lit by a physically based sun and sky.
 Its look draws on an eastern aesthetic, inspired by Ghost of Tsushima.
 
 ## Features
 
-### What it draws
+### Rendering
 
-- **Ocean**: FFT waves, shore waves, foam, refraction, sea and screen-space reflections
-- **Sky**: physical atmosphere, volumetric clouds and their shadows, day cycle, night sky with a
-  star catalogue and the moon
-- **Light**: soft sun shadows, ambient light probes, ground bounce, clustered local lights, GTAO,
-  light shafts
-- **Air**: volumetric haze by distance and height
-- **Vegetation**: instanced plants with levels of detail, moved by the wind
-- **Image**: automatic exposure with the Purkinje shift, local tone mapping, grading LUT, physical
-  bloom, TAA or MSAA, FSR upscaling, dynamic resolution
+- **Ocean**: FFT waves, shoreline waves, foam, refraction, screen-space reflections
+- **Sky**: physically based atmosphere, volumetric clouds and cloud shadows, day-night cycle, a
+  night sky with a real star catalogue and the moon
+- **Lighting**: soft sun shadows, ambient light probes, ground bounce light, clustered local
+  lights, GTAO, god rays
+- **Fog**: volumetric distance and height fog
+- **Vegetation**: instanced plants with LOD, animated by the wind
+- **Post-processing**: auto exposure with the Purkinje shift, local tone mapping, LUT colour
+  grading, physically based bloom, TAA or MSAA, FSR upscaling, dynamic resolution
 
-### Built for an AI agent to work on
+### Made for AI-assisted development
 
-- **Repeatable frames**: a paused page draws the same frame on every load, within a measured
-  tolerance, so a change can be proved by comparing captures.
-- **Tools**: capture, compare and measure frames, and split a frame's GPU time by pass.
-- **Skills**: the methods a lighting artist and a graphics engineer work by, from building a look to
-  verifying a change.
-- **Frame graph**: every pass declares the targets it reads and writes.
+- **Reproducible frames**: a paused page renders the same frame on every load, within a measured
+  tolerance, so a change can be verified by comparing screenshots.
+- **Tools**: capture and compare screenshots, measure frame time, and break down GPU time by render
+  pass.
+- **Skills**: written workflows that teach an AI agent how lighting artists and graphics engineers
+  work, from building a look to verifying a change.
+- **Frame graph**: every render pass declares the render targets it reads and writes.
 
 ## Why Ponlai
 
-Ponlai's aim is that anyone working with an AI coding agent can make game visuals of the quality of
-AAA games and film. The render pipeline gives the agent a physically based ground to build on, the
-skills give it the methods a lighting artist and a graphics engineer work by, and the tools let it
-see, compare and measure what it made, so it can check its own work.
+Ponlai aims to let anyone working with an AI coding agent create game visuals on par with AAA games
+and film. The render pipeline gives the agent a physically based foundation, the skills teach it
+how lighting artists and graphics engineers work, and the tools let it see, compare and measure its
+results, so it can check its own work.
 
 ## Status
 
-Ponlai is tuned and checked at the high quality tier at 4K output (1920x1080 CSS pixels at a device
-pixel ratio of 2), in the clear and fair weathers. The other quality tiers (`medium`, `low`) and
-weathers (`cloudy`, `overcast`, `rain`, `storm`, `fog`) are in the code and still load, but have not
-been tuned recently, so their look and cost may lag behind. `?game` opens an early game prototype
-on the island.
+Ponlai is tuned and tested on the high quality preset at 4K (1920x1080 CSS pixels at a device pixel
+ratio of 2), in clear and fair weather. The other presets (`medium`, `low`) and weathers (`cloudy`,
+`overcast`, `rain`, `storm`, `fog`) still load, but they have not been tuned recently and may look
+worse or run slower. `?game` opens an early game prototype on the island.
 
 ## Quick start
 
-You need a browser with WebGPU, such as a current Chrome or Edge, and Node.js 26 with npm.
+You need Node.js 26 and a browser with WebGPU support, such as a recent Chrome or Edge.
 
 ```bash
 git clone https://github.com/HuberyLL/ponlai.git
@@ -72,25 +72,25 @@ npm ci
 npm run dev
 ```
 
-Then open <http://127.0.0.1:5190/>. On its first start, the dev server downloads the assets
-(textures, sky catalogues, characters) into the git-ignored `public/` folder.
+Then open <http://127.0.0.1:5190/>. The first time the dev server starts, it downloads the assets
+(textures, sky data, characters) into `public/`, which git ignores.
 
-Some pages to try:
+Pages to try:
 
-| Address | What it shows |
+| Address | What you see |
 | --- | --- |
-| <http://127.0.0.1:5190/?weather=fair&preset=sunset> | The island at sunset on a fair day |
+| <http://127.0.0.1:5190/?weather=fair&preset=sunset> | The island at sunset in fair weather |
 | <http://127.0.0.1:5190/?paused&t=12> | The scene paused at 12 seconds, as the tools capture it |
 | <http://127.0.0.1:5190/?game> | The game prototype |
 | <http://127.0.0.1:5190/scenes.html?scene=ball> | A test scene without the island (`ball`, `empty`, `sea` or `plants`) |
 
-[URL options](docs/reference/url-options.md) lists every option.
+See [URL options](docs/reference/url-options.md) for every option.
 
 ## Use Ponlai in your own project
 
-To start a project, copy [the blank project](templates/blank/README.md): the render pipeline's sky,
-sea, light and post-processing around one rock to replace, with the tools (already configured) and
-the assets. In the clone from the quick start:
+To start a new project, copy [the blank project](templates/blank/README.md): a minimal scene with
+the sky, sea, lighting and post-processing around a single rock for you to replace, with the tools
+set up and the assets included. From your clone of this repository:
 
 ```bash
 node tools/repo/assets.mjs pull
@@ -100,29 +100,32 @@ npm install
 npm run dev
 ```
 
-The copy follows the template's links, so it takes the render pipeline, the tools and the assets
-with it, and installs and runs on its own. Its README says what each file does, how to choose its
-look and how to set up the tools.
+`cp -RL` follows the template's symbolic links, so the copy includes the render pipeline, the
+tools and the assets, and runs on its own. Its README explains each file, how to choose a look and
+how to set up the tools.
 
-To add the tools to a project you already have, follow [the kit's README](tools/kit/README.md). The
-agent skills work in any project ([below](#agent-skills)).
+To add the tools to an existing project, see [the tools' README](tools/kit/README.md). The agent
+skills work in any project ([see below](#agent-skills)).
 
-To work on Ponlai itself, [Contributing](.github/CONTRIBUTING.md) lists the programs the checks and
-tools need beyond the quick start.
+To contribute to Ponlai itself, [Contributing](.github/CONTRIBUTING.md) lists the extra programs
+the checks and tools need.
 
 ### Agent skills
 
-Each skill is a method written for any project; the project's facts go in a binding page beside it
-(this repository's are in `docs/bindings/`). Two of them make the look:
+Each skill is a general workflow that works in any project; your project's specifics go in a
+separate binding file next to it (this repository's are in `docs/bindings/`). Two of them are about
+the look:
 
-- [Building a stylised-realism picture](skills/building-cinematic-stylised-realism/SKILL.md) keeps
-  materials and light physically plausible, and puts the style in the content, a few global light
-  values per weather and hour, and the image.
-- [Fitting a look to reference images](skills/fitting-a-look-to-reference-images/SKILL.md) finds
-  the light, air and image values that bring a frame to your own reference images.
+- [Building cinematic stylised realism](skills/building-cinematic-stylised-realism/SKILL.md): get a
+  stylised look without breaking physically based rendering. Materials stay realistic; the styling
+  is done through the content, a few global lighting settings per weather and time of day, and
+  post-processing.
+- [Fitting a look to reference images](skills/fitting-a-look-to-reference-images/SKILL.md): tune
+  exposure, lighting, fog and colour grading until your renders match your own reference images.
 
-The others verify a change, measure frame time, find the cause of a defect or of a frame that does
-not repeat, and write shaders, tools and docs ([the docs' index](docs/README.md), Skills).
+The others cover verifying changes, measuring performance, debugging visual artifacts and frames
+that differ between runs, and writing shaders, tools and docs (see Skills in [the docs
+index](docs/README.md)).
 
 To install them in Claude Code:
 
@@ -131,25 +134,25 @@ claude plugin marketplace add HuberyLL/ponlai --sparse .claude-plugin plugins sk
 claude plugin install ponlai@ponlai
 ```
 
-Update them with `claude plugin marketplace update ponlai`. With another agent, copy a skill's
-folder into the agent's skills folder. Either way, write a binding page of your own with the same
-sections as this repository's.
+Update them with `claude plugin marketplace update ponlai`. For other agents, copy a skill's folder
+into the agent's skills directory. Either way, write your own binding file with the same sections
+as this repository's.
 
 ## Structure
 
-The code is in layers, lowest first: the render pipeline (`packages/render/`), the island
-(`packages/island/`), the game (`packages/game/`) and the page (`app/`). Each layer imports only from
-the layers below it. [Architecture](ARCHITECTURE.md) describes the layers, the flows and the rules
-across them, and [the docs' index](docs/README.md) lists every page.
+The code is organised in layers, from the bottom up: the render pipeline (`packages/render/`), the
+island (`packages/island/`), the game (`packages/game/`) and the app (`app/`). Each layer imports
+only from the layers below it. [Architecture](ARCHITECTURE.md) describes the layers, how data flows
+through them and the rules that span them, and [the docs index](docs/README.md) lists every page.
 
 ## Contribute
 
-Questions and ideas go to [Discussions](https://github.com/HuberyLL/ponlai/discussions), bugs and
-requests to the issues. [Contributing](.github/CONTRIBUTING.md) says how to set up and send a
-change, and everyone who takes part follows the [Code of Conduct](.github/CODE_OF_CONDUCT.md).
-Report a security issue as [Security](.github/SECURITY.md) says.
+Ask questions and share ideas in [Discussions](https://github.com/HuberyLL/ponlai/discussions);
+report bugs and request features in the issues. [Contributing](.github/CONTRIBUTING.md) explains how
+to set up and submit a change, and everyone taking part follows the [Code of
+Conduct](.github/CODE_OF_CONDUCT.md). To report a security issue, see [Security](.github/SECURITY.md).
 
 ## Licence
 
 Ponlai is released under the [MIT License](LICENSE). [Credits](CREDITS.md) lists the third-party
-code and assets, with their licences.
+code and assets and their licences.

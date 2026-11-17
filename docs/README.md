@@ -89,7 +89,7 @@ Facts to look up.
 - [Glossary](reference/glossary.md): the project's own words.
 - [Parity captures](../tools/kit/parity/README.md): the facts across the parity tools: which
   comparison is byte-exact, how a tolerance is set and how the stored references are used.
-- [The kit](../tools/kit/README.md): copying the capture and measuring tools into a project.
+- [Ponlai's tools](../tools/kit/README.md): adding the screenshot and measuring tools to a project.
 - [Blank project](../templates/blank/README.md): the template to copy for a project of your own.
 - [Reaching into three.js](../packages/render/three/README.md): the reaches and how to upgrade three.
 - [Game content](../packages/game/sim/content/README.md): adding a need, an item, a place, a building.
