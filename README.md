@@ -16,29 +16,33 @@
 </div>
 <!-- markdownlint-enable MD033 -->
 
-Ponlai is a render pipeline for the browser, built on three.js and WebGPU. Everything in it is
-physically based:
-
-- **Ocean**: an FFT sea with shore waves, foam, refraction, and reflections of the sky and the
-  shore.
-- **Sky**: a physical atmosphere, volumetric clouds and their shadows, a day cycle, and a night sky
-  with a real star catalogue and the moon.
-- **Light**: soft sun shadows, ambient light probes, light bounced from the ground, clustered local
-  lights, ambient occlusion (GTAO) and light shafts.
-- **Air**: a volumetric haze that thickens with distance and thins with height.
-- **Vegetation**: instanced plants with levels of detail that move in the wind.
-- **Image**: automatic exposure with the Purkinje shift in low light, local tone mapping, a
-  colour-grading LUT, physical bloom, TAA or MSAA, FSR upscaling and dynamic resolution.
-- **Frame graph**: every pass declares the targets it reads and writes.
-- **Repeatable frames**: a paused page draws the same frame on every load, within a measured
-  tolerance, so a change can be checked by comparing captures.
-
-With it come agent skills for making the look, and tools that capture, compare and measure its
-frames.
-
-This repository shows it on a small island in an open sea, with deep clear water, chunky stone and
-a meadow that moves in the wind, lit by the sun and the sky.
+Ponlai is a physically based render pipeline for the browser, built on three.js and WebGPU. This
+repository shows it on a small island in an open sea, with deep clear water, chunky stone and a
+meadow that moves in the wind, lit by the sun and the sky.
 The look is inspired by the eastern aesthetic of Ghost of Tsushima.
+
+## Features
+
+### What it draws
+
+- **Ocean**: FFT waves, shore waves, foam, refraction, sea and screen-space reflections
+- **Sky**: physical atmosphere, volumetric clouds and their shadows, day cycle, night sky with a
+  star catalogue and the moon
+- **Light**: soft sun shadows, ambient light probes, ground bounce, clustered local lights, GTAO,
+  light shafts
+- **Air**: volumetric haze by distance and height
+- **Vegetation**: instanced plants with levels of detail, moved by the wind
+- **Image**: automatic exposure with the Purkinje shift, local tone mapping, grading LUT, physical
+  bloom, TAA or MSAA, FSR upscaling, dynamic resolution
+
+### Built for an AI agent to work on
+
+- **Repeatable frames**: a paused page draws the same frame on every load, within a measured
+  tolerance, so a change can be proved by comparing captures.
+- **Tools**: capture, compare and measure frames, and split a frame's GPU time by pass.
+- **Skills**: the methods a lighting artist and a graphics engineer work by, from building a look to
+  verifying a change.
+- **Frame graph**: every pass declares the targets it reads and writes.
 
 ## Why Ponlai
 
