@@ -58,10 +58,10 @@ its results, so it can check its own work.
 
 ## Status
 
-Ponlai is tuned and tested on the high quality preset at 4K (1920x1080 CSS pixels at a device pixel
-ratio of 2), in clear and fair weather. The other presets (`medium`, `low`) and weathers (`cloudy`,
-`overcast`, `rain`, `storm`, `fog`) still load, but they have not been tuned recently and may look
-worse or run slower. `?game` opens an early game prototype on the island.
+Ponlai is tuned and tested on the high quality preset at native 4K, in clear and fair weather at
+every time of day, from day through sunset to night. The other presets (`medium`, `low`) and
+weathers (`cloudy`, `overcast`, `rain`, `storm`, `fog`) still load, but they have not been tuned
+recently and may look worse or run slower. `?game` opens an early game prototype on the island.
 
 ## Quick start
 
