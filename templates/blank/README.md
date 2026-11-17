@@ -1,19 +1,19 @@
-# Rock by the sea
+# Blank project
 
-The smallest project built on Ponlai's render pipeline: a rock in the open sea, under the render
-pipeline's sky, light and post-processing, with the tools that capture, compare and measure its
-frames. Copy it to start a project of your own.
+The starting point for a project of your own on Ponlai's render pipeline: the render pipeline's sky,
+sea, light and post-processing, one rock in the open sea to replace with your own content, and the
+tools that capture, compare and measure its frames. Copy it to start a project.
 
 ## Copy it
 
-In a clone of this repository, fetch the assets once, then copy the example. The copy follows the
-example's links, so it takes the render pipeline (`src/render/`), the tools (`tools/kit/`) and the
+In a clone of this repository, fetch the assets once, then copy the template. The copy follows the
+template's links, so it takes the render pipeline (`src/render/`), the tools (`tools/kit/`) and the
 assets the page loads (`public/`) with it:
 
 ```bash
 npm ci
 node tools/repo/assets.mjs pull
-cp -RL examples/rock ~/my-scene
+cp -RL templates/blank ~/my-scene
 cd ~/my-scene
 npm install
 npm run dev
@@ -28,7 +28,7 @@ runs the Python tools, and keep the project in git with at least one commit (the
 ```bash
 npx playwright install chromium
 curl -LsSf https://astral.sh/uv/install.sh | sh
-git init && git add -A && git commit -m "Start from Ponlai's example"
+git init && git add -A && git commit -m "Start from Ponlai's blank project"
 ```
 
 For the agent skills, install Ponlai's Claude Code plugin (the README's
@@ -66,9 +66,9 @@ paused scene and compare them:
 
 ```bash
 node tools/kit/serve.mjs dev
-node tools/kit/gpu-lock.mjs run --shared -- node tools/kit/capture.mjs rock --url http://127.0.0.1:6400/
-node tools/kit/gpu-lock.mjs run --shared -- node tools/kit/capture.mjs rock2 --url http://127.0.0.1:6400/
-uv run tools/kit/img.py diff artifacts/captures/rock.png artifacts/captures/rock2.png
+node tools/kit/gpu-lock.mjs run --shared -- node tools/kit/capture.mjs first --url http://127.0.0.1:6400/
+node tools/kit/gpu-lock.mjs run --shared -- node tools/kit/capture.mjs second --url http://127.0.0.1:6400/
+uv run tools/kit/img.py diff artifacts/captures/first.png artifacts/captures/second.png
 ```
 
 The two captures match byte for byte. Each tool's manual is its `--help`.

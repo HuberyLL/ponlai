@@ -4,5 +4,5 @@ const query = parseSettings( location.search );
 for ( const problem of settingProblems( query, RENDER_SETTINGS ) ) console.warn( `[settings] ${ problem }` );
 installSettings( query );
 
-const { startRock } = await import( './scene.ts' );
-await startRock();
+const { startProject } = await import( './scene.ts' );
+await startProject();

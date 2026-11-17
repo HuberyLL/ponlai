@@ -29,8 +29,8 @@
 //   project's name (`ponlai`, in any case) appears nowhere in the code, environment variables'
 //   names included (they are built from the configuration's `machine.envPrefix`).
 //
-// - The example's configuration (examples/rock/tools/project.mjs) sets the fields this one sets, no
-//   more and no fewer; a field it sets to null stands for that field's whole object.
+// - The blank project's configuration (templates/blank/tools/project.mjs) sets the fields this one
+//   sets, no more and no fewer; a field it sets to null stands for that field's whole object.
 //
 // Output: a summary on stdout (the files, imports and page globals checked), then PASS or FAIL with
 // the failures.
@@ -134,25 +134,26 @@ for ( const file of files ) {
 
 }
 
-// The example (examples/rock/) carries a configuration of its own beside its link to the kit, so it
-// must name the fields this one names: a field a kit tool starts reading is added to both. A field
-// set to null there (a table, the scene options, the tracer) stands for its whole object.
-const EXAMPLE = path.join( ROOT, 'examples/rock/tools/project.mjs' );
-const { default: example } = await import( EXAMPLE );
+// The blank project (templates/blank/) carries a configuration of its own beside its link to the
+// kit, so it must name the fields this one names: a field a kit tool starts reading is added to
+// both. A field set to null there (a table, the scene options, the tracer) stands for its whole
+// object.
+const TEMPLATE = path.join( ROOT, 'templates/blank/tools/project.mjs' );
+const { default: template } = await import( TEMPLATE );
 const sameFields = ( ours, theirs, at ) => {
 
 	for ( const key of Object.keys( ours ) ) {
 
-		if ( ! ( key in theirs ) ) failures.push( `${ rel( EXAMPLE ) }: lacks ${ at }${ key }, which tools/project.mjs sets` );
+		if ( ! ( key in theirs ) ) failures.push( `${ rel( TEMPLATE ) }: lacks ${ at }${ key }, which tools/project.mjs sets` );
 		else if ( ours[ key ] && typeof ours[ key ] === 'object' && ! Array.isArray( ours[ key ] ) && theirs[ key ] !== null ) sameFields( ours[ key ], theirs[ key ] ?? {}, `${ at }${ key }.` );
 
 	}
-	for ( const key of Object.keys( theirs ) ) if ( ! ( key in ours ) ) failures.push( `${ rel( EXAMPLE ) }: sets ${ at }${ key }, which tools/project.mjs does not` );
+	for ( const key of Object.keys( theirs ) ) if ( ! ( key in ours ) ) failures.push( `${ rel( TEMPLATE ) }: sets ${ at }${ key }, which tools/project.mjs does not` );
 
 };
-sameFields( PROJECT, example, '' );
+sameFields( PROJECT, template, '' );
 
-console.log( `verify-kit: ${ files.length } files under tools/kit/, ${ imports } imports, ${ PAGE_GLOBALS.length } page globals in the configuration, and the example's configuration` );
+console.log( `verify-kit: ${ files.length } files under tools/kit/, ${ imports } imports, ${ PAGE_GLOBALS.length } page globals in the configuration, and the blank project's configuration` );
 if ( failures.length ) {
 
 	console.log( `FAIL (${ failures.length })` );

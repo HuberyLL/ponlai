@@ -19,7 +19,7 @@ export default Object.freeze( {
 	} ),
 
 	// the title of the notices the tools post
-	name: 'Rock by the sea',
+	name: 'Blank project',
 
 	// where the tools write, under the project's root; the project's .gitignore holds `root`
 	output: Object.freeze( {
@@ -37,10 +37,10 @@ export default Object.freeze( {
 	// and a clone of Ponlai on one machine queue for the GPU together.
 	machine: Object.freeze( {
 		gpuLock: 'ponlai-gpu.lock',
-		jobs: 'rock-jobs',
-		tempPrefix: 'rock-',
-		home: '.rock',
-		envPrefix: 'ROCK_',
+		jobs: 'blank-jobs',
+		tempPrefix: 'blank-',
+		home: '.blank',
+		envPrefix: 'BLANK_',
 	} ),
 
 	// the dev server (`npm run dev`) a page tool opens without --url, and the query of a capture

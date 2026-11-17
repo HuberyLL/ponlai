@@ -19,7 +19,7 @@ homes in this repository:
 | Architecture page | `ARCHITECTURE.md`; each rule's full text in `docs/reference/architecture-rules.md`, under the same number |
 | Reference page | `docs/reference/` |
 | Design page | `docs/design/` (art direction and its subject pages, game design, game UI) |
-| Folder README | A `README.md` in the folder it documents: what the folder holds and one task's steps on it that no skill covers (`tools/kit/`, `tools/kit/parity/`, `packages/render/three/`, `packages/game/sim/content/`, `examples/rock/`); a method used across tasks is a skill |
+| Folder README | A `README.md` in the folder it documents: what the folder holds and one task's steps on it that no skill covers (`tools/kit/`, `tools/kit/parity/`, `packages/render/three/`, `packages/game/sim/content/`, `templates/blank/`); a method used across tasks is a skill |
 | Module header | The header comment of each file under `packages/` and `app/` |
 | Third-party sources whose licence asks for a notice or credit | `CREDITS.md` |
 | A file's copyright and licence | SPDX tags in its `/*! ... */` notice, `REUSE.toml`, `LICENSES/` |

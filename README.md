@@ -81,9 +81,8 @@ Some pages to try:
 
 ## Use Ponlai in your own project
 
-- **Start a project**: copy [the example](examples/rock/README.md), a rock in the open sea. It
-  brings the render pipeline, the tools (already configured) and the assets, and installs and runs on
-  its own.
+- **Start a project**: copy [the blank project](templates/blank/README.md). It brings the render
+  pipeline, the tools (already configured) and the assets, and installs and runs on its own.
 - **Add the tools to a project you have**: follow [the kit's README](tools/kit/README.md).
 - **Use the agent skills**: install them as a Claude Code plugin ([below](#agent-skills)). They work
   in any project.
@@ -93,9 +92,8 @@ tools need beyond the quick start.
 
 ### Agent skills
 
-Each skill is a method for any project. What it needs to know about your project, such as which
-tool takes a capture, which views to compare and which tolerances hold, goes in a binding page that
-it reads (this repository's are in `docs/bindings/`). Two of the skills make the look:
+Each skill is a method written for any project; the project's facts go in a binding page beside it
+(this repository's are in `docs/bindings/`). Two of them make the look:
 
 - [Building a stylised-realism picture](skills/building-cinematic-stylised-realism/SKILL.md) keeps
   materials and light physically plausible, and puts the style in the content, a few global light
@@ -117,7 +115,7 @@ The `--sparse` option downloads only the folders the plugin needs. The skills th
 plugin's name, such as `ponlai:verifying-rendering-changes`; update them with
 `claude plugin marketplace update ponlai`. With another agent, copy a skill's folder into the
 agent's skills folder. Either way, write a binding page of your own with the same sections as this
-repository's. The plugin brings only the skills; the tools come with the example.
+repository's. The plugin brings only the skills; the tools come with the blank project.
 
 ## Structure
 

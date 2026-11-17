@@ -3,7 +3,7 @@ import { startScene, neutralFields, neutralBounceGround, neutralSeaLattice, OPEN
 import { browserHost } from './render/browser.ts';
 import { NEUTRAL_LOOK } from './render/setup.ts';
 
-export async function startRock() {
+export async function startProject() {
 
   const host = browserHost( { canvasHost: document.getElementById( 'app' )!, loading: document.getElementById( 'loading' ) } );
   const rock = new THREE.Mesh( new THREE.DodecahedronGeometry( 2 ), new THREE.MeshStandardNodeMaterial( { color: 0x6b665e, roughness: 0.9 } ) );

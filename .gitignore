@@ -55,5 +55,5 @@ CLAUDE.local.md
 *.zip
 *.gz
 *.7z
-# The example's public/ holds links to files of public/, not the files themselves
-!/examples/*/public/**
+# The blank project's public/ holds links to files of public/, not the files themselves
+!/templates/*/public/**

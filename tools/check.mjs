@@ -11,9 +11,10 @@
 //   npm run check -- --full       also the production builds and the world's chunk checks
 //
 // Options:
-//   --full    adds `npm run build`, the example's build (`npm run build:example`: examples/rock/,
-//             the render pipeline in a project of its own), tools/island/verify-world-chunks.mjs
-//             and tools/island/verify-chunk-derived.mjs, and runs the docs' lint whatever is staged
+//   --full    adds `npm run build`, the blank project's build (`npm run build:template`:
+//             templates/blank/, the render pipeline in a project of its own),
+//             tools/island/verify-world-chunks.mjs and tools/island/verify-chunk-derived.mjs, and
+//             runs the docs' lint whatever is staged
 //
 // The commit-time list, in order (cheap and wide first, so a broken type fails before the rest):
 // the type check (`npm run typecheck`), the code lint (`npm run lint`, tools/repo/lint/plugin.mjs),
@@ -100,7 +101,7 @@ const checks = [
 	[ 'verify-lint', node( 'repo/verify-lint.mjs' ) ],
 ];
 if ( full || markdownStaged() ) checks.push( [ 'lint:docs', npm( 'lint:docs' ) ] );
-if ( full ) checks.push( [ 'build', npm( 'build' ) ], [ 'build:example', npm( 'build:example' ) ], [ 'verify-world-chunks', node( 'island/verify-world-chunks.mjs' ) ], [ 'verify-chunk-derived', node( 'island/verify-chunk-derived.mjs' ) ] );
+if ( full ) checks.push( [ 'build', npm( 'build' ) ], [ 'build:template', npm( 'build:template' ) ], [ 'verify-world-chunks', node( 'island/verify-world-chunks.mjs' ) ], [ 'verify-chunk-derived', node( 'island/verify-chunk-derived.mjs' ) ] );
 
 const results = [];
 const start = performance.now();

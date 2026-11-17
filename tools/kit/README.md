@@ -2,13 +2,14 @@
 
 The tools in this folder capture paused frames of a page, compare them byte for byte, read values
 from the page and measure frame time. They work in any project whose page is assembled by the
-render pipeline's `startScene`. A project started from [the example](../../examples/rock/README.md)
-has them already, configured; its Capture and compare shows them at work.
+render pipeline's `startScene`. A project started from
+[the blank project](../../templates/blank/README.md) has them already, configured; its Capture and
+compare shows them at work.
 
 ## Add the kit to a project of your own
 
-1. Copy `tools/kit/` to `tools/kit/` in your project, and the example's `tools/project.mjs` to
-   `tools/project.mjs`: the kit reads nothing else of the project. Add `artifacts/`, where it
+1. Copy `tools/kit/` to `tools/kit/` in your project, and the blank project's `tools/project.mjs`
+   to `tools/project.mjs`: the kit reads nothing else of the project. Add `artifacts/`, where it
    writes, to your `.gitignore`.
 2. In your `tools/project.mjs`, set `name`, `url` (your dev server) and `reference.buildInputs` (the
    files your build reads).
