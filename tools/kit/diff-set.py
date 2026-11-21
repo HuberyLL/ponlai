@@ -51,8 +51,8 @@ flower entirely. MSAA sets stay pixel-exact (the default and --aa-floor).
 --held: MSAA paused frames are bit-identical between runs, but for the region a held history-dependent
 effect reaches (the sea's reflection: packages/render/debug/HeldRegion.ts), which each capture of a
 set records in its JSON (`held`). With --held, two captures count as equal (in the exact rule and in
-every comparison --aa-floor makes) when they are identical, or identical outside the union of the
-two sides' regions and within tools/kit/tolerance.py's HELD inside it; a view with no region on
+every comparison --aa-floor makes) when they are identical, or within tools/kit/tolerance.py's HELD: inside the union of
+the two sides' regions by its temporal measurements, outside it but for the few 1-level pixels it allows; a view with no region on
 either side stays exact. Rows say `(held)` where a pair passed so, and the report keeps each such
 pair's `use` and measurements under `held`. capture-set.mjs and verify-scene-jump.mjs pass it for
 every MSAA comparison.
@@ -231,8 +231,9 @@ def helds(v):
 
 
 class Held:
-    """--held: two MSAA captures count as equal when identical, or identical outside the view's held
-    region and within the held tolerance inside it (tools/kit/tolerance.py HELD)."""
+    """--held: two MSAA captures count as equal when identical, or within the held tolerance
+    (tools/kit/tolerance.py HELD): inside the view's held region by its temporal measurements,
+    outside it but for the few 1-level pixels it allows."""
 
     def __init__(self, fs, v):
         self.fs, self.v, self.region, self.crops, self.seen = fs, v, False, None, []

@@ -50,8 +50,8 @@
 // captures, are the same pixels: a real difference shows in both pairs, the frame noise in one at
 // most. The pixels the sea's held reflection reaches are reproducible from load to load only within
 // a tolerance (docs/reference/test-mode.md), so each capture also records that region (`__PONLAI__.heldRegion()`), and a pair that is not the same
-// pixels still passes when tools/kit/diff-set.py `--held` finds it identical outside the two pages'
-// regions and within tools/kit/tolerance.py's HELD inside them. Views whose
+// pixels still passes when tools/kit/diff-set.py `--held` finds it within tools/kit/tolerance.py's
+// HELD (inside the two pages' regions, and the few 1-level pixels it allows outside them). Views whose
 // load-time options differ cannot share a page (establishScene refuses them).
 //
 // The verdicts (report.json `verdicts`, each pass or fail):
