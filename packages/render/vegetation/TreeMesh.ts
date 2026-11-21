@@ -145,7 +145,7 @@ const _pA = new THREE.Vector3(), _pB = new THREE.Vector3(), _pC = new THREE.Vect
 const _nA = new THREE.Vector3(), _nB = new THREE.Vector3(), _nC = new THREE.Vector3();
 const _cb = new THREE.Vector3(), _ab = new THREE.Vector3();
 
-// An indexed geometry's vertex normals in steps: three r186's computeVertexNormals (its face
+// An indexed geometry's vertex normals in steps: three r187's computeVertexNormals (its face
 // normals summed per vertex in the triangles' order, then normalised), the same operations in the
 // same order.
 function* normalSteps( g: THREE.BufferGeometry ): Generator<void, void> {

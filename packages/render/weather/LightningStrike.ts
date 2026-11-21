@@ -196,9 +196,8 @@ export class LightningStrike extends THREE.BufferGeometry {
 		this.axes = new Float32Array( maxVerts * 3 );
 		// (time the front arrives, time it vanishes, fraction along its subray, branch generation)
 		this.timings = new Float32Array( maxVerts * 4 );
-		// 32-bit, and kept so: three r186 copies a 16-bit index into a new 32-bit array when it
-		// creates the GPU buffer and uploads that copy from then on, so `build` must write the
-		// array the attribute holds.
+		// 32-bit, as an index rewritten in place is (docs/reference/three-behaviour.md, Index
+		// buffers): `build` writes the array the attribute holds, which three uploads as it is.
 		this.indices = new Uint32Array( maxIndices );
 		// Static usage: a tree is built once per strike and lives on the GPU, so `build` uploads
 		// only the vertices it wrote, once, through the version bump and update ranges. Marked

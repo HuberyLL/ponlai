@@ -10,24 +10,21 @@ import { bloomDraws, buildDrawsNow, pipelineQuad, renderWithAsyncPipelines, type
 // frame that first shows it, so no frame stalls on a pipeline (a weather change, the first bolt, a
 // storm's spray, fog setting in, the upscale switching on).
 //
-// three r186's `renderer.compileAsync` does not compile what a render later draws:
-// - it collects its draws synchronously but builds their node states and pipeline keys one await
-//   at a time, from whatever the renderer holds by then: the render target (its depth buffer, its
-//   formats, its texture names, which pick an MRT's outputs), the MRT, a double-sided draw's side
-//   (restored to DoubleSide before the builds: its two passes compiled as one pipeline no draw
-//   uses) and, for the canvas, the output colour space that keys its pipeline. A build made under
-//   the wrong state is cached under the right key and served to the real draw (an MRT draw would
-//   find a shader without its velocity output);
-// - it collects in the top-level render context, while a pass rendered inside another (an rtt()
-//   or bloom pass inside a chain) draws in its call depth's context, whose id is part of the
-//   material's node key;
-// - it compiles a QuadMesh without the vertex node QuadMesh.render sets for the draw.
-// Each miss builds the material again in its first frame, and a second build of a material under
-// another key may emit a layout function with the first build's uniform names (r186): an invalid
-// shader. `compileBound` builds every draw while the binding is in place, inside the collection
-// (three's own steps for a draw standing in for its `_createObjectPipeline` for that call:
-// three/DrawBuilds.ts `buildDrawsNow`), at the call depth and with the quad's vertex node of the
-// real draw, and leaves only the pipelines' creation asynchronous. Its result names the nodes that
+// three r187's `renderer.compileAsync` builds its draws' node states one await at a time, each
+// under the render target, MRT, render context and side it was queued with (Renderer.js
+// `_beginPreCompile`), but it is not what the warm-up needs:
+// - it returns no node states, which the warm-up's result names (a bloom's nodes, below);
+// - it builds at the depth of its own call, while a pass rendered inside another (an rtt() or bloom
+//   pass inside a chain) draws one call deeper, in a context whose id is part of the material's
+//   node key;
+// - QuadMesh.render sets a vertex node of its own for the draw, which a compile of the quad as a
+//   mesh leaves out.
+// A draw built under another key builds the material again in its first frame, and a second build
+// of a material under another key may emit a layout function with the first build's uniform names
+// (r187): an invalid shader. `compileBound` builds every draw while the binding is in place,
+// inside the collection (three's own steps for a draw standing in for its `_createObjectPipeline`
+// for that call: three/DrawBuilds.ts `buildDrawsNow`), at the call depth and with the quad's vertex
+// node of the real draw, and leaves only the pipelines' creation asynchronous. Its result names the nodes that
 // render passes of their own before the draw (`updateBeforeNodes`: a bloom), which `compileQuad`
 // compiles in turn; `compileNodes` compiles those a frame-graph pass runs itself. A three without
 // those steps throws (three/DrawBuilds.ts).
@@ -243,7 +240,7 @@ export function compileLatentInto( renderer: THREE.WebGPURenderer, objects: read
 /** Runs `render`, a render the renderer makes of its own (a shadow map's redraw), with the
  * pipelines its draws need created asynchronously, as `compileAsync` creates them: a draw whose
  * pipeline is not ready draws nothing. Its node builds are the render's own, made by its own path
- * and in its order, which a compile of the same draws ahead cannot match: three r186 emits a shader
+ * and in its order, which a compile of the same draws ahead cannot match: three r187 emits a shader
  * from shared node state, so the order in which materials first build can change the code of
  * later builds (a temporary inlined or kept), and with it a few pixels of the image. Resolves once
  * the pipelines exist: then the render, made again, draws (three/DrawBuilds.ts

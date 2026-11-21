@@ -74,7 +74,7 @@ export class SeaDetail {
 	readonly streakAmount: THREE.UniformNode<'float', number>;
 	/** ( rough, gust, slick, streak ) at a world xz (explicit level: callable in branches), given
 	 * the land's gust there (`landGust`; read here when left out). Inlined where it is called:
-	 * as a layout function reading this module's uniforms and texture, r186 emitted it with the
+	 * as a layout function reading this module's uniforms and texture, r187 emitted it with the
 	 * first material's binding names in the next one that called it. */
 	readonly sample: ( xz: V2, landGust?: F ) => THREE.Node<'vec4'>;
 	/** The meadow's gust at a world xz (Wind.ts `gustAt`): plain nodes, for a vertex stage. */

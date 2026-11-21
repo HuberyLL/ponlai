@@ -236,7 +236,7 @@ function callbacks( b: Fsr3Bindings ): SpdCallbacks {
 	return {
 
 		// one WGSL function per kernel (SPD calls it sixteen times per thread); built per kernel, so
-		// r186's shared-layout uniform naming cannot cross kernels
+		// r187's shared-layout uniform naming cannot cross kernels
 		SpdLoadSourceImage: ( p: N ) => SpdLoadSourceImageFn( ivec2( p ) ),
 
 		SpdLoad( tex: N ): N {

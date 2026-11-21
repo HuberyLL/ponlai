@@ -323,7 +323,7 @@ export function setUpRenderer( render: RenderParts ) {
 	// the three.js internals of the renderer the app uses beyond its public interface: a three.js
 	// without one stops the app here, naming it (three/Internals.ts)
 	checkRenderer( renderer );
-	// three r186 keys its node builds and pipelines by the first attachment, not the whole layout (an
+	// three r187 keys its node builds and pipelines by the first attachment, not the whole layout (an
 	// MRT picks its outputs by the textures' names): patched before any material builds, so a material
 	// drawn into two layouts gets a build each (three/ThreePatches.ts)
 	installCacheKeyPatches( renderer );
@@ -1057,7 +1057,7 @@ export function checkMotion( render: RenderParts ) {
 export function primeSharedBuilds( render: RenderParts ) {
 
 	const { renderer, scene, camera } = render;
-	// the nodes r186 makes inside the first lit build, made by a throwaway one, so the frame's receivers
+	// the nodes r187 makes inside the first lit build, made by a throwaway one, so the frame's receivers
 	// build the same code whichever comes first (three/ThreePatches.ts)
 	primeSharedNodes( renderer, scene, camera );
 

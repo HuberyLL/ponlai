@@ -162,7 +162,7 @@ export function buildKernels( clouds: Clouds ): void {
 	// The density at p: the eroded cloud, or under `cheap` its smooth bound alone (the light's
 	// far taps and the sky's probes, which need no margins). A plain function, not a shared
 	// helper: one read from several kernels can be emitted with another kernel's uniform names
-	// (r186).
+	// (r187).
 	const cloudDensity = ( p: V3, coverage: F, lods: V2, cheap: THREE.Node<'bool'> | boolean ) => {
 
 		const c = candidateAt( p, coverage, lods );
@@ -742,7 +742,7 @@ export function buildKernels( clouds: Clouds ): void {
 	// of every SHADOW_PHASES rows per pass.
 	// What gets through the shell to a ground point along a ray climbing `ly` per unit of `L.xz`:
 	// ( the direct beam, the direct beam with the light scattered on through ). One function per
-	// kernel: a helper reading uniforms can be emitted with another kernel's uniform names (r186).
+	// kernel: a helper reading uniforms can be emitted with another kernel's uniform names (r187).
 	const makeCastRay = ( name: string ) => Fn( ( [ ground, ly ]: [ V2, F ] ) => {
 
 		const ray = vec3( clouds.lightDir.x, ly, clouds.lightDir.z ).toVar();

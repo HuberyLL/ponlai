@@ -4,11 +4,17 @@ import { missing } from './Internals.ts';
 
 // The three.js steps for building a draw, which the frame graph's ahead-of-time compiles take.
 //
-// three r186's steps for building a draw, which the frame graph's ahead-of-time compiles
+// three r187's steps for building a draw, which the frame graph's ahead-of-time compiles
 // (post/graph/Compile.ts) take in place of `renderer.compileAsync`'s own: what a draw's node state
 // and pipeline are made from, and the passes a bloom draws. Each is three's own code or state,
-// mirrored or read as r186 has it (`three-internals.json`); post/graph/Compile.ts says why the
+// mirrored or read as r187 has it (`three-internals.json`); post/graph/Compile.ts says why the
 // compiles need them.
+//
+// compileAsync collects its draws between its `_beginPreCompile` and `_finishPreCompile`, which set
+// the renderer's precompilation state: while it is set, nodes that render before a draw (a
+// shadow's map) do not render, so the draws built here render nothing either. Its first step,
+// the drawing pipeline's `prepareAsync`, is synchronous for the standard drawing pipeline, so the
+// collection still runs within the call.
 
 /** A draw's node state: the nodes that render passes of their own before the draw. */
 export type NodeState = { updateBeforeNodes: Node[] };
@@ -22,8 +28,8 @@ type Internals = {
 	_bindings: { updateForRender( renderObject: RenderObject ): void };
 	_pipelines: PipelineCache;
 	_currentRenderContext: RenderContext;
-	_renderContexts: { get( target: RenderTarget | null, mrt: MRTNode | null, callDepth: number ): RenderContext };
-	_isPreCompiling: boolean;
+	_renderContexts: { get( target: RenderTarget | null, mrt: MRTNode | null, callDepth: number, camera: Camera ): RenderContext };
+	_precompilationState: unknown;
 	_createObjectPipeline?: ( ...args: unknown[] ) => void;
 	_compilationPromises: unknown;
 };
@@ -45,6 +51,7 @@ function internals( renderer: WebGPURenderer ): Internals {
 		[ 'Bindings.updateForRender', typeof r._bindings?.updateForRender === 'function' ],
 		[ 'Pipelines.getForRender', typeof r._pipelines?.getForRender === 'function' ],
 		[ 'Renderer._compilationPromises', '_compilationPromises' in r ],
+		[ 'Renderer._precompilationState', '_precompilationState' in r ],
 		[ 'RenderContexts.get', typeof r._renderContexts?.get === 'function' ],
 	];
 	for ( const [ entry, holds ] of members ) if ( ! holds ) throw missing( entry, 'buildDrawsNow (packages/render/three/DrawBuilds.ts)' );
@@ -73,7 +80,7 @@ export function buildDrawsNow( renderer: WebGPURenderer, object: Object3D, camer
 
 			if ( ! nested ) {
 
-				nested = r._renderContexts.get( renderer.getRenderTarget(), renderer.getMRT(), callDepth );
+				nested = r._renderContexts.get( renderer.getRenderTarget(), renderer.getMRT(), callDepth, camera );
 				nested.textures = context.textures;
 				nested.depthTexture = context.depthTexture;
 				nested.depth = context.depth;
@@ -86,19 +93,12 @@ export function buildDrawsNow( renderer: WebGPURenderer, object: Object3D, camer
 		const ro = r._objects.get( object, material, scene, camera, lightsNode, context, clippingContext, passId );
 		ro.drawRange = ( object as Mesh ).geometry.drawRange;
 		ro.group = group;
-		r._isPreCompiling = true;
-		try {
-
-			states.push( r._nodes.getForRender( ro ) );
-			r._geometries.updateForRender( ro );
-			r._nodes.updateForRender( ro );
-			r._bindings.updateForRender( ro );
-
-		} finally {
-
-			r._isPreCompiling = false;
-
-		}
+		// (within compileAsync's collection: the precompilation state is set)
+		if ( r._precompilationState === null ) throw missing( 'Renderer._precompilationState', 'buildDrawsNow (packages/render/three/DrawBuilds.ts)' );
+		states.push( r._nodes.getForRender( ro ) );
+		r._geometries.updateForRender( ro );
+		r._nodes.updateForRender( ro );
+		r._bindings.updateForRender( ro );
 		r._pipelines.getForRender( ro, pending );
 
 	};

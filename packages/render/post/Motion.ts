@@ -20,7 +20,7 @@ import { preExposedRGBA, preExposedScalar } from './PreExposure.ts';
 //   b   the surface's class (MOTION_CLASS: how the resolve treats its history)
 //   a   its reactive weight: 1 asks the resolve to trust the history less (a bolt, foam, spray)
 //
-// In three r186 the blend of each attachment comes only from the renderer's context MRT (the
+// In three r187 the blend of each attachment comes only from the renderer's context MRT (the
 // pass's `mrt`: WebGPUPipelineUtils reads `context.mrt.getBlendMode( texture.name )`, NoBlending
 // unless set), whatever a material's own MRT node says, which changes its shader's outputs only.
 // The scene MRT draws the colour with each material's own blending and overwrites the velocity, so
@@ -52,7 +52,7 @@ import { preExposedRGBA, preExposedScalar } from './PreExposure.ts';
 // animates without `positionPrevious` gets the camera's and the object's motion only. A material's
 // MRT node replaces its output when the pass has no MRT: set one only under the temporal modes
 // (`velocityOutput` returns null otherwise). Drawing a scene material into a second target layout or
-// MRT in one page builds it twice, which r186 may emit with the first build's uniform names in a
+// MRT in one page builds it twice, which r187 may emit with the first build's uniform names in a
 // layout function (the sea's `sceneViewZ` then fails to compile): time the velocity's cost by
 // comparing pages (`--compare` of `aa=off` against a temporal mode), not by switching a page's
 // target.

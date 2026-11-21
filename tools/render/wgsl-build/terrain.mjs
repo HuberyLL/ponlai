@@ -27,6 +27,7 @@ const array = ( name, layers, colorSpace = THREE.NoColorSpace ) => {
 	const t = new THREE.DataArrayTexture( new Uint8Array( 4 * layers ), 1, 1, layers );
 	t.name = name;
 	t.colorSpace = colorSpace;
+	t.minFilter = t.magFilter = THREE.LinearFilter; // as the page's (three r187 loads a nearest-filtered texture unfiltered)
 	return t;
 
 };

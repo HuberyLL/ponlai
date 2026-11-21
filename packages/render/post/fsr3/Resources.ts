@@ -44,7 +44,7 @@
 //   `Exposure()` turns into 1).
 // SPD_MIPS: upstream allocates the full chain of the half render-max size (mip count 0) and binds
 // levels 0..5 as UAVs; nothing reads or writes a level above 5 (the pyramids' stores of levels 6+
-// fall through `StorePyramid`), so the port allocates the 6 levels. three r186 binds one mip level
+// fall through `StorePyramid`), so the port allocates the 6 levels. three r187 binds one mip level
 // of a StorageTexture for writing (`textureStore( ... ).setMipLevel( i )` binds a view of that
 // level), so it stays one texture; the integration gives it 6 `mipmaps` entries (three then
 // allocates 6 levels and generates none) and samples it with a mip filter.

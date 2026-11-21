@@ -1,10 +1,11 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, Loop, attribute, dot, float, floor, fract, int, length, materialColor, max, mix, mod, normalGeometry, normalMap, normalize,
-	positionGeometry, select, sqrt, texture, uv, vec2, vec3, vec4, If,
+	positionGeometry, sqrt, texture, uv, vec2, vec3, vec4, If,
 } from 'three/tsl';
 import { GroundBounceLightingModel } from '../lighting/GroundBounce.ts';
 import { pnoise, hash22 } from '../materials/ProceduralTextures.ts';
+import { selectEach } from '../materials/Select.ts';
 import type { Shared } from '../shared.ts';
 import { branchBend, leafFlutter, mainBend, sprayBend } from './Deform.ts';
 import { rootHash } from '../weather/Wind.ts';
@@ -356,7 +357,9 @@ export function plantTint( albedo: V3, xi: F, mask: F, t: PlantTint ): V3 {
 	const blend = mix( vec3( 0.5 ), key, mask.mul( 1 - t.keep ) ).toVar();
 	const a = albedo.toVar();
 	const low = a.mul( blend ).mul( 2 ).toVar(), high = float( 1 ).sub( float( 1 ).sub( a ).mul( float( 1 ).sub( blend ) ).mul( 2 ) ).toVar();
-	const over = vec3( select( a.x.lessThan( 0.5 ), low.x, high.x ), select( a.y.lessThan( 0.5 ), low.y, high.y ), select( a.z.lessThan( 0.5 ), low.z, high.z ) );
+	// (per channel as WGSL's select: three branches would build the blend again in each,
+	// materials/Select.ts)
+	const over = selectEach( a.lessThan( vec3( 0.5 ) ), low, high );
 	const m = t.matrix;
 	return vec3( dot( vec3( m[ 0 ], m[ 1 ], m[ 2 ] ), over ), dot( vec3( m[ 3 ], m[ 4 ], m[ 5 ] ), over ), dot( vec3( m[ 6 ], m[ 7 ], m[ 8 ] ), over ) );
 

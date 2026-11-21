@@ -22,7 +22,7 @@ import type { ShoreField } from '../../render/data.ts';
 //   round it, out to the world's 32 m grid: ChunkMerge.ts fieldBounds; the rim ground's own,
 //   rimBounds), and writes only the squares of the changed chunks whose texels changed into it:
 //   packed into a staging buffer ahead, then copied into place on the GPU in the swap's frame,
-//   which sends no texel data (three r186's WebGPU backend writes a DataTexture whole and has no
+//   which sends no texel data (three r187's WebGPU backend writes a DataTexture whole and has no
 //   update ranges);
 // - takes a new texture once the land outgrows them, made and filled ahead (Upload.ts
 //   `textureSteps`) and set as the base node's value in the swap's frame.

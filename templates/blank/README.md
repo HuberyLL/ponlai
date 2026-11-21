@@ -28,7 +28,7 @@ For the agent skills, install Ponlai's Claude Code plugin (see
 
 | File | Purpose |
 | --- | --- |
-| `package.json` | three.js pinned to exactly 0.186.1 (the render pipeline uses three.js internals), plus Vite, TypeScript and Playwright |
+| `package.json` | three.js pinned to exactly 0.187.0 (the render pipeline uses three.js internals), plus Vite, TypeScript and Playwright |
 | `vite.config.ts` | Builds the render pipeline's web workers as ES modules |
 | `tsconfig.json` | Allows imports that end in `.ts`, which the render pipeline uses |
 | `index.html` | The page: the canvas container and a loading screen |

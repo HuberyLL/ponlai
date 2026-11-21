@@ -201,8 +201,9 @@ export const gtaoView = {
 /** The base node the receivers load the occlusion through (Pipeline.ts sets the graph's texture). */
 export const gtaoMap = texture( new THREE.DataTexture( new Float32Array( [ 1, - HALF_MAX, 0, 0 ] ), 1, 1, THREE.RGBAFormat, THREE.FloatType ) );
 
-// A texel's load: three r186 gives each load's clone the texture's uv matrix (a mat3 uniform per
-// load site, the identity here), so the loads leave it out.
+// A texel's load: three r187 gives each load's clone its base texture node's uv matrix (one mat3
+// uniform the clones share, the identity here), multiplied into the load's coordinates, so the
+// loads leave the multiplication out.
 type Loaded = { setUpdateMatrix( value: boolean ): unknown };
 function load( map: THREE.TextureNode, q: V2 ): V4 {
 

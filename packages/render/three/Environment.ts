@@ -1,32 +1,37 @@
 import type { PMREMGenerator, RenderTarget, Texture } from 'three/webgpu';
 import { missing } from './Internals.ts';
 
-// PMREMGenerator's own steps, driven one at a time so a bake's GGX filters spread over frames.
+// PMREMGenerator's own steps, driven one at a time so a bake's prefilter spreads over frames.
 //
-// PMREMGenerator's own steps (three r186), which a whole `fromEquirectangular` takes in one call
-// (its `_fromTexture`), driven one at a time so a periodic bake's GGX filter chain spreads over
-// frames (sky/SkyBake.ts `environmentSlices`). Taken in its order and with its arguments, the atlas
-// comes out the same.
+// PMREMGenerator's own steps (three r187), which a whole `fromEquirectangular` takes in one call
+// (its `_fromTexture`), driven one at a time so a periodic bake's prefilter spreads over frames
+// (sky/SkyBake.ts `environmentSlices`). The generator first draws the source into a cube of its
+// own, with a mip chain (`_textureToCubemap`), then filters each level of the PMREM, a cube render
+// target, from that cube alone (`_applyPMREM`), so the levels do not depend on each other. A level
+// is drawn by running `_applyPMREM` with its `_renderCube` passing on only that level's draw: the
+// loop sets the level's uniforms right before the draw, so the draw is the one a whole bake makes.
+// Taken in its order and with its arguments, the PMREM comes out the same.
+//
+// The source cube is the generator's own between the steps: a caller must finish a spread bake
+// before it starts another bake on the same generator.
 
+type RenderCube = ( this: unknown, target: RenderTarget, lod: number, material: unknown ) => void;
 type Steps = {
-	_lodMeshes: unknown[];
-	_setSizeFromTexture( texture: Texture ): void;
-	_init( target: RenderTarget ): void;
-	_textureToCubeUV( texture: Texture, target: RenderTarget ): void;
-	_applyGGXFilter( target: RenderTarget, lodIn: number, lodOut: number ): void;
-	_setViewport( target: RenderTarget, x: number, y: number, width: number, height: number ): void;
+	_setSize( cubeSize: number ): void;
+	_textureToCubemap( texture: Texture ): void;
+	_applyPMREM( target: RenderTarget ): void;
+	_renderCube: RenderCube;
 };
 
-/** A PMREM generator's bake of an environment into a cube-UV atlas it made before, as steps. */
+/** A PMREM generator's bake of an environment into a PMREM it made before, as steps. */
 export interface EnvironmentSteps {
-	/** The source's conversion into the atlas's first level (its size taken from the source). */
-	convert( source: Texture, target: RenderTarget ): void;
-	/** The atlas's level count, as the generator's last set-up left it. */
-	levels(): number;
-	/** Level `to`'s GGX filter from level `from` (two render passes). */
-	filter( target: RenderTarget, from: number, to: number ): void;
-	/** The viewport the generator leaves on `target` after a whole bake. */
-	resetViewport( target: RenderTarget ): void;
+	/** The equirectangular source drawn into the generator's source cube (its size taken from the
+	 * source), from which every level is filtered. */
+	convert( source: Texture ): void;
+	/** The level count of `target` (a PMREM the generator made). */
+	levels( target: RenderTarget ): number;
+	/** Level `level` of `target` filtered from the source cube (one cube: six render passes). */
+	filter( target: RenderTarget, level: number ): void;
 }
 
 /** `pmrem`'s steps; throws, naming the first one missing, on a three without them. */
@@ -34,25 +39,42 @@ export function environmentSteps( pmrem: PMREMGenerator ): EnvironmentSteps {
 
 	const p = pmrem as unknown as Steps;
 	const members: [ string, boolean ][] = [
-		[ 'PMREMGenerator._lodMeshes', Array.isArray( p._lodMeshes ) ],
-		[ 'PMREMGenerator._setSizeFromTexture', typeof p._setSizeFromTexture === 'function' ],
-		[ 'PMREMGenerator._init', typeof p._init === 'function' ],
-		[ 'PMREMGenerator._textureToCubeUV', typeof p._textureToCubeUV === 'function' ],
-		[ 'PMREMGenerator._applyGGXFilter', typeof p._applyGGXFilter === 'function' ],
-		[ 'PMREMGenerator._setViewport', typeof p._setViewport === 'function' ],
+		[ 'PMREMGenerator._setSize', typeof p._setSize === 'function' ],
+		[ 'PMREMGenerator._textureToCubemap', typeof p._textureToCubemap === 'function' ],
+		[ 'PMREMGenerator._applyPMREM', typeof p._applyPMREM === 'function' ],
+		[ 'PMREMGenerator._renderCube', typeof p._renderCube === 'function' ],
 	];
 	for ( const [ entry, holds ] of members ) if ( ! holds ) throw missing( entry, 'environmentSteps (packages/render/three/Environment.ts)' );
 	return {
-		convert( source, target ) {
+		convert( source ) {
 
-			p._setSizeFromTexture( source );
-			p._init( target );
-			p._textureToCubeUV( source, target );
+			// (`_fromTexture`'s equirectangular branch)
+			p._setSize( ( source.image as { width: number } ).width / 4 );
+			p._textureToCubemap( source );
 
 		},
-		levels: () => p._lodMeshes.length,
-		filter: ( target, from, to ) => p._applyGGXFilter( target, from, to ),
-		resetViewport: ( target ) => p._setViewport( target, 0, 0, target.width, target.height ),
+		levels: ( target ) => target.texture.mipmaps.length,
+		filter( target, level ) {
+
+			const own = Object.prototype.hasOwnProperty.call( p, '_renderCube' ) ? p._renderCube : null;
+			const render = p._renderCube;
+			p._renderCube = function ( this: unknown, cube, lod, material ) {
+
+				if ( lod === level ) render.call( this, cube, lod, material );
+
+			};
+			try {
+
+				p._applyPMREM( target );
+
+			} finally {
+
+				if ( own ) p._renderCube = own;
+				else delete ( p as Partial<Steps> )._renderCube;
+
+			}
+
+		},
 	};
 
 }

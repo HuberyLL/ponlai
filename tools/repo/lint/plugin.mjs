@@ -77,7 +77,7 @@ function selectorRule( description, selectors, message ) {
 
 // ---- tsl-method-order
 
-// The forms as written and what three r186 computes for them.
+// The forms as written and what three r187 computes for them.
 const METHOD_FORMS = {
 	mix: '`t.mix( a, b )` is mix( a, b, t )',
 	step: '`x.step( edge )` is step( edge, x )',
@@ -104,7 +104,7 @@ const tslMethodOrder = {
 	meta: {
 		...docs( 'TSL\'s mix, step and smoothstep only in their function form' ),
 		messages: {
-			found: 'TSL\'s method form takes its receiver out of order in three r186: {{ form }}. Write the function form imported from \'three/tsl\' with the arguments in their usual order ( mix( a, b, t ), step( edge, x ), smoothstep( low, high, x ) ). Why: packages/render/post/fsr3/Upsample.ts, the comment on ffxLerp.',
+			found: 'TSL\'s method form takes its receiver out of order in three r187: {{ form }}. Write the function form imported from \'three/tsl\' with the arguments in their usual order ( mix( a, b, t ), step( edge, x ), smoothstep( low, high, x ) ). Why: packages/render/post/fsr3/Upsample.ts, the comment on ffxLerp.',
 		},
 	},
 	create( context ) {
@@ -186,7 +186,7 @@ const chunkNormals = selectorRule(
 const noDynamicDraw = selectorRule(
 	'no DynamicDrawUsage',
 	[ 'MemberExpression[computed=false][property.name="DynamicDrawUsage"]', 'ImportSpecifier[imported.name="DynamicDrawUsage"]' ],
-	'With DynamicDrawUsage three r186 re-uploads the whole buffer on every draw. Leave the attribute at its static usage and, after writing it, bump its version with update ranges (`addUpdateRange`, `needsUpdate = true`), so only what changed is uploaded, once. Read packages/render/weather/LightningStrike.ts (the comment on its static usage) and packages/render/vegetation/Instances.ts.',
+	'With DynamicDrawUsage three r187 re-uploads the whole buffer on every draw. Leave the attribute at its static usage and, after writing it, bump its version with update ranges (`addUpdateRange`, `needsUpdate = true`), so only what changed is uploaded, once. Read packages/render/weather/LightningStrike.ts (the comment on its static usage) and packages/render/vegetation/Instances.ts.',
 );
 
 // ---- timestamp-owner

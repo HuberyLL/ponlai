@@ -6,7 +6,7 @@ import {
 	positionWorld, specularColor, specularColorBlended, specularF90, vertexIndex, workgroupArray, workgroupBarrier, workgroupId,
 } from 'three/tsl';
 import { LAWN_GAIN, MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_SIZE, groundGains } from '../materials/Meadow.ts';
-import { GUST_MEAN, gustAt, gustJitter, wave, windStrength, type WindState, RESPONSE, displacementAt, runSteps, CANOPY_SHADE, transmission, vegetationMaterial, unjitteredPadded, TEMPORAL, debugFlags, MEADOW_SHADOWS, meadowShadowAt, meadowShadowFloor, receiveScreenAO, textureSteps, type VegetationKind, type Shared, tune, tuneApply, tuneUniform, liftKeyWorld } from '../../render/index.ts';
+import { GUST_MEAN, gustAt, gustJitter, wave, windStrength, type WindState, RESPONSE, displacementAt, runSteps, CANOPY_SHADE, transmission, vegetationMaterial, unjitteredPadded, TEMPORAL, debugFlags, MEADOW_SHADOWS, meadowShadowAt, meadowShadowFloor, receiveScreenAO, textureSteps, type VegetationKind, type Shared, selectVec3, tune, tuneApply, tuneUniform, liftKeyWorld } from '../../render/index.ts';
 import type { WorldData } from './types.ts';
 import { GROUND_A, HEIGHT_MAP, LIP, SINK, SWARD_DEPTH, grassSteps, type GrassPlan } from './GrassGround.ts';
 import { GROVES } from './BambooGroves.ts';
@@ -1077,8 +1077,8 @@ function bladeVertex( reads: ReturnType<MeadowBlades[ 'reads' ]>, wind: WindStat
 
 	}
 	// (the clump's column, 0 or 1, and the gloss's ramp with the distance, THICKEN's, in one value:
-	// 2 column + ramp, `grassMaterial`)
-	return { position: select( live, position, vec3( 0 ) ), normal, along: t, ao, column: C.w.mul( 2 ).add( ramp ), far: D.z, winding, lean };
+	// 2 column + ramp, `grassMaterial`; the position as WGSL's select, render's `selectVec3`)
+	return { position: selectVec3( live, position, vec3( 0 ) ), normal, along: t, ao, column: C.w.mul( 2 ).add( ramp ), far: D.z, winding, lean };
 
 }
 

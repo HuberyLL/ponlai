@@ -22,6 +22,7 @@ export default function () {
 	const shore = data( 'shore-distance', 2, 2, new Float32Array( 4 ), THREE.RedFormat, THREE.FloatType );
 	const soil = new THREE.DataArrayTexture( new Uint8Array( 2 * 2 * 4 * 2 ), 2, 2, 2 );
 	soil.name = 'soil';
+	soil.minFilter = soil.magFilter = THREE.LinearFilter; // as materials/Soil.ts's
 	const fields = { shore: texture( shore, vec2( 0 ) ) };
 	const atlas = { map: data( 'leafMap', 1, 1, new Uint8Array( 4 ) ), alpha: data( 'leafAlpha', 1, 1, new Uint8Array( 4 ) ), ids: data( 'leafIds', 1, 1, new Uint8Array( 4 ) ) };
 	const leaves = new FallingLeaves( { shared, fields, soil, wind: new Wind( shared.wind ), atlas } );

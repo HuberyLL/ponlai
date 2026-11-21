@@ -4,12 +4,12 @@ import { missing } from './Internals.ts';
 
 // Cache-key patches for three's node and pipeline caches: one shader per target layout.
 //
-// Cache-key patches for three r186's node and pipeline caches, so a material drawn into targets
+// Cache-key patches for three r187's node and pipeline caches, so a material drawn into targets
 // of different layouts (another MRT, other attachment formats or names) gets a shader and a
 // pipeline per layout. Installed by main.ts right after `renderer.init()`, before any material
 // builds.
 //
-// In r186 a draw's node build is cached by `NodeManager.getForRenderCacheKey( renderObject )`, the
+// In r187 a draw's node build is cached by `NodeManager.getForRenderCacheKey( renderObject )`, the
 // render object's initial cache key. That key ends in its render context's id, and the contexts are
 // keyed by the attachment count, the first attachment's format and type, samples, depth, the MRT
 // and the call depth, so those already tell builds apart; the other attachments' formats and the
@@ -41,7 +41,7 @@ import { missing } from './Internals.ts';
 // texture binding at its node's current texture, which is where the first update would move it.
 // There is no public path: the build's bindings are three's internal state.
 //
-// And one build ahead of the frame (`primeSharedNodes`). r186 makes some nodes every lit material
+// And one build ahead of the frame (`primeSharedNodes`). r187 makes some nodes every lit material
 // shares inside the first build that needs them, and that build's code differs from every later
 // one's, though they draw the same: the light's colour times its shadow and the shadow node's own
 // graph (AnalyticLightNode.setupShadow, ShadowNode.setup) are made once, in the first receiver's
@@ -58,7 +58,7 @@ import { missing } from './Internals.ts';
 // shadow map it creates for the real receivers (so the map's first redraw moves to the loop's first
 // frame, SunShadow.ts). Paused views at grow 0, 6 and 12 drew the same pixels with it as without.
 //
-// And the graph's depth clears (`ownDepthClears`). r186 clears a render target's depth before the
+// And the graph's depth clears (`ownDepthClears`). r187 clears a render target's depth before the
 // first render into it whenever the renderer's flags clear colour but not depth
 // (`Renderer._renderScene`, its `depthInitialized` record of the target), and a resize disposes the
 // target, which drops that record. So on the frame after every change of the render scale the
@@ -86,16 +86,16 @@ function layoutKey( context: RenderContext ): string {
 
 const patched = new WeakSet<object>();
 
-// three's revision, which the patches were written against (r186): another throws
+// three's revision, which the patches were written against (r187): another throws
 function checkRevision( user: string, revision: string ): void {
 
-	if ( ! /^186(\.|$)/.test( revision ) ) throw missing( 'revision', `${ user } (written for r186, this is r${ revision })` );
+	if ( ! /^187(\.|$)/.test( revision ) ) throw missing( 'revision', `${ user } (written for r187, this is r${ revision })` );
 
 }
 
 /** Patches the renderer's node manager and backend (instances) so their cache keys include the
  * context MRT and the whole attachment layout (the node key fixed per render object). Call after
- * `renderer.init()`. Throws on a three revision other than 186, whose internals it was written
+ * `renderer.init()`. Throws on a three revision other than 187, whose internals it was written
  * against, or on a renderer without the members it patches (not initialised, or not WebGPU). Returns
  * true (a patched renderer is left as it is). */
 export function installCacheKeyPatches( renderer: unknown, revision: string = REVISION ): true {
@@ -138,7 +138,7 @@ export function installCacheKeyPatches( renderer: unknown, revision: string = RE
 
 /** Patches the renderer's bindings (an instance) so that a new bind group's texture bindings start at
  * their node's current texture, not the one the material was built with (see the header). Call after
- * `renderer.init()`. Throws on a three revision other than 186, or on a renderer without the member
+ * `renderer.init()`. Throws on a three revision other than 187, or on a renderer without the member
  * it patches. */
 export function installBindingPatches( renderer: unknown, revision: string = REVISION ): void {
 
@@ -164,10 +164,10 @@ export function installBindingPatches( renderer: unknown, revision: string = REV
 }
 
 /** Builds one throwaway receiver of `scene`'s lights and environment through the backend's node
- * builder (no pipeline), so the nodes r186 makes inside the first lit build exist before any material
+ * builder (no pipeline), so the nodes r187 makes inside the first lit build exist before any material
  * the frame draws is built (see the header). Call once, after the lights, their shadows' filters
  * and the scene's environment are in place and before the first frame. Throws on a three revision
- * other than 186, or on a renderer without the members it builds through. */
+ * other than 187, or on a renderer without the members it builds through. */
 export function primeSharedNodes( renderer: WebGPURenderer, scene: Scene, camera: Camera, revision: string = REVISION ): void {
 
 	checkRevision( 'primeSharedNodes', revision );
@@ -197,7 +197,7 @@ export function primeSharedNodes( renderer: WebGPURenderer, scene: Scene, camera
 
 }
 
-/** Marks `target`'s depth as initialised for three, so r186 never clears it on its own: the frame
+/** Marks `target`'s depth as initialised for three, so r187 never clears it on its own: the frame
  * graph decides every clear and load of the depth it owns (see the header). Call as the graph binds
  * a target with depth, before it renders into it. A renderer without three's texture records (the
  * frame graph's tables run it on stand-in renderers) is left alone: in the app `checkRenderer`

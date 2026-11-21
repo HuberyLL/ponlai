@@ -105,6 +105,7 @@ import '../kit/qos.mjs';
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, extname, join, relative, resolve } from 'node:path';
 import * as THREE from 'three/webgpu';
+import Bindings from 'three/src/renderers/common/Bindings.js';
 import { ROOT } from '../kit/root.mjs';
 
 const ENTRIES = join( ROOT, 'tools', 'render', 'wgsl-build' );
@@ -179,6 +180,10 @@ function stubRenderer( features ) {
 	const renderer = new THREE.WebGPURenderer( { canvas } );
 	renderer.backend.device = { features: new Set( features ), limits: {} };
 	renderer._initialized = true; // (hasFeature asks the backend only once initialised)
+	// three's own bindings (made by init, which the stand-in never runs): a build shares a uniform
+	// group per render context through them, which sorts the group's uniforms (r187)
+	renderer.backend.renderer = renderer; // (set by init: the bindings find the current context through it)
+	renderer._bindings = new Bindings( renderer.backend, null, null, null, {}, renderer.info );
 	renderer.setRenderTarget( new THREE.RenderTarget( 1, 1, { type: THREE.HalfFloatType, depthBuffer: false } ) );
 	return renderer;
 

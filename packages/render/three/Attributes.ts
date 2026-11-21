@@ -3,7 +3,7 @@ import { missing } from './Internals.ts';
 
 // The renderer's attribute records in three: whether uploaded, the upload, the buffer's release.
 //
-// The renderer's attribute records (three r186's `Renderer._attributes`): whether three has
+// The renderer's attribute records (three r187's `Renderer._attributes`): whether three has
 // uploaded an attribute, its own upload, and the release of an attribute's GPU buffer. The stepped
 // uploads (util/Upload.ts) make a buffer as three would and hand it to three through these.
 
@@ -36,7 +36,7 @@ export function uploadAttribute( renderer: WebGPURenderer, attribute: Attribute,
 
 }
 
-/** Frees `attribute`'s GPU buffer, as three frees a geometry's on dispose (r186 Attributes.delete:
+/** Frees `attribute`'s GPU buffer, as three frees a geometry's on dispose (r187 Attributes.delete:
  * the buffer destroyed, the renderer's memory info updated). */
 export function releaseAttribute( renderer: WebGPURenderer, attribute: Attribute ): void {
 

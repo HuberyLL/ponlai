@@ -137,7 +137,7 @@ function storageTexture( name: string, f: R.Fsr3Format, linear: boolean, mips = 
 	t.type = type;
 	t.name = name;
 	t.generateMipmaps = false;
-	( t as unknown as { mipmapsAutoUpdate: boolean } ).mipmapsAutoUpdate = false;
+	t.mipmapsAutoUpdate = false;
 	t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
 	t.magFilter = linear ? THREE.LinearFilter : THREE.NearestFilter;
 	t.minFilter = linear ? ( mips > 1 ? THREE.LinearMipmapNearestFilter : THREE.LinearFilter ) : THREE.NearestFilter;
@@ -227,8 +227,8 @@ export class Fsr3Upscaler {
 		const tHdr = texture( g.texture( inputs.hdr ) ), tDepth = texture( g.texture( inputs.surfaceDepth ) ), tVelocity = texture( g.texture( inputs.velocity ) );
 		const tVeil = inputs.veilReactive ? texture( g.texture( inputs.veilReactive ) ) : null;
 		const tAuto = autoReactive ? texture( this.textures.get( R.FFX_FSR3UPSCALER_RESOURCE_IDENTIFIER_AUTOREACTIVE )! ) : null;
-		// (a load with no uv matrix: three r186 gives a load of a graph texture a mat3 uniform per load
-		// site, the identity, multiplied into every load's texel coordinates, as Bindings.ts `loadAt`)
+		// (a load with no uv matrix: three r187 gives a load of a graph texture its base node's mat3
+		// uniform, the identity, multiplied into every load's texel coordinates, as Bindings.ts `loadAt`)
 		const load = ( t: THREE.TextureNode, p: N ) => ( textureLoad( t, ivec2( p ), int( 0 ) ) as unknown as N ).setUpdateMatrix( false ) as N;
 		const reactive = ( p: N ): N => {
 

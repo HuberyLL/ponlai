@@ -15,8 +15,8 @@ import { gpuBuffer, gpuDevice, gpuTexture, setGpuBuffer, wrapAttributeWrites } f
 // command stream, and with the GPU busy a few megabytes stalled the main thread for hundreds of
 // milliseconds (WorldFields.ts).
 //
-// The buffer of an attribute is made as three r186's WebGPUAttributeUtils.createAttribute makes it
-// (the same usage for its type, the size rounded to 4 bytes) and set where three keeps it (the
+// The buffer of an attribute is made as three r187's WebGPUAttributeUtils.createAttribute makes it
+// (the same usage for its type, the same widening of narrow integers, the size rounded to 4 bytes) and set where three keeps it (the
 // backend's data of the attribute's buffer: three/Backend.ts `setGpuBuffer`), so three's own update
 // then finds it made and only records its version: three owns it from then on (frees it on
 // dispose, writes it on a change). Data three converts on upload (16-bit or 8-bit integers, items
@@ -30,14 +30,12 @@ import { gpuBuffer, gpuDevice, gpuTexture, setGpuBuffer, wrapAttributeWrites } f
 // (`updateAttribute` wrapped once per backend: three/Backend.ts `wrapAttributeWrites`). The writes were under a megabyte, yet each 256 KB
 // instance-matrix write blocked the main thread for 15-35 ms on a running page with the GPU busy,
 // and the first after-swap step (the rain's map, whose proxies share those buffers) took 50-200 ms.
-// The key is the typed array: three uploads an instanced mesh's matrices and colours through
-// buffers of its own (r186 nodes/accessors/Instance.js) that wrap the attribute's array, so the
-// array is what the write and the stage share. There three also repeats the write: it keeps the
-// uploaded version per node attribute, and every material built on the mesh (its shadow, prepass
-// and wind variants, the rain map's proxies) has four on the one buffer, so the first write takes
-// the update range and each later one wrote the whole buffer again (256 KB a species). A write of
-// the staged version is therefore the copy once per GPU buffer and skipped after it; a write of
-// an older version (before the swap) or of other data goes through three.
+// The key is the typed array: three uploads an instanced mesh's matrices and colours from the
+// attribute's own array, bound per object as instance attributes or, when the geometry leaves no
+// room for them, through buffers of its own that wrap that array (r187 nodes/accessors/Instance.js),
+// so the array is what the write and the stage share. A write of the staged version is the copy
+// once per GPU buffer and skipped after it; a write of an older version (before the swap) or of
+// other data goes through three.
 
 export { AttributeType };
 
@@ -67,9 +65,11 @@ export function* uploadSteps( renderer: THREE.WebGPURenderer, attribute: Attribu
 	let array = source.array as ArrayBufferView;
 	const storage = ( source as unknown as { isStorageBufferAttribute?: boolean; isStorageInstancedBufferAttribute?: boolean } );
 	const isStorage = !! ( storage.isStorageBufferAttribute || storage.isStorageInstancedBufferAttribute );
-	const narrow = array instanceof Uint16Array || array instanceof Uint8Array || array instanceof Int16Array || array instanceof Int8Array;
-	const plain = array instanceof Float32Array || array instanceof Uint32Array || array instanceof Int32Array;
 	const itemSize = ( source as THREE.BufferAttribute ).itemSize;
+	// three keeps a 16-bit index at 16 bits unless it is also a storage buffer
+	const index16 = type === AttributeType.INDEX && ! isStorage;
+	const narrow = ( array instanceof Uint16Array && ! index16 ) || array instanceof Uint8Array || array instanceof Int16Array || array instanceof Int8Array;
+	const plain = array instanceof Float32Array || array instanceof Uint32Array || array instanceof Int32Array || ( array instanceof Uint16Array && index16 && itemSize === 1 );
 	// (a narrow item three pads, or one it keeps narrow when normalised, goes through three)
 	const widen = narrow && attribute.normalized === false && ! ( attribute as THREE.InterleavedBufferAttribute ).isInterleavedBufferAttribute && itemSize === 1;
 	if ( ! ( plain || widen ) || ( isStorage && itemSize === 3 ) || gpuBuffer( renderer, source ) ) {
@@ -81,10 +81,11 @@ export function* uploadSteps( renderer: THREE.WebGPURenderer, attribute: Attribu
 	}
 	if ( widen ) {
 
-		// three's patch for 16- and 8-bit integers: widened to 32 bits (an index's 0xffff to the
-		// 32-bit primitive restart), and the attribute keeps the wide array
+		// three's widening of 16- and 8-bit integers, which WGSL lacks: to 32 bits (an 8-bit index
+		// to 16, and a storage index's 0xffff to the 32-bit primitive restart), and the attribute
+		// keeps the wide array
 		const from = array as Uint16Array | Uint8Array | Int16Array | Int8Array, signed = from instanceof Int16Array || from instanceof Int8Array;
-		const wide = signed ? new Int32Array( from.length ) : new Uint32Array( from.length );
+		const wide = signed ? new Int32Array( from.length ) : index16 ? new Uint16Array( from.length ) : new Uint32Array( from.length );
 		const restart = ! signed && from instanceof Uint16Array && type === AttributeType.INDEX;
 		for ( let k = 0; k < from.length; k += SLICE / 4 ) {
 

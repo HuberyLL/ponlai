@@ -90,7 +90,7 @@ export class CharacterShadow {
 		this.camera.layers.set( CharacterShadow.LAYER );
 		this.material.colorWrite = false;
 		// No blending: three sets an override's `transparent` from each drawn material and can leave
-		// it null rather than false (Renderer.renderObject, r186), which reads as blended; a blended
+		// it null rather than false (Renderer.renderObject, r187), which reads as blended; a blended
 		// pipeline into this one-channel target reads an alpha its shader does not output, so
 		// WebGPU refuses it and every draw of the map uses an invalid pipeline (this map's shader is
 		// built for its own target, graph/Compile.ts).

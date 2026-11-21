@@ -54,11 +54,11 @@ import * as R from './Resources.ts';
 //   Out-of-bounds coordinates reach LoadInputMotionVector only with display-resolution motion
 //   vectors; an accessor returns 0 there, as a D3D load does.
 //   Every accessor builds and returns a new node on each call (or returns a uniform node), never
-//   one node it keeps: three r186 assigns a texture read (and any temporary used twice) to a
-//   variable where it is first built and reads that variable at every later use, and the kernels
-//   first call some accessors inside a branch (`Exposure()` inside the accumulate kernel's
-//   reprojection and LumaInstability's `If`), so a kept node would read 0 on every pixel that
-//   skips the branch. A float uniform is emitted as its uniform at each use. The app's exposure
+//   one node it keeps: three assigns a texture read (and any temporary used twice) to a variable
+//   where it is first built and reads that variable at later uses, and the kernels first call some
+//   accessors inside a branch (`Exposure()` inside the accumulate kernel's reprojection and
+//   LumaInstability's `If`). r187 builds such a value again where the block it was first built in
+//   is not visible (nodes/core/Node.js, the flow blocks); a new node per call does not depend on it. A float uniform is emitted as its uniform at each use. The app's exposure
 //   is a texture load (the exposure state's texel, `Pipeline.ts`), so its accessor builds the load
 //   anew at each call too.
 // - `setFrame( plan )` each frame before the dispatches: copies the plan's constants into the
@@ -67,7 +67,7 @@ import * as R from './Resources.ts';
 //
 // Differences from upstream (the WebGPU mapping):
 // - Each UAV (a resource's storage binding at one mip level and access) has a uniform hash of its
-//   own: three r186 merges texture nodes of one texture into one binding, which sent every SPD
+//   own: three r187 merges texture nodes of one texture into one binding, which sent every SPD
 //   level's store through level 0's view.
 // - Upstream's texture formats map to WebGPU's as Resources.ts says; NEW_LOCKS is r32float
 //   (read-write), so `StoreNewLocks` rounds to 8 bits as upstream's R8_UNORM stores would.
@@ -89,7 +89,7 @@ import * as R from './Resources.ts';
 // - r32float does not filter in WebGPU core: `SampleLanczos2Weight` and `SampleDilatedDepth`
 //   filter by hand, the same weights as a bilinear clamp-to-edge sample.
 // - `GetSPDMipDimensions` and the resource dimension getters read `textureDimensions` (level 0's:
-//   three r186 drops the level for a storage texture, so a mip's size is level 0's halved).
+//   three r187 drops the level for a storage texture, so a mip's size is level 0's halved).
 // - The deprecated auto-composition and pre/post-alpha callbacks (`StoreAutoReactive`,
 //   `LoadPrevPreAlpha`, ...) belong to the removed TCR pass and are not ported; the reactive-mask
 //   generator stores straight into `rw_output_autoreactive` as its pass file does.
@@ -295,7 +295,7 @@ export class Fsr3Bindings {
 			node = storageTexture( this.texture( this.uavAliases.get( id ) ?? id ) as THREE.StorageTexture ) as N;
 			if ( mip !== 0 ) node.setMipLevel( mip );
 			if ( readWrite ) node.toReadWrite();
-			// three r186 shares one binding between texture nodes of the same texture (their uniform
+			// three r187 shares one binding between texture nodes of the same texture (their uniform
 			// hash is the texture's uuid): every mip level's store then went through the first level's
 			// view (SPD's levels 1..5 landed in level 0's corner), and a kernel that samples a texture
 			// and stores into it would bind it once. Each UAV of a level and access is a binding of
@@ -359,9 +359,10 @@ export class Fsr3Bindings {
 
 	}
 
-	/** A load through an SRV: three r186 gives a clone made by `load()` the texture's uv matrix (a
-	 * mat3 uniform per load site, updated per dispatch), the identity on FSR's textures; a clone
-	 * made by `sample().level()` carries none. */
+	/** A load through an SRV: three r187 gives a clone made by `load()` its base texture node's uv
+	 * matrix (one mat3 uniform the base's clones share, updated per dispatch), multiplied into the
+	 * load's coordinates, the identity on FSR's textures; a clone made by `sample().level()` carries
+	 * none. */
 	private loadAt( node: N, p: N ): N {
 
 		return node.load( p ).setUpdateMatrix( false );
@@ -450,7 +451,7 @@ export class Fsr3Bindings {
 
 	GetSPDMipDimensions( uMipLevel: number ): N {
 
-		// three r186 drops the level of a storage texture's `textureSize`: level 0's size, halved
+		// three r187 drops the level of a storage texture's `textureSize`: level 0's size, halved
 		const size0 = ivec2( textureSize( this.srv( R.FFX_FSR3UPSCALER_RESOURCE_IDENTIFIER_SPD_MIPS ), int( 0 ) ) );
 		return uMipLevel === 0 ? size0 : max( ivec2( 1 ), size0.shiftRight( ivec2( uMipLevel ) ) );
 
@@ -820,7 +821,7 @@ export class Fsr3Bindings {
 
 		const node = this.srv( R.FFX_FSR3UPSCALER_RESOURCE_IDENTIFIER_SPD_MIPS );
 		const q = ivec2( iPxPos ).toVar();
-		// level `index`'s own size (a storage texture's `textureSize` is level 0's in r186), so
+		// level `index`'s own size (a storage texture's `textureSize` is level 0's in r187), so
 		// the tail reads 0 past it as upstream's UAV load does
 		const size = this.spdMipSize( index );
 		return select( this.inside( q, size ), node.load( q ).level( int( index ) ), vec4( 0 ) ).xy;

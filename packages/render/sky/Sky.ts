@@ -162,10 +162,9 @@ export interface SkyEndpoint {
 }
 
 // Render passes of a periodic bake per frame after its first (the panoramas): the conversion to
-// the cube atlas and its GGX filters (two passes each), a fraction of a millisecond each at high.
-// A frame takes whole steps up to this many passes: the conversion and one filter, then two
-// filters a frame.
-const SLICE_PASSES = 4;
+// the source cube and each level's filter, a cube (six passes, one a face) each. A frame takes
+// whole steps up to this many passes: one cube a frame.
+const SLICE_PASSES = 6;
 
 function makeEndpoint(): SkyEndpoint {
 
@@ -289,7 +288,7 @@ export class Sky {
 	seaColor = new THREE.Color( 0.0045, 0.0125, 0.0140 );
 	equirect: THREE.RenderTarget;
 	small: THREE.RenderTarget;
-	envMap: THREE.RenderTarget | null = null;
+	envMap: THREE.CubeRenderTarget | null = null;
 	dome: THREE.Mesh;
 	lastBakeMs = 0;
 	readonly irradianceNode: V3;
@@ -334,7 +333,7 @@ export class Sky {
 
 	endpoints = [ makeEndpoint(), makeEndpoint() ];
 	// The environment's PMREM atlases: the one shown (environmentFront) and the next one.
-	environments: [ THREE.RenderTarget | null, THREE.RenderTarget | null ] = [ null, null ];
+	environments: [ THREE.CubeRenderTarget | null, THREE.CubeRenderTarget | null ] = [ null, null ];
 	environmentFront = 0;
 	// The atlases the displayed environment cross-fades from and to (by `blend`), as published.
 	environmentPair: [ number, number ] = [ 0, 0 ];
@@ -365,7 +364,8 @@ export class Sky {
 	environmentA: THREE.TextureNode | null = null;
 	environmentB: THREE.TextureNode | null = null;
 	environment: V3 | null = null;
-	environmentBlendQuad: THREE.QuadMesh | null = null;
+	// the displayed PMREM's cross-fade: a box drawn around a cube camera into each level in turn
+	environmentBlend: { mesh: THREE.Mesh; camera: THREE.CubeCamera; level: THREE.UniformNode<'float', number> } | null = null;
 	irradianceQuad: THREE.QuadMesh;
 	private irradianceBlendQuad: THREE.QuadMesh;
 	private irradianceDisplay = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter } );
@@ -830,8 +830,8 @@ export class Sky {
 			[ this.deckIrradianceQuad, e.deckIrradianceMap ], [ this.deckIrradianceBlendQuad, this.deckIrradianceDisplay ],
 			[ this.landQuad, this.reflectionSource ],
 		];
-		if ( this.environmentBlendQuad && this.envMap ) pairs.push( [ this.environmentBlendQuad, this.envMap ] );
 		const compiling = pairs.map( ( [ quad, target ] ) => compileInto( r, quad, quad.camera, target ) );
+		if ( this.environmentBlend && this.envMap ) compiling.push( compileInto( r, this.environmentBlend.mesh, this.environmentBlend.camera.children[ 0 ] as THREE.Camera, this.envMap ) );
 		compiling.push( this.pmrem.compileEquirectangularShader() );
 		await Promise.all( compiling );
 
@@ -1025,12 +1025,18 @@ export class Sky {
 
 	private renderDisplayMaps(): void {
 
-		if ( ! this.environmentBlendQuad || ! this.envMap ) return;
+		if ( ! this.environmentBlend || ! this.envMap ) return;
 		const r = this.renderer, previous = r.getRenderTarget();
 		try {
 
-			r.setRenderTarget( this.envMap );
-			this.environmentBlendQuad.render( r );
+			const { mesh, camera, level } = this.environmentBlend;
+			for ( let lod = 0; lod < this.envMap.texture.mipmaps.length; lod ++ ) {
+
+				level.value = lod;
+				camera.activeMipmapLevel = lod;
+				camera.update( r, mesh );
+
+			}
 			r.setRenderTarget( this.irradianceDisplay );
 			this.irradianceBlendQuad.render( r );
 			r.setRenderTarget( this.clearIrradianceDisplay );
@@ -1192,7 +1198,8 @@ export class Sky {
 		this.irradianceDisplay.dispose();
 		this.clearIrradianceDisplay.dispose();
 		this.deckIrradianceDisplay.dispose();
-		( this.environmentBlendQuad?.material as THREE.Material | undefined )?.dispose();
+		this.environmentBlend?.mesh.geometry.dispose();
+		( this.environmentBlend?.mesh.material as THREE.Material | undefined )?.dispose();
 		( this.irradianceQuad.material as THREE.Material ).dispose();
 		( this.irradianceBlendQuad.material as THREE.Material ).dispose();
 		( this.clearIrradianceQuad.material as THREE.Material ).dispose();

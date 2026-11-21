@@ -20,14 +20,14 @@
 //    (`compileInto`, under the draw's target and MRT), whose draw must then create no pipeline.
 //    Each draw's fragment shader must have the outputs its target has (one, or two) and every
 //    attachment the values the material writes. With the cache-key patches installed
-//    (`installCacheKeyPatches`, as main.ts does), all must pass. Two controls show that the probe
-//    sees the faults it guards against: the same MRT drawn into two targets of one layout whose
+//    (`installCacheKeyPatches`, as main.ts does), all must pass. A control shows that the probe
+//    sees the fault it guards against: the same MRT drawn into two targets of one layout whose
 //    attachments are named in the other order (unpatched three serves the first draw's shader to
-//    the second, whose outputs land in the wrong attachments), and a scene of two meshes compiled
-//    with three's own compileAsync under the MRT (the second mesh builds after the MRT is unbound,
-//    without the velocity output), beside the same scene through `compileInto`, which must pass.
-//    The controls must fail where they are expected to.
-// 2. What the temporal frame graph rests on, in three r186 (bare page, patched renderer): blending
+//    the second, whose outputs land in the wrong attachments); it must fail. A scene of two meshes
+//    is compiled under the MRT with three's own compileAsync (since r187 it builds each draw under
+//    the binding it was called with, so the MRT is unbound before the second mesh builds) and
+//    through `compileInto`; both must give each mesh the velocity output.
+// 2. What the temporal frame graph rests on, in three r187 (bare page, patched renderer): blending
 //    per attachment comes only from the renderer's context MRT, here Motion.ts's sceneMRT and
 //    overlayMRT, the passes' own. Into a two-attachment target
 //    (`sceneColor`, `velocity`, half float, as the graph names them), each read back:
@@ -331,9 +331,9 @@ async function probeMrt() {
 
 	}
 
-	// a scene of two meshes compiled under the MRT: three's own compileAsync builds the second one
-	// after an await, once the MRT is unbound (a control: its shader lacks the velocity output);
-	// the warm-up's compile builds both under it
+	// a scene of two meshes compiled under the MRT, the MRT unbound before the second one builds:
+	// three's own compileAsync (r187 builds each draw under the binding of its call) and the
+	// warm-up's compile both build the two under it
 	for ( const bound of [ false, true ] ) {
 
 		const env = await setup( true );
@@ -363,7 +363,7 @@ async function probeMrt() {
 
 		}
 		const counts = ms.map( ( m ) => outputs( fragment( env, m ) ) );
-		cases.push( { name: `${ bound ? 'compileInto' : 'compileAsync' } of a two-mesh scene under the MRT`, expected: bound, pass: counts.every( ( c ) => c === 2 ) && env.counts.errors.length === 0, detail: `fragment outputs ${ JSON.stringify( counts ) } for 2 attachments` } );
+		cases.push( { name: `${ bound ? 'compileInto' : 'compileAsync' } of a two-mesh scene under the MRT`, expected: true, pass: counts.every( ( c ) => c === 2 ) && env.counts.errors.length === 0, detail: `fragment outputs ${ JSON.stringify( counts ) } for 2 attachments` } );
 		env.renderer.dispose();
 
 	}
@@ -580,6 +580,22 @@ async function probeReal() {
 			};
 
 		}
+		// The subjects' materials sample the app's render targets (the displacement field). Since
+		// r187 a renderer that samples a render target's texture first sets the target up, and
+		// setting it up at a size it has not seen marks its textures for update. That bumps their
+		// version, which the app's renderer then reads as an update: it destroys and remakes its
+		// own texture while commands that use it wait to be submitted. A target the app's renderer
+		// owns keeps its versions here.
+		const textures = renderer._textures, owner = s.renderer._textures;
+		const updateRenderTarget = textures.updateRenderTarget.bind( textures );
+		textures.updateRenderTarget = ( rt, ...rest ) => {
+
+			const foreign = textures.get( rt ).initialized !== true && owner.has( rt ) && owner.get( rt ).initialized === true;
+			const versions = foreign ? rt.textures.map( ( t ) => t.version ) : null;
+			updateRenderTarget( rt, ...rest );
+			if ( foreign ) rt.textures.forEach( ( t, i ) => { t.version = versions[ i ]; } );
+
+		};
 		device.addEventListener( 'uncapturederror', ( e ) => env.errors.push( e.error.message.split( '\n' )[ 0 ] ) );
 		renderer.onError = ( e ) => env.errors.push( String( e?.message ?? e ).split( '\n' )[ 0 ] );
 		return env;

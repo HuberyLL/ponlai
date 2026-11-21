@@ -268,7 +268,7 @@ export class WaveMaps {
 		} );
 		this.target.texture.name = 'waveMaps';
 		// three takes a render target's level count from its texture's mipmaps when there are any
-		// (r186 Textures.getMipLevels; nothing is uploaded from them): a short chain, three
+		// (r187 Textures.getMipLevels; nothing is uploaded from them): a short chain, three
 		// downsamples per layer instead of nine
 		this.target.texture.mipmaps = Array.from( { length: MIPS }, () => ( { data: new Uint8Array( 0 ), width: 0, height: 0 } ) );
 		const fine = fft.cascades - 1;

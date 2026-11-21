@@ -99,7 +99,7 @@ import { onSceneDispose } from '../SceneDispose.ts';
 // the key's times its cosine in `direct`, the irradiance and the environment's (or the volume's)
 // in the ambient diffuse; the occlusion multiplies them in the ambient grade's (AmbientGrade.ts).
 // The lookup is inlined into each material: as a layout function reading this module's uniforms and
-// texture, r186 emits it with the first material's binding names in the next one (SeaDetail.ts).
+// texture, r187 emits it with the first material's binding names in the next one (SeaDetail.ts).
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
