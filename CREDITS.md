@@ -44,6 +44,8 @@ carries the notice.
   (`packages/render/weather/RainCollision.ts`, `RainDrops.ts`).
 - AMD FidelityFX Super Resolution 1, through three.js's `FSR1Node`: © 2021 Advanced Micro Devices,
   Inc., © 2010-2026 three.js authors. `packages/render/post/FSR.ts`.
+- three.js's `PMREMGenerator` and `PMREMUtils`: © 2010-2026 three.js authors. The environment's GGX
+  prefilter (`packages/render/sky/Prefilter.ts`).
 - AMD FidelityFX Super Resolution 2, through tidewater's `TemporalUpscale.js`: © 2022-2023 Advanced
   Micro Devices, Inc., © 2026 DRG Software Solutions LLC. `packages/render/post/TemporalLocks.ts`.
 - [AMD FidelityFX SDK](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK) 2.3.0, FSR 3

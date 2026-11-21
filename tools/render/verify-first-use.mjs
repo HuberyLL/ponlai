@@ -57,7 +57,8 @@
 // first 12 listed) with the graph's rebuilds and history resets; with `--compare` a verdict per
 // step; with several runs a summary table. `--out` writes the results (`{ runs: [ ... ] }` for
 // several), each run's `wallMs` with the time to the loaded page, to the end of the 60 frames, per
-// step and in all.
+// step and in all, and its `load` with the labels of the pipelines built before the loop
+// (`beforeLoopLabels`) and in the first frame (`firstFrameLabels`), to diff two builds' loads.
 //
 // GPU lock and browser: takes the GPU lock shared (docs/reference/gpu-lock.md), as paused captures
 // and probes do, since it measures no time. It opens headless Chrome (CHROME_PATH, else
@@ -232,7 +233,9 @@ async function runOne( quality, aa ) {
 				countedFrom: window.__PONLAI__.renderer.info.frame,
 				firstFrame: Number.isFinite( firstFrame ) ? log.filter( ( p ) => p.frame === firstFrame ).length : 0,
 				later: log.filter( ( p ) => p.frame > firstFrame ).length,
-				// what the first frames still built, by label
+				// what the load built before the loop, by label and with the material and target three
+				// built it for, and what the first frames still built, by label
+				beforeLoopLabels: log.filter( ( p ) => p.frame <= 0 ).map( ( p ) => [ p.label, p.material?.name, p.target ].filter( Boolean ).map( ( x ) => typeof x === 'string' ? x : JSON.stringify( x ) ).join( ' ' ) ),
 				firstFrameLabels: log.filter( ( p ) => p.frame === firstFrame ).map( ( p ) => p.label ),
 				laterLabels: log.filter( ( p ) => p.frame > firstFrame ).map( ( p ) => `${ p.label } (frame ${ p.frame })` ),
 				// judged as the `load` step below: what the frames after the first created synchronously,

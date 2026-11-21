@@ -611,7 +611,7 @@ The render pipeline depends on parts of three.js that are not its public interfa
 of the renderer and of its helpers, the WebGPU backend and its device, methods it replaces or
 wraps, and three.js code it mirrors. Every such use lives in one folder
 ([packages/render/three/](../../packages/render/three/)), behind functions named for what they do
-(`gpuDevice`, `releaseAttribute`, `environmentSteps`). The rest of the code calls those functions
+(`gpuDevice`, `releaseAttribute`, `wrapPipelineCreation`). The rest of the code calls those functions
 and never names a private member or the backend. The folder keeps the list of what it depends on
 ([three-internals.json](../../packages/render/three/three-internals.json)), and three.js is pinned
 to one exact version in [package.json](../../package.json). A dependency that no longer holds is an

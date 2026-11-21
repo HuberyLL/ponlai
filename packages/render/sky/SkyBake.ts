@@ -9,7 +9,6 @@ import { cubeTexture, vec4, mix, uniform, positionWorldDirection, pmremTexture }
 import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 import { storePress } from '../post/PreExposure.ts';
 import type { WeatherState } from './Weather.ts';
-import { environmentSteps } from '../three/Environment.ts';
 import { luma } from '../look/SkyLook.ts';
 import type { Sky, SkyEndpoint } from './Sky.ts';
 
@@ -30,8 +29,8 @@ import type { Sky, SkyEndpoint } from './Sky.ts';
 // pipelines (`warm`) before it draws: three r187 skips a draw whose pipeline an asynchronous
 // compile is still creating, so a bake drawn meanwhile left its products empty (the irradiance
 // probe at 0: no sky light, and the exposure about five stops off at noon), and a paused page,
-// which bakes no more, kept them. The spread drives three's `PMREMGenerator` private steps
-// (three/Environment.ts, which throws on a three without them).
+// which bakes no more, kept them. The environment's prefilter is our own (Prefilter.ts), so a
+// spread bake runs its steps one cube at a time.
 
 // what a panorama that lends the land no light takes for its tint (`bakeLandTint`)
 const NEUTRAL_TINT = new THREE.Vector4( 1, 1, 1, 0 );
@@ -229,20 +228,20 @@ export function renderPanoramas( sky: Sky, bake: Bake ): void {
 // The environment of the source in atlas `index`, whole.
 export function filterEnvironment( sky: Sky, index: number ): void {
 
-	sky.environments[ index ] = sky.pmrem.fromEquirectangular( sky.reflectionSource.texture, sky.environments[ index ] );
+	sky.environments[ index ] = sky.prefilter.run( sky.reflectionSource.texture, sky.environments[ index ] );
 
 }
 
 // The same as filterEnvironment, as steps of one cube each (six render passes): the source drawn
-// into the generator's source cube, then each level of the PMREM filtered from it (PMREMGenerator's
-// own steps: three/Environment.ts). Each step restores the renderer's target as a whole bake
-// leaves it. The levels read the generator's source cube, which no other bake touches meanwhile: a
-// bake finishes the one under way before it starts (Sky.ts `update`).
+// into the prefilter's source cube, then each level of the PMREM filtered from it (Prefilter.ts).
+// Each step restores the renderer's target as a whole bake leaves it. The levels read the
+// prefilter's source cube, which no other bake touches meanwhile: a bake finishes the one under way
+// before it starts (Sky.ts `update`).
 export function environmentSlices( sky: Sky, index: number ): Slice[] {
 
 	const target = sky.environments[ index ];
 	if ( ! target ) return [ { cost: 42, run: () => filterEnvironment( sky, index ) } ];
-	const pmrem = environmentSteps( sky.pmrem );
+	const pmrem = sky.prefilter;
 	const r = sky.renderer, source = sky.reflectionSource.texture;
 	const step = ( work: () => void ) => () => {
 
@@ -417,7 +416,7 @@ export function publishBake( sky: Sky, bake: Bake ): void {
 		// Convolution is linear. Blending the already filtered PMREMs once keeps terrain within
 		// WebGPU's portable 16-texture limit instead of doubling every IBL sample. (The first PMREM
 		// taken to the second's power of two first: both stored as powers of two, the gain loses no
-		// bits.) Each level is drawn as three's generator draws one: a box around a cube camera.
+		// bits.) Each level is drawn as the prefilter draws one: a box around a cube camera.
 		const level = uniform( 0 );
 		const a = sky.environmentA.sample( positionWorldDirection ).level( level ), b = sky.environmentB.sample( positionWorldDirection ).level( level );
 		blendMat.fragmentNode = vec4( mix( a.rgb.mul( sky.environmentGainA ), b.rgb, sky.blend ), mix( a.a, b.a, sky.blend ) );

@@ -9,6 +9,7 @@ import {
 	Fn, uv, uniform, texture, dot, vec2, vec3, vec4, ivec2, float, sqrt, max, min, clamp, cos, sin,
 	mix, select, textureLoad, Loop, exp2, log2, positionView,
 } from 'three/tsl';
+import { EnvironmentPrefilter } from './Prefilter.ts';
 import { Atmosphere, SUN_ILLUMINANCE } from './Atmosphere.ts';
 import { Clouds } from './Clouds.ts';
 import type { CloudViewScale } from './CloudModel.ts';
@@ -410,7 +411,7 @@ export class Sky {
 	keyCloudFloor = uniform( 0 );
 	readonly castShadow = uniform( 1 );
 	cloudLayer: THREE.TextureNode;
-	pmrem: THREE.PMREMGenerator;
+	prefilter: EnvironmentPrefilter;
 	quad: THREE.QuadMesh;
 	// the bake of the environment's source, which lights the land: its haze without the fog layer
 	// (`fogEnvironment`)
@@ -616,7 +617,7 @@ export class Sky {
 
 		} )();
 		this.deckIrradianceQuad = new THREE.QuadMesh( deckIrradianceMat );
-		this.pmrem = new THREE.PMREMGenerator( renderer );
+		this.prefilter = new EnvironmentPrefilter( renderer );
 
 		const upperMat = new THREE.NodeMaterial();
 		// The reflection panorama's cloud layer: the live cloud map averaged over each of its
@@ -832,7 +833,7 @@ export class Sky {
 		];
 		const compiling = pairs.map( ( [ quad, target ] ) => compileInto( r, quad, quad.camera, target ) );
 		if ( this.environmentBlend && this.envMap ) compiling.push( compileInto( r, this.environmentBlend.mesh, this.environmentBlend.camera.children[ 0 ] as THREE.Camera, this.envMap ) );
-		compiling.push( this.pmrem.compileEquirectangularShader() );
+		compiling.push( this.prefilter.compile( this.reflectionSource.texture ) );
 		await Promise.all( compiling );
 
 	}
@@ -1217,7 +1218,7 @@ export class Sky {
 		}
 		for ( const environment of this.environments ) environment?.dispose();
 		abortSlices( this );
-		this.pmrem.dispose();
+		this.prefilter.dispose();
 		this.atmosphere.dispose();
 
 	}

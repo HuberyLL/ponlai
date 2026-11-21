@@ -20,8 +20,8 @@ export function missing( entry: string, user: string ): Error {
 }
 
 // the instance members the functions of this directory use: [ list entry, path from the renderer,
-// what it must be ]. (`_createObjectPipeline`, `_getShadowNodes` and the bloom's and the PMREM
-// generator's members live on prototypes or other objects: their users check them.)
+// what it must be ]. (`_createObjectPipeline`, `_getShadowNodes` and the bloom's members live on
+// prototypes or other objects: their users check them.)
 const MEMBERS: [ string, string, 'object' | 'function' | 'present' ][] = [
 	[ 'Renderer._nodes', '_nodes', 'object' ],
 	[ 'NodeManager.getForRenderCacheKey', '_nodes.getForRenderCacheKey', 'function' ],
