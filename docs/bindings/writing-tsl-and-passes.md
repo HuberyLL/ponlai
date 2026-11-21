@@ -48,9 +48,9 @@ anti-aliasing mode reads `post/Antialiasing.ts`'s exports, never the quality tie
 
 ## Version
 
-- three.js is pinned exactly in `package.json` (`three` 0.186.1, `@types/three` 0.186.0); the
-  behaviour page marks three.js's own behaviour at that version **r186**.
-- After an upgrade, follow `packages/render/three/README.md`: its step 11 rechecks every r186 entry
+- three.js is pinned exactly in `package.json` (`three` 0.187.0, `@types/three` 0.187.0); the
+  behaviour page marks three.js's own behaviour at that version **r187**.
+- After an upgrade, follow `packages/render/three/README.md`: its step 11 rechecks every r187 entry
   with its check. `tools/repo/verify-three-internals.mjs` (in `npm run check`) fails on each
   three.js internal that the render pipeline uses and whose code changed.
 
@@ -126,7 +126,7 @@ node tools/render/wgsl-build.mjs <entry> [--out <dir>] [--q "<query>"] [--featur
 ## Record
 
 - A new behaviour of three.js or WebGPU: add an entry in `docs/reference/three-behaviour.md`
-  (behaviour, what the code does, where, its check, **r186** when it is three.js's own). Add a line
+  (behaviour, what the code does, where, its check, **r187** when it is three.js's own). Add a line
   naming its section in `AGENTS.md`, Shaders and GPU work, or in `packages/render/AGENTS.md` when it
   applies to the render pipeline alone. The mistake it came from goes in the commit message. A
   finding that adds to an existing entry goes into that entry, under its existing line.

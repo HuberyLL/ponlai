@@ -46,7 +46,7 @@ import { onSceneDispose } from '../SceneDispose.ts';
 //   `apply`); every fetch here is a sample of it, so it follows that node: new bind groups, no
 //   pipeline. The fetches name an explicit level (the texture has none other), so they may sit in
 //   branches. The lattice helpers are layout functions taking the volume's uniforms as arguments:
-//   r186 emits a layout function that reads uniforms with the first material's binding names in
+//   r187 emits a layout function that reads uniforms with the first material's binding names in
 //   the next one (SeaDetail.ts). The texture holds the irradiance over its storage scale
 //   (AmbientRelight.ts `storageGain`, a power of two from the sky's geometric mean luminance, read
 //   from the sky's harmonics buffer: no texture binding), which the lookup multiplies back, times

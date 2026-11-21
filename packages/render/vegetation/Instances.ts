@@ -6,10 +6,12 @@ import * as THREE from 'three/webgpu';
 // keeps its capacity, and every write into those buffers goes through it. The kind keeps its
 // geometry, material and placement; the pool keeps the buffers.
 // - Capacity: an instanced mesh's buffers hold a capacity, not the count, so a grown island's
-//   instances are written into the same mesh (`set`) and draw with the pipeline it drew with. Up to
-//   1024 instances three keeps the matrices in a uniform array of exactly the capacity, which the
-//   shader names, so a pool holds `capacity` instances (at most 1024) whatever the land and draws
-//   only the first `capacity` of a larger land (warned).
+//   instances are written into the same mesh (`set`) and draw with the pipeline it drew with. three
+//   binds the matrices as per-instance vertex attributes when the geometry leaves room for them
+//   (at most 8 vertex buffers in all), and otherwise, up to 1024 instances, keeps them in a uniform
+//   array of exactly the capacity, which the shader names; so a pool holds `capacity` instances (at
+//   most 1024) whatever the land, which keeps one shader on either path, and draws only the first
+//   `capacity` of a larger land (warned).
 // - Writes (`writes`, `set`): each buffer's used part, from its start; the update range covers the
 //   values written (at least one item), the count follows, and the mesh's box and sphere are cleared
 //   or set to the box found ahead (`box`: InstancedMesh.computeBoundingBox's, found in the

@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { Fn, If, abs, clamp, float, floor, int, ivec2, max, min, mix, positionView, screenCoordinate, select, smoothstep, texture, textureLoad, uniform, vec2, vec4 } from 'three/tsl';
+import { Fn, If, Loop, abs, clamp, float, floor, int, ivec2, max, min, mix, positionView, screenCoordinate, select, smoothstep, texture, textureLoad, uniform, vec2, vec4 } from 'three/tsl';
 import { SCENE_SAMPLES, TEMPORAL } from './Antialiasing.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tuneUniform } from '../debug/Tune.ts';
@@ -283,9 +283,12 @@ function march( zMap: THREE.TextureNode, p: V3, z: F, size: V2, proj: THREE.Node
 	const { steps, reach, thick } = terms;
 	const scale = float( K ).div( max( z.negate(), 1e-3 ) ).toVar();
 	const occlusion = float( 0 ).toVar();
-	for ( let i = 1; i <= steps; i ++ ) {
+	// A loop, not a JavaScript loop that unrolls the lookups: under three r187 the ground's
+	// sixty-four unrolled lookups made its draw about three times as long for the same pixels
+	// (docs/reference/three-behaviour.md, Long loops).
+	Loop( { start: int( 1 ), end: int( steps + 1 ), type: 'int' }, ( { i } ) => {
 
-		const at = p.add( key.mul( reach * i / steps ) ).toVar();
+		const at = p.add( key.mul( float( i ).mul( reach / steps ) ) ).toVar();
 		const clip = proj.mul( vec4( at, 1 ) ).toVar();
 		const uv = clip.xy.div( clip.w ).mul( vec2( 0.5, - 0.5 ) ).add( 0.5 );
 		const pixel = uv.mul( size ).toVar();
@@ -296,7 +299,7 @@ function march( zMap: THREE.TextureNode, p: V3, z: F, size: V2, proj: THREE.Node
 		const blocked = select( inside.and( front.greaterThan( 0 ) ).and( front.lessThan( wall ) ), front, float( 0 ) ).mul( scale );
 		occlusion.addAssign( clamp( blocked.mul( blocked ), 0, 1 ).div( steps ) );
 
-	}
+	} );
 	return float( 1 ).sub( clamp( occlusion.sub( O0 ).div( DELTA ), 0, 1 ) );
 
 }

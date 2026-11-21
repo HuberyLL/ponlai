@@ -84,7 +84,7 @@ Facts to look up.
   shadows, exposure, water).
 - [Architecture rules](reference/architecture-rules.md): the rules across the layers in full, each
   with why it holds, what enforces it and the mistake it came from.
-- [three.js and WebGPU behaviour](reference/three-behaviour.md): what three.js r186, WebGPU and TSL
+- [three.js and WebGPU behaviour](reference/three-behaviour.md): what three.js r187, WebGPU and TSL
   do that the code is written around; read it before writing TSL or a pass of the frame graph.
 - [Glossary](reference/glossary.md): the project's own terms, such as test mode, scene jump and
   growth swap.

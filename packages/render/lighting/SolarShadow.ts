@@ -232,7 +232,7 @@ export function solarPCFVisibility( depth: THREE.Texture | THREE.TextureNode, co
 // streaks' peak to peak .025 of L at eight, .011 at sixteen and at thirty-two).
 // `across` and `along` are the disc's radii in the map's coordinate. Plain nodes on purpose, with
 // step() and max() for the bounds: an Fn or an If here, in the water's vertex path, comes out of the
-// r186 builder with unresolved uniform names (the shadow material, the vertex module).
+// r187 builder with unresolved uniform names (the shadow material, the vertex module).
 const DISC_TAPS = 16, GOLDEN_ANGLE = 2.39996323;
 const DISC = Array.from( { length: DISC_TAPS }, ( _, i ) => {
 

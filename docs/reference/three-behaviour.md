@@ -1,12 +1,12 @@
 # three.js and WebGPU behaviour
 
-These are the behaviours of three.js r186, WebGPU and TSL that the code is written around. Read
+These are the behaviours of three.js r187, WebGPU and TSL that the code is written around. Read
 this page before you write or change TSL, a shader, a compute kernel or a pass of the frame graph:
 most of these behaviours fail without an error. The failure shows as a shader that draws nothing,
 a pipeline built at the wrong time or a few pixels that change.
 
 Each entry gives the behaviour, what the code does about it, where in the code it occurs and the
-check that detects it. An entry marked **r186** is three.js's own behaviour at the pinned version.
+check that detects it. An entry marked **r187** is three.js's own behaviour at the pinned version.
 When you upgrade three.js, recheck each of these entries
 ([Upgrade three.js](../../packages/render/three/README.md), step 11). The code lint checks the
 entries that name a lint rule (`tools/repo/lint/plugin.mjs`); the rest need judgement.
@@ -32,7 +32,7 @@ Check: none; judgement.
 
 ### Method forms of mix, step and smoothstep
 
-**r186.** Three TSL methods take their receiver out of order: `t.mix( a, b )` is
+**r187.** Three TSL methods take their receiver out of order: `t.mix( a, b )` is
 mix( a, b, t ), `x.step( edge )` is step( edge, x ) and `x.smoothstep( low, high )` is
 smoothstep( low, high, x ). Write the function form, imported from `three/tsl`
 (`post/fsr3/Upsample.ts`, the comment on `ffxLerp`).
@@ -47,10 +47,22 @@ of those branches is then declared in that branch only, and the shader silently 
 Select between values built before the `select()` (`.toVar()`), or blend with weights of exactly 0
 or 1 (`ocean/Water.ts`, the previous position of its vertex).
 
-**r186.** A `.toVar()` made inside an `Fn` is emitted where it is made: it joins the function's
+**r187.** A `.toVar()` made inside an `Fn` is emitted where it is made: it joins the function's
 stack. One made outside an `Fn` has no stack to join, so its assignment is emitted where it is
-first used, once per shader stage, and that can be inside a branch. Make the `.toVar()` inside the
-`Fn` that builds the `select()` (`nodes/core/VarNode.js` `Var`, `nodes/tsl/TSLCore.js` `Stack`).
+first used, and that can be inside a branch; inside a `Loop` it is declared before the outermost
+loop (`nodes/core/Node.js` `_updateAssignable`, `NodeBuilder.declareBeforeBlock`). Make the
+`.toVar()` inside the `Fn` that builds the `select()`.
+
+**r187.** A `select()` by a scalar condition is always an `if` / `else` (unless the build's context
+sets `uniformFlow`), and its operands are built inside the branches. A node first built in one
+branch is built again in every block that cannot see it: the shader compiles and draws, but does
+the work twice or more, such as a nest of debug switches repeating eight texture taps. A
+`select()` by a vector condition (`bvec3( c )`, or a vector `lessThan`) is WGSL's `select()`,
+straight-line code with both operands built once. Choose by a vector condition
+(`materials/Select.ts`, whose helpers hold the cast three's types need), or blend by a weight of
+exactly 0 or 1. To find a case, build the shaders to WGSL
+(`tools/render/wgsl-build.mjs`) and compare the counts of samples and calls with the previous
+release.
 
 Check: none; judgement.
 
@@ -61,7 +73,7 @@ Implicitly filtered texture samples and derivatives need uniform control flow. T
 `textureLoad`. Keep filters that take `dFdx` / `dFdy` out of `select()` and `If` branches
 (`lighting/SolarShadow.ts`).
 
-**r186.** A `.toVar()` that only a sample's `.grad()` reads is declared where it is first read,
+**r187.** A `.toVar()` that only a sample's `.grad()` reads is declared where it is first read,
 not where it was made. The texture node keeps its two gradients as a plain array, so the build's
 analysis never records them as readers. The stack then skips a variable whose only reader is the
 stack (a rule meant for variables read only by `toVarying`). As a result, a derivative read only by
@@ -77,12 +89,24 @@ Pass both ranges of a nested loop to one `Loop()` call, so the counters get dist
 
 Check: none; judgement.
 
+### Long loops
+
+A JavaScript `for` loop around TSL unrolls its body into the shader once per step. Write a loop of
+more than a few steps that holds texture loads as a `Loop()`, so the shader holds the body once.
+
+**r187.** The meadow's ground ran its sixty-four unrolled screen-space shadow lookups
+(`post/MeadowShadows.ts`) about three times as long as under r186, with the same WGSL apart from
+names and the same pixels drawn. As a `Loop()`, it runs faster than the unrolled form did under
+r186.
+
+Check: none; judgement.
+
 ### Shader functions
 
 A helper called from several places is `Fn( ... ).setLayout( ... )`, so it compiles to one shader
 function.
 
-**r186.** A laid-out helper that reads uniforms in its body can be emitted with another build's
+**r187.** A laid-out helper that reads uniforms in its body can be emitted with another build's
 uniform names. This happens when two shaders that use it are built, whether compute kernels or
 materials: three.js emits the function once and reuses its code with the first build's names, and
 the second shader fails to compile. Pass the uniforms in as the helper's arguments, or keep it a
@@ -116,8 +140,9 @@ Check: none; the shader fails to compile.
 
 ### Bit-identical depth
 
-**r186.** Programs that must produce bit-identical depth need `@invariant` on the clip position,
-which three.js does not emit; the vegetation's depth prepass adds it
+**r187.** Programs that must produce bit-identical depth need `@invariant` on the clip position.
+three.js emits it only for a node builder whose context asks for it, which a material cannot set;
+the vegetation's depth prepass adds it
 (`vegetation/VegetationPrepass.ts`). A material that instances from storage buffers holds the
 placed position in a `toVar` (`vegetation/VegetationCull.ts`).
 
@@ -148,16 +173,18 @@ Check: none; judgement.
 
 ### Sample counts
 
-WebGPU multisamples with 1 or 4 samples only, and **r186** turns a sample count of 2 into 1, which
+WebGPU multisamples with 1 or 4 samples only, and **r187** turns a sample count of 2 into 1, which
 means no MSAA. The scene's sample count comes from the anti-aliasing mode (`post/Antialiasing.ts`).
 
 Check: the byte comparison of the parity captures.
 
 ### Depth textures
 
-**r186.** A `DepthTexture` without a `RenderTarget` takes the renderer's sample count, so it is
+**r187.** A `DepthTexture` without a `RenderTarget` takes the renderer's sample count, so it is
 declared multisampled and cannot be sampled with a comparison: give it a render target. three.js
-picks one sampler type per depth texture per material (`lighting/SolarShadow.ts`).
+picks one sampler type per depth texture per material (`lighting/SolarShadow.ts`). A render target
+has a colour texture unless it is made with `count: 0`, so a target drawn only for its depth takes
+`count: 0` (`lighting/SunShadow.ts`).
 
 Check: the byte comparison of the parity captures; `tools/render/verify-solar-shadows.mjs` (it
 builds and filters the sun's shadow).
@@ -216,7 +243,7 @@ Under the temporal modes:
   [Materials](../bindings/building-cinematic-stylised-realism.md#materials)).
 - The blend state of each render target comes only from the pass's own MRT (`post/Motion.ts`
   `sceneMRT`, `overlayMRT`), whatever a material's MRT node says.
-- **r186.** A material drawn into two render-target layouts needs one pipeline per layout, but
+- **r187.** A material drawn into two render-target layouts needs one pipeline per layout, but
   three.js's cache keys do not tell the layouts apart. The cache keys of `three/ThreePatches.ts`
   (`installCacheKeyPatches`) make it build once per layout.
 - The scene passes (the graph's jittered span) see the camera's projection jittered by a fraction
@@ -248,13 +275,13 @@ Check: none; judgement.
 
 ### Pipeline precompilation
 
-**r186.** `renderer.compileAsync` alone does not compile what a render draws (its render target,
-MRT, side, call depth, a render context shared by render targets with the same attachments).
-Precompile pipelines through the frame graph's warm-up. Register a draw that appears only some of
-the time as a latent draw of its pass (`post/graph/FrameGraph.ts`, `post/graph/Compile.ts`,
-`three/DrawBuilds.ts`; register a shadow map's draws with `compileLatentInto`). The warm-up's
-priming renders only what keeps no state, and it never leaves a persistent resource written
-(`fgPrime=0` turns priming off).
+**r187.** `renderer.compileAsync` builds each draw under the render target, MRT, render context
+and side it was queued with, but at the depth of its own call and without the vertex node that
+`QuadMesh.render` sets, and it returns no node states. Precompile pipelines through the frame
+graph's warm-up. Register a draw that appears only some of the time as a latent draw of its pass
+(`post/graph/FrameGraph.ts`, `post/graph/Compile.ts`, `three/DrawBuilds.ts`; register a shadow
+map's draws with `compileLatentInto`). The warm-up's priming renders only what keeps no state, and
+it never leaves a persistent resource written (`fgPrime=0` turns priming off).
 
 Some renders that three.js makes on its own cannot be compiled before their first frame, such as
 the sun's shadow map, which is built with the first receiver. These compile by rendering once with
@@ -264,7 +291,7 @@ Check: `tools/render/verify-frame-graph-gpu.mjs`, `tools/render/verify-first-use
 
 ### Build order
 
-**r186.** The order in which materials first build affects the rendered image. three.js emits a
+**r187.** The order in which materials first build affects the rendered image. three.js emits a
 shader from node state that the builds share, so precompiling draws in a different order from the
 one the frame builds them in changed other materials' code and changed a few pixels by one level.
 The first lit build also makes nodes that every shadow receiver shares (the shadow's node graph,
@@ -277,7 +304,7 @@ scene jump check (`tools/island/verify-scene-jump.mjs`).
 
 ### Draws skipped while compiling
 
-**r186.** A draw whose pipeline an asynchronous compile is still creating is skipped silently
+**r187.** A draw whose pipeline an asynchronous compile is still creating is skipped silently
 (`Pipelines.isReady`). A one-time render, such as a bake, therefore waits for the warm-up that
 compiles it (`sky/Sky.ts` `warm`, `post/graph/Compile.ts` `compileByRendering`).
 
@@ -297,7 +324,7 @@ Check: none; judgement.
 
 ### Storage buffers
 
-**r186.** A storage buffer cannot grow in place: a larger array fails its `writeBuffer`. Instead,
+**r187.** A storage buffer cannot grow in place: a larger array fails its `writeBuffer`. Instead,
 set a new `StorageBufferAttribute` as the `value` of each storage node that reads it. This needs
 new bind groups but no new pipeline, compute or render, because the shaders declare runtime-sized
 arrays
@@ -307,24 +334,27 @@ Check: `tools/render/verify-storage-realloc.mjs`.
 
 ### Instance matrices
 
-**r186.** Up to 1024 instances, three.js keeps the instance matrices in a uniform array whose
-length is exactly the capacity, and the shader states that length. A fixed capacity therefore
-keeps one shader
-(`vegetation/Instances.ts`).
+**r187.** three.js binds an instanced mesh's matrices (and colours) as per-instance vertex
+attributes when the geometry's attributes and the instance buffers fit in 8 vertex buffers; the
+shader then does not depend on the capacity. Otherwise, up to 1024 instances, it keeps the matrices
+in a uniform array whose length is exactly the capacity, the shader states that length, and each
+mesh builds its own shader (`nodes/accessors/Instance.js`). A fixed capacity keeps one shader on
+either path (`vegetation/Instances.ts`).
 
 Check: `tools/island/verify-growth-swap.mjs` (a swap builds no pipeline).
 
 ### Index buffers
 
-**r186.** A 16-bit index is copied into a new 32-bit array when its GPU buffer is created, and
-from then on the copy is uploaded. An index rewritten in place must therefore be a `Uint32Array`
-(`util/Upload.ts`, the merged kinds' indices).
+**r187.** An 8-bit index, and a 16-bit index that is also a storage buffer, is copied into a new
+wider array when its GPU buffer is created, and from then on the copy is uploaded. An index
+rewritten in place must therefore be a `Uint32Array` (`util/Upload.ts`, the merged kinds'
+indices).
 
 Check: `tools/island/verify-growth-swap.mjs`.
 
 ### Attribute usage
 
-**r186.** `DynamicDrawUsage` re-uploads the whole buffer on every draw. Leave attributes that
+**r187.** `DynamicDrawUsage` re-uploads the whole buffer on every draw. Leave attributes that
 change once per event at static usage, with update ranges.
 
 Check: the lint rule `ponlai/no-dynamic-draw`.
@@ -338,7 +368,7 @@ buffers. Raw WebGPU work and new queue operations follow its rules, and one inva
 loses its whole batch. `post/graph/AttachmentOps.ts` wraps the encoders too: a wrapper that hands
 out encoders of its own must be installed before it.
 
-**r186.** Each render pass begins on a command encoder of its own, made in `beginRender`, which
+**r187.** Each render pass begins on a command encoder of its own, made in `beginRender`, which
 `post/graph/AttachmentOps.ts` relies on.
 
 Check: the frame graph's dev check on the dev server (`opsMismatchFrames` in the diagnostics'
@@ -360,3 +390,25 @@ resolution from its own readings. Only these two modules and the wrappers in `th
 queries.
 
 Check: the lint rule `ponlai/timestamp-owner`.
+
+### Draw counts
+
+`renderer.info.render`'s `drawCalls` and `triangles` count only direct draws: an indirect draw
+(`geometry.indirect`: the culled plants' and the meadow's) adds nothing, as its counts live on the GPU
+(`WebGPUBackend.draw`). The frame profiler's draw calls and triangles (`debug/FrameProfiler.ts`)
+therefore leave out the vegetation drawn through the culling kernels. **r187.** The counts fell
+when three stopped adding the CPU side's estimate for each indirect draw; the GPU's work did not
+change.
+
+Check: none; judgement.
+
+### Readbacks
+
+`renderer.readRenderTargetPixelsAsync` returns the rows tightly packed, `width * channels` values
+each: three copies the texture into a buffer whose rows are padded to 256 bytes and removes the
+padding before it returns (`WebGPUTextureUtils.copyTextureToBuffer`). Code that indexes the result
+with a padded stride places every texel of a target whose row is not a multiple of 256 bytes
+wrongly, with no error. **r187.** Before r187 the rows came back padded.
+
+Check: `debug/RadianceAov.ts` `readTexture` and `tools/island/meadow-light.mjs` throw when the
+result's length is not `width * height * channels`. Read a target through `readTexture`.

@@ -5,7 +5,7 @@
  */
 
 import * as THREE from 'three/webgpu';
-import { uv, texture, vec4, float, mix, pmremTexture } from 'three/tsl';
+import { cubeTexture, vec4, mix, uniform, positionWorldDirection, pmremTexture } from 'three/tsl';
 import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 import { storePress } from '../post/PreExposure.ts';
 import type { WeatherState } from './Weather.ts';
@@ -20,14 +20,14 @@ import type { Sky, SkyEndpoint } from './Sky.ts';
 //
 // Only the reflection panorama, environment and irradiance cross-fade between bakes. A periodic
 // bake on a running clock spreads over frames: its panoramas and irradiance in the frame that asks
-// for it, then the environment's PMREM conversion and GGX filters at most four render passes a
-// frame, published (with the same products as a whole bake) a few frames later. Explicit bakes
+// for it, then the environment's PMREM conversion and its levels' filters one cube (six
+// render passes) a frame, published (with the same products as a whole bake) a few frames later. Explicit bakes
 // (presets, seeks, weather jumps, the first bake) and any bake while the scene clock is paused run
 // whole, so paused frames stay exact. A paused page keeps its last explicit bake's products, and
 // every explicit bake (the load's, a scene jump's, a seek's, a retune's) starts from the state
 // before a fresh load's first bake, the clouds set to the scene clock (`reset`), so each makes the ones
 // a fresh load of its scene makes. A bake waits for the warm-up's
-// pipelines (`warm`) before it draws: three r186 skips a draw whose pipeline an asynchronous
+// pipelines (`warm`) before it draws: three r187 skips a draw whose pipeline an asynchronous
 // compile is still creating, so a bake drawn meanwhile left its products empty (the irradiance
 // probe at 0: no sky light, and the exposure about five stops off at noon), and a paused page,
 // which bakes no more, kept them. The spread drives three's `PMREMGenerator` private steps
@@ -65,7 +65,7 @@ export async function bake( sky: Sky, transitionSeconds: number ): Promise<void>
 	const readback = transitionSeconds === 0 || ! sky.initialized;
 	const weather = sky.weatherState ? { ...sky.weatherState } : null;
 	await sky.renderer.init();
-	// the warm-up's pipelines first: r186 skips a draw whose pipeline is still being created
+	// the warm-up's pipelines first: r187 skips a draw whose pipeline is still being created
 	// (see the header)
 	await sky.warmed;
 	if ( ! sky.clouds.ready ) await sky.clouds.init( sky.renderer );
@@ -233,45 +233,33 @@ export function filterEnvironment( sky: Sky, index: number ): void {
 
 }
 
-// The same as filterEnvironment, as steps of one or two render passes: the conversion to the
-// cube atlas, then each level's GGX filter from the one above (PMREMGenerator's own steps:
-// three/Environment.ts). Each step restores what PMREMGenerator restores after a whole conversion.
+// The same as filterEnvironment, as steps of one cube each (six render passes): the source drawn
+// into the generator's source cube, then each level of the PMREM filtered from it (PMREMGenerator's
+// own steps: three/Environment.ts). Each step restores the renderer's target as a whole bake
+// leaves it. The levels read the generator's source cube, which no other bake touches meanwhile: a
+// bake finishes the one under way before it starts (Sky.ts `update`).
 export function environmentSlices( sky: Sky, index: number ): Slice[] {
 
 	const target = sky.environments[ index ];
-	if ( ! target ) return [ { cost: 20, run: () => filterEnvironment( sky, index ) } ];
+	if ( ! target ) return [ { cost: 42, run: () => filterEnvironment( sky, index ) } ];
 	const pmrem = environmentSteps( sky.pmrem );
 	const r = sky.renderer, source = sky.reflectionSource.texture;
 	const step = ( work: () => void ) => () => {
 
-		const previous = r.getRenderTarget(), face = r.getActiveCubeFace(), level = r.getActiveMipmapLevel(), autoClear = r.autoClear;
+		const previous = r.getRenderTarget(), face = r.getActiveCubeFace(), level = r.getActiveMipmapLevel();
 		try {
 
 			work();
 
 		} finally {
 
-			r.autoClear = autoClear;
 			r.setRenderTarget( previous, face, level );
-			target.scissorTest = false;
-			pmrem.resetViewport( target );
 
 		}
 
 	};
-	const slices: Slice[] = [ { cost: 1, run: step( () => {
-
-		pmrem.convert( source, target );
-
-	} ) } ];
-	// the generator keeps the levels of the source size the first bake set up, so their count is known
-	const levels = pmrem.levels();
-	for ( let i = 1; i < levels; i ++ ) slices.push( { cost: 2, run: step( () => {
-
-		r.autoClear = false;
-		pmrem.filter( target, i - 1, i );
-
-	} ) } );
+	const slices: Slice[] = [ { cost: 6, run: step( () => pmrem.convert( source ) ) } ];
+	for ( let i = 0; i < pmrem.levels( target ); i ++ ) slices.push( { cost: 6, run: step( () => pmrem.filter( target, i ) ) } );
 	return slices;
 
 }
@@ -412,24 +400,28 @@ export function publishBake( sky: Sky, bake: Bake ): void {
 	if ( sky.initialized && bake.environment !== null ) sky.environmentFront = bake.environment;
 	if ( ! sky.environmentA || ! sky.environmentB ) {
 
-		sky.environmentA = texture( shown.texture );
-		sky.environmentB = texture( nextEnvironment.texture );
+		sky.environmentA = cubeTexture( shown.texture );
+		sky.environmentB = cubeTexture( nextEnvironment.texture );
+		// the displayed PMREM: a cube with the atlases' size and levels, drawn level by level
 		sky.envMap = shown.clone();
-		sky.envMap.texture.mapping = THREE.CubeUVReflectionMapping;
+		sky.envMap.texture.generateMipmaps = false;
 		( sky.envMap.texture as THREE.Texture & { isPMREMTexture: boolean } ).isPMREMTexture = true;
 		sky.envMap.texture.name = 'skyDisplayedPMREM';
-		sky.envMap.scissorTest = false;
 		const blendMat = new THREE.NodeMaterial();
+		blendMat.name = 'PMREM_skyBlend';
+		blendMat.side = THREE.BackSide;
+		blendMat.blending = THREE.NoBlending;
 		blendMat.depthTest = false;
 		blendMat.depthWrite = false;
 		blendMat.toneMapped = false;
-		// Convolution is linear. Blending the already filtered atlases once keeps terrain
-		// within WebGPU's portable 16-texture limit instead of doubling every IBL sample. (The
-		// first atlas taken to the second's power of two first: both stored as powers of two,
-		// the gain loses no bits.)
-		const a = sky.environmentA.sample( uv() ).level( float( 0 ) ), b = sky.environmentB.sample( uv() ).level( float( 0 ) );
+		// Convolution is linear. Blending the already filtered PMREMs once keeps terrain within
+		// WebGPU's portable 16-texture limit instead of doubling every IBL sample. (The first PMREM
+		// taken to the second's power of two first: both stored as powers of two, the gain loses no
+		// bits.) Each level is drawn as three's generator draws one: a box around a cube camera.
+		const level = uniform( 0 );
+		const a = sky.environmentA.sample( positionWorldDirection ).level( level ), b = sky.environmentB.sample( positionWorldDirection ).level( level );
 		blendMat.fragmentNode = vec4( mix( a.rgb.mul( sky.environmentGainA ), b.rgb, sky.blend ), mix( a.a, b.a, sky.blend ) );
-		sky.environmentBlendQuad = new THREE.QuadMesh( blendMat );
+		sky.environmentBlend = { mesh: new THREE.Mesh( new THREE.BoxGeometry( 5, 5, 5 ), blendMat ), camera: new THREE.CubeCamera( 1, 10, sky.envMap ), level };
 		sky.environment = pmremTexture( sky.envMap.texture );
 
 	} else {

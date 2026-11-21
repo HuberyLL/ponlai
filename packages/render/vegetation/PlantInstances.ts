@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { Fn, attribute, cameraPosition, cos, float, instanceIndex, length, mix, normalGeometry, normalLocal, positionGeometry, select, sin, sqrt, uniform, varying, vec2, vec3, vec4 } from 'three/tsl';
+import { Fn, attribute, cameraPosition, cos, float, instanceIndex, length, mix, normalGeometry, normalLocal, positionGeometry, select, sin, sqrt, step, uniform, varying, vec2, vec3, vec4 } from 'three/tsl';
 import { AttributeType, freeAttribute, uploadSteps } from '../util/Upload.ts';
 import { stippleThreshold } from './Coverage.ts';
 import { LEVEL_SWITCH, levelFade, switchScale } from './Lod.ts';
@@ -380,8 +380,10 @@ export class PlantInstances {
 		this.vertex();
 		const fade = this.fade!;
 		const d = stippleThreshold().sub( fade.x );
-		// near (+1) keeps t >= v, far (-1) keeps t < v
-		const keep = select( fade.y.greaterThan( 0 ), select( d.greaterThanEqual( 0 ), float( 1 ), float( 0 ) ), select( d.lessThan( 0 ), float( 1 ), float( 0 ) ) );
+		// near (+1) keeps t >= v, far (-1) keeps t < v; weighted, not selected: a select by a scalar is a
+		// branch that would build the threshold again in each (docs/reference/three-behaviour.md, select())
+		const above = step( 0, d );
+		const keep = mix( float( 1 ).sub( above ), above, fade.y.mul( 0.5 ).add( 0.5 ) );
 		// A dropped pixel's threshold lies above any alpha: three discards it, or at 4x gives it no
 		// coverage, while a kept pixel keeps its own test (its edge's coverage, the temporal modes'
 		// band). Added, not selected: the temporal band's threshold takes a derivative (Coverage.ts).

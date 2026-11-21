@@ -16,7 +16,7 @@ import { onSceneDispose } from '../SceneDispose.ts';
 // Local lights: small light sources on the island (by night the yunpeng's clumps, Yunpeng.ts) that
 // light the ground and the plants round them, every source in view at once, by clustered forward
 // shading (Olsson, Billeter and Assarsson, "Clustered Deferred and Forward Shading", HPG 2012; the
-// mechanism as three r186's ClusteredLightsNode has it: a CPU sort by view depth with per-slice
+// mechanism as three r187's ClusteredLightsNode has it: a CPU sort by view depth with per-slice
 // ranges, one thread per cluster testing spheres against the cluster's box, no atomics; written
 // anew here, none of its code). No light object per source: three would unroll every light into
 // every lit material, multiplying the shaders and their compile time, and a source coming or going
@@ -219,7 +219,7 @@ export type LocalShade = ( L: V3, light: V3 ) => { reflected: V3; meter: V3 };
 /** The lights of the fragment's cluster shaded by the model's `shade`, added to its direct diffuse
  * and the metering illuminance's key, both times `weight` (the occlusion and what dims the key):
  * called from the model's `indirect` (three has run the direct lights by then), once per material.
- * Inline, not a `setLayout` function: three r186 emits a laid-out function once and reuses its code
+ * Inline, not a `setLayout` function: three r187 emits a laid-out function once and reuses its code
  * in later materials with the uniform names of the first one's build (the count read as another
  * material's `object.nodeUniform0`, which failed to compile); it runs in the fragment stage only.
  * `weight` is built before the loop (a `toVar`), so nothing it samples is taken inside the branch. */

@@ -989,7 +989,7 @@ export class Pipeline {
 		// resolve nothing samples before the next draw, derived per frame from the passes that run
 		// (the legacy table, `fgOps=legacy`, discards in the rain only: the discardScene option,
 		// `legacyDiscard` above). WebGPU lets a pass load its attachments and still discard them
-		// once resolved, which three r186 offers only together with a clear, so AttachmentOps
+		// once resolved, which three r187 offers only together with a clear, so AttachmentOps
 		// rewrites the stores as three hands each pass's descriptor to WebGPU.
 		g.attachmentOps.install();
 

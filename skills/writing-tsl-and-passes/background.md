@@ -69,7 +69,7 @@ Each entry states only what the cited page states.
   severity error, triggered when a call to a built-in that computes derivatives (the derivative
   built-ins, `textureSample`, `textureSampleBias`, `textureSampleCompare`) is not proven to be in
   uniform control flow.
-- three.js r186, `src/renderers/webgpu/nodes/WGSLNodeBuilder.js`: the builder writes
+- three.js r187, `src/renderers/webgpu/nodes/WGSLNodeBuilder.js`: the builder writes
   `diagnostic( off, derivative_uniformity );` into the shaders it emits (read in the installed
   package; check it again after an upgrade).
 - W3C, *WebGPU*, section 3.6.2, Limits (<https://www.w3.org/TR/webgpu/>). Default

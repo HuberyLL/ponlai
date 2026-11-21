@@ -85,7 +85,7 @@ type FilterInput = { shadowCoord: V3 };
 // then the receivers stay lit (`ready`) and `pending` holds the settled signal. The compile is the
 // redraw itself, its node builds made in its order, as three would make them: precompiled in
 // another order, the receivers' and casters' shaders came out with other temporaries and moved a
-// few pixels by one level (three r186 emits from shared node state).
+// few pixels by one level (three r187 emits from shared node state).
 //
 // The plants cast in their swayed pose (VegetationShadow.ts), so the map is redrawn every frame, as
 // a cut is, with no previous map to cross-fade: the sub-texel casters boil again, the price of
@@ -241,7 +241,8 @@ export class SunShadow {
 			THREE.LinearFilter, THREE.LinearFilter, undefined, THREE.DepthFormat, 2 );
 		depth.compareFunction = THREE.LessEqualCompare;
 		depth.name = 'sunShadowSteps';
-		this.maps = new THREE.RenderTarget( width, height, { depth: 2, depthTexture: depth, depthBuffer: true } );
+		// (depth only, `count: 0`: three r187 gives a target without it a colour layer per map)
+		this.maps = new THREE.RenderTarget( width, height, { depth: 2, depthTexture: depth, depthBuffer: true, count: 0 } );
 		this.depth = texture( depth );
 		sun.shadow.autoUpdate = false;
 
@@ -379,7 +380,7 @@ export class SunShadow {
 	 *
 	 * three draws a caster into the map with the shadow node's material in its own's place
 	 * (scene.overrideMaterial), taking the caster's colour, depth and position nodes and side into
-	 * it per draw and restoring them after (Renderer.renderObject, r186). Each caster here compiles
+	 * it per draw and restoring them after (Renderer.renderObject, r187). Each caster here compiles
 	 * with a pass material of its own that already holds what the draw takes into it, so the build
 	 * is the draw's whether it runs before that restore (the bound compile) or after it. This
 	 * mirrors three's shadow material and its non-VSM side rule (three/ShadowPass.ts).

@@ -63,9 +63,8 @@ export async function ambientProbe( context: { renderer: THREE.WebGPURenderer; h
 	await renderer.computeAsync( kernel );
 	const read = new Float32Array( ( await renderer.getArrayBufferAsync( out.value as THREE.StorageBufferAttribute ) ).slice( 0 ) );
 	kernel.dispose();
-	// the two storage buffers' GPU memory: r186's BufferAttribute.dispose() reaches no listener for
-	// a storage attribute, so they are deleted from the renderer's attribute records, which destroys
-	// the buffers (three/Attributes.ts)
+	// the two storage buffers' GPU memory, deleted from the renderer's attribute records, which
+	// destroys the buffers (three/Attributes.ts; since r187 an attribute's dispose() does the same)
 	for ( const a of [ input.value, out.value ] as THREE.BufferAttribute[] ) releaseAttribute( renderer, a );
 	const vis = Array.from( { length: count }, ( _, i ) => read[ i * 4 + 3 ] ).sort( ( a, b ) => a - b );
 	const threshold = vis[ Math.min( count - 1, Math.floor( open * ( count - 1 ) ) ) ];

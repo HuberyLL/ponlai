@@ -18,14 +18,14 @@ import { gpuDevice, wrapBeginRender } from '../../three/Backend.ts';
 // be declared (`read`, `readOptional`): an undeclared read of a discarded attachment shows garbage,
 // and one of a resolve the water left to the rain shows the scene without the sea.
 //
-// three r186 offers a discard only together with a clear (`storeMultisampled*Buffer = false`) and
+// three r187 offers a discard only together with a clear (`storeMultisampled*Buffer = false`) and
 // always resolves a multisampled target, so the descriptor is rewritten as it reaches WebGPU:
 // the backend's `beginRender` (wrapped through three/Backend.ts `wrapBeginRender`) notes the render
 // target of the context it begins, and the command encoder it then creates gets a
 // `beginRenderPass` of its own that hands the rewritten descriptor on.
-// This relies on r186's WebGPUBackend beginning every render pass on a command encoder of its own,
+// This relies on r187's WebGPUBackend beginning every render pass on a command encoder of its own,
 // created inside `beginRender` right before the pass (WebGPUBackend.beginRender); re-check on a
-// three upgrade. r186 does begin a second pass on the same encoder in two cases: a viewport
+// three upgrade. r187 does begin a second pass on the same encoder in two cases: a viewport
 // texture node copying the framebuffer mid-pass (copyFramebufferToTexture) and layered
 // array-camera targets (finishRender). A discard on the first of those would drop what the copy or
 // the next layer needs, and only the last can be told apart once it comes, so only an encoder's

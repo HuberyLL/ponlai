@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import type { Pipeline } from '../post/Pipeline.ts';
 import { preExposure } from '../post/PreExposure.ts';
-import { type Aov, type AovResult, type RingsOptions, type RingsResult, forCellTexels, readAov, readRings } from './RadianceAov.ts';
+import { type Aov, type AovResult, type RingsOptions, type RingsResult, forCellTexels, readAov, readRings, readTexture } from './RadianceAov.ts';
 
 // The scene's linear radiance over screen boxes, as numbers, measured before the exposure.
 //
@@ -90,32 +90,22 @@ export async function readRadiance( renderer: THREE.WebGPURenderer, pipeline: Pi
 	const at = pipeline.radianceSource( source );
 	if ( ! at ) throw new Error( `radiance: no '${ source }' in this graph` );
 	const { target, index } = at;
-	const texture = target.textures[ index ];
-	const width = target.width, height = target.height;
+	const channels = target.textures[ index ].format === THREE.RedFormat ? 1 : 4;
 	// (the P the frame drawn last stored at: read before the await, which a new frame may follow)
 	const stops = preExposure.stops, unscale = 2 ** - stops;
-	const raw = await renderer.readRenderTargetPixelsAsync( target, 0, 0, width, height, index );
-	// rows come back padded to 256 bytes (three's copyTextureToBuffer)
-	const half = texture.type === THREE.HalfFloatType;
-	const channels = texture.format === THREE.RedFormat ? 1 : 4, bytes = half ? 2 : 4;
-	const stride = Math.ceil( width * channels * bytes / 256 ) * 256 / bytes;
 	// (stored values; `rgbAt` below gives scene units)
-	const value = half ? ( i: number ) => THREE.DataUtils.fromHalfFloat( ( raw as Uint16Array )[ i ] ) : ( i: number ) => ( raw as Float32Array )[ i ];
+	const stored = await readTexture( renderer, target, index );
+	const { width, height } = stored;
 	// a texel's ( r, g, b ) in scene units (one channel: green and blue 0)
-	const rgbAt = ( x: number, y: number ): [ number, number, number ] => {
-
-		const i = y * stride + x * channels;
-		return channels === 1 ? [ value( i ) * unscale, 0, 0 ] : [ value( i ) * unscale, value( i + 1 ) * unscale, value( i + 2 ) * unscale ];
-
-	};
+	const rgbAt = ( x: number, y: number ): [ number, number, number ] =>
+		channels === 1 ? [ stored.at( x, y ) * unscale, 0, 0 ] : [ stored.at( x, y, 0 ) * unscale, stored.at( x, y, 1 ) * unscale, stored.at( x, y, 2 ) * unscale ];
 	// the sky's texels, left out under `nonSky`
 	let sky: ( x: number, y: number ) => boolean = () => false;
 	if ( options.nonSky ) {
 
 		const at = pipeline.radianceSource( 'surfaceDepth' )!;
-		const z = await renderer.readRenderTargetPixelsAsync( at.target, 0, 0, width, height, at.index ) as Float32Array;
-		const zStride = Math.ceil( width * 4 / 256 ) * 256 / 4;
-		sky = ( x, y ) => z[ y * zStride + x ] < - 9e4;
+		const z = await readTexture( renderer, at.target, at.index );
+		sky = ( x, y ) => z.at( x, y ) < - 9e4;
 
 	}
 	const boxes = options.boxes ?? { frame: [ 0, 0, 1, 1 ] as Box };

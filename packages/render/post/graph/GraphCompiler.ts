@@ -430,14 +430,14 @@ export class GraphDecl {
 		for ( const r of pass.reads ) if ( ! r.previous && written.has( r.resource ) )
 			fail( `'${ name }' reads and writes '${ this.resources[ r.resource ].name }'` );
 		if ( pass.writes.length > 1 && ! pass.hasMrt ) fail( `'${ name }' writes ${ pass.writes.length } attachments without an mrt` );
-		// three r186 sets one clear flag for every colour attachment of a pass (renderer.autoClearColor)
+		// three r187 sets one clear flag for every colour attachment of a pass (renderer.autoClearColor)
 		if ( pass.writes.length > 1 && new Set( pass.writes.map( ( w ) => drawsOver( pass, w ) ) ).size > 1 )
 			fail( `'${ name }' clears some of its attachments and loads others: three clears all or none` );
-		// a three r186 RenderTarget always carries a colour attachment (its textures[ 0 ]), which a
-		// depth-only pass would draw into, store and key its pipelines by; the depth-only draws
-		// planned (the vegetation's depth copies) stay inside their colour pass with colorWrite off
+		// the graph makes a target of one colour attachment at least (three r187 allows a depth-only
+		// target, `count: 0`, which the graph does not use); the depth-only draws planned (the
+		// vegetation's depth copies) stay inside their colour pass with colorWrite off
 		if ( pass.depth && pass.writes.length === 0 && pass.kind !== 'compute' )
-			fail( `'${ name }' has a depth attachment but no colour attachment: depth-only passes are not supported (three's render targets carry a colour texture)` );
+			fail( `'${ name }' has a depth attachment but no colour attachment: depth-only passes are not supported (the graph's targets carry a colour texture)` );
 		if ( pass.kind === 'compute' && ( pass.writes.length > 0 || pass.depth ) )
 			fail( `'${ name }': a compute pass has no attachments (declare what it writes with storage())` );
 		const attachments = [ ...pass.writes.map( ( w ) => w.resource ), ...( pass.depth ? [ pass.depth.resource ] : [] ) ].map( ( id ) => this.resources[ id ] );

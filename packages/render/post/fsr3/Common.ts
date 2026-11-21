@@ -18,7 +18,7 @@ import type { Fsr3ShaderOptions } from './Host.ts';
 // Differences from upstream:
 // - Helpers that read the constant buffer (`ReconstructedDepthMvPxThreshold` does not, but
 //   `GetViewSpaceDepth`, `ComputeHrPosFromLrPos`, `ShadingChangeRenderSize`, ... do) take the
-//   bindings as their first argument and are expanded where they are called: three r186 can emit
+//   bindings as their first argument and are expanded where they are called: three r187 can emit
 //   a `Fn( ... ).setLayout( ... )` function with another kernel's uniform names when two compute
 //   kernels share it (docs/reference/three-behaviour.md, Shader functions), so only the pure helpers are
 //   `setLayout` functions (one WGSL function each).

@@ -20,13 +20,13 @@ taking another path:
 
 The other dependencies are on three.js's behaviour, with no code that uses its internals: [three.js
 and WebGPU behaviour](../../../docs/reference/three-behaviour.md) lists them as the entries marked
-r186, each with the check that detects it.
+r187, each with the check that detects it.
 
 ## Upgrade three.js
 
 1. Create a branch. Read three.js's migration guide and release notes for every version between the
    pinned one and the new one, and note what touches an entry of `three-internals.json` or an entry
-   marked r186 in `docs/reference/three-behaviour.md`.
+   marked r187 in `docs/reference/three-behaviour.md`.
 2. Change `three` and `@types/three` together, to exact versions (no `^` or `~`), and install:
    `npm install --save-exact three@<version> @types/three@<version>`. Set the list's `three`,
    `types` and `revision` to the new versions.
@@ -52,10 +52,10 @@ r186, each with the check that detects it.
    (`tools/island/verify-growth-swap.mjs`).
 10. Measure the frame time before and after the upgrade
     (`skills/measuring-performance-changes/SKILL.md`).
-11. Go through the entries marked r186 in `docs/reference/three-behaviour.md`, each with its check.
+11. Go through the entries marked r187 in `docs/reference/three-behaviour.md`, each with its check.
     Where three.js no longer behaves as an entry says, remove the code that works around it and the
     entry, and the line of `AGENTS.md` (or `packages/render/AGENTS.md`) or the lint rule that states
     it.
-12. Update the comments that name the old version (search for `r186`, the current revision). If
+12. Update the comments that name the old version (search for `r187`, the current revision). If
     three.js ships a newer meshoptimizer simplifier, update its notice in
     `packages/island/world/IslandSimplify.ts` and its line in `CREDITS.md`.

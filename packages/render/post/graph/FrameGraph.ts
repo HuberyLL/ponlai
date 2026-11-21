@@ -28,7 +28,7 @@ import { ownDepthClears } from '../../three/ThreePatches.ts';
 // not own (three's display nodes in a chain, which make their own) follow it through `onResize`.
 //
 // A texture may sit in several of those render targets (a resource written alone by one pass and
-// with a velocity attachment by another). In three r186 `RenderTarget.setSize` disposes the target,
+// with a velocity attachment by another). In three r187 `RenderTarget.setSize` disposes the target,
 // which destroys every texture in it, and each target's first `updateRenderTarget` after that
 // recreates all its textures (its own record of the size is gone): a second target's first use in
 // a frame would wipe what the first had drawn into the shared texture. So after any resize the
@@ -55,7 +55,7 @@ import { ownDepthClears } from '../../three/ThreePatches.ts';
 // props and islanders). A new
 // pass, or a draw that first shows later, joins it the same way; `tools/render/verify-first-use.mjs`
 // counts the pipelines any step still creates. A miss is not harmless: a material built twice under
-// two keys can be emitted with the first build's uniform names in a layout function (r186), an
+// two keys can be emitted with the first build's uniform names in a layout function (r187), an
 // invalid shader. Priming (rendering a pass once at startup) covers only what the walker cannot
 // reach (three's FSR1Node, `post=three-fsr`), never leaves a persistent resource written, skips a
 // node that may keep state of its own (a history) unless the pass's owner resets it (`invalidate`),

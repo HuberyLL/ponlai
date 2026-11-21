@@ -38,7 +38,7 @@ import { GenerateReactive } from './AutogenReactive.ts';
 // depth, sharpening for ACCUMULATE_SHARPEN, the reprojection's Lanczos type), the SPD tails as
 // kernels of their own, and kernels for upstream's clear jobs.
 //
-// How the integration dispatches them (three r186): `renderer.compute( kernel, [ x, y, 1 ] )` with
+// How the integration dispatches them (three r187): `renderer.compute( kernel, [ x, y, 1 ] )` with
 // the workgroup counts of `getFixedDispatchSize` (from the context's max render and upscale sizes,
 // the canvas's: fixed per canvas, so no pipeline changes with the render size); three passes an
 // array dispatch size straight to `dispatchWorkgroups` and bakes no count into the shader (only

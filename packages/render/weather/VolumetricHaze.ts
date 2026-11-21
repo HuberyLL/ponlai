@@ -29,6 +29,7 @@ import { shared } from '../shared.ts';
 import { FOG_NOISE, fogDrift } from './FogNoise.ts';
 import { DROPLET, dropletPhase } from './FogDroplets.ts';
 import { halton } from '../post/Jitter.ts';
+import { selectVec3 } from '../materials/Select.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -1190,9 +1191,9 @@ export class VolumetricHaze {
 		// (without the density anti-aliasing, the depth out to the far boundary of the slice the
 		// surface lies in, as the grid's slices hold the medium)
 		const held = opacityOf( along.mul( this.sliceDepth( ceil( this.sliceCoordinate( at ) ) ).div( max( at, 1e-6 ) ) ) ).toVar();
-		const opacity = select( this.switches.z.greaterThan( 0.5 ), exact, held ).toVar();
+		const opacity = selectVec3( this.switches.z.greaterThan( 0.5 ), exact, held ).toVar();
 		// (the debug views: the visibility card alone, or the haze's light over black)
-		const under = select( this.switches.w.equal( 3 ), vec3( 0 ), colour );
+		const under = selectVec3( this.switches.w.equal( 3 ), vec3( 0 ), colour );
 		let over = mix( under, lit, opacity );
 		if ( ground ) {
 
@@ -1206,7 +1207,7 @@ export class VolumetricHaze {
 			over = scaled;
 
 		}
-		const result = select( this.switches.w.equal( 1 ), lit, over );
+		const result = selectVec3( this.switches.w.equal( 1 ), lit, over );
 		return { result, opacity };
 
 	}
@@ -1250,7 +1251,7 @@ export class VolumetricHaze {
 		const depth = dome && ! distance && ! from ? medium.add( length.mul( this.skyDepth ) ) : medium;
 		const fog = this.fogOver( vec3( 0 ), q, forward, length, depth, false );
 		const on = this.switches.x.greaterThan( 0.5 );
-		return { light: select( on, fog.result, vec3( 0 ) ), transmittance: select( on, vec3( 1 ).sub( fog.opacity ), vec3( 1 ) ) };
+		return { light: selectVec3( on, fog.result, vec3( 0 ) ), transmittance: selectVec3( on, vec3( 1 ).sub( fog.opacity ), vec3( 1 ) ) };
 
 	}
 
@@ -1320,7 +1321,7 @@ export class VolumetricHaze {
 		const tau = this.sigma.mul( depth ).toVar();
 		const opacity = bandToDisplay( tau.mul( expShare3( tau ) ), bandPush ).toVar();
 		const on = this.switches.x.greaterThan( 0.5 );
-		return { light: select( on, mean.mul( opacity ), vec3( 0 ) ), transmittance: select( on, vec3( 1 ).sub( opacity ), vec3( 1 ) ) };
+		return { light: selectVec3( on, mean.mul( opacity ), vec3( 0 ) ), transmittance: selectVec3( on, vec3( 1 ).sub( opacity ), vec3( 1 ) ) };
 
 	}
 

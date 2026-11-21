@@ -278,8 +278,9 @@ async function readFrame( { depth } ) {
 	const w = target.width, h = target.height;
 	const raw = await s.renderer.readRenderTargetPixelsAsync( target, 0, 0, w, h, index );
 	const half = raw instanceof Uint16Array;
-	// rows come back padded to 256 bytes (three's copyTextureToBuffer)
-	const bytes = half ? 2 : 4, stride = Math.ceil( w * 4 * bytes / 256 ) * 256 / bytes;
+	// rows come back tightly packed (docs/reference/three-behaviour.md, Readbacks)
+	if ( raw.length !== w * h * 4 ) throw new Error( `meadow-light: ${ raw.length } values for ${ w } x ${ h } x 4 (three's readback layout changed)` );
+	const stride = w * 4;
 	const rgb = half ? new Uint16Array( w * h * 3 ) : new Float32Array( w * h * 3 );
 	for ( let y = 0; y < h; y ++ ) for ( let x = 0; x < w; x ++ ) {
 
@@ -296,7 +297,8 @@ async function readFrame( { depth } ) {
 
 		const rt = s.pipeline.depthRT;
 		const z = await s.renderer.readRenderTargetPixelsAsync( rt, 0, 0, rt.width, rt.height, 0 );
-		const zs = Math.ceil( rt.width * 2 * 4 / 256 ) * 256 / 4;
+		if ( z.length !== rt.width * rt.height * 2 ) throw new Error( `meadow-light: ${ z.length } depth values for ${ rt.width } x ${ rt.height } x 2 (three's readback layout changed)` );
+		const zs = rt.width * 2;
 		const dm = new Uint16Array( w * h );
 		for ( let y = 0; y < h; y ++ ) for ( let x = 0; x < w; x ++ ) dm[ y * w + x ] = Math.min( 65535, Math.round( Math.abs( z[ y * zs + x * 2 ] ) * 100 ) );
 		result.depth = await b64( dm );

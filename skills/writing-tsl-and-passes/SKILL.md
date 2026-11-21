@@ -22,7 +22,7 @@ record what you find.
 - Take derivatives and implicitly filtered samples (`dFdx`, `fwidth`, `texture()` without a
   level) only in uniform control flow: take them before any `If`, `Loop` or `select()`, and inside
   a branch, sample with an explicit level. WGSL makes this an error by default
-  (`derivative_uniformity`), but three.js's WGSL builder turns that diagnostic off at r186. A wrong
+  (`derivative_uniformity`), but three.js's WGSL builder turns that diagnostic off at r187. A wrong
   one therefore compiles, and its pixels change with unrelated edits.
 - A helper used by several shaders takes the uniforms it reads as arguments. A laid-out `Fn`
   that reads a uniform in its body can be emitted with the first build's uniform names, and the

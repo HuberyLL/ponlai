@@ -114,7 +114,7 @@ const COOL_TO = uniform( 0 );
 const HIGHLIGHT_GREY = { amount: uniform( 0 ), from: uniform( 0 ), to: uniform( 0 ) };
 /** How cool the colour `c` (white balanced) is, 0 to 1 (`coolFrom`, `coolTo`: COOL_FROM, COOL_TO). The
  * edges come in as inputs: a laid-out helper that reads uniforms in its body can be emitted with
- * another material's uniform names (r186), which broke the rain's materials under taa. */
+ * another material's uniform names (r187), which broke the rain's materials under taa. */
 const coolShare = Fn( ( [ c, coolFrom, coolTo ]: [ V3, F, F ] ) => {
 
 	const spread = max( max( c.r, c.g ), c.b ).sub( min( min( c.r, c.g ), c.b ) );

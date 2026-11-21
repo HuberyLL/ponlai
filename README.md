@@ -12,7 +12,7 @@
 
 [![Check](https://github.com/HuberyLL/ponlai/actions/workflows/check.yml/badge.svg)](https://github.com/HuberyLL/ponlai/actions/workflows/check.yml)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![three.js r186](https://img.shields.io/badge/three.js-r186-black?logo=threedotjs)](https://threejs.org/)
+[![three.js r187](https://img.shields.io/badge/three.js-r187-black?logo=threedotjs)](https://threejs.org/)
 [![WebGPU](https://img.shields.io/badge/WebGPU-required-005a9c)](https://www.w3.org/TR/webgpu/)
 [![Node.js 26](https://img.shields.io/badge/Node.js-26-5fa04e?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 

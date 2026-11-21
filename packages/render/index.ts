@@ -45,6 +45,7 @@ export { heightBlend, hexReadScan } from './materials/HexTiling.ts';
 export type { HexScan } from './materials/HexTiling.ts';
 export { DETAIL_SIZE, bakeProceduralTextures } from './materials/ProceduralTextures.ts';
 export type { DetailTextures } from './materials/ProceduralTextures.ts';
+export { selectVec3 } from './materials/Select.ts';
 export { DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness } from './materials/Wetness.ts';
 export type { OceanFFT } from './ocean/OceanFFT.ts';
 export { markSwimmer, refractedGroup, showUnderwater } from './ocean/Refraction.ts';

@@ -18,7 +18,7 @@ const CANVAS = { of: 'canvas' };
 const extents = ( w, h ) => ( { render: { width: w, height: h }, canvas: { width: w, height: h } } );
 
 // A renderer whose compileAsync collects the visible meshes of what it is given through
-// `_createObjectPipeline`, as three r186's does, and whose node builds record the binding they see.
+// `_createObjectPipeline`, as three r187's does (between its precompilation state's begin and end), and whose node builds record the binding they see.
 // A material's `userData.before` lists the nodes its build names as rendering before it.
 function mockRenderer() {
 
@@ -50,9 +50,9 @@ function mockRenderer() {
 		// ---- the internals Compile.ts builds through
 		_compilationPromises: null,
 		_currentRenderContext: null,
-		_isPreCompiling: false,
+		_precompilationState: null,
 		_createObjectPipeline() { throw new Error( 'three\'s own _createObjectPipeline: the bound compile did not stand in' ); },
-		_renderContexts: { get: ( rt, m, depth ) => context( rt, m, depth ) },
+		_renderContexts: { get: ( rt, m, depth, camera ) => context( rt, m, depth, camera ) },
 		_objects: { get: ( object, material, scene, camera, lightsNode, renderContext ) => ( { object, material, context: renderContext } ) },
 		_nodes: {
 			getForRender: ( ro ) => {
@@ -70,6 +70,7 @@ function mockRenderer() {
 
 			const ctx = context( target, mrt, 0 );
 			r._currentRenderContext = ctx;
+			r._precompilationState = { renderContext: ctx };
 			const visit = ( o ) => {
 
 				if ( ! o.visible ) return;
@@ -91,6 +92,7 @@ function mockRenderer() {
 
 			};
 			visit( object );
+			r._precompilationState = null;
 			return Promise.resolve();
 
 		},

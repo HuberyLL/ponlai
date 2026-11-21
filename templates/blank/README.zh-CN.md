@@ -23,7 +23,7 @@ git init && git add -A && git commit -m "Start from Ponlai's blank project"
 
 | 文件 | 用途 |
 | --- | --- |
-| `package.json` | 锁定为 0.186.1 的 three.js（渲染管线用到了 three.js 的内部实现），以及 Vite、TypeScript 和 Playwright |
+| `package.json` | 锁定为 0.187.0 的 three.js（渲染管线用到了 three.js 的内部实现），以及 Vite、TypeScript 和 Playwright |
 | `vite.config.ts` | 把渲染管线的 Web Worker 构建为 ES 模块 |
 | `tsconfig.json` | 允许以 `.ts` 结尾的导入，渲染管线用的就是这种写法 |
 | `index.html` | 页面：画布容器和加载画面 |

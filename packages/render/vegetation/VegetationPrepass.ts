@@ -70,9 +70,10 @@ import { onSceneDispose } from '../SceneDispose.ts';
 // Equal depth needs the prepass and the shaded draw to place every vertex bit for bit alike. The
 // two programs differ (the shaded one computes much more), and the shader compiler then reorders
 // or contracts the position's arithmetic differently: a few samples fail the test and show the
-// clear colour behind. WGSL's `@invariant` on the clip position forbids that. three does not emit
-// it, so both materials patch the declarations of the builder that compiles them (the opaque
-// prepass's pairs too: OpaquePrepass.ts).
+// clear colour behind. WGSL's `@invariant` on the clip position forbids that. three emits it only
+// for a builder whose context asks for it (r187), which a material cannot set, so both materials
+// patch the declarations of the builder that compiles them (the opaque prepass's pairs too:
+// OpaquePrepass.ts).
 export function invariantPosition( material: THREE.NodeMaterial ): void {
 
 	const setup = material.setup;

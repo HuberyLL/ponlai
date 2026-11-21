@@ -96,7 +96,7 @@ const frameMasks = ( c ) => {
 const strip = ( table ) => table.passes.map( ( p ) => row( p.pass, p.colors, p.depth ) );
 const find = ( table, name ) => table.passes.find( ( p ) => p.pass === name );
 
-// ---- a CPU mock of the WebGPU objects AttachmentOps wraps (r186's beginRender path)
+// ---- a CPU mock of the WebGPU objects AttachmentOps wraps (r187's beginRender path)
 
 function mockWebGPU() {
 

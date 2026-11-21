@@ -72,9 +72,11 @@ export async function readTexture( renderer: THREE.WebGPURenderer, target: THREE
 	const width = target.width, height = target.height;
 	const raw = await renderer.readRenderTargetPixelsAsync( target, 0, 0, width, height, index );
 	const half = texture.type === THREE.HalfFloatType;
-	const channels = texture.format === THREE.RedFormat ? 1 : texture.format === THREE.RGFormat ? 2 : 4, bytes = half ? 2 : 4;
-	// rows come back padded to 256 bytes (three's copyTextureToBuffer)
-	const stride = Math.ceil( width * channels * bytes / 256 ) * 256 / bytes;
+	const channels = texture.format === THREE.RedFormat ? 1 : texture.format === THREE.RGFormat ? 2 : 4;
+	// rows come back tightly packed (docs/reference/three-behaviour.md, Readbacks); another layout
+	// would place every texel wrongly, so it throws
+	if ( raw.length !== width * height * channels ) throw new Error( `readTexture: ${ raw.length } values for ${ width } x ${ height } x ${ channels } (three's readback layout changed)` );
+	const stride = width * channels;
 	const at = half
 		? ( x: number, y: number, c = 0 ) => THREE.DataUtils.fromHalfFloat( ( raw as Uint16Array )[ y * stride + x * channels + c ] )
 		: ( x: number, y: number, c = 0 ) => ( raw as Float32Array )[ y * stride + x * channels + c ];

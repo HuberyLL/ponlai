@@ -47,7 +47,7 @@ const MEMBERS: [ string, string, 'object' | 'function' | 'present' ][] = [
 	[ 'Renderer._renderContexts', '_renderContexts', 'object' ],
 	[ 'RenderContexts.get', '_renderContexts.get', 'function' ],
 	[ 'Renderer._currentRenderContext', '_currentRenderContext', 'present' ],
-	[ 'Renderer._isPreCompiling', '_isPreCompiling', 'present' ],
+	[ 'Renderer._precompilationState', '_precompilationState', 'present' ],
 	[ 'Renderer._compilationPromises', '_compilationPromises', 'present' ],
 	[ 'Renderer._createObjectPipeline', '_createObjectPipeline', 'function' ],
 	[ 'Renderer._getShadowNodes', '_getShadowNodes', 'function' ],
