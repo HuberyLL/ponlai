@@ -36,14 +36,17 @@ holds the result (packages/render/ocean/SeaReflection.ts, Rest); a few of those 
 last bits from load to load, and the held result keeps what they held. The region is the cells of
 the render the reflection last traced from, which each capture records (`held`:
 packages/render/debug/HeldRegion.ts), grown by `dilate` cells for the upscale and the sharpening
-(held_region()). Outside it nothing may differ (`outside`: 0); inside it the measurements and
-names are TEMPORAL's, over the region's pixels, at the level such frames show.
+(held_region()). Inside it the measurements and names are TEMPORAL's, over the region's pixels, at
+the level such frames show. Outside it a few pixels may differ by 1 level (`outside`,
+`outside_window`), none by more: the local tone mapping's base (packages/render/post/LocalTone.ts,
+a bilateral grid and a wide blur) spreads the region's last-bit changes over the frame, and a few
+pixels anywhere on it round to the next level.
 
 Calibration: 12 fresh loads of each of the sea's parity views (island-fair-noon,
 island-clear-golden, horizon-fair-noon, island-night-clear, water-skim-cliffs, island-from-sea,
 sunrise-long-shadows, night-moon, low-36, rim-sea, cliff-sea-golden, meadow-close; the GPU shared
 with other captures), every pair compared, and the regressions above cut at three points of each
-view's region, plus a change of every region pixel by 1 % and of one pixel outside it. The A/A
+view's region, plus a change of every region pixel by 1 %. The A/A
 pairs differ only in the region (but for a lone pair whose grass outside it differed, which the
 recapture absorbs), by 1 level and on one pixel in one pair by 2: up to 206 pixels a frame, 28 in a
 32 px window. So `level` is 1 and `big` 4 with no big pixel allowed; the window's share of off
@@ -54,6 +57,10 @@ window, 0.027), not only the mixed signs seen (0.006).
 The worst A/A pair uses 0.24 of the tolerance (a window's 2-level pixel); the weakest regression
 3.4 times it (a missing 6 px object on the sea at night, low in contrast), the next 6.4 times (3
 levels of green over an 8 px square).
+Outside the region, over 63 pairs of distinct captures of those views on two builds: at most 13
+pixels differ, none by more than 1 level, at most 4 in one 32 px window. So `outside` is 32 and
+`outside_window` 8; a pixel outside changed by 2 levels fails, and so does a 1-level change of a
+48 px square (the window) or of 33 scattered pixels (the count).
 """
 import numpy as np
 
@@ -76,8 +83,8 @@ TEMPORAL = {
 }
 
 # Every threshold of the held rule (MSAA paused frames, the held region only; see the header). The
-# names are TEMPORAL's; `outside`: pixels that may differ outside the region; `dilate`: cells the
-# region is grown by.
+# names are TEMPORAL's; `outside`: pixels that may differ outside the region, each by `level` at
+# most; `outside_window`: of them, the most in one window; `dilate`: cells the region is grown by.
 HELD = {
 	"level": 1,
 	"big": 4,
@@ -89,7 +96,8 @@ HELD = {
 	"window_bias": 0.03,
 	"crop_off": 0.0001,
 	"crop_bias": 0.001,
-	"outside": 0,
+	"outside": 32,
+	"outside_window": 8,
 	"dilate": 1,
 }
 
@@ -168,15 +176,17 @@ def _region(S, M, T, absS=None):
 def measure(A, B, crops=None, T=TEMPORAL, region=None):
 	"""The rule's measurements for frames A (reference) and B (test), H x W x 3 (uint8 or int16).
 	With `region` (H x W bool, held_region()): the pixels that differ outside it are counted
-	(`outside`), the difference outside it is left out, and the frame's measurements are over the
-	region's pixels."""
+	(`outside`; `outside_off`, those over the level; `outside_window`, the most in one window), the
+	difference outside it is left out, and the frame's measurements are over the region's pixels."""
 	S = np.subtract(B, A, dtype=np.int16)
 	absS = np.abs(S)
 	M = np.maximum(np.maximum(absS[..., 0], absS[..., 1]), absS[..., 2])
 	if region is None:
 		r = {"frame": _region(S, M, T, absS)}
 	else:
-		r = {"outside": int(np.count_nonzero(M[~region]))}
+		out = (M > 0) & ~region
+		r = {"outside": int(np.count_nonzero(out)), "outside_off": int(np.count_nonzero(M[~region] > T["level"])),
+			"outside_window": int(_windows(out.astype(np.uint8), T["window"])[0].max())}
 		S[~region], absS[~region], M[~region] = 0, 0, 0
 		r["frame"] = _region(S[region], M[region], T, absS[region]) if region.any() else _region(S[:1, :1], M[:1, :1], T)
 	w = T["window"]
@@ -203,6 +213,8 @@ def checks(r, T=TEMPORAL):
 	f, wn = r["frame"], r["window"]
 	if "outside" in r:
 		yield "px outside the region", r["outside"], T["outside"], ""
+		yield f"px outside the region >{T['level']}", r["outside_off"], 0, ""
+		yield "px outside the region in a window", r["outside_window"], T["outside_window"], ""
 	yield f"frame px>{T['level']}", f["off"], T["frame_off"], ""
 	yield "frame mean", f["mean"], T["frame_mean"], ""
 	yield f"window px>{T['level']}", wn["off"]["value"], T["window_off"], wn["off"]["at"]
