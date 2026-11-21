@@ -401,3 +401,14 @@ when three stopped adding the CPU side's estimate for each indirect draw; the GP
 change.
 
 Check: none; judgement.
+
+### Readbacks
+
+`renderer.readRenderTargetPixelsAsync` returns the rows tightly packed, `width * channels` values
+each: three copies the texture into a buffer whose rows are padded to 256 bytes and removes the
+padding before it returns (`WebGPUTextureUtils.copyTextureToBuffer`). Code that indexes the result
+with a padded stride places every texel of a target whose row is not a multiple of 256 bytes
+wrongly, with no error. **r187.** Before r187 the rows came back padded.
+
+Check: `debug/RadianceAov.ts` `readTexture` and `tools/island/meadow-light.mjs` throw when the
+result's length is not `width * height * channels`. Read a target through `readTexture`.
