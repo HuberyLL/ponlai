@@ -22,7 +22,7 @@
 // leaves for materials, lighting models, shadows and inspectors, which @types/three does not
 // declare (they are its interface, listed so that an upgrade sees one go).
 //
-// Three checks, each a failure (exit 1) when broken:
+// Four checks, each a failure (exit 1) when broken:
 // - Version. three and @types/three installed are the versions the list was checked against, and
 //   three's REVISION is the list's, and package.json pins both to exact versions (no ^ or ~).
 // - Shape. Every entry holds in the installed three: a `method` (a method, getter or setter) is
@@ -41,6 +41,9 @@
 //   SRC_KNOWN is empty.
 //   tools/ is white-box (its tools run scripts in the page) and keeps a list of its own,
 //   TOOLS_KNOWN, which only shrinks too.
+// - Count. The list's `limits` hold the number of entries of each category and of the fingerprinted
+//   ones, and the list holds exactly that many: a new entry raises its limit in the same change, so
+//   the diff shows it, and a removed one lowers it, so the limits only fall as uses go.
 //
 // Output: a summary on stdout, the warnings, then PASS or FAIL with the failures; the options add
 // their lines.
@@ -380,9 +383,22 @@ const inSrc = new Map( [ ...[ ...inPackages ].map( ( [ rel, f ] ) => [ `packages
 const inTools = checkPlace( 'tools', TOOLS_KNOWN, ( rel ) => `tools/${ rel }` === SELF, 'TOOLS_KNOWN', 'drive the page through its debug objects, or call a function of packages/render/three/' );
 if ( options.verbose ) for ( const [ dir, seen ] of [ [ '.', inSrc ], [ 'tools', inTools ] ] ) for ( const [ rel, found ] of seen ) console.log( `  internals used by ${ dir }/${ rel }: ${ found.join( ', ' ) }` );
 
-// ---- summary
+// ---- count
 
 const byCategory = [ 1, 2, 3 ].map( ( c ) => list.entries.filter( ( e ) => e.category === c ).length );
+const counts = { 1: byCategory[ 0 ], 2: byCategory[ 1 ], 3: byCategory[ 2 ], fingerprinted: list.entries.filter( ( e ) => FINGERPRINTED.has( e.use ) ).length };
+for ( const [ key, n ] of Object.entries( counts ) ) {
+
+	const limit = list.limits?.[ key ];
+	const what = key === 'fingerprinted' ? 'fingerprinted entries' : `category ${ key } entries`;
+	if ( limit === undefined ) failures.push( `count: the list's limits give no limit for ${ what }` );
+	else if ( n > limit ) failures.push( `count: ${ n } ${ what }, over the limit of ${ limit }: use three's public interface, or raise the limit in the same change to show the new dependency` );
+	else if ( n < limit ) failures.push( `count: ${ n } ${ what }, under the limit of ${ limit }: lower the limit to ${ n }` );
+
+}
+
+// ---- summary
+
 console.log( `verify-three-internals: three ${ list.three } (r${ list.revision }), ${ list.entries.length } entries (${ byCategory.join( ' / ' ) } by category), ${ current.length } fingerprinted; internals used in ${ inSrc.size } code files (${ SRC_KNOWN.length } known), ${ inTools.size } tools (${ TOOLS_KNOWN.length } known)` );
 for ( const w of warnings ) console.log( `  warning ${ w }` );
 if ( failures.length ) {

@@ -6,7 +6,11 @@ three.js that are not its public interface: private members of the renderer and 
 WebGPU backend and its device, methods it replaces, and three.js code it mirrors. Each of these
 dependencies is a function in `packages/render/three/`, and
 `packages/render/three/three-internals.json` lists what they depend on. `three` and `@types/three`
-are pinned to exact versions, so the list holds until someone changes the pin.
+are pinned to exact versions, so the list holds until someone changes the pin. The list's `limits`
+give how many entries each category holds, and how many are fingerprinted (replaced, wrapped,
+mirrored or relied on, which an upgrade has to read again). A change that adds an entry raises its
+limit, and one that removes an entry lowers it, so the number of dependencies only falls unless a
+change shows the new one.
 
 An upgrade is the only time the list can stop holding, and then the code reports an error instead of
 taking another path:

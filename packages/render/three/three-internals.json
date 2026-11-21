@@ -2,6 +2,7 @@
 	"three": "0.187.0",
 	"types": "0.187.0",
 	"revision": "187",
+	"limits": { "1": 61, "2": 23, "3": 34, "fingerprinted": 25 },
 	"entries": [
 		{ "id": "Renderer.backend", "category": 2, "file": "src/renderers/common/Renderer.js", "owner": "Renderer", "name": "backend", "kind": "member", "use": "read", "users": [ "three/Backend.ts (each function)", "three/Internals.ts checkRenderer", "three/ThreePatches.ts" ] },
 		{ "id": "Renderer.lighting", "category": 1, "file": "src/renderers/common/Renderer.js", "owner": "Renderer", "name": "lighting", "kind": "member", "use": "read", "users": [ "three/ThreePatches.ts primeSharedNodes" ] },
