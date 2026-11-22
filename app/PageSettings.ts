@@ -10,14 +10,16 @@
 // own neutral one, which the app (main.ts) hands to the render pipeline's stages (`PAGE_LOOK`).
 // The rest of the app's own state outside the scene lives here too: the reload with changed
 // options (a load setting's new value) and the browser's storage for what a page remembers between
-// visits (the dynamic resolution's scale, the player's graphics settings: GraphicsSettings.ts, read
-// here before the settings are installed, since their tier and overrides are load settings).
+// visits (the dynamic resolution's scale, the player's graphics settings: GraphicsSettings.ts, and
+// language: LanguageSettings.ts, read here before the settings are installed, since their tier,
+// overrides and language are load settings).
 import { installSettings, parseSettings, settingProblems, NEUTRAL_LOOK, type Look } from '../packages/render/setup.ts';
 import { PAGE_SETTINGS, type PageSettingName } from './AppSettings.ts';
 import { adapterName, chooseQuality, type QualityChoice } from './QualityDetect.ts';
 import { ISLAND_LOOK } from '../packages/island/land.ts';
 import { loadGraphics, readsGraphicsStore, withStoredOverrides } from './GraphicsSettings.ts';
 import type { GraphicsRecord } from '../packages/render/setup.ts';
+import { browserLanguages, loadLanguage, withLanguage, type LanguageChoice } from './LanguageSettings.ts';
 
 /** The browser's storage for what the page remembers between visits, or null where it has none
  * (reading it throws where site data is blocked). Its own calls may still throw: callers catch. */
@@ -42,8 +44,12 @@ export const GRAPHICS_STORE = readsGraphicsStore( address, navigator.webdriver =
 /** The player's stored graphics settings this load builds (null: none, or not read: `?quality`, an
  * automated browser). */
 export const STORED_GRAPHICS: GraphicsRecord | null = GRAPHICS_STORE && ! address.has( 'quality' ) ? loadGraphics( pageStore ) : null;
-// the stored choices' overrides first, the address's own after them (Quality.ts: a later one wins)
-const query = parseSettings( withStoredOverrides( location.search, STORED_GRAPHICS ) );
+/** The player's language choice (LanguageSettings.ts; auto where the store is not read). */
+export const STORED_LANGUAGE: LanguageChoice = GRAPHICS_STORE ? loadLanguage( pageStore ) : 'auto';
+// the stored choices' overrides first, the address's own after them (Quality.ts: a later one wins);
+// on a player's page the language chosen, or the browser's, where the address names none
+const stored = withStoredOverrides( location.search, STORED_GRAPHICS );
+const query = parseSettings( GRAPHICS_STORE ? withLanguage( stored, STORED_LANGUAGE, browserLanguages() ) : stored );
 /** The tier this load builds and how it was chosen (QualityDetect.ts). */
 // (the adapter's name only where a remembered measurement may be read: no `?quality`, no stored
 // choice, a player's browser or `autoQuality=detect`; a tool's browser holds the GPU back until the

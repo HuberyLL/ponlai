@@ -7,20 +7,19 @@
 // `npm run check`.
 //
 // Usage:
-//   node tools/game/verify-i18n.mjs [--strict] [--list]
+//   node tools/game/verify-i18n.mjs [--list]
 //
 // Options:
-//   --strict   fails on another language's drift too (for when a language is maintained)
 //   --list     prints every drifted key under its language
 //
 // It fails on a Chinese literal in the code outside ALLOWED (the content that is not the
 // interface's words: the islanders' names, the stand-in agent's lines, the debug panel's
-// placeholder lines and days), and on a source value that is not a non-empty string. The drift of
-// another language is reported, not failed: English is a snapshot not maintained while the game is
-// in development. The drift is the keys a catalogue lacks (the page shows the Chinese for them), the
-// keys the source no longer has, and the values that name other values (`{{place}}`) than the
-// source gives; a value that leaves one of the source's values unsaid is counted apart and never
-// fails. A key's plural forms (`_one`, `_other`) count as the key.
+// placeholder lines and days), on a source value that is not a non-empty string, and on another
+// language's drift: the player chooses the language in the settings menu, so every catalogue is
+// kept complete. The drift is the keys a catalogue lacks (the page would show the Chinese for
+// them), the keys the source no longer has, and the values that name other values (`{{place}}`)
+// than the source gives; a value that leaves one of the source's values unsaid is counted apart and
+// never fails (a language may say it otherwise). A key's plural forms (`_one`, `_other`) count as the key.
 //
 // Output: on stdout, the count of code files and Chinese literals, the source's count of strings,
 // a line per other language with its drift (with --list, its keys), each failure as `FAIL ...`,
@@ -38,7 +37,7 @@ import { ROOT } from '../kit/root.mjs';
 
 const CATALOGUES = join( ROOT, 'packages/game/ui/i18n' );
 const SOURCE = 'zh-CN';
-const strict = process.argv.includes( '--strict' ), list = process.argv.includes( '--list' );
+const list = process.argv.includes( '--list' );
 
 // Chinese characters, CJK punctuation and full-width forms
 const CJK = /[　-〿㐀-䶿一-鿿豈-﫿＀-￯]/;
@@ -161,7 +160,7 @@ for ( const name of readdirSync( CATALOGUES ) ) {
 
 	}
 	const drift = missing.length + stale.length + unknown.length;
-	const say = strict && drift > 0 ? fail : ( line ) => console.log( line );
+	const say = drift > 0 ? fail : ( line ) => console.log( line );
 	say( `${ locale }: ${ other.size } strings; ${ missing.length } missing (shown in ${ SOURCE }), ${ stale.length } no longer in the source, ${ unknown.length } naming values the source does not give, ${ dropped.length } leaving a value unsaid` );
 	if ( list ) {
 

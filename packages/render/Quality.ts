@@ -26,7 +26,7 @@
 // Medium and low (their rows say how they were chosen) hold the same paused-page rules as high: the
 // test mode's frames are bit-identical between runs and equal a fresh load's; the default checks
 // name high alone, and a preset's own checks name it (`--quality`, `--tiers`). Every tier runs the
-// dynamic render scale, so the menu's render resolution and dynamic resolution apply on any of them.
+// dynamic render scale, so the menu's resolution and dynamic resolution apply on any of them.
 //
 // Each tier picks its anti-aliasing (the `aa` setting, post/Antialiasing.ts; `?aa` or the GUI choose
 // any mode over it). Without multisampling or a temporal resolve geometric edges alias by a pixel's
@@ -78,12 +78,12 @@ export type RenderScaleRule =
 	// the maximum. Pixel counts rather than shares of the display's ratio, so a frame costs about
 	// the same on any display; the floor is at most `floorShare` of the maximum per axis, which keeps
 	// a small display's floor below its maximum (post/RenderScale.ts `dynamicRange`).
-	// `share` (0 < share <= 1), when not 0, caps the render at that share of the display's ratio per
-	// axis and makes it the baseline instead of `baseline`'s pixels (the settings menu's render
-	// resolution); `pinned` holds the render
+	// `rows`, when not 0, caps the render at that height in device pixels (the width follows the
+	// view's aspect; -1: the display's own) and makes it the baseline instead of `baseline`'s pixels
+	// (the settings menu's resolution); `pinned` holds the render
 	// at the baseline, the dynamic scale off (the menu's dynamic resolution). Both may change on a
 	// running page (assemble/SceneFrame.ts `setResolution`).
-	| { dynamic: { max: number; baseline: number; floor: number; floorShare: number; step: number; share: number; pinned: boolean } };
+	| { dynamic: { max: number; baseline: number; floor: number; floorShare: number; step: number; rows: number; pinned: boolean } };
 
 /** The temporal resolve's settings (taa and taau; read once as the resolve is built). */
 export interface TemporalSettings {
@@ -234,7 +234,7 @@ export interface QualityProfile {
  * the sky's, the frame reads the intervals each frame, the sizing takes the render's share and pin
  * (assemble/SceneFrame.ts `setResolution`) and the pacer its rate (`setRate`). A live graphics option
  * sets these only (tools/render/verify-graphics-options.mjs). */
-export const RUNTIME_SETTINGS = [ 'cloudView', 'cloudDome', 'cloudMarch', 'cloudShadowRows', 'skyUpdateInterval', 'environmentEvery', 'refractedSun', 'rainDrops', 'render.dynamic.share', 'render.dynamic.pinned', 'frameRate' ] as const;
+export const RUNTIME_SETTINGS = [ 'cloudView', 'cloudDome', 'cloudMarch', 'cloudShadowRows', 'skyUpdateInterval', 'environmentEvery', 'refractedSun', 'rainDrops', 'render.dynamic.rows', 'render.dynamic.pinned', 'frameRate' ] as const;
 
 const TAA: TemporalSettings = {
 	framesStill: 24, framesStillWater: 12, framesMoving: 5, speedFull: 16, gammaStill: 1.25, gammaMove: 0.75,
@@ -251,7 +251,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		taa: { ...TAA },
 		// 1440p's pixels at the baseline (the standard upscales them, a 2K display is native) and 1080p's
 		// at the floor; a display of 1080p or fewer pixels drops at most a quarter per axis
-		render: { dynamic: { max: 2, baseline: 2560 * 1440, floor: 1920 * 1080, floorShare: 0.75, step: 0.05, share: 0, pinned: false } },
+		render: { dynamic: { max: 2, baseline: 2560 * 1440, floor: 1920 * 1080, floorShare: 0.75, step: 0.05, rows: 0, pinned: false } },
 		water: { ssrIterations: 48, ssrMinFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { hazeGrid: { width: 160, height: 90, depth: 64 } },
 		ao: true,
@@ -279,7 +279,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		aa: 'msaa',
 		taa: { ...TAA },
 		// 1080p's pixels at the baseline, 900p's at the floor
-		render: { dynamic: { max: 2, baseline: 1920 * 1080, floor: 1600 * 900, floorShare: 0.75, step: 0.05, share: 0, pinned: false } },
+		render: { dynamic: { max: 2, baseline: 1920 * 1080, floor: 1600 * 900, floorShare: 0.75, step: 0.05, rows: 0, pinned: false } },
 		water: { ssrIterations: 32, ssrMinFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { hazeGrid: { width: 128, height: 72, depth: 64 } },
 		ao: false,
@@ -300,7 +300,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		aa: 'msaa',
 		taa: { ...TAA, lite: true, framesStill: 12 },
 		// 900p's pixels at the baseline, 720p's at the floor
-		render: { dynamic: { max: 2, baseline: 1600 * 900, floor: 1280 * 720, floorShare: 0.75, step: 0.05, share: 0, pinned: false } },
+		render: { dynamic: { max: 2, baseline: 1600 * 900, floor: 1280 * 720, floorShare: 0.75, step: 0.05, rows: 0, pinned: false } },
 		// (the merged storm foam turned the crests' streaks into scattered lace: kept as on high)
 		water: { ssrIterations: 32, ssrMinFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { hazeGrid: { width: 96, height: 54, depth: 64 } },

@@ -18,7 +18,7 @@
 // unknown option or choice, a missing one) resolves to nothing: the app drops it.
 //
 // - `applies`: `live` options change on a running page through the render pipeline's setters (the
-//   render resolution, the pacer, the sky's runtime quality: `RenderStages.ts` `applySkyQuality`);
+//   resolution, the pacer, the sky's runtime quality: `RenderStages.ts` `applySkyQuality`);
 //   `reload` ones are compiled into materials or the frame graph and change with a reload.
 // - No option changes the weather, the clock or the lighting state (Quality.ts): a choice changes
 //   the cost, never the mood.
@@ -29,6 +29,10 @@
 import { QUALITY, QUALITY_TIERS, isQualityTier, type QualityProfile, type QualityTier } from './Quality.ts';
 
 export type GraphicsGroup = 'display' | 'quality';
+
+/** The resolution option's heights in device pixels (720p to 4K); a height at or above the display's
+ * own renders natively, so the menu offers only those below it besides native. */
+export const RESOLUTION_ROWS: readonly number[] = [ 720, 900, 1080, 1440, 1800, 2160 ];
 
 export interface GraphicsChoice {
 	readonly id: string;
@@ -84,8 +88,10 @@ function option( id: string, group: GraphicsGroup, applies: 'live' | 'reload', f
 
 /** The menu's options, in its order. */
 export const GRAPHICS_OPTIONS: readonly GraphicsOption[] = [
-	// the render's share of the output per axis; auto: the tier's own pixel count (1440p's at 4K output)
-	option( 'resolution', 'display', 'live', [ 'render.dynamic.share' ], choices( 'render.dynamic.share', [ [ 'auto', 0 ], [ '50', 0.5 ], [ '67', 2 / 3 ], [ '75', 0.75 ], [ '85', 0.85 ], [ '100', 1 ] ] ) ),
+	// the render's height in device pixels, its width the view's aspect (a PC game's list of
+	// resolutions; the menu offers those below the display's own, RESOLUTION_ROWS); auto: the tier's
+	// own pixel count (1440p's at 4K output); native: the display's own
+	option( 'resolution', 'display', 'live', [ 'render.dynamic.rows' ], choices( 'render.dynamic.rows', [ [ 'auto', 0 ], ...RESOLUTION_ROWS.map( ( r ) => [ String( r ), r ] as const ), [ 'native', - 1 ] ] ) ),
 	option( 'dynamic', 'display', 'live', [ 'render.dynamic.pinned' ], choices( 'render.dynamic.pinned', [ [ 'on', false ], [ 'off', true ] ] ) ),
 	// MSAA 4x (upscaled by FSR 1), or a temporal resolve; the meadow needs one of them (no `off`)
 	option( 'aa', 'display', 'reload', [ 'aa' ], choices( 'aa', [ [ 'msaa', 'msaa' ], [ 'taa', 'taa' ], [ 'taau', 'taau' ], [ 'fsr3', 'fsr3' ] ] ) ),
@@ -111,7 +117,7 @@ export interface GraphicsRecord {
 }
 
 /** bumped when the options or their choices change, so a stored record of another shape is dropped */
-export const GRAPHICS_VERSION = 1;
+export const GRAPHICS_VERSION = 2;
 
 const same = ( a: unknown, b: unknown ): boolean => JSON.stringify( a ) === JSON.stringify( b );
 

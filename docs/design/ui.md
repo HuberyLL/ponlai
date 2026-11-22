@@ -37,11 +37,11 @@ game behind it: [Game design](game-design.md).
   rows; adding a building, a resource, a weather kind or a record entry never touches the
   components. Each list ships with a few placeholder rows that show every state the component
   draws (buildable, not yet buildable, short of a material, no icon yet).
-- **Out of scope for now**: settings pages beyond 画面 (sound, controls, language); a brightness
+- **Out of scope for now**: settings pages beyond 画面 and 语言 (sound, controls); a brightness
   calibration; the placement of any building in the world but the chest (it belongs to the 3D scene:
   `packages/game/Placement.ts`); telling time in 时辰 (the clock reads `08:00` until that is
-  decided); the English version (its catalogue is a snapshot, not kept up until then:
-  `packages/game/ui/i18n/i18n.ts`).
+  decided). The English page is a full translation, kept complete with the Chinese
+  (`packages/game/ui/i18n/i18n.ts`), and laid out with the Chinese page's measures, untuned.
 - **No save menu.** The player has no save or load control and no sign that the game was saved.
   The app saves the game itself and resumes it when the page loads (`packages/game/save.ts` says
   when); the title's 继续 is that resume.
@@ -301,16 +301,23 @@ screens' headings only. Each choice is a key of the catalogue; the graphics opti
 
 ### Settings
 
-- The heading 设置, the pages beneath it (画面 alone; the column leaves room for sound, controls and
-  language, never an empty page), 返回 at the foot.
+- The heading 设置, the pages beneath it (画面 and 语言; the column leaves room for sound and
+  controls, never an empty page), 返回 at the foot.
 - 画面: the preset row (低 中 高 自定义), then the options in two groups, 显示 and 画质. Each option is
   a row of exclusive choices, with a short 苍 line on what it costs; one that takes a reload carries
   the mark 重载. Changing any option makes the preset 自定义, and choosing a preset sets every option.
+- 分辨率 lists sizes in pixels, as a PC game does: 自动 (the preset's own), the standard heights
+  from 720 up to below the screen's own, each with the screen's aspect (1920 × 1080), and 原生 with
+  the screen's size. A size below the screen's is upscaled to it.
+- 语言: 自动, then each language by its own name (中文, English). 自动 takes the first of the
+  browser's languages, which follow the system's, that the game has; with none, English. It takes a
+  reload.
 - A live option applies at once. A reload option is named at the foot with 重新载入; leaving with
   one pending asks whether to reload now or later (it applies at the next load either way). The game
   is saved before a reload, which comes back where it was: into play from the pause menu, to the
   title from the title.
-- Keys: ↑/↓ between rows, ←/→ change the row's choice, Enter takes, Esc goes back.
+- Keys: ↑/↓ between rows (the pages' column first), ←/→ change the row's choice, Enter takes, Esc
+  goes back.
 - The frame-rate readout, when on, is a small 苍 number in the bottom right corner.
 
 ## Motion

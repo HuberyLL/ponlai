@@ -17,7 +17,7 @@ export const GAME_SETTINGS = {
 	load: { type: 'switch', default: 'off', about: 'resumes the saved game' },
 	new: { type: 'switch', default: 'off', about: 'starts a new game' },
 	autosave: { type: 'choice', default: 'on, off in an automated browser', values: [ 'on', 'off' ], about: 'whether the app keeps the save itself' },
-	lang: { type: 'text', default: 'zh-CN', about: 'the interface\'s language (`zh-CN`, `en`)' },
+	lang: { type: 'text', default: 'the player\'s choice, else zh-CN', about: 'the interface\'s language (`zh-CN`, `en`)' },
 } as const satisfies SettingsTable;
 
 /** The game's option names, beside the render pipeline's. */

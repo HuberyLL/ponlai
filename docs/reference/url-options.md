@@ -701,9 +701,10 @@ the island's or the game's.
 - `review` loads the art-review scene instead of the game: one islander walking a loop, the GUI.
   The capture, parity, probe, profile and verify tools load it (`tools/kit/page-query.mjs`).
 - `graphicsStore=on|off` sets whether the page reads and writes the player's graphics settings
-  (`app/GraphicsSettings.ts`). It is on by default and off in an automated browser, so a capture
-  or a check loads what its address names. Under `quality`, the stored settings are not read; an
-  address's `aa` or `tier.<setting>` wins over the stored choice of that setting.
+  (`app/GraphicsSettings.ts`) and language (`app/LanguageSettings.ts`). It is on by default and
+  off in an automated browser, so a capture or a check loads what its address names. Under
+  `quality`, the stored settings are not read; an address's `aa` or `tier.<setting>` wins over the
+  stored choice of that setting, and its `lang` over the stored language.
 - `hour` sets the start hour (default 8).
 - `dayLength` sets the real seconds per game day at 1x (default 1440: 24 minutes).
 - `paused` starts the game paused; the scene runs again once the game does.
@@ -714,8 +715,10 @@ the island's or the game's.
   every minute and when the page is hidden or left. It is on by default, and off in an automated
   browser, so that a capture or a check neither resumes a game left in its browser profile nor
   leaves one. `load` resumes the save whatever `autosave` says (`packages/game/save.ts`).
-- `lang` sets the interface's language: `zh-CN`, the default, or `en`, a snapshot whose missing
-  words show in Chinese (`packages/game/ui/i18n/`).
+- `lang` sets the interface's language: `zh-CN` or `en` (`packages/game/ui/i18n/`). Without it, a
+  player's page shows the language chosen in the settings menu, or under 自动 the browser's, else
+  English (`app/LanguageSettings.ts`); a page that does not read the player's settings
+  (`graphicsStore`) shows `zh-CN`.
 - The app's own `weather` option and the automatic weather work in the game as they do without it.
 - The player's interface, its parts and its keys: [Game UI](../design/ui.md)
   (`packages/game/ui/GameUi.ts`).
@@ -823,7 +826,7 @@ the two equal).
 | `load` | named (its value unread) | off | game | resumes the saved game |
 | `new` | named (its value unread) | off | game | starts a new game |
 | `autosave` | `on`, `off` | on, off in an automated browser | game | whether the app keeps the save itself |
-| `lang` | text | zh-CN | game | the interface's language (`zh-CN`, `en`) |
+| `lang` | text | the player's choice, else zh-CN | game | the interface's language (`zh-CN`, `en`) |
 | `polar` | a number | 40 | app | the island view's tilt (degrees) |
 | `az` | a number | 180 | app | the island view's heading (degrees) |
 | `dist` | a number from 0 | frames the land | app | the island view's distance from the default pivot (m) |
@@ -833,7 +836,7 @@ the two equal).
 | `nearFovFrom` | a number from 0 | 50 | app | the distance the fov widens from (m) |
 | `soil` | `0`, `1` | on | app | `0`: the ground without its soil layer |
 | `autoQuality` | `detect`, `off` | a first visit times the GPU | app | `detect` times the GPU again to choose the tier, `off` keeps high |
-| `graphicsStore` | `on`, `off` | on (off in an automated browser) | app | whether the page reads and writes the player's graphics settings |
+| `graphicsStore` | `on`, `off` | on (off in an automated browser) | app | whether the page reads and writes the player's graphics settings and language |
 | `autoQualitySlow` | a number from 0.01 | 1 | app | scales the GPU timing's measured time |
 | `renderLook` | `neutral`, `ponlai` | the app's own | app | the look the render pipeline draws with, over the app's own: `neutral` (the render pipeline's) on the island's page, `ponlai` (the island's) on the test scenes' (debug pages only) |
 | `scene` | `ball`, `empty`, `sea`, `plants` | none | app | the test scene `scenes.html` shows |

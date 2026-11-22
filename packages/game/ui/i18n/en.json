@@ -42,6 +42,9 @@
 	"item": {
 		"fish": "Fish"
 	},
+	"unit": {
+		"fish": ""
+	},
 	"need": {
 		"satiety": "Satiety",
 		"hydration": "Hydration"
@@ -51,6 +54,7 @@
 	},
 	"doing": {
 		"go": "Going to {{place}}",
+		"goTo": "Going over to {{place}}",
 		"wait": "Resting",
 		"walk": "Walking",
 		"think": "Thinking",
@@ -59,7 +63,8 @@
 			"fish": "Fishing",
 			"build": "Building the {{place}}",
 			"put": "Putting things in the {{place}}",
-			"take": "Taking things from the {{place}}"
+			"take": "Taking things from the {{place}}",
+			"follow": "Following {{place}}"
 		}
 	},
 	"tag": {
@@ -151,10 +156,14 @@
 		"deed": {
 			"landed": "{{who}} came ashore",
 			"landed_own": "Came ashore",
+			"died": "{{who}} died of old age at {{age}}",
+			"died_own": "Died of old age at {{age}}",
 			"built": "{{building}} built",
 			"need": "{{who}}: {{need}}",
 			"need_own": "{{need}}",
 			"placed": "{{building}} sited",
+			"gave": "{{who}} gave {{to}} {{count}} {{unit}}{{item}}",
+			"gave_own": "Gave {{to}} {{count}} {{unit}}{{item}}",
 			"other": "{{who}}: {{what}}",
 			"other_own": "{{what}}"
 		},
@@ -195,6 +204,7 @@
 		"settings": {
 			"title": "Settings",
 			"graphics": "Graphics",
+			"language": "Language",
 			"back": "Back",
 			"preset": "Preset",
 			"display": "Display",
@@ -220,14 +230,11 @@
 				"window": "Window"
 			},
 			"resolution": {
-				"name": "Render resolution",
-				"cost": "Cost follows the pixel count; lower is softer",
+				"name": "Resolution",
+				"cost": "The pixels rendered, upscaled to the screen when fewer; the cost follows their count",
 				"auto": "Auto",
-				"50": "50%",
-				"67": "67%",
-				"75": "75%",
-				"85": "85%",
-				"100": "100%"
+				"size": "{{width}} × {{height}}",
+				"native": "Native {{width}} × {{height}}"
 			},
 			"dynamic": {
 				"name": "Dynamic resolution",
@@ -274,6 +281,13 @@
 				"high": "High",
 				"medium": "Medium",
 				"low": "Low"
+			},
+			"lang": {
+				"name": "Language",
+				"cost": "The words of the menus and the interface; Auto follows the system or browser language",
+				"auto": "Auto",
+				"zh-CN": "中文",
+				"en": "English"
 			}
 		},
 		"fps": "{{fps}} fps"
