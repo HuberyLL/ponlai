@@ -145,10 +145,11 @@ export interface SceneSizing {
 	readonly canvasSize: THREE.Vector2;
 	/** whether the render holds its baseline: pinned by the settings menu's dynamic resolution off */
 	readonly pinned: boolean;
-	/** The settings menu's render resolution (a share of the display's ratio per axis, 0: the tier's
-	 * own baseline) and dynamic resolution (`pinned`: off), on a running page: the tier's dynamic rule
-	 * takes them and the canvas is sized again. A tier without the dynamic rule keeps its fixed scale. */
-	setResolution( choice: { share: number; pinned: boolean } ): void;
+	/** The settings menu's resolution (the render's height in device pixels, -1 the display's own,
+	 * 0 the tier's own baseline) and dynamic resolution (`pinned`: off), on a running page: the
+	 * tier's dynamic rule takes them and the canvas is sized again. A tier without the dynamic rule
+	 * keeps its fixed scale. */
+	setResolution( choice: { rows: number; pinned: boolean } ): void;
 }
 
 export interface SceneFrame {
@@ -195,10 +196,10 @@ export function createSceneSizing( render: RenderParts, host: SceneHost, frame: 
 		get pinned() { return 'dynamic' in quality.render && quality.render.dynamic.pinned; },
 		setResolution,
 	};
-	function setResolution( choice: { share: number; pinned: boolean } ): void {
+	function setResolution( choice: { rows: number; pinned: boolean } ): void {
 
 		if ( ! ( 'dynamic' in quality.render ) ) return;
-		quality.render.dynamic.share = choice.share;
+		quality.render.dynamic.rows = choice.rows;
 		quality.render.dynamic.pinned = choice.pinned;
 		resize();
 
@@ -231,9 +232,9 @@ export function createSceneSizing( render: RenderParts, host: SceneHost, frame: 
 		const f = frame();
 		if ( ! f ) return;
 		storeKeyGeneration = f.pacer.generation;
-		// (the player's render resolution is part of the tier's key: a scale remembered under another share is not this one's)
-		const share = 'dynamic' in quality.render && quality.render.dynamic.share > 0 ? `@${ quality.render.dynamic.share.toFixed( 3 ) }` : '';
-		if ( scaleMemory ) f.dynamicResolution?.setStoreKey( renderScaleKey( renderer, qualityTier + share, AA_MODE, f.pacer.rate, sizing.canvasSize.x, sizing.canvasSize.y, f.gpuTimer !== null || profiler?.timestamps === true ? 'gpu' : 'frames' ) );
+		// (the player's resolution is part of the tier's key: a scale remembered under another height is not this one's)
+		const rows = 'dynamic' in quality.render && quality.render.dynamic.rows !== 0 ? `@${ quality.render.dynamic.rows }` : '';
+		if ( scaleMemory ) f.dynamicResolution?.setStoreKey( renderScaleKey( renderer, qualityTier + rows, AA_MODE, f.pacer.rate, sizing.canvasSize.x, sizing.canvasSize.y, f.gpuTimer !== null || profiler?.timestamps === true ? 'gpu' : 'frames' ) );
 
 	}
 	( sizing as unknown as { storeKeyStale(): boolean } ).storeKeyStale = () => frame()?.pacer.generation !== storeKeyGeneration;

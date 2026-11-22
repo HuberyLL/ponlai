@@ -43,9 +43,9 @@ export function createGraphicsControl( render: RenderParts, frame: SceneFrame, g
 		const values = choiceValues( id, choice );
 		if ( id === 'resolution' || id === 'dynamic' ) {
 
-			const share = Number( choiceValues( 'resolution', record.options.resolution )[ 'render.dynamic.share' ] ?? 0 );
+			const rows = Number( choiceValues( 'resolution', record.options.resolution )[ 'render.dynamic.rows' ] ?? 0 );
 			const pinned = Boolean( choiceValues( 'dynamic', record.options.dynamic )[ 'render.dynamic.pinned' ] ?? false );
-			frame.sizing.setResolution( { share, pinned } );
+			frame.sizing.setResolution( { rows, pinned } );
 
 		} else if ( id === 'frameRate' ) {
 
@@ -89,9 +89,11 @@ export function createGraphicsControl( render: RenderParts, frame: SceneFrame, g
 			try { sessionStorage.setItem( OPENING_KEY, into ); } catch { /* storage refused: the load opens on the title */ }
 			// the menu's choice is what the next load builds: an address that names the tier (the GUI's
 			// control writes `quality`) would keep the stored choice unread (PageSettings.ts)
-			reloadWith( { quality: null } );
+			// (and one that names the language would keep the menu's language unread: LanguageSettings.ts)
+			reloadWith( { quality: null, lang: null } );
 
 		},
+		output: () => ( { width: frame.sizing.canvasSize.x, height: frame.sizing.canvasSize.y } ),
 		fullscreen: () => document.fullscreenElement !== null,
 		setFullscreen( on ) {
 

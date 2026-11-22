@@ -25,7 +25,7 @@ export const APP_SETTINGS = {
 	soil: { type: 'choice', default: 'on', values: [ '0', '1' ], about: '`0`: the ground without its soil layer' },
 	// quality, anti-aliasing and the frame
 	autoQuality: { type: 'choice', default: 'a first visit times the GPU', values: [ 'detect', 'off' ], about: '`detect` times the GPU again to choose the tier, `off` keeps high' },
-	graphicsStore: { type: 'choice', default: 'on (off in an automated browser)', values: [ 'on', 'off' ], about: 'whether the page reads and writes the player\'s graphics settings' },
+	graphicsStore: { type: 'choice', default: 'on (off in an automated browser)', values: [ 'on', 'off' ], about: 'whether the page reads and writes the player\'s graphics settings and language' },
 	autoQualitySlow: { type: 'number', default: '1', range: [ 0.01, Infinity ], about: 'scales the GPU timing\'s measured time' },
 	// debug
 	renderLook: { type: 'choice', default: 'the app\'s own', values: [ 'neutral', 'ponlai' ], debug: true, about: 'the look the render pipeline draws with, over the app\'s own: `neutral` (the render pipeline\'s) on the island\'s page, `ponlai` (the island\'s) on the test scenes\'' },

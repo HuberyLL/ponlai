@@ -2,19 +2,23 @@ import i18next from 'i18next';
 import en from './en.json';
 import zh from './zh-CN.json';
 import { settings } from '../../GameSettings.ts';
+import { LOCALES, SOURCE_LOCALE, matchLocale, type Locale } from './locales.ts';
 
 // The interface's languages, on i18next: every word the player reads is a catalogue's key.
 //
 // The interface's languages, on i18next (https://www.i18next.com). Every word the player reads is a
 // key of a catalogue here, one JSON file per language: zh-CN.json is the source, written with the
-// game and complete, and the language shown by default; en.json is a snapshot of it, kept but not
-// maintained while the game is in development, so a key it lacks shows the Chinese (i18next's
-// fallback, key by key). An English version made for release fills it (docs/design/ui.md: never mixed).
+// game; en.json is its translation, kept complete with it (tools/game/verify-i18n.mjs fails on a
+// key it lacks). A key a catalogue still lacked would show the Chinese (i18next's fallback, key by
+// key). The languages and how a tag names one are in locales.ts.
 //
-// The language is a load-time setting, read once from `?lang=` (zh-CN or en; none or another: zh-CN): the
+// The language is a load-time setting, read once from `?lang=` (zh-CN or en; none or another:
+// zh-CN). On a player's page the app fills it in when the address names none: the language chosen
+// in the settings menu, or with 自动 (the default) the browser's own (app/LanguageSettings.ts). The
 // data tables resolve their rows' words when they load (data/*.ts) and the parts build their fixed
-// labels once, so a change of language reloads the page (the debug panel's Interface folder does).
-// The English page is laid out with the Chinese page's measures and letter spacing, untuned.
+// labels once, so a change of language reloads the page (the settings menu's 语言 page and the debug
+// panel's Interface folder do). The English page is laid out with the Chinese page's measures and
+// letter spacing, untuned.
 //
 // What is content rather than the interface's words stays out of the catalogues: the islanders'
 // names (sim/Sim.ts) and what people say (the player's lines, the islanders' answers, the debug
@@ -34,22 +38,18 @@ import { settings } from '../../GameSettings.ts';
 // - Interpolation is not HTML-escaped: the interface sets text, never markup.
 //
 // Rules: no player-facing string is written in code outside these files (tools/game/verify-i18n.mjs
-// fails on a Chinese literal elsewhere and reports where en.json has drifted from zh-CN.json). A
+// fails on a Chinese literal elsewhere and on a key en.json lacks or no longer needs). A
 // call costs a few microseconds, so per-frame code calls `t` only when what it says changed, and
 // fixed words are taken once.
 
-export type Locale = 'zh-CN' | 'en';
-/** the language the game is written in, shown by default and filling any gap of another */
-export const SOURCE_LOCALE: Locale = 'zh-CN';
-/** the languages there are catalogues for */
-export const LOCALES: readonly Locale[] = [ 'zh-CN', 'en' ];
+export { LOCALES, SOURCE_LOCALE, type Locale } from './locales.ts';
 
 /** The language of this page: `?lang=`, else the source. */
 export const locale: Locale = ( () => {
 
 	const asked = settings.get( 'lang' );
 	if ( asked === null ) return SOURCE_LOCALE;
-	const found = LOCALES.find( ( l ) => l.toLowerCase() === asked.toLowerCase() || l.split( '-' )[ 0 ] === asked.toLowerCase() );
+	const found = matchLocale( asked );
 	if ( ! found ) console.warn( `?lang=${ asked }: no such language (${ LOCALES.join( ', ' ) }); showing ${ SOURCE_LOCALE }` );
 	return found ?? SOURCE_LOCALE;
 

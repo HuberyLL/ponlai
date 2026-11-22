@@ -3,7 +3,8 @@
 // Starts the game's front end (game/front/Front.ts) once the scene is built and before the loop
 // starts, so the loading screen lifts onto the title screen (or, after a reload for a setting made
 // in play, straight onto play). It gives the front end the graphics control (GraphicsControl.ts),
-// the title's view (the island camera turning slowly round the island, the hand's input off, and
+// the language control (LanguageSettings.ts: the choice stored, shown from the next load), the
+// title's view (the island camera turning slowly round the island, the hand's input off, and
 // back to the island view for play: the turn itself is in the frame, Frame.ts) and the new game on
 // another island (a reload with `new`, which the next load takes off the address again).
 //
@@ -14,7 +15,9 @@ import type { RenderParts } from '../packages/render/index.ts';
 import type { IslandParts } from '../packages/island/index.ts';
 import type { PageParts } from './Page.ts';
 import { settings as params } from './AppSettings.ts';
-import { GRAPHICS_STORE, QUALITY_CHOICE, STORED_GRAPHICS, reloadWith } from './PageSettings.ts';
+import { GRAPHICS_STORE, QUALITY_CHOICE, STORED_GRAPHICS, STORED_LANGUAGE, pageStore, reloadWith } from './PageSettings.ts';
+import { LANGUAGE_CHOICES, browserLanguages, resolveLanguage, saveLanguage, type LanguageChoice } from './LanguageSettings.ts';
+import type { LanguageControl } from '../packages/game/index.ts';
 import { currentGraphics } from './GraphicsSettings.ts';
 import { createGraphicsControl, OPENING_KEY } from './GraphicsControl.ts';
 
@@ -47,9 +50,24 @@ export async function startFront( render: RenderParts, island: IslandParts, page
 
 	}
 	const hand = island.controls.handInput;
+	let language: LanguageChoice = STORED_LANGUAGE;
+	const isChoice = ( c: string ): c is LanguageChoice => ( LANGUAGE_CHOICES as readonly string[] ).includes( c );
+	const languageControl: LanguageControl = {
+		choices: LANGUAGE_CHOICES,
+		get choice() { return language; },
+		set( choice ) {
+
+			if ( ! isChoice( choice ) ) return;
+			language = choice;
+			if ( GRAPHICS_STORE ) saveLanguage( pageStore, language );
+
+		},
+		resolve: ( choice ) => isChoice( choice ) ? resolveLanguage( choice, browserLanguages() ) : choice,
+	};
 	page.front = new Front( {
 		game,
 		graphics,
+		language: languageControl,
 		opening: opening(),
 		holdsPause: params.has( 'paused' ),
 		titleView( on ) {

@@ -17,7 +17,9 @@ import { SettingsPage } from './SettingsPage.ts';
 //
 // It reads the game through the Game's methods and the graphics through the app's `GraphicsControl`
 // (app/GraphicsControl.ts), which stores the player's choice, applies a live option at once and
-// reloads for the rest: the front end never reaches into the render pipeline or the browser's storage.
+// reloads for the rest, and the language through the app's `LanguageControl`
+// (app/LanguageSettings.ts): the front end never reaches into the render pipeline or the browser's
+// storage.
 // Its keys: one listener ahead of the game's (capture, on the window) while a screen is up, which
 // takes every key but the browser's shortcuts; in play only Esc, after the game's own listener has
 // let it pass.
@@ -35,6 +37,8 @@ export interface GraphicsControl {
 	pending(): string[];
 	/** saves the game, then reloads into play (`into`) or to the title */
 	reload( into: 'play' | 'title' ): void;
+	/** the output's size in device pixels (the canvas's), which the resolution's choices are offered below */
+	output(): { width: number; height: number };
 	/** the display mode (the Fullscreen API) */
 	fullscreen(): boolean;
 	setFullscreen( on: boolean ): void;
@@ -42,10 +46,23 @@ export interface GraphicsControl {
 	fps(): number;
 }
 
+/** What the app gives the menu for the language (app/LanguageSettings.ts). */
+export interface LanguageControl {
+	/** auto (the browser's language), then each language there is a catalogue for */
+	readonly choices: readonly string[];
+	/** the player's choice as it stands */
+	readonly choice: string;
+	/** a choice: stored, shown from the next load */
+	set( choice: string ): void;
+	/** the language a choice shows on this browser */
+	resolve( choice: string ): string;
+}
+
 /** What the app gives the front end besides the game. */
 export interface FrontContext {
 	game: Game;
 	graphics: GraphicsControl;
+	language: LanguageControl;
 	/** the title's slow turn round the island (on), or the island view for play (off) */
 	titleView( on: boolean ): void;
 	/** where this load opens: the title, or straight into play (a reload for a setting from play) */
@@ -121,7 +138,7 @@ export class Front {
 		textButton( t( 'front.pause.settings' ), pauseMenu, () => this.openSettings( 'pause' ) );
 		textButton( t( 'front.pause.toTitle' ), pauseMenu, () => this.toTitle() );
 
-		this.settings = new SettingsPage( root, context.graphics, () => this.closeSettings(), () => this.from === 'pause' ? 'play' : 'title' );
+		this.settings = new SettingsPage( root, context.graphics, context.language, () => this.closeSettings(), () => this.from === 'pause' ? 'play' : 'title' );
 
 		addEventListener( 'keydown', this.onKey, { capture: true } );
 		addEventListener( 'keydown', this.onPlayKey );

@@ -5,4 +5,4 @@
 // for its types only, so the game's code stays in a chunk of its own and loads only with the game.
 export { Game } from './Game.ts';
 export { Front } from './front/Front.ts';
-export type { GraphicsControl } from './front/Front.ts';
+export type { GraphicsControl, LanguageControl } from './front/Front.ts';

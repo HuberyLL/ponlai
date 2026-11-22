@@ -47,6 +47,7 @@
 .pl-settings-back { position: absolute; left: 164px; bottom: 96px; font-size: 24px; }
 .pl-settings-body { position: absolute; left: 470px; top: 104px; right: 140px; bottom: 86px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; scrollbar-width: none; }
 .pl-settings-body::-webkit-scrollbar { display: none; }
+.pl-settings-body[hidden], .pl-set-choices .pl-btn[hidden] { display: none; }
 .pl-settings-group { margin: 12px 0 0; font-size: 16px; }
 .pl-set-row { display: grid; grid-template-columns: 210px 1fr; column-gap: 28px; align-items: start; }
 .pl-set-row.preset { margin-bottom: 8px; }
