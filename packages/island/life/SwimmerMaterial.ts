@@ -7,10 +7,11 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, attribute, float, vec2, vec3, color, sin, cos, mix, smoothstep, floor, fract, abs, sign, select, length, dot, max,
-	normalize, cross, positionGeometry, normalGeometry, normalLocal, positionPrevious, atan, pow, step,
+	normalize, cross, positionGeometry, normalGeometry, normalLocal, positionPrevious, atan, pow, step, normalView, positionView, min, Discard,
 } from 'three/tsl';
-import { type Shared, type WaveMaps, underwaterLight, UnderwaterLightingModel, TEMPORAL, writeMeter } from '../../render/index.ts';
+import { type Shared, type WaveMaps, underwaterLight, UnderwaterLightingModel, TEMPORAL, ALPHA_TO_COVERAGE, coverageDither, markSwimmer, writeMeter } from '../../render/index.ts';
 import { PART, wingRoot, type Anatomy } from './FishGeometry.ts';
+import { TISSUE_UNDER_WATER } from './FloorMaterial.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -31,6 +32,8 @@ type V4 = THREE.Node<'vec4'>;
 //   - a stingray: its disc's margins undulate in a wave running back; an eagle ray: its wings flap
 //     as a whole; the whip tail trails
 //   - the turtle: the front flippers stroke in long beats, the hind ones paddle
+//   - a jelly: the bell's margin draws in and down in a quick contraction and eases back out, a
+//     pulse a stroke; the oral arms trail and sway
 // Then it scales, turns and places the creature by its instance (iPose, iTurn: no instance matrix,
 // the pose is local), and adds the sway it is given (Water.ts swimmerSway: where the eye sees it
 // through the waves). Under the temporal modes the same pose at the instance's previous position
@@ -38,20 +41,26 @@ type V4 = THREE.Node<'vec4'>;
 //
 // The fragment stage paints the skin from aData (FishGeometry.ts, CreatureGeometry.ts) by the
 // kind's painter (FishSkin and the others below): counter-shading, the species' markings and fins,
-// a painted eye. A fish's silvery flank is a metal-like specular layer (guanine), so a school that
-// turns flashes. It is lit as everything under the water is (Underwater.ts: the key down the water
-// column, the ambient dimmer with depth); above the water (a dolphin's back, a turtle's head
-// taking a breath), as in the air. Its ambient diffuse is the ambient volume's
+// a painted eye; a jelly's clear bell covers only a share of its pixels (alpha to coverage, or an
+// ordered dither with one sample). A fish's silvery flank is a metal-like specular layer (guanine),
+// so a school that turns flashes; the rest of the skin reflects under the water at living tissue's
+// share (FloorMaterial.ts TISSUE_UNDER_WATER). It is lit as everything under the water is
+// (Underwater.ts: the key down the water column, the ambient dimmer with depth); above the water
+// (a dolphin's back, a turtle's head taking a breath), as in the air. Its ambient diffuse is the ambient volume's
 // (lighting/AmbientSample.ts) through the model's default, weighted by depth.
 
 /** How a kind swims (the vertex stage's pose). */
-export type Motion = 'fish' | 'cetacean' | 'stingray' | 'eagleRay' | 'turtle';
+export type Motion = 'fish' | 'cetacean' | 'stingray' | 'eagleRay' | 'turtle' | 'jelly';
 
-/** What a painter returns: the albedo (linear), the metalness and the roughness. */
-export interface Surface { color: V3; metal: F; rough: F }
+/** What a painter returns: the albedo (linear), the metalness and the roughness; for a clear body
+ * (a jelly), `alpha`, the share of the pixel the tissue covers. */
+export interface Surface { color: V3; metal: F; rough: F; alpha?: F }
 
 /** A painter: the surface from aData, the part and the rest position (the model's units). */
 export type Painter = ( aData: V4, part: F, p: V3 ) => Surface;
+
+// the metalness of a fully silvered flank (FishSkin.silver 1)
+const SILVER_METAL = 0.6;
 
 /** A wing's rays turn back to this share of their spread angle when folded. */
 const FOLD = 0.1;
@@ -154,6 +163,20 @@ export function makeSwimmerMaterial( o: { name: string; motion: Motion; paint: P
 			// (the back's normal leans against the slope, the belly's with it)
 			n.assign( normalize( n.add( vec3( slopeX.negate().mul( n.y ), 0, 0 ) ) ) );
 
+		} else if ( o.motion === 'jelly' ) {
+
+			// the contraction: quick, then a slower recovery (the square of a raised sine), drawing the
+			// margin in by up to a third and down, more toward the margin
+			const pulse = pow( sin( phase ).mul( 0.5 ).add( 0.5 ), 2 ).mul( motion.y ).toVar();
+			const bell = select( isPart( part, PART.BELL ), 1, 0 );
+			const s2 = u.mul( u );
+			const squeeze = float( 1 ).sub( pulse.mul( s2 ).mul( 0.35 ).mul( bell ) );
+			const arm = float( 1 ).sub( bell );
+			const sway = sin( phase.mul( 0.5 ).sub( u.mul( 2.5 ) ).add( aData.z ) ).mul( u ).mul( 0.05 ).mul( arm );
+			p.assign( vec3( p.x.mul( squeeze ).add( sway ), p.y.sub( pulse.mul( s2 ).mul( 0.07 ).mul( bell ) ).add( pulse.mul( 0.02 ).mul( arm ) ), p.z.mul( squeeze ).add( sway.mul( 0.6 ) ) ) );
+			// the margin's surface turns down as it draws in
+			n.assign( normalize( n.sub( vec3( p.x, 0, p.z ).mul( pulse.mul( u ).mul( 0.6 ).mul( bell ) ) ) ) );
+
 		} else {
 
 			// the turtle: the front flippers stroke down and back (an underwater flight), the hind
@@ -187,11 +210,24 @@ export function makeSwimmerMaterial( o: { name: string; motion: Motion; paint: P
 	if ( TEMPORAL ) mat.userData.previousPosition = true;
 
 	const surface = o.paint( aData, part, positionGeometry );
-	mat.colorNode = surface.color;
+	// a clear body covers a share of its pixels: with 4 samples by alpha to coverage under the
+	// swimmer's mark (ocean/Refraction.ts markSwimmer); with one, kept by an ordered dither's
+	// threshold, as the meadow's blades are (render/vegetation/Coverage.ts)
+	const alpha = surface.alpha;
+	mat.colorNode = alpha && ! ALPHA_TO_COVERAGE ? Fn( () => {
+
+		Discard( alpha.lessThanEqual( coverageDither() ) );
+		return surface.color;
+
+	} )() : surface.color;
+	markSwimmer( mat, ALPHA_TO_COVERAGE ? alpha : undefined );
 	mat.metalnessNode = surface.metal;
 	mat.roughnessNode = surface.rough;
 
-	const light = underwaterLight( o.shared, o.waveMaps );
+	// the skin reflects under the water at living tissue's share, the guanine's silver as in the air
+	// (a stack of thin crystal plates, a reflector made to work in water)
+	const silvered = surface.metal.div( SILVER_METAL ).clamp( 0, 1 );
+	const light = underwaterLight( o.shared, o.waveMaps, { specular: mix( float( TISSUE_UNDER_WATER ), float( 1 ), silvered ), swimmerShadows: false } );
 	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new UnderwaterLightingModel( light, { terminator: false } );
 	writeMeter( mat );
 	return mat;
@@ -215,7 +251,15 @@ export interface FishSkin {
 		| { kind: 'band'; color: number; h: number; width: number } // one band along the flank
 		| { kind: 'spotRow'; color: number; h: number; count: number } // a row of dark spots along the flank
 		| { kind: 'chequer'; color: number }; // a whale shark's pale spots and stripes over the back
+	// marks over the pattern: bars across the body and its fins between two places along the fish
+	// (fractions of the total length), and round spots at a place and height (as the eye's)
+	marks?: readonly FishMark[];
 }
+
+/** A fish's mark: a bar across the body and fins, or a round spot on the body. */
+export type FishMark =
+	| { kind: 'bar'; from: number; to: number; color: number }
+	| { kind: 'spot'; u: number; y: number; r: number; color: number };
 
 /** The painter of a lofted fish (or a whale shark, or a cetacean with `silver` 0). */
 export function fishSkin( skin: FishSkin ): Painter {
@@ -265,20 +309,77 @@ export function fishSkin( skin: FishSkin ): Painter {
 
 		}
 		if ( skin.head ) col = mix( col, c( skin.head.color ), float( 1 ).sub( smoothstep( skin.head.end - 0.025, skin.head.end + 0.01, u ) ) );
+		// the marks: a bar's edges soft over 0.4 % of the length, a spot's over a tenth of its radius
+		let finMark: V3 | null = null;
+		for ( const M of skin.marks ?? [] ) {
+
+			if ( M.kind === 'bar' ) {
+
+				const w = M.to - M.from, mid = ( M.from + M.to ) / 2;
+				const on = float( 1 ).sub( smoothstep( w / 2 - 0.004, w / 2 + 0.002, abs( u.sub( mid ) ) ) );
+				col = mix( col, c( M.color ), on );
+				finMark = mix( finMark ?? c( skin.fin ), c( M.color ), on );
+
+			} else {
+
+				const d = length( p.zy.sub( vec2( 0.5 - M.u, M.y ) ) ).div( M.r );
+				col = mix( col, c( M.color ), float( 1 ).sub( smoothstep( 0.9, 1, d ) ) );
+
+			}
+
+		}
 		// the painted eye on each side of the head
 		const eye = length( p.zy.sub( vec2( 0.5 - skin.eye.u, skin.eye.y ) ) ).div( skin.eye.r );
 		col = mix( col, c( skin.iris ), float( 1 ).sub( smoothstep( 0.85, 1, eye ) ) );
 		col = mix( col, c( 0x07090b ), float( 1 ).sub( smoothstep( 0.42, 0.55, eye ) ) );
 		// the fins: darker toward the edge, the rays a shade darker than the membrane between them
 		const ray = abs( fract( aData.w.add( 0.5 ) ).sub( 0.5 ) );
-		const fin = mix( c( skin.fin ), c( skin.finEdge ), smoothstep( 0.45, 1, aData.z ) ).mul( mix( 0.78, 1, smoothstep( 0.05, 0.22, ray ) ) );
+		const fin = mix( finMark ?? c( skin.fin ), c( skin.finEdge ), smoothstep( 0.45, 1, aData.z ).mul( finMark ? 0.5 : 1 ) ).mul( mix( 0.78, 1, smoothstep( 0.05, 0.22, ray ) ) );
 		// the guanine's silver on the flank, little on the back and none on the fins
 		const silver = smoothstep( - 0.8, - 0.1, h ).mul( float( 1 ).sub( backShare.mul( 0.75 ) ) ).mul( skin.silver );
 		return {
 			color: select( body, col, fin ),
-			metal: select( body, silver.mul( 0.6 ), float( 0 ) ),
+			metal: select( body, silver.mul( SILVER_METAL ), float( 0 ) ),
 			rough: select( body, mix( float( skin.rough ), float( 0.24 ), silver ), float( Math.max( skin.rough, 0.45 ) ) ),
 		};
+
+	};
+
+}
+
+// ------------------------------------------------------------------ the jelly
+
+/** A moon jelly's skin: the thin bell picks up little light, milky at the margin, the four gonads
+ * rings of colour seen through it, the oral arms translucent and faintly tinted. Drawn opaque: the
+ * values are those of the bell seen against the water, its own scattering over what passes through. */
+export function jellySkin( o: { bell: number; margin: number; gonad: number; arm: number; rough: number } ): Painter {
+
+	return ( aData, part, p ) => {
+
+		const s = aData.x;
+		const margin = smoothstep( 0.8, 0.97, s );
+		let col: V3 = mix( c( o.bell ), c( o.margin ), margin );
+		// the gonads: four horseshoes, interradial, some a seventh of the diameter across, each open
+		// toward the bell's centre
+		let ring: F = float( 0 );
+		for ( let k = 0; k < 4; k ++ ) {
+
+			const a = ( k + 0.5 ) / 4 * Math.PI * 2;
+			const out = vec2( Math.sin( a ), Math.cos( a ) );
+			const off = p.xz.sub( out.mul( 0.15 ) );
+			const d = length( off );
+			const open = smoothstep( - 0.55, - 0.15, dot( off, out ).div( max( d, 1e-4 ) ) );
+			ring = max( ring, float( 1 ).sub( smoothstep( 0.008, 0.018, abs( d.sub( 0.06 ) ) ) ).mul( open ) );
+
+		}
+		col = mix( col, c( o.gonad ), ring.mul( select( aData.w.greaterThan( 0 ), 1, 0.6 ) ) );
+		const arm = isPart( part, PART.ORAL_ARM );
+		// the clear mesoglea covers little of what lies behind it, more where the eye looks through it
+		// at a slant (the path through the tissue is longer, 1 / cos); the margin, the gonads and the
+		// frilled arms are denser
+		const slant = float( 1 ).div( max( abs( dot( normalView, normalize( positionView.negate() ) ) ), 0.25 ) );
+		const bell = min( float( 0.07 ).mul( slant ), 0.5 ).max( margin.mul( 0.4 ) ).max( ring.mul( 0.6 ) );
+		return { color: select( arm, c( o.arm ), col ), metal: float( 0 ), rough: float( o.rough ), alpha: select( arm, float( 0.4 ), bell ) };
 
 	};
 

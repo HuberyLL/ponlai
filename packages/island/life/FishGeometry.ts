@@ -31,7 +31,7 @@ import * as THREE from 'three/webgpu';
 //         belly .. 1 back); fins: the position along the ray (0 root .. 1 edge) and the ray
 //         coordinate (an integer on the rays, 0 the leading ray)
 
-export const PART = { BODY: 0, DORSAL: 1, ANAL: 2, CAUDAL: 3, PECTORAL: 4, PELVIC: 5, DISC: 6, WHIP: 7, CARAPACE: 8, SKIN: 9, FLIPPER: 10, EYE: 11 } as const;
+export const PART = { BODY: 0, DORSAL: 1, ANAL: 2, CAUDAL: 3, PECTORAL: 4, PELVIC: 5, DISC: 6, WHIP: 7, CARAPACE: 8, SKIN: 9, FLIPPER: 10, EYE: 11, BELL: 12, ORAL_ARM: 13 } as const;
 
 type Profile = readonly ( readonly [ number, number ] )[];
 

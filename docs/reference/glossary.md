@@ -119,9 +119,10 @@ Scene jump
   the page then holds what a fresh load of the same URL holds.
 
 Sea life
-: The ordinary fauna of the sea round the island, fish, rays, turtles, dolphins and a whale shark,
-  each kind placed from the land and moved as a function of the scene clock
-  (`packages/island/life/SeaLife.ts`;
+: The ordinary fauna of the sea round the island, fish, rays, turtles, jellies, dolphins and a whale
+  shark, each kind placed from the land and moved as a function of the scene clock
+  (`packages/island/life/SeaLife.ts`), and the floor's eelgrass and reef that the same land places
+  (`packages/island/life/FloorLife.ts`;
   [Life and islanders](../design/life-and-islanders.md#the-seas-life)).
 
 Settled

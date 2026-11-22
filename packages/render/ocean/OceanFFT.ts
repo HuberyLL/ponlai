@@ -11,7 +11,7 @@ import {
 } from 'three/tsl';
 import { mulberry32 } from '../util/noise.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
-import { COX_MUNK, seaState, slopeVariance, waveSystemTerms, type SwellParams, type WaveSpectrumSettings } from './OceanSpectrum.ts';
+import { COX_MUNK, seaState, significantHeight, slopeVariance, waveSystemTerms, type SwellParams, type WaveSpectrumSettings } from './OceanSpectrum.ts';
 import { MAX_ANISOTROPY, SLOPE_ENTRIES, fillSlopeEntries, readSlopeEntries, slopeTable, type CascadeBand } from './UnresolvedSlopes.ts';
 
 // The multi-cascade FFT ocean on WebGPU compute: four cascades of a local sea and a swell.
@@ -559,6 +559,29 @@ export class OceanFFT {
 		return this.swellHeading + this.swell.directionOffset;
 
 	}
+
+	/** The swell as the water under it moves: its travel direction ( x, z ) (the IFFT's waves travel
+	 * against the spectrum's heading), its peak angular frequency (rad/s) and its significant height
+	 * (m, the sea's amplitude included), for what the swell moves below the surface (the sea floor's
+	 * plants). Measured again only when the swell's settings change. */
+	swellState(): { x: number; z: number; omega: number; height: number } {
+
+		const S = this.swell, settings: WaveSpectrumSettings = { scale: S.scale, windSpeed: S.windSpeed, windDirection: this.swellDirection,
+			fetch: S.fetch, spread: S.spread, swell: S.swell, peakEnhancement: S.peakEnhancement, shortWavesFade: S.shortWavesFade };
+		const key = JSON.stringify( [ settings, this.params.depth, this.params.amplitude ] );
+		if ( key !== this.swellKey ) {
+
+			const angle = this.swellDirection * Math.PI / 180;
+			this.swellKey = key;
+			this.swellMeasured = { x: - Math.cos( angle ), z: - Math.sin( angle ), omega: waveSystemTerms( settings ).peakOmega, height: significantHeight( settings, this.params.depth ) * this.params.amplitude };
+
+		}
+		return this.swellMeasured;
+
+	}
+
+	private swellKey = '';
+	private swellMeasured = { x: 0, z: 0, omega: 1, height: 0 };
 
 	/** Takes the share of Cox and Munk's slope held below every pixel (0 to below 1), rebuilt in the
 	 * next update when it changes. */

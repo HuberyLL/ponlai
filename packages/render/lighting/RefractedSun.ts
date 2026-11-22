@@ -416,9 +416,10 @@ export class RefractedSun {
 		root.traverse( ( object ) => {
 
 			const source = object as THREE.Mesh;
-			if ( ! source.isMesh || ( source as THREE.InstancedMesh ).isInstancedMesh || ( source as THREE.SkinnedMesh ).isSkinnedMesh ) return;
+			if ( ! source.isMesh || ( source as THREE.InstancedMesh ).isInstancedMesh || ( source as THREE.SkinnedMesh ).isSkinnedMesh || ( source.geometry as THREE.InstancedBufferGeometry ).isInstancedBufferGeometry ) return;
 			// World terrain is static. Animated grass/ivy/foliage must stay in the normal air
-			// shadow pass; their undisplaced geometry would be an invalid submerged blocker.
+			// shadow pass; their undisplaced geometry would be an invalid submerged blocker, as would
+			// an instanced geometry placed by its material (the sea floor's plants) drawn once.
 			const materials = Array.isArray( source.material ) ? source.material : [ source.material ];
 			if ( ! materials.some( ( material ) => material.userData.refractedSolarReceiver ) ) return;
 			const subset = subsets?.get( source ), kept = before.get( source );

@@ -26,6 +26,7 @@ import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { FramingGlide, IslandTurn, landOutline } from './camera/IslandFraming.ts';
 import { FallingLeaves } from './world/FallingLeaves.ts';
 import { SeaLife } from './life/SeaLife.ts';
+import { FloorLife } from './life/FloorLife.ts';
 import { bakeGroundTextures } from './materials/GroundTextures.ts';
 import { buildWorldMeshes } from './world/World.ts';
 import type { WorldData } from './world/types.ts';
@@ -109,6 +110,8 @@ export interface IslandParts {
 	yunpeng: Yunpeng;
 	/** the sea's creatures round the island (life/SeaLife.ts) */
 	seaLife: SeaLife;
+	/** the sea floor's meadows and reef (life/FloorLife.ts) */
+	floorLife: FloorLife;
 	bamboo: Bamboo;
 	heldOpaque: THREE.Box3[];
 	/** the bamboo's box and its groves' mean free path: the volume the sea's reflection crosses as
@@ -337,6 +340,11 @@ export function createWorld( render: RenderParts, island: IslandParts ) {
 	// land and the scene clock; a Grow lays them out again (createGrowth, onSwap).
 	island.seaLife = new SeaLife( data, shared, waveMaps, fft, render.simTime );
 	scene.add( island.seaLife.group );
+	// The sea floor's meadows and reef (life/FloorLife.ts), in the world's group: the refraction's
+	// camera, the refracted sun's map and the opaque prepass take them with the floor; a Grow lays
+	// them out again (onSwap).
+	island.floorLife = new FloorLife( data, shared, waveMaps, fft );
+	world.group.add( island.floorLife.group );
 	island.fallingLeaves = TEST_MODE ? null : new FallingLeaves( { shared, fields, soil: textures.soil, wind, atlas: singleLeaf() } );
 
 }
@@ -546,6 +554,7 @@ export function createGrowth( render: RenderParts, island: IslandParts, { landOp
 			poseIslandView( framing.viewOptions, island.islandTurned, island.islandZoom );
 			if ( follow ) followFraming();
 			island.seaLife.setWorld( version );
+			island.floorLife.setWorld( version );
 			island.shownData = version;
 			islandEvent( 'world swap' );
 
@@ -657,6 +666,7 @@ export function createIslandFrame( render: RenderParts, island: IslandParts, { f
 		advanceLife( dt ) {
 
 			island.seaLife.update( render.simTime, render.paused ? 0 : dt );
+			island.floorLife.update( render.simTime, render.paused ? 0 : dt, camera, renderer.domElement.height );
 			island.fallingLeaves?.update( render.simTime, freeControls.enabled ? camera.position : controls.target, camera.position );
 
 		},

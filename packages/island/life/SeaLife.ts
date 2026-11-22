@@ -1,15 +1,17 @@
 import * as THREE from 'three/webgpu';
-import { type Shared, type WaveMaps, type OceanFFT, swimmerSway } from '../../render/index.ts';
-import { mulberry32, type Rng } from '../../render/data.ts';
-import type { WorldData } from '../world/types.ts';
+import { type Shared, type WaveMaps, type OceanFFT, type SwimmerCapsule, SWIMMER_SHADOWS, setSwimmerShadows, swimmerSway } from '../../render/index.ts';
+import { mulberry32, hash3i, type Rng } from '../../render/data.ts';
+import type { Rock, WorldData } from '../world/types.ts';
 import { SeaHabitat } from './SeaHabitat.ts';
 import { SwimPath, type Fits, type PathPoint } from './SwimPath.ts';
 import { Swimmers, type Pose } from './Swimmers.ts';
 import { fishGeometry, type Anatomy } from './FishGeometry.ts';
-import { rayGeometry, turtleGeometry } from './CreatureGeometry.ts';
-import { makeSwimmerMaterial, fishSkin, raySkin, turtleSkin, type Motion, type Painter } from './SwimmerMaterial.ts';
+import { rayGeometry, turtleGeometry, jellyGeometry } from './CreatureGeometry.ts';
+import { makeSwimmerMaterial, fishSkin, raySkin, turtleSkin, jellySkin, type Motion, type Painter } from './SwimmerMaterial.ts';
 import * as SP from './SeaSpecies.ts';
 
+// The sea's life round the island.
+//
 // The sea's life round the island: a warm-temperate rocky coast's animals (SeaSpecies.ts), each at
 // its real size, where it lives and in the numbers its habitat holds
 // (docs/design/life-and-islanders.md, The sea):
@@ -22,9 +24,12 @@ import * as SP from './SeaSpecies.ts';
 //   - Naruto eagle rays flying in a line in mid-water, flapping and gliding
 //   - a pod of bottlenose dolphins round the island offshore, surfacing to breathe in pairs
 //   - one whale shark on a wide loop past the shelf, near the surface
+//   - moon jellies drifting in loose swarms in the upper water, their bells pulsing
+//   - round the reef stones: clouds of pearl-spot chromis hovering over them, pairs of oriental
+//     butterflyfish close along their feet, a few barred knifejaw ranging a little wider
 //
 // Where: every kind's homes are cells of a world-anchored grid whose jittered point lies in its
-// habitat (SeaHabitat.ts candidates), taken in a hash's order and kept apart; its numbers scale
+// habitat (SeaHabitat.ts candidates), or the reef's stones, taken in a hash's order and kept apart; its numbers scale
 // with the coast's length, the meadows' or the shelf's area. A group swims a closed route through
 // its habitat round its home (SwimPath.ts `around`); the offshore kinds, a ring round the island
 // past its outline (`ring`). All of it is a function of the land and fixed seeds.
@@ -60,6 +65,9 @@ interface Member {
 	period: number; offset: number;
 }
 
+// a group's home: a point, and the stone when it is a reef
+interface Home { x: number; z: number; rock?: Rock }
+
 interface Group { kind: Kind; path: SwimPath; speed: number; s0: number; members: Member[] }
 
 interface Kind {
@@ -82,16 +90,22 @@ interface Kind {
 	// the period of a breath or a glide (s), if the kind has one
 	period?: Range;
 	// the route: the homes' cell (m) and spacing, and the habitats of the homes and the route
-	home?: { cell: number; apart: number; fits: ( H: SeaHabitat ) => Fits };
-	route: ( H: SeaHabitat, home: { x: number; z: number }, rng: Rng ) => SwimPath | null;
+	// (a reef kind's homes are the reef stones, `reef`, in a hash's order, kept `apart`)
+	home?: { cell: number; apart: number; fits: ( H: SeaHabitat ) => Fits } | { reef: true; apart: number };
+	route: ( H: SeaHabitat, home: Home, rng: Rng ) => SwimPath | null;
 	// the final height (m) at a point of the member's course, from the route's
 	height?: ( y: number, t: number, m: Member, x: number, z: number, H: SeaHabitat ) => number;
 	// the stroke's amplitude at a time (an eagle ray's glides)
 	ampAt?: ( t: number, m: Member ) => number;
+	// the shadow it casts on the floor (render/lighting/SwimmerShadows.ts): a capsule along the
+	// body or across the span (a ray's wings), its half-length and radius in units of the scale
+	shadow?: { across: boolean; half: number; radius: number };
 }
 
 const between = ( rng: Rng, r: Range ) => r[ 0 ] + ( r[ 1 ] - r[ 0 ] ) * rng();
 const clamp = ( x: number, a: number, b: number ) => Math.min( b, Math.max( a, x ) );
+// a reef kind's groups: one per `per` reef stones, at least one where there is a reef, at most `most`
+const reefGroups = ( H: SeaHabitat, per: number, most: number ) => H.reefs.length ? clamp( Math.round( H.reefs.length / per ), 1, most ) : 0;
 const smooth = ( a: number, b: number, x: number ) => {
 
 	const t = clamp( ( x - a ) / ( b - a ), 0, 1 );
@@ -127,8 +141,9 @@ function homeRoutes( H: SeaHabitat, K: Kind, salt: number, count: number ): { pa
 
 	const out: { path: SwimPath; rng: Rng }[] = [];
 	if ( count <= 0 || ! K.home ) return out;
-	const fits = K.home.fits( H );
-	const cands = H.candidates( K.home.cell, salt, fits );
+	const cands: ( Home & { seed: number } )[] = 'reef' in K.home
+		? H.reefs.map( ( rock ) => ( { x: rock.x, z: rock.z, rock, seed: Math.floor( hash3i( Math.round( rock.x * 16 ), Math.round( rock.z * 16 ), salt ) * 4294967296 ) } ) ).sort( ( a, b ) => a.seed - b.seed )
+		: H.candidates( K.home.cell, salt, K.home.fits( H ) );
 	const taken: { x: number; z: number }[] = [];
 	for ( const c of cands ) {
 
@@ -186,6 +201,7 @@ function kinds(): Kind[] {
 		},
 		{
 			name: 'amberjack', motion: 'fish', anatomy: SP.AMBERJACK, paint: fishSkin( SP.AMBERJACK_SKIN ), geometry: () => fishGeometry( SP.AMBERJACK, 0 ),
+			shadow: { across: false, half: 0.36, radius: 0.07 },
 			capacity: 14, groups: () => 1, members: [ 8, 14 ],
 			scale: [ 0.8, 1.1 ], speed: [ 1.0, 1.3 ], freq: [ 2.2, 2.8 ], amp: 0.08, fold: 0.8,
 			clear: 0.8, ceiling: - 0.9, pitch: 0.3, bank: 0.5,
@@ -196,6 +212,7 @@ function kinds(): Kind[] {
 		},
 		{
 			name: 'green turtles', motion: 'turtle', paint: turtleSkin( SP.TURTLE_SKIN ), geometry: () => turtleGeometry( 0 ),
+			shadow: { across: false, half: 0.22, radius: 0.3 },
 			capacity: 4, groups: ( H ) => H.meadowArea < 30 ? 0 : clamp( Math.round( H.meadowArea / 350 ), 1, 4 ), members: [ 1, 1 ],
 			// the carapace 0.8 to 1.05 m (the model's carapace is 0.72 of its length)
 			scale: [ 0.8 / 0.72, 1.05 / 0.72 ], speed: [ 0.25, 0.4 ], freq: [ 0.28, 0.36 ], amp: 1, fold: 0,
@@ -210,6 +227,7 @@ function kinds(): Kind[] {
 		},
 		{
 			name: 'red stingrays', motion: 'stingray', paint: raySkin( SP.STINGRAY_SKIN ), geometry: () => rayGeometry( false, 0 ),
+			shadow: { across: false, half: 0.08, radius: 0.45 },
 			capacity: 5, groups: ( H ) => clamp( Math.round( H.shelfArea / 900 ), 2, 5 ), members: [ 1, 1 ],
 			scale: [ 0.6, 0.9 ], speed: [ 0.2, 0.32 ], freq: [ 0.8, 1.1 ], amp: 0.05, fold: 0,
 			clear: 0.12, ceiling: - 0.8, pitch: 0.15, bank: 0.3,
@@ -220,6 +238,7 @@ function kinds(): Kind[] {
 		},
 		{
 			name: 'eagle rays', motion: 'eagleRay', paint: raySkin( SP.EAGLE_RAY_SKIN ), geometry: () => rayGeometry( true, 0 ),
+			shadow: { across: true, half: 0.3, radius: 0.16 },
 			capacity: 2 * 6, groups: ( H ) => clamp( Math.round( H.coastLength / 220 ), 1, 2 ), members: [ 3, 6 ],
 			scale: [ 1.2, 1.6 ], speed: [ 0.7, 0.9 ], freq: [ 0.38, 0.45 ], amp: 0.16, fold: 0,
 			clear: 0.8, ceiling: - 0.9, pitch: 0.25, bank: 0.7,
@@ -234,6 +253,7 @@ function kinds(): Kind[] {
 		},
 		{
 			name: 'dolphins', motion: 'cetacean', anatomy: SP.DOLPHIN, paint: fishSkin( SP.DOLPHIN_SKIN ), geometry: () => fishGeometry( SP.DOLPHIN, 0 ),
+			shadow: { across: false, half: 0.36, radius: 0.09 },
 			capacity: 9, groups: () => 1, members: [ 6, 9 ],
 			scale: [ 2.2, 2.6 ], speed: [ 2.2, 2.6 ], freq: [ 1.1, 1.4 ], amp: 0.075, fold: 0,
 			clear: 1, ceiling: - 0.05, pitch: 0.45, bank: 0.5,
@@ -253,12 +273,79 @@ function kinds(): Kind[] {
 		},
 		{
 			name: 'whale shark', motion: 'fish', anatomy: SP.WHALE_SHARK, paint: fishSkin( SP.WHALE_SHARK_SKIN ), geometry: () => fishGeometry( SP.WHALE_SHARK, 0 ),
+			shadow: { across: false, half: 0.36, radius: 0.085 },
 			capacity: 1, groups: () => 1, members: [ 1, 1 ],
 			scale: [ 7, 8 ], speed: [ 0.8, 1.0 ], freq: [ 0.25, 0.3 ], amp: 0.06, fold: 0,
 			clear: 1.5, ceiling: - 1.2, pitch: 0.15, bank: 0.3,
 			formation: () => ( { a: 0, b: 0, c: 0 } ),
 			wander: [ 0, 0.8, 0.25 ], wanderPeriod: [ 18, 26 ],
 			route: ( H, _home, rng ) => SwimPath.ring( H.centre, ( x, z ) => H.coast( x, z ) < 0, rng, { points: 8, off: [ 28, 42 ], margin: 6, height: ( _x, _z, r ) => - 1.8 - r() * 0.5 }, band( H, 20, Infinity, - 8.8 ) ),
+		},
+		{
+			// drifting in loose swarms in the upper water over the shelf's edge, each bell pulsing
+			// about once a second; the bell's diameter 15 to 30 cm
+			name: 'moon jellies', motion: 'jelly', paint: jellySkin( SP.JELLY_SKIN ), geometry: jellyGeometry,
+			capacity: 4 * 30, groups: ( H ) => clamp( Math.round( H.coastLength / 120 ), 1, 4 ), members: [ 12, 30 ],
+			scale: [ 0.15, 0.3 ], speed: [ 0.03, 0.06 ], freq: [ 0.6, 0.9 ], amp: 1, fold: 0,
+			clear: 0.8, ceiling: - 0.5, pitch: 0, bank: 0,
+			formation: ( rng, _k, n ) => inEllipsoid( rng, 3 * Math.sqrt( n / 20 ), 3 * Math.sqrt( n / 20 ), 0.9 ),
+			wander: [ 0.4, 0.4, 0.35 ], wanderPeriod: [ 10, 20 ],
+			home: { cell: 10, apart: 25, fits: ( H ) => band( H, 8, 22, - 3 ) },
+			route: ( H, home, rng ) => SwimPath.around( home, rng, { points: 5, radius: [ 3, 6 ], margin: 3, height: ( x, z ) => clamp( H.floor( x, z ) * 0.4, - 3, - 1.2 ) }, band( H, 5, 23.5, - 2.5 ) ),
+		},
+		// the reef's fish, round the reef stones (SeaHabitat.ts `reefs`): their numbers follow the
+		// stones'; a stone's footprint reaches about 1.2 times its size from its centre
+		{
+			name: 'chromis', motion: 'fish', anatomy: SP.CHROMIS, paint: fishSkin( SP.CHROMIS_SKIN ), geometry: () => fishGeometry( SP.CHROMIS, 2 ),
+			capacity: 8 * 50, groups: ( H ) => reefGroups( H, 5, 8 ), members: [ 20, 50 ],
+			scale: [ 0.1, 0.15 ], speed: [ 0.1, 0.16 ], freq: [ 4.5, 6.5 ], amp: 0.08, fold: 0.4,
+			clear: 0.5, ceiling: - 0.6, pitch: 0.3, bank: 0.4,
+			// a loose cloud over the stone, each fish hovering and darting about its place
+			formation: ( rng, _k, n ) => {
+
+				const s = Math.sqrt( n / 30 );
+				return inEllipsoid( rng, 1.1 * s, 0.9 * s, 0.45 * s );
+
+			},
+			wander: [ 0.35, 0.35, 0.2 ], wanderPeriod: [ 3, 6 ],
+			home: { reef: true, apart: 4 },
+			route: ( H, home, rng ) => {
+
+				const r = home.rock!, top = r.y + r.sy;
+				return SwimPath.around( home, rng, { points: 5, radius: [ r.s * 0.4, r.s * 0.4 + 1.2 ], margin: 0.5, height: ( _x, _z, q ) => Math.min( top + 0.5 + q() * 0.6, - 0.7 ) }, ( x, z ) => H.floor( x, z ) < - 1.2 );
+
+			},
+		},
+		{
+			name: 'butterflyfish', motion: 'fish', anatomy: SP.BUTTERFLYFISH, paint: fishSkin( SP.BUTTERFLYFISH_SKIN ), geometry: () => fishGeometry( SP.BUTTERFLYFISH, 1 ),
+			capacity: 6 * 2, groups: ( H ) => reefGroups( H, 8, 6 ), members: [ 2, 2 ],
+			scale: [ 0.14, 0.2 ], speed: [ 0.15, 0.25 ], freq: [ 3, 4.5 ], amp: 0.06, fold: 0.3,
+			clear: 0.35, ceiling: - 0.6, pitch: 0.4, bank: 0.4,
+			// a pair, side by side, one a little behind
+			formation: ( rng, k ) => ( { a: - k * 0.3 + ( rng() - 0.5 ) * 0.1, b: k * 0.25, c: ( rng() - 0.5 ) * 0.1 } ),
+			wander: [ 0.3, 0.3, 0.15 ], wanderPeriod: [ 4, 8 ],
+			home: { reef: true, apart: 6 },
+			route: ( H, home, rng ) => {
+
+				const r = home.rock!, foot = r.s * 1.25;
+				return SwimPath.around( home, rng, { points: 6, radius: [ foot + 0.4, foot + 2.5 ], margin: 0.4, height: ( x, z, q ) => H.floor( x, z ) + 0.5 + q() * 0.4 }, ( x, z ) => H.offReef( x, z, 0.35 ) && H.floor( x, z ) < - 1 );
+
+			},
+		},
+		{
+			name: 'knifejaw', motion: 'fish', anatomy: SP.KNIFEJAW, paint: fishSkin( SP.KNIFEJAW_SKIN ), geometry: () => fishGeometry( SP.KNIFEJAW, 1 ),
+			capacity: 4 * 3, groups: ( H ) => reefGroups( H, 12, 4 ), members: [ 1, 3 ],
+			scale: [ 0.3, 0.5 ], speed: [ 0.3, 0.45 ], freq: [ 2.4, 3.2 ], amp: 0.07, fold: 0.5,
+			clear: 0.5, ceiling: - 0.8, pitch: 0.35, bank: 0.45,
+			formation: ( rng ) => inEllipsoid( rng, 1.2, 0.8, 0.3 ),
+			wander: [ 0.5, 0.4, 0.2 ], wanderPeriod: [ 5, 9 ],
+			home: { reef: true, apart: 10 },
+			route: ( H, home, rng ) => {
+
+				const r = home.rock!, foot = r.s * 1.25;
+				return SwimPath.around( home, rng, { points: 6, radius: [ foot + 1, foot + 5 ], margin: 0.6, height: ( x, z, q ) => H.floor( x, z ) + 0.9 + q() * 0.5 }, ( x, z ) => H.offReef( x, z, 0.6 ) && H.floor( x, z ) < - 1.4 );
+
+			},
 		},
 	];
 
@@ -267,6 +354,8 @@ function kinds(): Kind[] {
 // ------------------------------------------------------------------ the sea's life
 
 const _q = new THREE.Quaternion(), _e = new THREE.Euler( 0, 0, 0, 'YXZ' );
+// the least darkest share of a shadow worth a caster's place (render/lighting/SwimmerShadows.ts)
+const SHADOW_LEAST = 0.15;
 
 export class SeaLife {
 
@@ -278,9 +367,12 @@ export class SeaLife {
 	private readonly at: PathPoint = { x: 0, z: 0, y: 0, hx: 0, hz: 1, curve: 0 };
 	private readonly pose: Pose = { x: 0, y: 0, z: 0, scale: 1, qx: 0, qy: 0, qz: 0, qw: 1, phase: 0, amp: 0, bend: 0, fold: 0, px: 0, py: 0, pz: 0, pphase: 0 };
 
+	private readonly shared: Shared;
+
 	constructor( data: WorldData, shared: Shared, waveMaps: WaveMaps, fft: OceanFFT, time: number ) {
 
 		this.group.name = 'sea life';
+		this.shared = shared;
 		this.kinds = kinds();
 		const sway = ( p: THREE.Node<'vec3'> ) => swimmerSway( fft, p, shared.waterLevel );
 		this.meshes = this.kinds.map( ( K ) => {
@@ -319,13 +411,46 @@ export class SeaLife {
 	update( time: number, dt: number ): void {
 
 		for ( const m of this.meshes ) m.begin();
+		const casters = this.casters;
+		casters.length = 0;
+		let n = 0;
 		for ( const g of this.groups ) {
 
 			const mesh = this.meshes[ this.kinds.indexOf( g.kind ) ];
-			for ( const m of g.members ) mesh.push( this.write( g, m, time, dt ) );
+			for ( const m of g.members ) {
+
+				const P = this.write( g, m, time, dt );
+				mesh.push( P );
+				if ( g.kind.shadow ) this.caster( g.kind.shadow, P, n ++ );
+
+			}
 
 		}
 		for ( const m of this.meshes ) m.end();
+		// the shadows worth drawing: the strongest, a body near the floor before one high over it
+		casters.sort( ( a, b ) => b.strength - a.strength || a.order - b.order );
+		setSwimmerShadows( this.shared.swimmerShadows, casters.slice( 0, SWIMMER_SHADOWS ) );
+
+	}
+
+	private readonly casters: ( SwimmerCapsule & { strength: number; order: number } )[] = [];
+	private readonly pool: ( SwimmerCapsule & { strength: number; order: number } )[] = [];
+	private readonly _axis = new THREE.Vector3();
+
+	// a swimmer's capsule (render/lighting/SwimmerShadows.ts), kept if its shadow's darkest share
+	// reaches SHADOW_LEAST: a band 2r wide blurred over 2 forwardAngle times its height over the floor
+	private caster( shadow: NonNullable<Kind[ 'shadow' ]>, P: Pose, order: number ): void {
+
+		const r = shadow.radius * P.scale;
+		const h = Math.max( P.y - this.habitat.floor( P.x, P.z ), 0 );
+		const strength = Math.min( 1, 2 * r / Math.max( 2 * this.shared.forwardAngle.value * h, 0.02 ) );
+		if ( strength < SHADOW_LEAST ) return;
+		const axis = this._axis.set( shadow.across ? 1 : 0, 0, shadow.across ? 0 : 1 ).applyQuaternion( _q.set( P.qx, P.qy, P.qz, P.qw ) ).multiplyScalar( shadow.half * P.scale );
+		const c = this.pool[ this.casters.length ] ?? ( this.pool[ this.casters.length ] = { ax: 0, ay: 0, az: 0, bx: 0, by: 0, bz: 0, r: 0, strength: 0, order: 0 } );
+		c.ax = P.x - axis.x; c.ay = P.y - axis.y; c.az = P.z - axis.z;
+		c.bx = P.x + axis.x; c.by = P.y + axis.y; c.bz = P.z + axis.z;
+		c.r = r; c.strength = strength; c.order = order;
+		this.casters.push( c );
 
 	}
 

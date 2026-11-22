@@ -95,6 +95,24 @@ school's glint, a shadow in the shallows, a back breaking the surface.
   each pair breaking the surface to breathe every 8 to 20 seconds.
 - Beyond the shelf's edge, one whale shark (Rhincodon typus, 7 to 8 m), pale spots and stripes over
   its dark back: the great fish of Yingzhou of the cast, still without its horn.
+- In mid-water over the shelf, loose swarms of moon jellies (Aurelia aurita, 15 to 30 cm), clear
+  bells with four pale horseshoe gonads, pulsing slowly as they drift.
+- Round the reef stones, the reef's fish: dense clouds of pearl-spotted chromis (Chromis notata),
+  pairs of golden butterflyfish (Chaetodon auripes) close over the stone, and a few barred knifejaw
+  (Oplegnathus fasciatus).
+
+The floor under them is alive too (`packages/island/life/FloorLife.ts`). Eelgrass (Zostera marina)
+grows wherever the floor's seagrass cover is, its leaves longer in deeper water, swaying with the
+swell's orbital motion at the bed. The stones deep enough for it carry the reef of a warm-temperate
+rocky coast: Ecklonia kelp on the shallow tops; table and branching Acropora and Porites domes in
+the browns of their zooxanthellae; soft corals (Dendronephthya) and red, orange or yellow gorgonian
+fans on the steeper and deeper faces, the fans broadside to the swell; long-spined urchins
+(Diadema) at the stones' feet. The colours are the species' own in daylight close up; the water's
+absorption takes the reds out with depth, as it does in the sea.
+
+The larger swimmers cast their shadows on the floor: a stingray over the sand in the shallows lays
+a sharp oval under it, a body high over the floor only a faint wide one, as the water's forward
+scattering blurs it (`packages/render/lighting/SwimmerShadows.ts`).
 
 ## The islanders
 

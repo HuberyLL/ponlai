@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
-import { markSwimmer } from '../../render/index.ts';
 
+// One kind of the sea's creatures as an instanced mesh.
+//
 // One kind of the sea's creatures as an instanced mesh of a fixed capacity, its instances written
 // from the CPU each frame (SeaLife.ts).
 //
@@ -10,9 +11,10 @@ import { markSwimmer } from '../../render/index.ts';
 // (SwimmerMaterial.ts) poses, turns and places. The buffers keep their capacity for the page's life
 // (a Grow changes how many are drawn, never the buffers: the root AGENTS.md's instance rule).
 //
-// The mesh is a swimmer (Refraction.ts markSwimmer): drawn in the opaque pass only, its alpha 0
-// telling the water that the pixel holds a creature under it, so the water shows it at the render's
-// own resolution instead of the refraction image's. It casts no shadow and is never culled (its
+// The mesh is a swimmer (Refraction.ts markSwimmer, which its material calls: SwimmerMaterial.ts):
+// drawn in the opaque pass only, its alpha under 1 telling the water that the pixel holds a
+// creature under it, so the water shows it at the render's own resolution instead of the
+// refraction image's. It casts no shadow and is never culled (its
 // instances move anywhere round the island).
 
 export interface Pose {
@@ -41,7 +43,6 @@ export class Swimmers {
 		this.attrs = { iPose: attr(), iTurn: attr(), iMotion: attr(), iBefore: attr() };
 		for ( const [ a, b ] of Object.entries( this.attrs ) ) geometry.setAttribute( a, b );
 		geometry.instanceCount = 0;
-		markSwimmer( material );
 		this.mesh = new THREE.Mesh( geometry, material );
 		this.mesh.name = name;
 		this.mesh.frustumCulled = false;

@@ -7,6 +7,8 @@
 import type { Anatomy } from './FishGeometry.ts';
 import type { FishSkin } from './SwimmerMaterial.ts';
 
+// The bodies and skins of the sea's creatures.
+//
 // The bodies and skins of the sea's creatures: real species of a warm-temperate rocky coast that a
 // warm current reaches (as the Kuroshio reaches southern Japan, Jeju and north-eastern Taiwan), the
 // sea the island's floor already is (mineral sand, eelgrass meadows, boulders; a shelf to some 6 m,
@@ -139,6 +141,76 @@ export const WHALE_SHARK_SKIN: FishSkin = {
 	pattern: { kind: 'chequer', color: 0xc9d0cc },
 };
 
+// ------------------------------------------------------------------ the reef's fish
+
+/** Chromis notata, the pearl-spot chromis: a small, deep, compressed damselfish, one long dorsal
+ * fin, a deeply forked tail; dark olive brown, paler below, a white spot under the end of the
+ * dorsal fin. Hovers in aggregations over the rocky reef, picking plankton. */
+export const CHROMIS: Anatomy = {
+	body: 0.77, sec: 2.2,
+	top: [ [ 0, 0.01 ], [ 0.04, 0.05 ], [ 0.12, 0.11 ], [ 0.26, 0.16 ], [ 0.42, 0.165 ], [ 0.6, 0.13 ], [ 0.78, 0.075 ], [ 0.9, 0.05 ], [ 1, 0.045 ] ],
+	bot: [ [ 0, 0.01 ], [ 0.04, 0.04 ], [ 0.12, 0.09 ], [ 0.26, 0.135 ], [ 0.42, 0.145 ], [ 0.6, 0.12 ], [ 0.78, 0.07 ], [ 0.9, 0.045 ], [ 1, 0.04 ] ],
+	wid: [ [ 0, 0.01 ], [ 0.06, 0.035 ], [ 0.2, 0.052 ], [ 0.4, 0.05 ], [ 0.7, 0.032 ], [ 1, 0.014 ] ],
+	dorsal: [ { from: 0.3, to: 0.86, rays: 14, h: [ [ 0, 0.06 ], [ 0.5, 0.075 ], [ 0.8, 0.1 ], [ 1, 0.04 ] ], rake: [ 0.45, 0.95 ], notch: 0.02 } ],
+	anal: [ { from: 0.62, to: 0.86, rays: 9, h: [ [ 0, 0.05 ], [ 0.7, 0.09 ], [ 1, 0.035 ] ], rake: [ 0.5, 0.95 ], notch: 0.015 } ],
+	pectoral: { u: 0.3, y: - 0.01, rays: 7, lead: 1.0, last: 0.35, len: 0.16, tail: 0.6, dihedral: 0 },
+	pelvic: { u: 0.33, y: - 0.12, rays: 4, lead: 0.9, last: 0.45, len: 0.12, tail: 0.5, dihedral: - 0.2 },
+	caudal: { len: 0.23, span: 0.2, fork: 0.35, lower: 1, rays: 13 },
+};
+export const CHROMIS_SKIN: FishSkin = {
+	back: 0x2e2c22, flank: 0x4a4434, belly: 0x847a64, fin: 0x2c2a22, finEdge: 0x1c1a16, iris: 0x3a3426,
+	silver: 0.1, rough: 0.42,
+	eye: { u: 0.085, y: 0.04, r: 0.03 },
+	marks: [ { kind: 'spot', u: 0.6, y: 0.1, r: 0.03, color: 0xe8e8e0 } ],
+};
+
+/** Chaetodon auripes, the oriental butterflyfish: a disc-deep, very compressed body, a pointed
+ * snout, long dorsal and anal fins, a squarish tail; golden yellow with fine dark lines along the
+ * scale rows, a black bar through the eye with a white one behind it. Mostly in pairs, picking at
+ * the reef. */
+export const BUTTERFLYFISH: Anatomy = {
+	body: 0.84, sec: 2.3,
+	top: [ [ 0, 0.008 ], [ 0.05, 0.035 ], [ 0.12, 0.1 ], [ 0.25, 0.2 ], [ 0.42, 0.24 ], [ 0.6, 0.215 ], [ 0.78, 0.13 ], [ 0.9, 0.06 ], [ 1, 0.05 ] ],
+	bot: [ [ 0, 0.008 ], [ 0.05, 0.03 ], [ 0.12, 0.085 ], [ 0.25, 0.18 ], [ 0.42, 0.215 ], [ 0.6, 0.19 ], [ 0.78, 0.115 ], [ 0.9, 0.055 ], [ 1, 0.045 ] ],
+	wid: [ [ 0, 0.008 ], [ 0.08, 0.028 ], [ 0.25, 0.042 ], [ 0.45, 0.04 ], [ 0.7, 0.026 ], [ 1, 0.012 ] ],
+	dorsal: [ { from: 0.3, to: 0.9, rays: 15, h: [ [ 0, 0.05 ], [ 0.5, 0.07 ], [ 0.8, 0.075 ], [ 1, 0.03 ] ], rake: [ 0.6, 1.1 ], notch: 0.015 } ],
+	anal: [ { from: 0.58, to: 0.9, rays: 10, h: [ [ 0, 0.05 ], [ 0.6, 0.075 ], [ 1, 0.03 ] ], rake: [ 0.6, 1.1 ], notch: 0.015 } ],
+	pectoral: { u: 0.32, y: - 0.02, rays: 6, lead: 1.0, last: 0.35, len: 0.12, tail: 0.6, dihedral: 0 },
+	pelvic: { u: 0.36, y: - 0.17, rays: 4, lead: 0.9, last: 0.45, len: 0.1, tail: 0.5, dihedral: - 0.2 },
+	caudal: { len: 0.16, span: 0.17, fork: 1, lower: 1, rays: 11 },
+};
+export const BUTTERFLYFISH_SKIN: FishSkin = {
+	back: 0xb88c2e, flank: 0xd0a43a, belly: 0xd8b85a, fin: 0xc49a34, finEdge: 0x3a2a14, iris: 0x1a1612,
+	silver: 0, rough: 0.4,
+	eye: { u: 0.11, y: 0.045, r: 0.025 },
+	pattern: { kind: 'stripes', color: 0x6a4c1e, count: 9 },
+	marks: [ { kind: 'bar', from: 0.085, to: 0.14, color: 0x16140f }, { kind: 'bar', from: 0.14, to: 0.17, color: 0xe6e0d0 } ],
+};
+
+/** Oplegnathus fasciatus, the barred knifejaw: a deep, compressed body, the teeth fused into a
+ * parrot-like beak, a spiny dorsal fin running into the soft one; grey white under seven black bars,
+ * the first through the eye. Alone or a few together, crushing urchins and shellfish off the
+ * stones. */
+export const KNIFEJAW: Anatomy = {
+	body: 0.82, sec: 2.2,
+	top: [ [ 0, 0.012 ], [ 0.04, 0.05 ], [ 0.12, 0.12 ], [ 0.26, 0.18 ], [ 0.42, 0.19 ], [ 0.6, 0.165 ], [ 0.78, 0.1 ], [ 0.9, 0.065 ], [ 1, 0.058 ] ],
+	bot: [ [ 0, 0.012 ], [ 0.04, 0.045 ], [ 0.12, 0.1 ], [ 0.26, 0.155 ], [ 0.42, 0.17 ], [ 0.6, 0.145 ], [ 0.78, 0.09 ], [ 0.9, 0.06 ], [ 1, 0.052 ] ],
+	wid: [ [ 0, 0.012 ], [ 0.06, 0.04 ], [ 0.2, 0.062 ], [ 0.42, 0.06 ], [ 0.7, 0.04 ], [ 1, 0.018 ] ],
+	dorsal: [ { from: 0.28, to: 0.86, rays: 15, h: [ [ 0, 0.055 ], [ 0.2, 0.08 ], [ 0.55, 0.045 ], [ 0.75, 0.085 ], [ 1, 0.035 ] ], rake: [ 0.5, 1.0 ], notch: 0.03 } ],
+	anal: [ { from: 0.62, to: 0.86, rays: 9, h: [ [ 0, 0.05 ], [ 0.5, 0.085 ], [ 1, 0.035 ] ], rake: [ 0.5, 1.0 ], notch: 0.015 } ],
+	pectoral: { u: 0.3, y: - 0.03, rays: 7, lead: 1.0, last: 0.35, len: 0.14, tail: 0.6, dihedral: 0 },
+	pelvic: { u: 0.34, y: - 0.14, rays: 4, lead: 0.9, last: 0.45, len: 0.1, tail: 0.5, dihedral: - 0.2 },
+	caudal: { len: 0.18, span: 0.17, fork: 0.85, lower: 1, rays: 13 },
+};
+const KNIFEJAW_BAR = 0x1e2022;
+export const KNIFEJAW_SKIN: FishSkin = {
+	back: 0x9a9e98, flank: 0xc4c6be, belly: 0xd6d6cc, fin: 0x5a5e5c, finEdge: 0x2a2c2c, iris: 0x2a2a24,
+	silver: 0.15, rough: 0.38,
+	eye: { u: 0.085, y: 0.05, r: 0.022 },
+	marks: [ [ 0.07, 0.115 ], [ 0.19, 0.25 ], [ 0.32, 0.38 ], [ 0.44, 0.5 ], [ 0.56, 0.61 ], [ 0.67, 0.71 ], [ 0.77, 0.81 ] ]
+		.map( ( [ from, to ] ) => ( { kind: 'bar' as const, from, to, color: KNIFEJAW_BAR } ) ),
+};
+
 // ------------------------------------------------------------------ the rays and the turtle
 
 /** Hemitrygon akajei, the red stingray: a brown back, its rim more orange, a pale belly. */
@@ -148,3 +220,9 @@ export const EAGLE_RAY_SKIN = { back: 0x3d3a30, mottle: 0x34312a, margin: 0x2e2b
 /** Chelonia mydas, the green turtle: an olive-brown carapace streaked darker, its skin dark scales
  * edged pale, a cream plastron. */
 export const TURTLE_SKIN = { shell: 0x5a4a2c, streak: 0x2e2416, skin: 0x4a4636, scale: 0xb8ae90, plastron: 0xd6c898 };
+
+// ------------------------------------------------------------------ the moon jelly
+
+/** Aurelia aurita: the clear bell faintly blue grey, its margin milky, the four gonads lilac pink
+ * rings, the oral arms pale; the bell's clearness is the painter's coverage (jellySkin). */
+export const JELLY_SKIN = { bell: 0x8c9ca6, margin: 0xb0bec6, gonad: 0xb48cb4, arm: 0xa4a2b4, rough: 0.22 };

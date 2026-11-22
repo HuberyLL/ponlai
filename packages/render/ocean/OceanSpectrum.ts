@@ -129,6 +129,26 @@ function radialEnergy( k: number, depth: number, { alpha, peakOmega, gamma, fade
 
 }
 
+/** A wave system's significant height (m): four times the square root of its variance, the energy
+ * per unit wavenumber summed from a tenth of the peak's wavenumber to a hundred times it (all but a
+ * negligible share of a JONSWAP spectrum), the short waves' fade included, at amplitude 1. */
+export function significantHeight( settings: WaveSpectrumSettings, depth: number ): number {
+
+	const terms = waveSystemTerms( settings );
+	const kp = terms.peakOmega * terms.peakOmega / GRAVITY;
+	const n = 600, k0 = kp * 0.1, ratio = Math.pow( 1000, 1 / n );
+	let m0 = 0, k = k0;
+	for ( let i = 0; i < n; i ++ ) {
+
+		const k1 = k * ratio, mid = Math.sqrt( k * k1 );
+		m0 += radialEnergy( mid, depth, terms ) * ( k1 - k );
+		k = k1;
+
+	}
+	return 4 * Math.sqrt( m0 );
+
+}
+
 /** Returns the two-dimensional k-space energy density, including the omega-to-k Jacobian (the
  * GPU's is OceanFFT's `waveEnergy`, the same formulas). */
 export function createWaveSpectrum( settings: WaveSpectrumSettings, depth: number ): ( kx: number, kz: number ) => number {

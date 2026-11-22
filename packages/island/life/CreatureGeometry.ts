@@ -7,7 +7,10 @@
 import * as THREE from 'three/webgpu';
 import { MeshData, PART } from './FishGeometry.ts';
 
-// The rays and the green turtle, in the fish's frame, so one material poses and paints them.
+// The shapes of the rays, the green turtle and the moon jelly.
+//
+// The rays, the green turtle and the moon jelly, in the fish's frame, so one material poses and
+// paints them.
 //
 // Tidewater's CreatureGeometry (4811ba4), in the fish's frame (the snout at z = +0.5, the back at
 // +y, the total length 1), so they share the swimmers' material and its data:
@@ -19,7 +22,12 @@ import { MeshData, PART } from './FishGeometry.ts';
 //    plastron (PART.SKIN, w 2), the head and neck (PART.SKIN, w 1), the flippers (PART.FLIPPER: z
 //    the distance from the shoulder, w the flipper, 0 and 1 the front left and right, 2 and 3 the
 //    hind) that stroke about their shoulders.
-// Each comes at two levels (`detail` 0 near, 1 far: fewer rings, no eyes).
+//  - a moon jelly: the bell (PART.BELL), a flat dome its diameter 1 across, its axis on y, an outer
+//    and an inner surface joined at the margin, and four frilled oral arms hanging under it
+//    (PART.ORAL_ARM). aData: x the distance out from the bell's apex (0 .. 1 at the margin) or down
+//    the arm (0 .. 1 at its tip), z the angle round the bell (0 .. 1) or the arm, w 1 outside, -1
+//    inside (or the arm's other face).
+// Each comes at two levels (`detail` 0 near, 1 far: fewer rings, no eyes); the jelly at one.
 
 const TAU = Math.PI * 2;
 
@@ -239,6 +247,91 @@ export function turtleGeometry( detail: 0 | 1 = 0 ): THREE.BufferGeometry {
 	flipper( 3, - 0.16, zc - 0.28, [ - 0.8, - 0.6 ], 0.2, 0.06 );
 	// the short tail
 	tube( M, [ [ 0, - 0.02, zc - L / 2 + 0.02, 0.035, 0.6 ], [ 0, - 0.03, zc - L / 2 - 0.08, 0.004, 0.6 ] ], detail ? 3 : 5, PART.SKIN, () => [ 0, 1 ] );
+	return M.build();
+
+}
+
+/** Aurelia aurita, the moon jelly: a flat bell whose height is about an eighth of its diameter
+ * (1), its margin turned a little down, and four oral arms some a third of the diameter long. */
+export function jellyGeometry(): THREE.BufferGeometry {
+
+	const M = new MeshData();
+	const nR = 7, nA = 18, H = 0.13;
+	// the bell: rows out from the apex, the outer surface over the inner one
+	const surface = ( outer: boolean ) => {
+
+		const rows: number[][] = [];
+		const lift = outer ? 1 : 0.5, shrink = outer ? 1 : 0.97, w = outer ? 1 : - 1;
+		const centre = M.v( 0, outer ? H : H * lift - 0.012, 0, 0, PART.BELL, 0, w );
+		for ( let k = 1; k <= nR; k ++ ) {
+
+			const s = k / nR, row: number[] = [];
+			const r = 0.5 * s * shrink, y = H * lift * Math.pow( 1 - s * s, 0.8 ) - 0.035 * Math.pow( s, 6 ) - ( outer ? 0 : 0.012 * ( 1 - s ) );
+			for ( let j = 0; j < nA; j ++ ) {
+
+				const a = j / nA * TAU;
+				row.push( M.v( Math.sin( a ) * r, y, Math.cos( a ) * r, s, PART.BELL, j / nA, w ) );
+
+			}
+			rows.push( row );
+
+		}
+		for ( let j = 0; j < nA; j ++ ) {
+
+			const j1 = ( j + 1 ) % nA;
+			if ( outer ) M.tri( centre, rows[ 0 ][ j ], rows[ 0 ][ j1 ] );
+			else M.tri( centre, rows[ 0 ][ j1 ], rows[ 0 ][ j ] );
+			for ( let k = 0; k < nR - 1; k ++ ) {
+
+				const a = rows[ k ][ j ], b = rows[ k ][ j1 ], c = rows[ k + 1 ][ j1 ], d = rows[ k + 1 ][ j ];
+				if ( outer ) { M.tri( a, d, b ); M.tri( b, d, c ); } else { M.tri( a, b, d ); M.tri( b, c, d ); }
+
+			}
+
+		}
+		return rows[ nR - 1 ];
+
+	};
+	const out = surface( true ), inner = surface( false );
+	// the margin's rim, facing out and down
+	for ( let j = 0; j < nA; j ++ ) {
+
+		const j1 = ( j + 1 ) % nA;
+		M.tri( out[ j ], inner[ j ], out[ j1 ] );
+		M.tri( out[ j1 ], inner[ j ], inner[ j1 ] );
+
+	}
+	// the oral arms, perradial, hanging from the manubrium: frilled ribbons, each face its own
+	const n = 6;
+	for ( let i = 0; i < 4; i ++ ) {
+
+		const a = i / 4 * TAU, ux = Math.sin( a ), uz = Math.cos( a );
+		for ( const face of [ 1, - 1 ] ) {
+
+			const rows: [ number, number ][] = [];
+			for ( let k = 0; k <= n; k ++ ) {
+
+				const t = k / n, len = 0.34;
+				const r = 0.03 + 0.06 * t, y = 0.02 - len * t;
+				const half = 0.05 * ( 1 - 0.5 * t ) + 0.015 * Math.sin( t * 9 + i );
+				// the ribbon lies across the radial direction
+				const cx = ux * r, cz = uz * r, sx = uz * half, sz = - ux * half;
+				rows.push( [
+					M.v( cx - sx, y, cz - sz, t, PART.ORAL_ARM, i, face ),
+					M.v( cx + sx, y, cz + sz, t, PART.ORAL_ARM, i, face ),
+				] );
+
+			}
+			for ( let k = 0; k < n; k ++ ) {
+
+				const [ a0, b0 ] = rows[ k ], [ a1, b1 ] = rows[ k + 1 ];
+				if ( face > 0 ) M.quad( a0, b0, b1, a1 ); else M.quad( b0, a0, a1, b1 );
+
+			}
+
+		}
+
+	}
 	return M.build();
 
 }

@@ -5,6 +5,7 @@ import { displacementUniforms } from './vegetation/Displacement.ts';
 import { ABSORPTION, BACKSCATTER, FORWARD_ANGLE, FORWARD_SCATTER, SCATTER } from './ocean/SeaOptics.ts';
 import type { Look } from './look/Look.ts';
 import { onSceneDispose } from './SceneDispose.ts';
+import { createSwimmerShadows } from './lighting/SwimmerShadows.ts';
 
 // Uniforms shared by the water, the terrain and the vegetation, installed by one scene at a time.
 //
@@ -55,6 +56,8 @@ export const createShared = ( look: SharedTables ) => ( {
 	forwardScatter: uniform( FORWARD_SCATTER ),
 	forwardAngle: uniform( FORWARD_ANGLE ),
 	sunIntoWater: uniform( 1 ), // 1 - Fresnel of the sun at the surface
+	// what swims in the water, as the capsules that shade the key under it (lighting/SwimmerShadows.ts)
+	swimmerShadows: createSwimmerShadows(),
 	// Storm strength: whitecaps on breaking crests (0 calm).
 	storm: uniform( 0 ),
 	muSun: uniform( 1 ), // cosine of the refracted sun below the surface

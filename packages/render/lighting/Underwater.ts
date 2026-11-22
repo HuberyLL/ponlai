@@ -13,6 +13,7 @@ import type { Shared } from '../shared.ts';
 import type { WaveMaps } from '../ocean/WaveMaps.ts';
 import { refractedSunDirectionNode, refractedSunBeamScaleNode } from './RefractedSun.ts';
 import { GroundBounceLightingModel } from './GroundBounce.ts';
+import { swimmerShade } from './SwimmerShadows.ts';
 import { meterAmbient } from './MeterLight.ts';
 import { ambient as grade } from './AmbientGrade.ts';
 import type { AmbientReceiver } from './AmbientSample.ts';
@@ -28,7 +29,8 @@ type B = THREE.Node<'bool'>;
 // light refracted at the mean surface and carried down the water column to the point under the long
 // waves' surface (Beer-Lambert over the slant path, the share that enters the water and the beam's
 // change of area), faded in over the first 8 cm, its light gathered and spread by the waves above
-// into the caustics (WaveMaps.ts `causticsAt`, mean 1); and the ambient and specular light under
+// into the caustics (WaveMaps.ts `causticsAt`, mean 1) and shaded by what swims above it
+// (SwimmerShadows.ts); and the ambient and specular light under
 // the mean level, dimmer with the depth, faded in over the first 10 cm. Both paths attenuate by
 // kappa = a + bb (shared.ts `sigA`, `bb`): the light scattered forward stays in the downwelling
 // stream, so only absorption and backscattering take it away (Lee et al. 1999, Appl. Opt. 38:3831).
@@ -106,12 +108,15 @@ export interface UnderwaterOptions {
 	// the key's multiplier above the water (the terrain's canopy shadowing); 1 without one
 	aboveSun?: V3;
 	// the specular's share below the surface, the material's reflectance against water over its
-	// reflectance against air; 1 without one
-	specular?: number;
+	// reflectance against air (a node where it changes over the surface); 1 without one
+	specular?: number | F;
+	// whether the swimmers' shadows shade the key here (lighting/SwimmerShadows.ts); true but on
+	// the swimmers themselves, each of which would shade itself
+	swimmerShadows?: boolean;
 }
 
 /** The underwater light at `positionWorld` (see the header). */
-export function underwaterLight( shared: Shared, waveMaps: WaveMaps, { aboveSun, specular = 1 }: UnderwaterOptions = {} ): UnderwaterLight {
+export function underwaterLight( shared: Shared, waveMaps: WaveMaps, { aboveSun, specular = 1, swimmerShadows = true }: UnderwaterOptions = {} ): UnderwaterLight {
 
 	// the water above this point: the long waves' surface for the key, the mean level for the
 	// ambient (the wave maps; a level sea above the water's reach)
@@ -136,7 +141,8 @@ export function underwaterLight( shared: Shared, waveMaps: WaveMaps, { aboveSun,
 
 			const path = exp( sigT.negate().mul( dSun ).div( max( waterSun.y, 0.15 ) ) );
 			const caustics = waveMaps.causticsAt( p, dSun, waves.yz );
-			const beam = path.mul( shared.sunIntoWater ).mul( refractedSunBeamScaleNode( shared.sunDir ) ).mul( caustics );
+			let beam = path.mul( shared.sunIntoWater ).mul( refractedSunBeamScaleNode( shared.sunDir ) ).mul( caustics );
+			if ( swimmerShadows ) beam = beam.mul( swimmerShade( shared.swimmerShadows, p, waterSun, shared.forwardAngle.mul( 2 ) ) );
 			att.assign( mix( att, beam, smoothstep( 0, 0.08, dSun ) ) );
 
 		} );
@@ -149,7 +155,7 @@ export function underwaterLight( shared: Shared, waveMaps: WaveMaps, { aboveSun,
 	const below = smoothstep( 0, 0.1, depth ).toVar();
 	const ambient = mix( vec3( 1 ), ambAtt, below );
 	const diffuse = mix( vec3( 1 ), ambAtt.mul( grade.seaSky ), below );
-	return { under, depth: dW, sun, sunView: waterSunView, ambient, diffuse, specular: mix( float( 1 ), float( specular ), below ) };
+	return { under, depth: dW, sun, sunView: waterSunView, ambient, diffuse, specular: mix( float( 1 ), typeof specular === 'number' ? float( specular ) : specular, below ) };
 
 }
 
