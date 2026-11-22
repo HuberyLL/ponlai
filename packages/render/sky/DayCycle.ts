@@ -253,7 +253,7 @@ export function duskIn( windows: DayWindows, elevation: number, window: readonly
 	return inStops( t < ease ? ease * x * x * ( 2 - x ) : t, 2 ** - depth, cloud );
 
 }
-/** The display's night weight (Pipeline NIGHT: the tone, the grade, the bloom; the flying fish), at
+/** The display's night weight (Pipeline NIGHT: the tone, the grade, the bloom), at
  * `daylight` (the snapshot's) and the sun's `elevation` (degrees), `rising` or setting, under a
  * clouded share `cloud` (Weather.ts `cloudedShare`). Under cloud none through the afterglow, all of
  * it once the daylight has gone; a clear sky's comes in from -7 to -11 degrees after sunset and

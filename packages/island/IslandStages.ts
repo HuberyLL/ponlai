@@ -24,8 +24,8 @@ import * as THREE from 'three/webgpu';
 import { FreeCameraControls } from './camera/FreeCameraControls.ts';
 import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { FramingGlide, IslandTurn, landOutline } from './camera/IslandFraming.ts';
-import { Wenyao } from './life/Wenyao.ts';
 import { FallingLeaves } from './world/FallingLeaves.ts';
+import { SeaLife } from './life/SeaLife.ts';
 import { bakeGroundTextures } from './materials/GroundTextures.ts';
 import { buildWorldMeshes } from './world/World.ts';
 import type { WorldData } from './world/types.ts';
@@ -102,12 +102,13 @@ export interface IslandParts {
 	fields: WorldFields;
 	walk: [ number, number ][];
 	world: WorldMeshes;
-	wenyao: Wenyao | null;
 	chunkView: { borders: boolean; lines: THREE.LineSegments | null };
 	shownData: WorldData;
 	showChunkBorders: ( on: boolean ) => void;
 	grass: THREE.Group;
 	yunpeng: Yunpeng;
+	/** the sea's creatures round the island (life/SeaLife.ts) */
+	seaLife: SeaLife;
 	bamboo: Bamboo;
 	heldOpaque: THREE.Box3[];
 	/** the bamboo's box and its groves' mean free path: the volume the sea's reflection crosses as
@@ -323,20 +324,19 @@ export function createLand( render: RenderParts, island: IslandParts, { landOpti
 
 }
 
-/** The world's meshes, and the wenyao over the sea (under ?wenyao). */
+/** The world's meshes. */
 export function createWorld( render: RenderParts, island: IslandParts ) {
 
-	const { scene, wind, fft, waveMaps } = render;
+	const { scene, wind, waveMaps, fft } = render;
 	const { textures, data, fields } = island;
 	island.walk = walkPoints( data.walk );
 	const world = buildWorldMeshes( data, textures, shared, waveMaps, fields );
 	island.world = world;
 	scene.add( world.group );
-	// The wenyao's schools off the island (life/Wenyao.ts): swimmers (Refraction.ts markSwimmer), which
-	// the opaque pass draws where the eye sees them through the waves (Water.ts swimmerSway). Parked:
-	// built only under ?wenyao.
-	island.wenyao = params.has( 'wenyao' ) ? new Wenyao( data, shared, waveMaps, fft ) : null;
-	if ( island.wenyao ) scene.add( island.wenyao.mesh );
+	// The sea's creatures (life/SeaLife.ts): swimmers (Refraction.ts markSwimmer), functions of the
+	// land and the scene clock; a Grow lays them out again (createGrowth, onSwap).
+	island.seaLife = new SeaLife( data, shared, waveMaps, fft, render.simTime );
+	scene.add( island.seaLife.group );
 	island.fallingLeaves = TEST_MODE ? null : new FallingLeaves( { shared, fields, soil: textures.soil, wind, atlas: singleLeaf() } );
 
 }
@@ -509,7 +509,7 @@ export function holdOpaque( render: RenderParts, island: IslandParts, box: THREE
 export function createGrowth( render: RenderParts, island: IslandParts, { landOptions, game, framing }: { landOptions: { worldSeed: number; step: number }; game: GrowthGame | null; framing: IslandFraming } ) {
 
 	const { renderer, scene, groundBounce, shoreWaves, ambient, refractedSun } = render;
-	const { controls, worldCache, data, fields, world, wenyao, chunkView, showChunkBorders, heldOpaque, plants } = island;
+	const { controls, worldCache, data, fields, world, chunkView, showChunkBorders, heldOpaque, plants } = island;
 	const { t0, measureLand, setLand, showWindArrows, vegetation, setLocalSources, holdPlants, setSunCasters } = staged( island );
 	const { poseIslandView, holdsFraming, followFraming } = framing;
 
@@ -545,8 +545,8 @@ export function createGrowth( render: RenderParts, island: IslandParts, { landOp
 			island.islandMaxDistance = controls.maxDistance;
 			poseIslandView( framing.viewOptions, island.islandTurned, island.islandZoom );
 			if ( follow ) followFraming();
+			island.seaLife.setWorld( version );
 			island.shownData = version;
-			wenyao?.setWorld( version );
 			islandEvent( 'world swap' );
 
 		},
@@ -611,7 +611,7 @@ export interface IslandFrame {
 export function createIslandFrame( render: RenderParts, island: IslandParts, { framing, view }: { framing: IslandFraming; view: { readonly camera: string } } ): IslandFrame {
 
 	const { renderer, scene, camera, sky, sun } = render;
-	const { controls, framingGlide, islandTurn, freeControls, trample, wenyao, growth } = island;
+	const { controls, framingGlide, islandTurn, freeControls, trample, growth } = island;
 	const { poseIslandView, followFraming } = framing;
 	return {
 
@@ -656,8 +656,7 @@ export function createIslandFrame( render: RenderParts, island: IslandParts, { f
 
 		advanceLife( dt ) {
 
-			// (their schools take flight more often by night)
-			wenyao?.update( render.paused ? 0 : dt, sky.grade.night );
+			island.seaLife.update( render.simTime, render.paused ? 0 : dt );
 			island.fallingLeaves?.update( render.simTime, freeControls.enabled ? camera.position : controls.target, camera.position );
 
 		},
@@ -679,13 +678,11 @@ export function createIslandFrame( render: RenderParts, island: IslandParts, { f
 }
 
 /** Registers what a scene jump clears of the island's (post/SceneHistory.ts): the islander's
- * clips, the wenyao's schools and the falling leaves, each read when the jump comes (the islander
- * and the leaves are made late, or not at all). */
+ * clips and the falling leaves, each read when the jump comes (the islander and the leaves are
+ * made late, or not at all). */
 export function registerIslandHistories( render: RenderParts, island: IslandParts ) {
 
-	const { wenyao } = island;
 	render.history.onJump( 'islanders', () => island.characters?.reset() );
-	render.history.onJump( 'wenyao', () => wenyao?.reset() );
 	render.history.onJump( 'falling leaves', () => island.fallingLeaves?.reset() );
 
 }

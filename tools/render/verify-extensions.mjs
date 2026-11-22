@@ -61,13 +61,13 @@ import { ROOT } from '../kit/root.mjs';
 // The registries' owner files (under packages/render/) and the scene's words none of their code may hold.
 const PLANTS = [ 'grass', 'yunpeng', 'bamboo', 'meadow', 'culms' ];
 const OWNERS = {
-	'Extensions.ts': [ ...PLANTS, 'leaves', 'wenyao', 'islander', 'game' ],
+	'Extensions.ts': [ ...PLANTS, 'leaves', 'sealife', 'islander', 'game' ],
 	'vegetation/Registry.ts': [ ...PLANTS, 'leaves' ],
 	'vegetation/DefaultPlant.ts': [ 'grass', 'yunpeng', 'bamboo', 'meadow', 'culms' ],
 	'lighting/LocalLights.ts': [ ...PLANTS, 'leaves', 'lantern' ],
 	'post/ExtraPass.ts': [ ...PLANTS, 'leaves', 'fallingLeaves', 'leavesPass' ],
 	'post/SceneEvents.ts': [ 'game', 'swap', 'approach', 'world', 'island' ],
-	'post/SceneHistory.ts': [ ...PLANTS, 'leaves', 'wenyao', 'islander', 'islanders', 'characters', 'lightning', 'storm', 'wind', 'haze', 'bounce', 'pacer' ],
+	'post/SceneHistory.ts': [ ...PLANTS, 'leaves', 'sealife', 'islander', 'islanders', 'characters', 'lightning', 'storm', 'wind', 'haze', 'bounce', 'pacer' ],
 	// (the kinds' own names, FIT_CLASSES, are the view's: grass, leaves, wood, figure)
 	'debug/Classes.ts': [ 'yunpeng', 'bamboo', 'culms', 'rocks', 'seabed', 'feathers', 'weave', 'hanming', 'topY', 'terrainVariant' ],
 };

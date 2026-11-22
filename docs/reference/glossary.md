@@ -118,6 +118,12 @@ Scene jump
   `packages/render/assemble/SceneJump.ts`). It clears every state the earlier scene left behind, so
   the page then holds what a fresh load of the same URL holds.
 
+Sea life
+: The ordinary fauna of the sea round the island, fish, rays, turtles, dolphins and a whale shark,
+  each kind placed from the land and moved as a function of the scene clock
+  (`packages/island/life/SeaLife.ts`;
+  [Life and islanders](../design/life-and-islanders.md#the-seas-life)).
+
 Settled
 : The page's signal that a paused frame is final (`settled`, `packages/render/post/Settled.ts`).
   Captures are taken once it is true.
@@ -138,11 +144,6 @@ Test mode
 : A paused page rendered with MSAA, with every history-dependent effect frozen or off, and captured
   once `settled` is true. In the test mode, a paused frame is bit-identical between runs and equals
   a fresh load's frame, except in the held region ([Test mode](test-mode.md)).
-
-Wenyao
-: The flying fish of the old texts, in schools that break from the swell offshore and glide
-  (`packages/island/life/Wenyao.ts`;
-  [Life and islanders](../design/life-and-islanders.md#the-cast)).
 
 Yunpeng
 : A herb of the old texts: single clumps of straight white stalks far apart on the open meadow,

@@ -17,7 +17,6 @@ export const ISLAND_SETTINGS = {
 	grow: { type: 'integer', default: 'the save\'s pieces in the game, 0 under `review`', range: [ 0, Infinity ], about: 'growth steps after the starting island (up to `GROWTH.maxSteps`)' },
 	worldCache: { type: 'choice', default: 'on', values: [ 'on', 'off', '0', '' ], about: '`off` or `0`: generates every chunk instead of reading the browser\'s cache' },
 	bamboo: { type: 'list', default: 'the default groves', about: 'another look of the bamboo: `cover,height`' },
-	wenyao: { type: 'switch', default: 'off', about: 'shows the wenyao, the schools of flying fish off the island (parked)' },
 	approach: { type: 'number', default: '0', range: [ 0, 1 ], about: 'the progress toward the next piece, its shoal put on at once' },
 	// quality, anti-aliasing and the frame
 	terrainHex: { type: 'choice', default: 'on', values: [ '0' ], about: '`0`: the cliff\'s plain triplanar tiling' },

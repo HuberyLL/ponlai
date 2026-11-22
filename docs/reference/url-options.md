@@ -96,8 +96,6 @@ Contents:
 - `terrainHex=0` gives the cliff plain triplanar tiling and smooth layer masks. The option is read
   only when the material is built. For an A/B inside one page, swap each cliff material to its
   other variant through `material.userData.terrainVariant`, as `TerrainMaterial.ts` shows.
-- `wenyao` builds the wenyao, the schools of flying fish off the island
-  (`packages/island/life/Wenyao.ts`). The scene leaves them out while they are parked.
 - `chunkBorders` shows the world's 16 m chunks as lines above the sea and the meadow, so you can
   tell a seam from a chunk border. The GUI's Ground folder control `chunk borders` does the same.
 
@@ -816,7 +814,6 @@ the two equal).
 | `grow` | a whole number from 0 | the save's pieces in the game, 0 under `review` | island | growth steps after the starting island (up to `GROWTH.maxSteps`) |
 | `worldCache` | `on`, `off`, `0`, named bare | on | island | `off` or `0`: generates every chunk instead of reading the browser's cache |
 | `bamboo` | a comma list | the default groves | island | another look of the bamboo: `cover,height` |
-| `wenyao` | named (its value unread) | off | island | shows the wenyao, the schools of flying fish off the island (parked) |
 | `approach` | a number, 0 to 1 | 0 | island | the progress toward the next piece, its shoal put on at once |
 | `terrainHex` | `0` | on | island | `0`: the cliff's plain triplanar tiling |
 | `chunkBorders` | named (its value unread) | off | island | shows the world's chunks as lines |
