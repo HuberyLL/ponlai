@@ -85,6 +85,7 @@ Contents:
 | Whether your own definition registers at each of the render pipeline's extension points | `tools/render/verify-extensions.mjs` |
 | Whether each system reads its own look tables and changes no other system's | `tools/render/verify-look-params.mjs` |
 | The day cycle's clock, sun, moon, stars and exposure, on the CPU | `tools/render/verify-day-cycle.mjs` |
+| The graphics menu's options against the quality tiers, the stored settings and their precedence, on the CPU | `tools/render/verify-graphics-options.mjs` |
 | The weather's state, transitions, wind and auto chain, on the CPU | `tools/render/verify-weather-state.mjs` |
 | The wind's state and clocks and the plants' and sea's readings of it, on the CPU | `tools/render/verify-wind.mjs` |
 | The local lights' clusters against a replica of the kernel, on the CPU | `tools/render/verify-local-lights.mjs` |

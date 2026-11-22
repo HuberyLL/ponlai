@@ -17,7 +17,7 @@ const params = settings;
 
 // A resumed game (game/save.ts `resumesSave`: the app keeps the save, or `load`) stands on the
 // island its save grew: its piece count is the land's step, unless the `grow` option is given.
-const pieces = params.has( 'game' ) && ! params.has( 'grow' ) && resumesSave( params ) ? savedPieces( readSlot() ) ?? 0 : 0;
+const pieces = ! params.has( 'review' ) && ! params.has( 'grow' ) && resumesSave( params ) ? savedPieces( readSlot() ) ?? 0 : 0;
 
 /** The land's options (the world's seed and its step) and the world's job, which main.ts awaits. */
 export const { landOptions, worldJob } = startWorld( { pieces, webgpu: 'gpu' in navigator } );

@@ -14,6 +14,10 @@ export interface SceneStore {
 	setItem( key: string, value: string ): void;
 }
 
+/** The stages a load passes, in order, as `startScene` reaches them (a loading screen's progress). */
+export const LOAD_STAGES = [ 'renderer', 'sky', 'ground', 'world', 'plants', 'water', 'haze', 'warm-up', 'loop' ] as const;
+export type LoadStage = typeof LOAD_STAGES[ number ];
+
 export interface SceneHost {
 	/** the element the canvas is put in */
 	readonly canvasHost: HTMLElement;
@@ -33,6 +37,8 @@ export interface SceneHost {
 	readonly automated: boolean;
 	/** shows a line of the load's progress on the loading screen */
 	status( text: string ): void;
+	/** the load has passed `stage` (a loading screen's real progress; optional) */
+	progress?( stage: LoadStage ): void;
 	/** lifts the loading screen, at once when `instant` (a paused page), or with its fade */
 	liftLoading( instant: boolean ): void;
 	/** whether the loading screen no longer covers the canvas: there is none, or its fade has ended */

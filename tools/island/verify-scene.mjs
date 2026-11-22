@@ -31,6 +31,7 @@ import { acquireGpuLock } from '../kit/gpu-lock.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import { renderedFrames } from '../kit/page-eval.mjs';
+import { reviewUrl } from '../kit/page-query.mjs';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const out = 'artifacts/verification';
@@ -50,7 +51,7 @@ try {
 	page.on( 'console', ( m ) => { if ( m.type() === 'error' ) errors.push( m.text() ); } );
 	page.on( 'response', ( r ) => { if ( r.status() >= 400 ) failures.push( `${ r.status() } ${ r.url() }` ); } );
 	page.on( 'requestfailed', ( r ) => failures.push( r.url() ) );
-	await page.goto( `${ base }/?debug&paused&t=12&dpr=1` );
+	await page.goto( reviewUrl( `${ base }/?debug&paused&t=12&dpr=1` ) );
 	await page.waitForFunction( () => window.__THREE_GAME_DIAGNOSTICS__?.frame > 150, null, { timeout: 60000 } );
 	const inspect = await page.evaluate( () => {
 		const s = window.__PONLAI__;
@@ -154,7 +155,7 @@ try {
 	// From a start nearer than the farthest zoom (`dist`, m) the wheel zooms out, to 70 m at most, and
 	// back in no nearer than the start.
 	const loadAt = async ( query ) => {
-		await page.goto( `${ base }/?debug&paused&t=12&dpr=1&${ query }` );
+		await page.goto( reviewUrl( `${ base }/?debug&paused&t=12&dpr=1&${ query }` ) );
 		await page.waitForFunction( () => window.__THREE_GAME_DIAGNOSTICS__?.frame > 150, null, { timeout: 60000 } );
 		await drawn();
 	};
@@ -181,7 +182,7 @@ try {
 	assert.ok( still( held, await pose() ), 'cameraInput=off: a drag, W and the wheel leave the island camera where it is' );
 	checks.push( 'cameraInput=off: a left drag, W and the wheel leave the island camera where it is' );
 	if ( production ) {
-		await page.goto( base );
+		await page.goto( reviewUrl( base ) );
 		await page.waitForFunction( () => document.getElementById( 'loading' )?.classList.contains( 'done' ), null, { timeout: 60000 } );
 		assert.equal( await page.evaluate( () => window.__PONLAI__ === undefined && window.__THREE_GAME_DIAGNOSTICS__ === undefined ), true );
 		checks.push( 'Production entry renders without exposing development scene handles' );

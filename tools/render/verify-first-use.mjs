@@ -83,6 +83,7 @@ import { acquireGpuLock } from '../kit/gpu-lock.mjs';
 import { launchCapture } from '../kit/capture-browser.mjs';
 import { installScript } from './pipeline-trace.mjs';
 import { installWaitFrames } from '../kit/page-eval.mjs';
+import { reviewUrl } from '../kit/page-query.mjs';
 
 const args = process.argv.slice( 2 );
 const opt = ( name, fallback = null ) => {
@@ -213,7 +214,7 @@ async function runOne( quality, aa ) {
 		page.on( 'pageerror', ( e ) => errors.push( `pageerror: ${ e.message }` ) );
 		page.on( 'console', ( m ) => { if ( m.type() === 'error' ) errors.push( `console: ${ m.text() }` ); } );
 		await page.addInitScript( COUNTER );
-		await page.goto( result.url );
+		await page.goto( reviewUrl( result.url ) );
 		await page.waitForFunction( () => window.__PONLAI__?.renderer?.info && document.getElementById( 'loading' )?.classList.contains( 'done' ), null, { timeout: 180000, polling: 'raf' } );
 		const ready = ms( t0 );
 		// the first frame builds what nothing warmed (the world's materials, the shadow maps' nodes);

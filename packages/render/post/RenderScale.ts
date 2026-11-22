@@ -17,8 +17,10 @@ import type { RenderScaleRule } from '../Quality.ts';
 //   (2560x1440 at 1x) renders natively and drops to about 1080p when busy. A load starts at,
 //   and a paused or pinned page holds, the baseline, capped by the maximum (a display of 2K or fewer
 //   pixels renders natively there). The floor is at most `floorShare` of the maximum per axis, so a
-//   small display's floor stays below its maximum. `dynamicRange` gives the three; this returns the
-//   baseline as the nominal;
+//   small display's floor stays below its maximum. The settings menu's render resolution sets the
+//   baseline as a share of the maximum per axis instead (`share`), and its dynamic resolution off
+//   pins the render there (`pinned`). `dynamicRange` gives the three; this returns the baseline as
+//   the nominal;
 // - medium and low (parked, Quality.ts): a budget of rendered pixels (1600x900 and 1280x720 today);
 //   `?dpr` and the GUI's full resolution lift it.
 // The canvas always matches the display (up to OUTPUT_PIXEL_RATIO_CAP): a render below it is
@@ -60,8 +62,12 @@ export function dynamicRange( width: number, height: number, ratio: number, rule
 	const { dynamic } = rule;
 	const area = Math.max( width * height, 1 );
 	const max = Math.min( ratio, cap, dynamic.max );
-	const floor = Math.min( Math.sqrt( dynamic.floor / area ), dynamic.floorShare * max );
-	const baseline = Math.min( Math.max( Math.sqrt( dynamic.baseline / area ), floor ), max );
+	const floorAt = Math.min( Math.sqrt( dynamic.floor / area ), dynamic.floorShare * max );
+	// a share below the floor lowers the floor with it, so the dynamic scale never climbs above the
+	// player's resolution to reach its own floor
+	const floor = dynamic.share > 0 ? Math.min( floorAt, dynamic.share * max ) : floorAt;
+	// (a share of the maximum, the settings menu's render resolution, is taken as it is: below the floor too)
+	const baseline = dynamic.share > 0 ? Math.min( dynamic.share * max, max ) : Math.min( Math.max( Math.sqrt( dynamic.baseline / area ), floor ), max );
 	return { max, baseline, floor };
 
 }

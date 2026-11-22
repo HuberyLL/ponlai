@@ -36,6 +36,7 @@ import { acquireGpuLock } from '../kit/gpu-lock.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { SCENE_RADIANCE_SCALE, SUN_DISPLAY_RADIUS, SUN_PROJECTED_SOLID_ANGLE } from '../../packages/render/lighting/Radiometry.ts';
+import { reviewUrl } from '../kit/page-query.mjs';
 
 assert.ok( SUN_PROJECTED_SOLID_ANGLE > 0 );
 const errors = [];
@@ -54,7 +55,7 @@ try {
 	page.on( 'pageerror', e => errors.push( e.message ) );
 	page.on( 'console', m => { if ( m.type() === 'error' ) errors.push( m.text() ); } );
 	page.on( 'requestfailed', r => errors.push( r.url() ) );
-	await page.goto( `${ process.argv[ 2 ] || 'http://127.0.0.1:5190' }/?debug&paused&t=12&dpr=1` );
+	await page.goto( reviewUrl( `${ process.argv[ 2 ] || 'http://127.0.0.1:5190' }/?debug&paused&t=12&dpr=1` ) );
 	await page.waitForFunction( () => window.__PONLAI__?.applySun && window.__THREE_GAME_DIAGNOSTICS__?.frame > 30, null, { timeout: 90000 } );
 	const measurements = await page.evaluate( async ( displayRadius ) => {
 

@@ -203,7 +203,7 @@ for ( const [ name, spec ] of [ ...Object.entries( SETTINGS ), ...Object.entries
 const html = readFileSync( path.join( ROOT, 'index.html' ), 'utf8' );
 if ( ! /<script[^>]*\bsrc="\/app\/Boot\.ts"/.test( html ) ) failures.push( 'index.html: does not load /app/Boot.ts as its script' );
 const boot = readFileSync( path.join( ROOT, 'app', 'Boot.ts' ), 'utf8' ).replace( /^\s*\/\/.*$/gm, '' );
-const install = boot.search( /^import '\.\/PageSettings\.ts';$/m ), page = boot.search( /^await import\( '\.\/main\.ts' \);$/m );
+const install = boot.search( /^import '\.\/PageSettings\.ts';$/m ), page = boot.search( /^\s*await import\( '\.\/main\.ts' \);$/m );
 if ( install < 0 || page < 0 || install > page ) failures.push( 'app/Boot.ts: must import \'./PageSettings.ts\' first, then `await import( \'./main.ts\' )`' );
 if ( /^import[^;]*'\.\/main\.ts'/m.test( boot ) ) failures.push( 'app/Boot.ts: imports main.ts statically (its shared chunks would load before the settings are installed)' );
 

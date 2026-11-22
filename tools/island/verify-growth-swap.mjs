@@ -98,6 +98,7 @@ import { launchCapture, waitForStable, pngCapturer, stopLoop, startLoop, decodeP
 import { leaseGpuLock, releaseGpuLock } from '../kit/gpu-lock.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
 import { ROOT } from '../kit/root.mjs';
+import { reviewUrl } from '../kit/page-query.mjs';
 
 const LABEL = 'verify-growth-swap';
 const MEMORY_TOLERANCE = 2;
@@ -204,7 +205,7 @@ async function rendering( page, fn ) {
 async function loadPage( page, url ) {
 
 	const t = Date.now();
-	await page.goto( url, { waitUntil: 'domcontentloaded', timeout: timeout * 5 } );
+	await page.goto( reviewUrl( url ), { waitUntil: 'domcontentloaded', timeout: timeout * 5 } );
 	await page.waitForFunction( () => window.__PONLAI_WORLD__?.ready || ( ! window.__PONLAI_WORLD__ && window.__PONLAI_GPU_GATE__?.asked ),
 		null, { timeout: timeout * 5, polling: 100 } );
 	const worldMs = Date.now() - t;

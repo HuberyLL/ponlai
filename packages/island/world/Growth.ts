@@ -88,7 +88,7 @@ import { SeabedRise } from './SeabedRise.ts';
 //   `approach` and `approachNow` start the generation first, so a page that only moves the GUI's
 //   Approach slider gets a pending piece. Its writes count in `work` (stage 'rise').
 
-/** What the growth tells the game (?game): the pending piece once it is ready (`setComing`), the
+/** What the growth tells the game: the pending piece once it is ready (`setComing`), the
  * new land after a swap (`setIsland`), each with the world's chunks on that land. */
 export interface GrowthGame {
 	setComing( land: LandLattice, chunks: readonly ChunkData[] ): void;
@@ -108,7 +108,7 @@ export interface GrowthPage<M = unknown> {
 	ambient: AmbientVolume;
 	rain: Rain;
 	characters: Villagers | null;
-	/** the game (?game) */
+	/** the game (null on the art-review page) */
 	game: GrowthGame | null;
 	/** the app's own land-dependent state, in the swap's frame */
 	/** what the app measures of a land (its box and framing), ahead in a step of the preparation */

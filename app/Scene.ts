@@ -13,7 +13,7 @@
 //   place draws what a fresh load of that step draws); the land's `seed`, generated once, must
 //   equal the page's.
 // - The GUI's time preset follows the query's.
-// (The art-review page only: under ?game the game owns the clock.)
+// (The art-review page only: in the game the game owns the clock.)
 import type { RenderParts, SceneJumpContent } from '../packages/render/index.ts';
 import { registerIslandHistories, type IslandParts } from '../packages/island/index.ts';
 import type { PageParts } from './Page.ts';

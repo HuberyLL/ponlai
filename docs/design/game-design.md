@@ -1,6 +1,6 @@
 # Game design
 
-What the game behind `?game` is, the decisions behind it, and what to avoid. Read this page before
+What the game (the page at `/`) is, the decisions behind it, and what to avoid. Read this page before
 gameplay work; change it when a decision changes. Nothing is built ahead of it. How the code carries
 a decision out is in the header comment of the module that owns it; where the code lives is in
 [Architecture](../../ARCHITECTURE.md#code-map). What the player sees on screen is in

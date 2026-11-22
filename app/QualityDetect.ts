@@ -80,8 +80,8 @@ export interface AutoQualityRecord {
 
 export interface QualityChoice {
 	tier: QualityTier;
-	// how it was chosen: ?quality, a remembered measurement, a measurement on this load, the default
-	source: 'url' | 'auto' | 'detect' | 'default';
+	// how it was chosen: ?quality, the player's graphics settings, a remembered measurement, a measurement on this load, the default
+	source: 'url' | 'player' | 'auto' | 'detect' | 'default';
 	why: string;
 	record: AutoQualityRecord | null;
 	adapter: string;
@@ -126,15 +126,46 @@ export function forgetQuality(): void {
 
 }
 
-/** The tier this load builds: `?quality` (any tier, parked ones included), else high. The GPU is
- * not measured while the lower tiers are parked (`source` is never 'detect'). */
-export function chooseQuality( params: PageSettingsQuery ): QualityChoice {
+/** A short, stable name of the GPU adapter (vendor, architecture, device, description), which a
+ * remembered measurement is kept for; '' where the browser has no WebGPU adapter to describe. */
+export async function adapterName(): Promise<string> {
+
+	try {
+
+		const gpu = ( navigator as unknown as { gpu?: { requestAdapter( o: object ): Promise<{ info?: Record<string, string> } | null> } } ).gpu;
+		const adapter = await gpu?.requestAdapter( { powerPreference: 'high-performance' } );
+		const info = adapter?.info;
+		return info ? [ info.vendor, info.architecture, info.device, info.description ].join( '/' ) : '';
+
+	} catch {
+
+		return '';
+
+	}
+
+}
+
+/** The tier this load builds, and whether it measures the GPU (`source === 'detect'`): `?quality`,
+ * else the player's graphics settings (`stored`, GraphicsSettings.ts), else a measurement remembered
+ * for this adapter, else high, measured on a first visit (not in an automated browser, on a paused
+ * page or under `autoQuality=off`; `autoQuality=detect` measures again). */
+export function chooseQuality( params: PageSettingsQuery, stored: QualityTier | null = null, adapter = '', automated = false ): QualityChoice {
 
 	const slow = Math.max( Number( params.get( 'autoQualitySlow' ) ?? 1 ) || 1, 0.01 );
-	const base = { record: null, adapter: '', slow };
+	const base = { record: null, adapter, slow };
 	const requested = params.get( 'quality' );
 	if ( isQualityTier( requested ) ) return { ...base, tier: requested, source: 'url', why: 'set by ?quality' };
-	return { ...base, tier: DEFAULT_QUALITY, source: 'default', why: 'the only active tier (medium and low parked)' };
+	const mode = params.get( 'autoQuality' );
+	const force = mode === 'detect';
+	if ( stored !== null && ! force ) return { ...base, tier: stored, source: 'player', why: 'the player\'s graphics settings' };
+	if ( mode === 'off' ) return { ...base, tier: DEFAULT_QUALITY, source: 'default', why: 'autoQuality=off' };
+	const record = readRecord();
+	if ( ! force && record && record.adapter === adapter && record.slow === slow ) return { tier: record.tier, source: 'auto', why: `measured on this GPU ${ record.at.slice( 0, 10 ) }`, record, adapter, slow };
+	if ( ! force && automated ) return { ...base, tier: DEFAULT_QUALITY, source: 'default', why: 'automated browser: not measured (autoQuality=detect measures)' };
+	// a paused scene never switches tier: it keeps the default until a running load measures
+	if ( params.has( 'paused' ) ) return { ...base, tier: DEFAULT_QUALITY, source: 'default', why: 'paused: not measured' };
+	const why = ! record ? 'first visit: measuring' : record.adapter !== adapter ? 'GPU changed: measuring' : 'measuring';
+	return { ...base, tier: DEFAULT_QUALITY, source: 'detect', why };
 
 }
 

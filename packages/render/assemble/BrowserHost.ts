@@ -7,7 +7,7 @@
 // its computed opacity is 0), and the page's globals on `window`. It is the render pipeline's one
 // module that reads the browser's globals for a scene (tools/repo/verify-layers.mjs, PAGE_NEEDS),
 // behind its own entry point (render/browser.ts) that only the app layer imports.
-import type { SceneHost, SceneStore } from './SceneHost.ts';
+import type { LoadStage, SceneHost, SceneStore } from './SceneHost.ts';
 
 export interface BrowserHostOptions {
 	/** the element the canvas goes in */
@@ -16,6 +16,8 @@ export interface BrowserHostOptions {
 	loading?: HTMLElement | null;
 	/** where the dynamic render scale remembers its scales: the page's local storage by default, null for nowhere */
 	store?: SceneStore | null;
+	/** each load stage passed (the loading screen's progress) */
+	onProgress?: ( stage: LoadStage ) => void;
 }
 
 /** The host of a scene that runs in this browser page. */
@@ -64,6 +66,11 @@ export function browserHost( options: BrowserHostOptions ): SceneHost {
 
 			const line = loading?.querySelector( 'span' );
 			if ( line ) line.textContent = text;
+
+		},
+		progress( stage ) {
+
+			options.onProgress?.( stage );
 
 		},
 		liftLoading( instant ) {

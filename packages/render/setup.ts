@@ -9,9 +9,13 @@
 // settings through it (tools/repo/verify-entry-points.mjs). A name is in one entry point only:
 // these are not in render/index.ts.
 export { ACTIVE_QUALITY, DEFAULT_QUALITY, QUALITY, QUALITY_TIERS, isQualityTier } from './Quality.ts';
-export type { QualityTier } from './Quality.ts';
+export type { QualityTier, QualityProfile } from './Quality.ts';
+export { GRAPHICS_OPTIONS, GRAPHICS_VERSION, choiceValues, presetRecord, readGraphicsRecord, resolveGraphics, withChoice } from './GraphicsOptions.ts';
+export type { GraphicsOption, GraphicsRecord } from './GraphicsOptions.ts';
 export { installSettings, mergeSettings, numberSetting, parseSettings, RENDER_SETTINGS, settingProblems, settingsFor } from './Settings.ts';
 export type { SettingName, SettingsQuery, SettingsTable } from './Settings.ts';
 export type { AmbientLook, AmbientRowLook, BloomKey, DayLook, DesaturationKey, DisplayLook, ExposureKey, ExposureLook, FullKey, HazeLook, LandSkyRow, LocalLightsLook, Look, MeadowCanopyLook, OcclusionLook, Rgb, SeaLook, SharingKey, SkyLook, WindLook } from './look/Look.ts';
 export { NEUTRAL_LOOK } from './look/NeutralLook.ts';
 export { renderPixelRatio } from './post/RenderScale.ts';
+export { LOAD_STAGES } from './assemble/SceneHost.ts';
+export type { LoadStage } from './assemble/SceneHost.ts';

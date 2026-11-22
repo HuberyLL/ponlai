@@ -65,7 +65,7 @@ its results, so it can check its own work.
 Ponlai is tuned and tested on the high quality preset at native 4K, in clear and fair weather at
 every time of day, from day through sunset to night. The other presets (`medium`, `low`) and
 weathers (`cloudy`, `overcast`, `rain`, `storm`, `fog`) still load, but they have not been tuned
-recently and may look worse or run slower. `?game` opens an early game prototype on the island.
+recently and may look worse or run slower. The page at `/` is an early game prototype on the island; `?review` shows the island alone.
 
 ## Quick start
 
@@ -85,9 +85,9 @@ Pages to try:
 
 | Address | What you see |
 | --- | --- |
-| <http://127.0.0.1:5190/?weather=fair&preset=sunset> | The island at sunset in fair weather |
-| <http://127.0.0.1:5190/?paused&t=12> | The scene paused at 12 seconds, as the tools capture it |
-| <http://127.0.0.1:5190/?game> | The game prototype |
+| <http://127.0.0.1:5190/> | The game: the title screen, then play |
+| <http://127.0.0.1:5190/?review&weather=fair&preset=sunset> | The art-review scene: the island at sunset in fair weather |
+| <http://127.0.0.1:5190/?review&paused&t=12> | The art-review scene paused at 12 seconds, as the tools capture it |
 | <http://127.0.0.1:5190/scenes.html?scene=ball> | A test scene without the island (`ball`, `empty`, `sea` or `plants`) |
 
 See [URL options](docs/reference/url-options.md) for every option.

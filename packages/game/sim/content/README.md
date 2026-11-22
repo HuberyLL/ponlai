@@ -1,6 +1,6 @@
 # Game content
 
-This folder holds the content of the simulation behind `?game`, and this page gives the steps for
+This folder holds the content of the simulation behind the game, and this page gives the steps for
 adding a piece of it. Why content is registered definitions that the core never names: [Rules across
 the
 layers](../../../../docs/reference/architecture-rules.md#rule-7-content-is-registered-definitions-the-core-names-none),

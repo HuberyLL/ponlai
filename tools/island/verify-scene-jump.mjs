@@ -112,6 +112,7 @@ import { waitForScene, waitForSettled, waitForStable, stableOptions, stopLoop } 
 import { viewTable } from '../kit/parity/tables.mjs';
 import { selectViews, viewQuery } from '../kit/parity/adhoc.mjs';
 import { ROOT } from '../kit/root.mjs';
+import { reviewUrl } from '../kit/page-query.mjs';
 
 // the views table capture-set's selection registers ad-hoc views into (adhoc.mjs)
 const { VIEWS, viewEval } = viewTable;
@@ -197,7 +198,7 @@ async function open( q ) {
 	const errors = [];
 	page.on( 'console', ( m ) => { if ( m.type() === 'error' ) errors.push( 'error: ' + m.text() ); } );
 	page.on( 'pageerror', ( e ) => errors.push( 'pageerror: ' + e.message ) );
-	await page.goto( `${ base }?${ q }` );
+	await page.goto( reviewUrl( `${ base }?${ q }` ) );
 	await page.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__, null, { timeout } );
 	return { page, errors };
 

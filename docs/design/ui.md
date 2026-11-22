@@ -1,7 +1,8 @@
 # Game UI (蜃光, "mirage light")
 
-The interface of `?game`: what the player sees over the scene, built in `packages/game/ui/`
-(`GameUi.ts` and its parts). This page is its spec: each decision says what it is, why, what to
+The interface of the game, the page at `/`: what the player sees over the scene, built in
+`packages/game/ui/` (`GameUi.ts` and its parts) and, for the screens around play,
+`packages/game/front/`. This page is its spec: each decision says what it is, why, what to
 avoid and how it shows on screen. How the code gets there is in each module's header comment. The
 game behind it: [Game design](game-design.md).
 
@@ -19,6 +20,11 @@ game behind it: [Game design](game-design.md).
   - [Speaking](#speaking)
   - [Build bar](#build-bar)
   - [沧海录, the record](#沧海录-the-record)
+- [The front end](#the-front-end)
+  - [Loading](#loading)
+  - [Title](#title)
+  - [Pause](#pause)
+  - [Settings](#settings)
 - [Motion](#motion)
 - [Ink](#ink)
 - [Rules for the code](#rules-for-the-code)
@@ -31,14 +37,14 @@ game behind it: [Game design](game-design.md).
   rows; adding a building, a resource, a weather kind or a record entry never touches the
   components. Each list ships with a few placeholder rows that show every state the component
   draws (buildable, not yet buildable, short of a material, no icon yet).
-- **Out of scope for now**: a settings menu (frame rate, anti-aliasing and the rest wait); the
-  placement of any building in the world but the chest (it belongs to the 3D scene:
+- **Out of scope for now**: settings pages beyond 画面 (sound, controls, language); a brightness
+  calibration; the placement of any building in the world but the chest (it belongs to the 3D scene:
   `packages/game/Placement.ts`); telling time in 时辰 (the clock reads `08:00` until that is
   decided); the English version (its catalogue is a snapshot, not kept up until then:
   `packages/game/ui/i18n/i18n.ts`).
-- **No save menu.** With no menu, the player has no save or load control and no sign that the game
-  was saved. The app saves the game itself and resumes it when the page loads
-  (`packages/game/save.ts` says when).
+- **No save menu.** The player has no save or load control and no sign that the game was saved.
+  The app saves the game itself and resumes it when the page loads (`packages/game/save.ts` says
+  when); the title's 继续 is that resume.
 - **Not built yet**: a choice in an islander's bag does nothing beyond marking the slot, and the
   stand-in agent (`packages/game/sim/standin.ts`) never starts a thought from what it hears (an
   agent that hears does: [Speaking](#speaking)).
@@ -262,6 +268,50 @@ of the interface hides. Esc or × closes it, and ←/→ step the days.
   happening (a landing as a boat, a building as the mallet, a critical need in 朱; 蓬莱 groups
   landings as N人登岛, with +N for more). Below it stand that day's weather icon and name: the kind
   that held longest that day.
+
+## The front end
+
+The screens around play, in their order: loading, the title, play, the pause menu, the settings.
+They follow the principles above: no frames, the mist shadow under text, choices as words in 缟
+with one 金 stroke under the chosen one and the others 苍, calligraphy for the name and the
+screens' headings only. Each choice is a key of the catalogue; the graphics options are data
+(`packages/render/GraphicsOptions.ts`), so a new option is a row there and its words here.
+
+### Loading
+
+- The name 蓬莱 in calligraphy, a brush stroke beneath that fills as the load goes, the stage's line
+  in 苍 (天空, 岛屿, 草木, 研墨调色 for the shaders) and the exact percentage.
+- The progress is real: it moves when the load passes a stage, each stage at the share of a first
+  load's time it ends at. Avoid a timer or a spinner: a slow stage reads as slow.
+- The same screen covers a first load and the reload a setting asks for.
+
+### Title
+
+- The name 蓬莱 upright (vertical writing) at the left third, large, over a soft 黛 mist; the
+  choices beside it: 继续 (only when a save exists), 新游戏, 设置.
+- Behind it the island lives: the sea moves, the camera turns slowly round the island, the time of
+  day stands still.
+- Choosing to play sinks the title into the mist and surfaces the game's interface.
+
+### Pause
+
+- Esc in play, when no part of the interface takes it (a selection, the build bar, the record),
+  opens it. The world dims and stands still.
+- The heading 暂停 in calligraphy, then 继续, 设置, 返回标题. 返回标题 saves first. Esc resumes.
+
+### Settings
+
+- The heading 设置, the pages beneath it (画面 alone; the column leaves room for sound, controls and
+  language, never an empty page), 返回 at the foot.
+- 画面: the preset row (低 中 高 自定义), then the options in two groups, 显示 and 画质. Each option is
+  a row of exclusive choices, with a short 苍 line on what it costs; one that takes a reload carries
+  the mark 重载. Changing any option makes the preset 自定义, and choosing a preset sets every option.
+- A live option applies at once. A reload option is named at the foot with 重新载入; leaving with
+  one pending asks whether to reload now or later (it applies at the next load either way). The game
+  is saved before a reload, which comes back where it was: into play from the pause menu, to the
+  title from the title.
+- Keys: ↑/↓ between rows, ←/→ change the row's choice, Enter takes, Esc goes back.
+- The frame-rate readout, when on, is a small 苍 number in the bottom right corner.
 
 ## Motion
 

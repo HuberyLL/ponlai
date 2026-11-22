@@ -72,6 +72,7 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { acquireGpuLock } from '../kit/gpu-lock.mjs';
 import { requireDevServer } from '../kit/dev-server.mjs';
+import { reviewUrl } from '../kit/page-query.mjs';
 
 const base = ( process.argv[ 2 ] || 'http://127.0.0.1:5190' ).replace( /\/$/, '' );
 await requireDevServer( process.argv[ 2 ] || 'http://127.0.0.1:5190', 'verify-frame-graph-gpu' );
@@ -114,7 +115,7 @@ try {
 		const appErrors = [];
 		app.on( 'pageerror', ( e ) => appErrors.push( `pageerror: ${ e.message }` ) );
 		app.on( 'console', ( m ) => { if ( m.type() === 'error' ) appErrors.push( m.text() ); } );
-		await app.goto( `${ base }/?debug&quality=high${ aa ? `&aa=${ aa }` : '' }` );
+		await app.goto( reviewUrl( `${ base }/?debug&quality=high${ aa ? `&aa=${ aa }` : '' }` ) );
 		await app.waitForFunction( () => window.__PONLAI__?.renderer?.info?.frame > 0 && document.getElementById( 'loading' )?.classList.contains( 'done' ), null, { timeout: 180000, polling: 250 } );
 		const result = await app.evaluate( async () => {
 

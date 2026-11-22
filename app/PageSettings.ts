@@ -10,16 +10,47 @@
 // own neutral one, which the app (main.ts) hands to the render pipeline's stages (`PAGE_LOOK`).
 // The rest of the app's own state outside the scene lives here too: the reload with changed
 // options (a load setting's new value) and the browser's storage for what a page remembers between
-// visits (the dynamic resolution's scale).
+// visits (the dynamic resolution's scale, the player's graphics settings: GraphicsSettings.ts, read
+// here before the settings are installed, since their tier and overrides are load settings).
 import { installSettings, parseSettings, settingProblems, NEUTRAL_LOOK, type Look } from '../packages/render/setup.ts';
 import { PAGE_SETTINGS, type PageSettingName } from './AppSettings.ts';
-import { chooseQuality, type QualityChoice } from './QualityDetect.ts';
+import { adapterName, chooseQuality, type QualityChoice } from './QualityDetect.ts';
 import { ISLAND_LOOK } from '../packages/island/land.ts';
+import { loadGraphics, readsGraphicsStore, withStoredOverrides } from './GraphicsSettings.ts';
+import type { GraphicsRecord } from '../packages/render/setup.ts';
 
-const query = parseSettings( location.search );
-for ( const problem of settingProblems( query, PAGE_SETTINGS ) ) console.warn( `[settings] ${ problem }` );
+/** The browser's storage for what the page remembers between visits, or null where it has none
+ * (reading it throws where site data is blocked). Its own calls may still throw: callers catch. */
+export const pageStore: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | null = ( () => {
+
+	try {
+
+		return globalThis.localStorage ?? null;
+
+	} catch {
+
+		return null;
+
+	}
+
+} )();
+
+const address = parseSettings( location.search );
+for ( const problem of settingProblems( address, PAGE_SETTINGS ) ) console.warn( `[settings] ${ problem }` );
+/** Whether this load reads and writes the player's graphics settings (GraphicsSettings.ts). */
+export const GRAPHICS_STORE = readsGraphicsStore( address, navigator.webdriver === true );
+/** The player's stored graphics settings this load builds (null: none, or not read: `?quality`, an
+ * automated browser). */
+export const STORED_GRAPHICS: GraphicsRecord | null = GRAPHICS_STORE && ! address.has( 'quality' ) ? loadGraphics( pageStore ) : null;
+// the stored choices' overrides first, the address's own after them (Quality.ts: a later one wins)
+const query = parseSettings( withStoredOverrides( location.search, STORED_GRAPHICS ) );
 /** The tier this load builds and how it was chosen (QualityDetect.ts). */
-export const QUALITY_CHOICE: QualityChoice = chooseQuality( query );
+// (the adapter's name only where a remembered measurement may be read: no `?quality`, no stored
+// choice, a player's browser or `autoQuality=detect`; a tool's browser holds the GPU back until the
+// world is generated, and the world starts after this module: tools/kit/capture.mjs)
+const measures = ! address.has( 'quality' ) && ! STORED_GRAPHICS && ( navigator.webdriver !== true || address.get( 'autoQuality' ) === 'detect' );
+const adapter = measures ? await adapterName() : '';
+export const QUALITY_CHOICE: QualityChoice = chooseQuality( query, STORED_GRAPHICS?.base ?? null, adapter, navigator.webdriver === true );
 installSettings( query, QUALITY_CHOICE.tier );
 const debugPage = import.meta.env.DEV || query.has( 'debug' ) || query.has( 'profile' );
 /** The look this load draws with, which the app (main.ts) hands to the render pipeline's stages. */
@@ -38,19 +69,3 @@ export function reloadWith( changes: Partial<Record<PageSettingName, string | nu
 	location.assign( url );
 
 }
-
-/** The browser's storage for what the page remembers between visits, or null where it has none
- * (reading it throws where site data is blocked). Its own calls may still throw: callers catch. */
-export const pageStore: Pick<Storage, 'getItem' | 'setItem'> | null = ( () => {
-
-	try {
-
-		return globalThis.localStorage ?? null;
-
-	} catch {
-
-		return null;
-
-	}
-
-} )();

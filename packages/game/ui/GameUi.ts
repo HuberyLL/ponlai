@@ -18,9 +18,9 @@ import { UiShared } from './Shared.ts';
 import { SpeakBar } from './SpeakBar.ts';
 import { TopRow } from './TopRow.ts';
 
-// 蜃光, the player's interface in ?game: a mirage over the sea, assembled from its parts.
+// 蜃光, the player's interface in the game: a mirage over the sea, assembled from its parts.
 //
-// 蜃光, the player's interface in ?game (docs/design/ui.md, the spec it follows). The interface
+// 蜃光, the player's interface in the game (docs/design/ui.md, the spec it follows). The interface
 // is a mirage over the sea: no frames, a mist shadow under white brush line art, in one language:
 // Chinese, the language the game is written in, or another by `?lang=` (i18n/i18n.ts: every word is
 // a catalogue's). Its parts:
@@ -70,7 +70,8 @@ const BOARD_W = 1600, BOARD_H = 900;
 // what the fonts must have before the interface shows (the loading screen waits: Game.ready): the
 // slices of the words the interface opens with (the first ten days' names and the titles)
 const FONT_SAMPLES = [ '26px "Ma Shan Zheng"', '18px "LXGW WenKai GB"', '18px "Ponlai Brush"', '30px "Ponlai Brush Display"' ];
-const FONT_TEXT = [ ...Array.from( { length: 10 }, ( _, i ) => dayName( i + 1 ) ), t( 'record.title' ), t( 'speak.title' ), t( 'record.island' ), ' 0123456789:' ].join( '' );
+// and the front end's (front/Front.ts: the title screen shows first)
+const FONT_TEXT = [ ...Array.from( { length: 10 }, ( _, i ) => dayName( i + 1 ) ), t( 'record.title' ), t( 'speak.title' ), t( 'record.island' ), t( 'front.name' ), t( 'front.title.continue' ), t( 'front.title.new' ), t( 'front.title.settings' ), t( 'front.pause.title' ), t( 'front.settings.title' ), ' 0123456789:' ].join( '' );
 
 export class GameUi {
 
@@ -118,6 +119,24 @@ export class GameUi {
 		} );
 
 	}
+
+	/** Hides the interface and stops its keys (the title screen and the menus over it: front/Front.ts);
+	 * shown again, it surfaces like mist (ui.md, Motion). */
+	set hidden( on: boolean ) {
+
+		this.away = on;
+		flag( this.root, 'away', on );
+		if ( on ) this.people.select( null );
+
+	}
+
+	get hidden(): boolean {
+
+		return this.away;
+
+	}
+
+	private away = false;
 
 	/** Whether the interface can show: its fonts are in (the app's loading screen waits). */
 	get ready(): boolean {
@@ -192,8 +211,8 @@ export class GameUi {
 		};
 		const target = e.target as Element | null;
 		const typing = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
-		// the browser's own shortcuts are never the interface's
-		if ( e.ctrlKey || e.metaKey || e.altKey ) return;
+		// the browser's own shortcuts are never the interface's, nor any key while it is hidden
+		if ( e.ctrlKey || e.metaKey || e.altKey || this.away ) return;
 		if ( this.record.open ) {
 
 			// the world behind is still: no other key reaches the app or the camera (their

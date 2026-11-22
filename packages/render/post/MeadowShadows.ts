@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { Fn, If, Loop, abs, clamp, float, floor, int, ivec2, max, min, mix, positionView, screenCoordinate, select, smoothstep, texture, textureLoad, uniform, vec2, vec4 } from 'three/tsl';
 import { SCENE_SAMPLES, TEMPORAL } from './Antialiasing.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { loadTier, qualityProfile } from '../Quality.ts';
 import { tuneUniform } from '../debug/Tune.ts';
 
 type F = THREE.Node<'float'>;
@@ -77,7 +78,8 @@ type M4 = THREE.UniformNode<'mat4', THREE.Matrix4>;
 // alone); at run time
 // `flags.ssShadow = false` keeps the opaque depth out of the resolve and the receivers read 1, so
 // tools/render/profile-frame.mjs --toggle "s.flags.ssShadow = on" times it.
-export const MEADOW_SHADOWS = SCENE_SAMPLES === 4 && ! TEMPORAL && debugFlags.meadowShadows !== false;
+// The tier's `meadowShadows` (Quality.ts) builds them, `flags=meadowShadows:false|true` over it.
+export const MEADOW_SHADOWS = SCENE_SAMPLES === 4 && ! TEMPORAL && ( debugFlags.meadowShadows === undefined ? qualityProfile( loadTier() ).meadowShadows : debugFlags.meadowShadows !== false );
 export const SS_SHADOW = MEADOW_SHADOWS && debugFlags.ssShadow !== false;
 
 // The march: STEPS lookups over REACH (m) toward the light. Step j occludes by

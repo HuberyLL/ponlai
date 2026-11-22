@@ -2,8 +2,8 @@
 
 A physically based render pipeline for the browser, on three.js WebGPU, shown on a small island in
 an open sea (features and usage: `README.md`). The island is calm and painterly, lit naturally by
-the sun and the sky (deep clear water, chunky stone, a lush meadow that moves in the wind); `?game`
-opens a game prototype.
+the sun and the sky (deep clear water, chunky stone, a lush meadow that moves in the wind); the page
+at `/` is the game, and `?review` opens the art-review scene the tools render.
 
 ## Where things are written
 
@@ -194,7 +194,7 @@ The folders in full: `ARCHITECTURE.md`, Code map; file by file: `node tools/repo
 `app/`: the app layer (entry, assembly, frame loop, GUI, scene jump); `app/scenes/`, `scenes.html`:
 the render pipeline's test scenes. `packages/render/`: the render pipeline, built without the
 island. `packages/island/`: the island, its world in chunks, grown in place. `packages/game/`: the
-game behind `?game`, its headless rules in `sim/`. `tools/`: checks, captures, probes, profiling,
+game at `/` (the art-review scene behind `?review`), its headless rules in `sim/`. `tools/`: checks, captures, probes, profiling,
 the GPU lock, the code lint. `packages/render/`, `packages/island/` and `tools/` have their own
 rules in an `AGENTS.md`. `skills/`: linked from `.claude/skills/`. `docs/`: the documentation by
 kind (`docs/README.md`). `public/` (git-ignored): the assets.

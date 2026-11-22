@@ -13,6 +13,8 @@
 // - It reads the installed settings (Settings.ts; the page installs them before the render pipeline
 //   loads) and their tier, the look the caller picked, and the scene's defaults (the hour and day
 //   length where the address names none).
+// - It tells the host each load stage it passes (`progress`, SceneHost.ts `LOAD_STAGES`), for a
+//   loading screen's real progress; the calls build nothing and change no order.
 // - It reads no browser global (ARCHITECTURE.md, rule 13): the window, the loading screen and the
 //   page's globals come through the host (SceneHost.ts; in a browser, render/browser.ts's
 //   `browserHost`).
@@ -175,6 +177,7 @@ export async function startScene( host: SceneHost, options: StartOptions, conten
 	const quality = qualityProfile( qualityTier );
 	await createRenderer( render, { profiler, mark: ( name ) => profiler?.mark( name ), DEBUG, qualityTier, quality, setStatus: ( s ) => host.status( s ) } );
 	setUpRenderer( render );
+	host.progress?.( 'renderer' );
 	// every render and compute pipeline the render pipeline creates, counted for the diagnostics
 	// (debug only)
 	const pipelineCount = DEBUG ? ( await import( '../debug/PipelineCounter.ts' ) ).installPipelineCounter( render.renderer ) : null;
@@ -203,20 +206,27 @@ export async function startScene( host: SceneHost, options: StartOptions, conten
 	await createEnvironment( render );
 	publishSkyLight( render );
 	await content.afterEnvironment?.( scene );
+	host.progress?.( 'sky' );
 	const { rainCeiling, extraPasses } = content.passes( scene );
 	createSeaAndPipeline( render, { rainCeiling, extraPasses, look } );
 	// the clip tools' stepped clip, which the exposure follows (post/Pipeline.ts)
 	render.pipeline.clipping = () => host.hasGlobal( globals.clip );
-	createBounceAndShore( render, await content.ground( scene ) );
+	const ground = await content.ground( scene );
+	host.progress?.( 'ground' );
+	createBounceAndShore( render, ground );
 	await content.afterBounce?.( scene );
 	startWaveMaps( render );
 	await createAmbient( render, await content.ambient( scene ) );
+	host.progress?.( 'world' );
 	await content.afterAmbient?.( scene );
+	host.progress?.( 'plants' );
 	createWater( render, content.water( scene ) );
 	sizing = createSceneSizing( render, host, () => frame );
 	await content.afterWater?.( scene );
+	host.progress?.( 'water' );
 	await bakeWithHaze( render );
 	await content.afterHaze?.( scene );
+	host.progress?.( 'haze' );
 
 	const spec = content.frame?.( scene ) ?? {};
 	const handles = content.handles?.( scene ) ?? {};
@@ -232,12 +242,14 @@ export async function startScene( host: SceneHost, options: StartOptions, conten
 	}, ( made ) => { frame = made; } );
 	const running = frame as unknown as SceneFrame;
 	await awaitWarmUp( render );
+	host.progress?.( 'warm-up' );
 	checkMotion( render );
 	await content.afterWarmUp?.( scene );
 	primeSharedBuilds( render );
 	await content.afterShared?.( scene );
 
 	render.mark( 'loop' );
+	host.progress?.( 'loop' );
 	startSceneLoop( running, content.wrapLoop );
 	// The loading screen lifts once the scene shows what it will show (by default: the sun's map has
 	// drawn once its casters' pipelines exist, a few frames in, and the ambient light's first relight

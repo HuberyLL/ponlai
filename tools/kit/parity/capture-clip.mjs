@@ -106,6 +106,7 @@ import { selectViews, viewQuery } from './adhoc.mjs';
 import { launchCapture, waitForScene, waitForStable, stableOptions, decodePng, compareFrames, pngCapturer } from '../capture-browser.mjs';
 import PROJECT from '../../project.mjs';
 import { ROOT, outputDir } from '../root.mjs';
+import { reviewUrl } from '../page-query.mjs';
 
 const REPO = ROOT;
 const { VIEWS, viewEval } = viewTable;
@@ -291,7 +292,7 @@ try {
 		const p = session.page;
 		p.on( 'console', ( m ) => { if ( options.verbose || m.type() === 'error' || m.type() === 'warning' ) errors.push( m.type() + ': ' + m.text() ); } );
 		p.on( 'pageerror', ( e ) => errors.push( 'pageerror: ' + e.message ) );
-		await p.goto( url );
+		await p.goto( reviewUrl( url ) );
 		await p.waitForFunction( ( g ) => window[ g.handle ] && window[ g.diagnostics ], PAGE, { timeout } );
 		if ( ! ( await p.evaluate( ( n ) => typeof window[ n ].loop.step === 'function', PAGE.handle ) ) ) throw new Error( `this build has no ${ PAGE.handle }.loop.step` );
 		await p.evaluate( viewEval( viewName, crops ) );

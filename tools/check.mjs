@@ -23,7 +23,7 @@
 // verify-three-internals and verify-kit (tools/repo/), tools/verify-no-binaries.mjs (every file in
 // the index), verify-licences (REUSE and the notices' SPDX tags; it needs uv), verify-skill-links
 // and verify-translations (tools/repo/), the game's verify-game, verify-i18n and verify-ink
-// (tools/game/), the render pipeline's verify-framegraph, verify-day-cycle, verify-weather-state,
+// (tools/game/), the render pipeline's verify-framegraph, verify-day-cycle, verify-graphics-options, verify-weather-state,
 // verify-wind, verify-local-lights, verify-extensions, verify-look-params and verify-slope-variance
 // (tools/render/), then tools/repo/verify-lint.mjs, and the docs' lint (`npm run lint:docs`) when a
 // Markdown file is staged. Each check runs to its end even after another failed, so one run lists every failure.
@@ -93,6 +93,7 @@ const checks = [
 	[ 'verify-ink', node( 'game/verify-ink.mjs' ) ],
 	[ 'verify-framegraph', node( 'render/verify-framegraph.mjs' ) ],
 	[ 'verify-day-cycle', node( 'render/verify-day-cycle.mjs' ) ],
+	[ 'verify-graphics-options', node( 'render/verify-graphics-options.mjs' ) ],
 	[ 'verify-weather-state', node( 'render/verify-weather-state.mjs' ) ],
 	[ 'verify-wind', node( 'render/verify-wind.mjs' ) ],
 	[ 'verify-local-lights', node( 'render/verify-local-lights.mjs' ) ],

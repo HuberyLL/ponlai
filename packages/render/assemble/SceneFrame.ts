@@ -58,6 +58,7 @@ import { createFrameStages, type FrameStages, type RenderParts } from '../Render
 import { settings as params } from '../Settings.ts';
 import { DynamicResolution, GpuFrameTimer, PassScaling, TAAU_MAX_UPSCALE, renderScaleKey } from '../post/DynamicResolution.ts';
 import { FramePacer, PAUSED_QUEUE } from '../post/FramePacer.ts';
+import type { RenderScaleRule } from '../Quality.ts';
 import { dynamicRange, outputPixelRatio, renderPixelRatio } from '../post/RenderScale.ts';
 import { AA_MODE } from '../post/Antialiasing.ts';
 import { renderEvent } from '../post/SceneEvents.ts';
@@ -142,13 +143,19 @@ export interface SceneSizing {
 	/** the render scale `loop.step` holds for the frame it draws (null otherwise) */
 	steppedScale: number | null;
 	readonly canvasSize: THREE.Vector2;
+	/** whether the render holds its baseline: pinned by the settings menu's dynamic resolution off */
+	readonly pinned: boolean;
+	/** The settings menu's render resolution (a share of the display's ratio per axis, 0: the tier's
+	 * own baseline) and dynamic resolution (`pinned`: off), on a running page: the tier's dynamic rule
+	 * takes them and the canvas is sized again. A tier without the dynamic rule keeps its fixed scale. */
+	setResolution( choice: { share: number; pinned: boolean } ): void;
 }
 
 export interface SceneFrame {
 	readonly sizing: SceneSizing;
 	readonly pacer: FramePacer;
 	readonly dynamicResolution: DynamicResolution | null;
-	readonly dynamicRule: { dynamic: { max: number; baseline: number; floor: number; floorShare: number; step: number } } | null;
+	readonly dynamicRule: Extract<RenderScaleRule, { dynamic: unknown }> | null;
 	readonly gpuTimer: GpuFrameTimer | null;
 	readonly passScaling: PassScaling | null;
 	readonly gpuQueue: { onSubmittedWorkDone(): Promise<void> };
@@ -185,7 +192,17 @@ export function createSceneSizing( render: RenderParts, host: SceneHost, frame: 
 		applyRenderScale,
 		describeRenderScale,
 		refreshStoreKey,
+		get pinned() { return 'dynamic' in quality.render && quality.render.dynamic.pinned; },
+		setResolution,
 	};
+	function setResolution( choice: { share: number; pinned: boolean } ): void {
+
+		if ( ! ( 'dynamic' in quality.render ) ) return;
+		quality.render.dynamic.share = choice.share;
+		quality.render.dynamic.pinned = choice.pinned;
+		resize();
+
+	}
 	function resize(): void {
 
 		sizing.sized = true;
@@ -224,7 +241,7 @@ export function createSceneSizing( render: RenderParts, host: SceneHost, frame: 
 
 		const d = frame()?.dynamicResolution;
 		if ( sizing.steppedScale !== null ) return sizing.steppedScale;
-		if ( ! d || resolution.full || render.paused ) return sizing.nominalScale;
+		if ( ! d || resolution.full || sizing.pinned || render.paused ) return sizing.nominalScale;
 		return d.scale;
 
 	}
@@ -253,7 +270,7 @@ export function createSceneSizing( render: RenderParts, host: SceneHost, frame: 
 	function describeRenderScale(): void {
 
 		const d = frame()?.dynamicResolution ?? null;
-		const how = ! d ? 'fixed' : resolution.full ? 'pinned' : render.paused ? 'paused' : `${ d.floor }–${ d.max }`;
+		const how = ! d ? 'fixed' : resolution.full || sizing.pinned ? 'pinned' : render.paused ? 'paused' : `${ d.floor }–${ d.max }`;
 		resolution.scale = `${ sizing.renderScale.toFixed( 2 ) } (${ how })`;
 		resolution.gpu = d && d.observed.length ? `${ [ ...d.observed ].sort( ( a, b ) => a - b )[ d.observed.length >> 1 ].toFixed( 1 ) } ms` : '–';
 
@@ -495,7 +512,7 @@ export function createSceneFrame( render: RenderParts, host: SceneHost, sizing: 
 		if ( internal.storeKeyStale() ) sizing.refreshStoreKey();
 		// the GPU's budget follows the paced frame interval (a 60 Hz frame unpaced)
 		dynamicResolution.setFrameInterval( pacer.rate > 0 ? pacer.interval : 1000 / 60 );
-		const steering = sizing.steppedScale === null && ! render.paused && ! resolution.full && sizing.renderScale === dynamicResolution.scale;
+		const steering = sizing.steppedScale === null && ! render.paused && ! resolution.full && ! sizing.pinned && sizing.renderScale === dynamicResolution.scale;
 		frameScales.set( renderer.info.frame, { scale: steering ? sizing.renderScale : NaN, heavy: frames.periodicWork() } );
 		if ( frameScales.size > 240 ) frameScales.delete( frameScales.keys().next().value! );
 		gpuTimer?.resolve();

@@ -750,7 +750,7 @@ function buildChest( sim ) {
 	assert.equal( again.sim.save(), sim.save() );
 	assert.equal( JSON.stringify( again.record.save() ), JSON.stringify( record.save() ), 'a restored record keeps the entries the original keeps' );
 
-	// a game saved before its first tick (?game&paused) and resumed again and again: each islander
+	// a game saved before its first tick (a paused game page) and resumed again and again: each islander
 	// landed once
 	{
 

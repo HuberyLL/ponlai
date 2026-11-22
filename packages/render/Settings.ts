@@ -78,9 +78,9 @@ export const RENDER_SETTINGS = {
 	t: { type: 'number', default: '0', range: [ 0, Infinity ], about: 'the scene time (s)' },
 	dpr: { type: 'number', default: 'the display\'s ratio, capped', range: [ 0, Infinity ], about: 'pins the canvas\'s pixel ratio' },
 	// sky and weather
-	hour: { type: 'number', default: 'golden-hour (8 under `game`)', about: 'the hour of the day' },
+	hour: { type: 'number', default: '8 (golden-hour under `review`)', about: 'the hour of the day' },
 	preset: { type: 'choice', default: 'golden-hour', values: PRESETS, about: 'the hour by its sun' },
-	dayLength: { type: 'number', default: '2880 (1440 under `game`)', range: [ 30, Infinity ], about: 'seconds per day' },
+	dayLength: { type: 'number', default: '1440 (2880 under `review`)', range: [ 30, Infinity ], about: 'seconds per day' },
 	moon: { type: 'number', default: '0.5', about: 'the moon\'s phase (0.5 full)' },
 	clock: { type: 'choice', default: 'running', values: [ 'paused' ], about: '`paused`: freezes the day clock only' },
 	weather: { type: 'choice', default: 'auto, from fair', values: WEATHERS, about: 'holds this weather (the parked ones on debug pages only)' },
