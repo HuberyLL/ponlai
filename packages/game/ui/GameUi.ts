@@ -126,6 +126,8 @@ export class GameUi {
 
 		this.away = on;
 		flag( this.root, 'away', on );
+		// (nothing in it takes the focus or a click while the screens are up)
+		this.root.inert = on;
 		if ( on ) this.people.select( null );
 
 	}

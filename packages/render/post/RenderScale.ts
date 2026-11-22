@@ -17,12 +17,12 @@ import type { RenderScaleRule } from '../Quality.ts';
 //   (2560x1440 at 1x) renders natively and drops to about 1080p when busy. A load starts at,
 //   and a paused or pinned page holds, the baseline, capped by the maximum (a display of 2K or fewer
 //   pixels renders natively there). The floor is at most `floorShare` of the maximum per axis, so a
-//   small display's floor stays below its maximum. The settings menu's render resolution sets the
-//   baseline as a share of the maximum per axis instead (`share`), and its dynamic resolution off
-//   pins the render there (`pinned`). `dynamicRange` gives the three; this returns the baseline as
+//   small display's floor stays below its maximum. The settings menu's render resolution caps the
+//   render at a share of the display's ratio per axis (`share`), which is then also the baseline and
+//   the scale goes only below it; its dynamic resolution off pins the render there (`pinned`). `dynamicRange` gives the three; this returns the baseline as
 //   the nominal;
-// - medium and low (parked, Quality.ts): a budget of rendered pixels (1600x900 and 1280x720 today);
-//   `?dpr` and the GUI's full resolution lift it.
+// - a tier with a fixed budget of rendered pixels (none today: every tier is dynamic, with its own
+//   baseline and floor, Quality.ts); `?dpr` and the GUI's full resolution lift it.
 // The canvas always matches the display (up to OUTPUT_PIXEL_RATIO_CAP): a render below it is
 // upscaled inside the frame graph with FSR 1 and the dither added after, never stretched by the
 // browser. Every pass is sized to the render, not the canvas (the frame graph sizes each target by
@@ -61,13 +61,12 @@ export function dynamicRange( width: number, height: number, ratio: number, rule
 
 	const { dynamic } = rule;
 	const area = Math.max( width * height, 1 );
-	const max = Math.min( ratio, cap, dynamic.max );
-	const floorAt = Math.min( Math.sqrt( dynamic.floor / area ), dynamic.floorShare * max );
-	// a share below the floor lowers the floor with it, so the dynamic scale never climbs above the
-	// player's resolution to reach its own floor
-	const floor = dynamic.share > 0 ? Math.min( floorAt, dynamic.share * max ) : floorAt;
-	// (a share of the maximum, the settings menu's render resolution, is taken as it is: below the floor too)
-	const baseline = dynamic.share > 0 ? Math.min( dynamic.share * max, max ) : Math.min( Math.max( Math.sqrt( dynamic.baseline / area ), floor ), max );
+	// a share of the display's ratio (the settings menu's render resolution) is the most it renders:
+	// the dynamic scale only goes below it
+	const full = Math.min( ratio, cap, dynamic.max );
+	const max = dynamic.share > 0 ? Math.min( dynamic.share * full, full ) : full;
+	const floor = Math.min( Math.sqrt( dynamic.floor / area ), dynamic.floorShare * max );
+	const baseline = dynamic.share > 0 ? max : Math.min( Math.max( Math.sqrt( dynamic.baseline / area ), floor ), max );
 	return { max, baseline, floor };
 
 }

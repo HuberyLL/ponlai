@@ -137,20 +137,20 @@ Contents:
 ## Quality, anti-aliasing and the frame
 
 - `quality` selects the quality tier (low, medium or high), which sets every quality setting in
-  `packages/render/Quality.ts`. Without it, the tier is high, the only active tier; medium and low
-  are parked (see `docs/reference/tools.md`, Parked weathers and quality tiers).
-  `tier.<setting>=<value>` overrides one setting of the tier for an A/B (for example
-  `tier.post.hazeGrid.width=128`). The GPU timing that once chose the tier (`app/QualityDetect.ts`,
-  `autoQuality`, and `autoQualitySlow`, a factor on the time it measures) is parked with them. The
-  load reads neither option to choose the tier, and the GUI's quality control removes
-  `autoQuality=detect` from the address when it reloads.
+  `packages/render/Quality.ts`. Without it, the tier is the player's stored choice
+  (`app/GraphicsSettings.ts`), else the one a first visit's GPU timing chose for this GPU
+  (`app/QualityDetect.ts`), else high. `tier.<setting>=<value>` overrides one setting of the tier for
+  an A/B (for example `tier.post.hazeGrid.width=128`; a JSON value replaces a whole setting:
+  `tier.cloudView={"render":0.5}`); the player's custom options are installed the same way, before
+  the address's own. `autoQuality=detect` times the GPU again, `autoQuality=off` keeps high, and
+  `autoQualitySlow` scales the measured time (a stand-in for a slower GPU). The timing never runs
+  in an automated browser, on a paused page or under `quality`.
 
 The following rendering and A/B options are read at load. The runtime switches for A/Bs inside one
 page are in `packages/render/debug/DebugFlags.ts`.
 
 - `aa` selects the anti-aliasing mode (`packages/render/post/Antialiasing.ts`), over the tier's
-  `aa` setting. Each tier has its default: `msaa` for high (`taau` for the parked medium tier,
-  `msaa` for low). The GUI's Antialiasing control reloads the page with any of MSAA 4x, TAAU, FSR
+  `aa` setting. Every tier's default is `msaa`. The GUI's Antialiasing control reloads the page with any of MSAA 4x, TAAU, FSR
   3.1, TAA and Off.
   - `msaa`: 4 samples, upscaled by FSR 1.
   - `off`: one sample.
@@ -164,7 +164,7 @@ page are in `packages/render/debug/DebugFlags.ts`.
     `aa=off`, since WebGPU multisamples with 1 or 4 samples only.
 
   The capture and parity tools apply the temporal tolerances through their own `--aa` option, so a
-  set of captures with the parked medium tier's default passes `--aa taau`.
+  set of captures under a temporal mode passes `--aa taau`.
 - `aa=fsr3` uses AMD's FSR 3.1 upscaler (the TSL port in `packages/render/post/fsr3/`, integrated
   by `Fsr3Upscaler.ts`) at the position in the frame that AMD specifies: one sample, jittered with
   FSR's own sequence, with motion vectors. FSR takes the composite's HDR image at the render
@@ -785,7 +785,7 @@ the two equal).
 | `clouds` | a number, 0 to 1 | the weather's | render | overrides the cloud coverage |
 | `dayFog` | named (its value unread) | off | render | the day's fog layer under a clear or fair sky |
 | `seaFog` | named (its value unread) | off | render | the deep sea fog |
-| `quality` | `low`, `medium`, `high` | high | render | the quality tier (medium and low parked) |
+| `quality` | `low`, `medium`, `high` | high | render | the quality tier, the settings menu's preset |
 | `aa` | `msaa`, `taa`, `taau`, `fsr3`, `off`, `gt` | the tier's (high: msaa) | render | the anti-aliasing mode (`gt` on debug pages only) |
 | `msaa` | `1`, `2`, `4` | none | render | the older alias of `aa`: `4` msaa, `1` and `2` off |
 | `fsrDebug` | named (its value unread) | off | render | FSR 3's debug view over its output, under `aa=fsr3` (debug pages only) |
@@ -832,9 +832,9 @@ the two equal).
 | `nearFov` | a number, 1 to 179, or `off` | 42 | app | the island view's fov at its closest zoom (degrees; `off`: 27 at every distance) |
 | `nearFovFrom` | a number from 0 | 50 | app | the distance the fov widens from (m) |
 | `soil` | `0`, `1` | on | app | `0`: the ground without its soil layer |
-| `autoQuality` | `detect`, `off` | parked | app | the GPU timing that chose the tier (parked: read by the tier's reload only) |
+| `autoQuality` | `detect`, `off` | a first visit times the GPU | app | `detect` times the GPU again to choose the tier, `off` keeps high |
 | `graphicsStore` | `on`, `off` | on (off in an automated browser) | app | whether the page reads and writes the player's graphics settings |
-| `autoQualitySlow` | a number from 0.01 | 1 | app | scales the GPU timing's measured time (parked) |
+| `autoQualitySlow` | a number from 0.01 | 1 | app | scales the GPU timing's measured time |
 | `renderLook` | `neutral`, `ponlai` | the app's own | app | the look the render pipeline draws with, over the app's own: `neutral` (the render pipeline's) on the island's page, `ponlai` (the island's) on the test scenes' (debug pages only) |
 | `scene` | `ball`, `empty`, `sea`, `plants` | none | app | the test scene `scenes.html` shows |
 | `review` | named (its value unread) | off (the game) | app | the art-review scene (one islander walking a loop, the GUI) instead of the game |

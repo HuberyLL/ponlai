@@ -48,7 +48,7 @@ const query = parseSettings( withStoredOverrides( location.search, STORED_GRAPHI
 // (the adapter's name only where a remembered measurement may be read: no `?quality`, no stored
 // choice, a player's browser or `autoQuality=detect`; a tool's browser holds the GPU back until the
 // world is generated, and the world starts after this module: tools/kit/capture.mjs)
-const measures = ! address.has( 'quality' ) && ! STORED_GRAPHICS && ( navigator.webdriver !== true || address.get( 'autoQuality' ) === 'detect' );
+const measures = ! address.has( 'quality' ) && ! STORED_GRAPHICS && ( navigator.webdriver !== true && ! address.has( 'review' ) || address.get( 'autoQuality' ) === 'detect' );
 const adapter = measures ? await adapterName() : '';
 export const QUALITY_CHOICE: QualityChoice = chooseQuality( query, STORED_GRAPHICS?.base ?? null, adapter, navigator.webdriver === true );
 installSettings( query, QUALITY_CHOICE.tier );

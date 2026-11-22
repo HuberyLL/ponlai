@@ -155,7 +155,7 @@ export function islandLoop( parts: () => RenderParts, island: IslandParts, page:
 			const { dynamicResolution, gpuTimer } = frame;
 			return ! island.approachWritten || sunShadow.draws === 0 || ! ambientRelight.ready || ( detector !== null && ( detector.pending || ( detector.result !== null && detector.result.tier !== qualityTier ) ) ) || ( game !== null && ! game.ready() ) || dynamicResolution !== null && dynamicResolution.settling && ( gpuTimer !== null || profiler?.timestamps === true ) &&
 				// eslint-disable-next-line ponlai/scene-clock -- the loading screen's longest wait: when it lifts, not what is drawn
-				! render.paused && ! resolution.full && performance.now() < until;
+				! render.paused && ! resolution.full && ! frame.sizing.pinned && performance.now() < until;
 
 		},
 		onRevealed() {

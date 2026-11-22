@@ -16,7 +16,7 @@ import { GRAPHICS_OPTIONS, choiceValues, presetRecord, withChoice, type Graphics
 import type { RenderParts, SceneFrame } from '../packages/render/index.ts';
 import type { Game, GraphicsControl } from '../packages/game/index.ts';
 import { saveGraphics } from './GraphicsSettings.ts';
-import { pageStore } from './PageSettings.ts';
+import { pageStore, reloadWith } from './PageSettings.ts';
 
 /** Where the load after a reload for a setting opens (main.ts reads it once). */
 export const OPENING_KEY = 'ponlai.front.opening';
@@ -70,25 +70,6 @@ export function createGraphicsControl( render: RenderParts, frame: SceneFrame, g
 
 	};
 
-	// eslint-disable-next-line ponlai/scene-clock -- the frame-rate readout: frames shown a second, not what is drawn
-	let frames = 0, since = performance.now(), fps = 0;
-	const countFrames = () => {
-
-		frames ++;
-		// eslint-disable-next-line ponlai/scene-clock -- the frame-rate readout: frames shown a second, not what is drawn
-		const now = performance.now();
-		if ( now - since >= 1000 ) {
-
-			fps = frames * 1000 / ( now - since );
-			frames = 0;
-			since = now;
-
-		}
-		requestAnimationFrame( countFrames );
-
-	};
-	requestAnimationFrame( countFrames );
-
 	return {
 		options: GRAPHICS_OPTIONS,
 		get record() { return record; },
@@ -96,14 +77,19 @@ export function createGraphicsControl( render: RenderParts, frame: SceneFrame, g
 		setPreset( tier: QualityTier ) { change( { ...presetRecord( tier ), options: { ...presetRecord( tier ).options, fps: record.options.fps } } ); },
 		pending() {
 
-			return GRAPHICS_OPTIONS.filter( ( o ) => o.applies === 'reload' && o.fields.some( ( f ) => JSON.stringify( choiceValues( o.id, record.options[ o.id ] )[ f ] ) !== JSON.stringify( choiceValues( o.id, loaded.options[ o.id ] )[ f ] ) ) ).map( ( o ) => o.id );
+			// a preset of another tier than the one built changes reload settings no option names (the
+			// haze's grid, the environment's source, the render's baseline): it reloads as a whole
+			const preset = record.base !== loaded.base ? [ 'preset' ] : [];
+			return preset.concat( GRAPHICS_OPTIONS.filter( ( o ) => o.applies === 'reload' && o.fields.some( ( f ) => JSON.stringify( choiceValues( o.id, record.options[ o.id ] )[ f ] ) !== JSON.stringify( choiceValues( o.id, loaded.options[ o.id ] )[ f ] ) ) ).map( ( o ) => o.id ) );
 
 		},
 		reload( into ) {
 
-			game?.autosave();
+			if ( game?.keeps ) game.autosave();
 			try { sessionStorage.setItem( OPENING_KEY, into ); } catch { /* storage refused: the load opens on the title */ }
-			location.reload();
+			// the menu's choice is what the next load builds: an address that names the tier (the GUI's
+			// control writes `quality`) would keep the stored choice unread (PageSettings.ts)
+			reloadWith( { quality: null } );
 
 		},
 		fullscreen: () => document.fullscreenElement !== null,
@@ -113,7 +99,16 @@ export function createGraphicsControl( render: RenderParts, frame: SceneFrame, g
 			else if ( ! on && document.fullscreenElement ) void document.exitFullscreen().catch( () => {} );
 
 		},
-		fps: () => frame.frameTimes.length ? fps : 0,
+		// the frames the loop rendered (the pacer's skipped refreshes are not frames), from the frame's
+		// own intervals
+		fps() {
+
+			const times = frame.frameTimes;
+			if ( times.length < 2 ) return 0;
+			const mean = times.reduce( ( a, b ) => a + b, 0 ) / times.length;
+			return mean > 0 ? 1000 / mean : 0;
+
+		},
 	};
 
 }

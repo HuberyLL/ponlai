@@ -128,8 +128,9 @@ export function showLoading( element: HTMLElement ): LoadingScreen {
 		element.classList.add( 'failed' );
 		text( stage, t( 'front.load.failed' ) );
 		text( percent, '' );
+		// the host's own line, where it wrote one (no WebGPU), says it better than the error
 		const status = element.querySelector( '.pl-load-status' );
-		if ( status ) text( status, message );
+		if ( status && ! status.textContent ) text( status, message );
 
 	};
 	return { element, progress: set, fail };

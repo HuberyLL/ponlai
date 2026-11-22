@@ -180,7 +180,6 @@ name, and a tool uses them only when asked to:
   and `--accept`, and verify-first-use's steps. The `special` group, or a name, selects a parked
   view, clip or scene. `tools/render/verify-weather-effects.mjs` and the rain parts of
   `tools/render/verify-weather.mjs` are parked with them.
-- Parked quality tiers (medium and low; `packages/render/Quality.ts` `PARKED_QUALITY`) are out of
-  the default choice and checks. A page without `quality` loads high, and the GUI lists only high.
-  Every tool's default is high; `?quality=medium|low`, `--quality medium` or
-  `--tiers high,medium,low` select the others.
+- Every tool's default quality tier is high, the reference; `?quality=medium|low`,
+  `--quality medium` or `--tiers high,medium,low` select the other presets. A tool's page loads what
+  its address names: the player's stored graphics settings are not read in an automated browser.

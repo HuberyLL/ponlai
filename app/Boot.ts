@@ -7,8 +7,9 @@
 // of the app that sits in a shared chunk would read them before an install made among the app's
 // own imports. Loading the app by a dynamic import puts the whole of it after the install.
 import './PageSettings.ts';
-import { LOADING } from './LoadingScreen.ts';
 
+// (by a dynamic import too: the loading screen loads the game's words, which read the settings)
+const { LOADING } = await import( './LoadingScreen.ts' );
 try {
 
 	await import( './main.ts' );

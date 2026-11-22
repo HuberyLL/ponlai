@@ -9,8 +9,8 @@
 // cannot read whole is removed and the page loads as if none was stored.
 //
 // The stored record is not read in an automated browser (captures, profiles and checks load what
-// their address names, as the game's save is not resumed there: game/save.ts), nor under
-// `?quality`; `graphicsStore=on` reads it anywhere (the menu's own checks), `off` never.
+// their address names, as the game's save is not resumed there: game/save.ts), on the art-review
+// page (`?review`), nor under `?quality`; `graphicsStore=on` reads it anywhere (the menu's own checks), `off` never.
 import { GRAPHICS_VERSION, presetRecord, readGraphicsRecord, resolveGraphics, type GraphicsRecord } from '../packages/render/setup.ts';
 import type { QualityTier } from '../packages/render/setup.ts';
 import type { PageSettingsQuery } from './AppSettings.ts';
@@ -25,7 +25,8 @@ export function readsGraphicsStore( query: PageSettingsQuery, automated: boolean
 	const asked = query.get( 'graphicsStore' );
 	if ( asked === 'on' ) return true;
 	if ( asked === 'off' ) return false;
-	return ! automated;
+	// (the art-review page shows what its address names, as the tools see it)
+	return ! automated && ! query.has( 'review' );
 
 }
 

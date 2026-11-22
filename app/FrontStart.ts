@@ -61,7 +61,7 @@ export async function startFront( render: RenderParts, island: IslandParts, page
 		},
 		newGameElsewhere() {
 
-			game.autosave();
+			if ( game.keeps ) game.autosave();
 			try { sessionStorage.setItem( OPENING_KEY, 'play' ); } catch { /* the title then */ }
 			reloadWith( { new: '' } );
 

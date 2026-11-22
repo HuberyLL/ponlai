@@ -231,7 +231,9 @@ export function createSceneSizing( render: RenderParts, host: SceneHost, frame: 
 		const f = frame();
 		if ( ! f ) return;
 		storeKeyGeneration = f.pacer.generation;
-		if ( scaleMemory ) f.dynamicResolution?.setStoreKey( renderScaleKey( renderer, qualityTier, AA_MODE, f.pacer.rate, sizing.canvasSize.x, sizing.canvasSize.y, f.gpuTimer !== null || profiler?.timestamps === true ? 'gpu' : 'frames' ) );
+		// (the player's render resolution is part of the tier's key: a scale remembered under another share is not this one's)
+		const share = 'dynamic' in quality.render && quality.render.dynamic.share > 0 ? `@${ quality.render.dynamic.share.toFixed( 3 ) }` : '';
+		if ( scaleMemory ) f.dynamicResolution?.setStoreKey( renderScaleKey( renderer, qualityTier + share, AA_MODE, f.pacer.rate, sizing.canvasSize.x, sizing.canvasSize.y, f.gpuTimer !== null || profiler?.timestamps === true ? 'gpu' : 'frames' ) );
 
 	}
 	( sizing as unknown as { storeKeyStale(): boolean } ).storeKeyStale = () => frame()?.pacer.generation !== storeKeyGeneration;

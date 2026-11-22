@@ -206,6 +206,9 @@ const boot = readFileSync( path.join( ROOT, 'app', 'Boot.ts' ), 'utf8' ).replace
 const install = boot.search( /^import '\.\/PageSettings\.ts';$/m ), page = boot.search( /^\s*await import\( '\.\/main\.ts' \);$/m );
 if ( install < 0 || page < 0 || install > page ) failures.push( 'app/Boot.ts: must import \'./PageSettings.ts\' first, then `await import( \'./main.ts\' )`' );
 if ( /^import[^;]*'\.\/main\.ts'/m.test( boot ) ) failures.push( 'app/Boot.ts: imports main.ts statically (its shared chunks would load before the settings are installed)' );
+// its one static import is the install: any other module it imports statically may sit in a shared
+// chunk the bundle evaluates before the install (the loading screen's words read `lang` so)
+for ( const m of boot.matchAll( /^import\s+(?:[^;]*?from\s+)?'([^']+)';$/gm ) ) if ( m[ 1 ] !== './PageSettings.ts' ) failures.push( `app/Boot.ts: imports ${ m[ 1 ] } statically: only PageSettings.ts, the install, is a static import; load the rest by \`await import( ... )\`` );
 
 // the tools' addresses
 let queries = 0;

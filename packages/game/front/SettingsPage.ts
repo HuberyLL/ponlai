@@ -215,6 +215,12 @@ export class SettingsPage {
 			}
 
 		}
+		// an option another one turns off reads as off and takes no choice (the ambient occlusion reads
+		// the meadow shadows' prepass, and neither is built under a temporal anti-aliasing)
+		const o = this.graphics.record.options;
+		const temporal = o.aa !== 'msaa';
+		this.inactive( 'meadowShadows', temporal );
+		this.inactive( 'ao', temporal || o.meadowShadows === 'off' );
 		// the custom preset is shown, never chosen
 		const custom = this.rows[ 0 ]?.buttons.get( 'custom' );
 		if ( custom ) custom.disabled = this.graphics.record.preset !== 'custom';
@@ -222,7 +228,7 @@ export class SettingsPage {
 		this.pending.replaceChildren();
 		if ( pending.length ) {
 
-			const names = pending.map( ( id ) => t( `front.option.${ id }.name` as 'front.name' ) ).join( t( 'list.and' ) );
+			const names = pending.map( ( id ) => id === 'preset' ? t( 'front.settings.preset' ) : t( `front.option.${ id }.name` as 'front.name' ) ).join( t( 'list.and' ) );
 			el( 'span', '', this.pending, t( 'front.settings.pending', { list: names } ) );
 			this.button( t( 'front.settings.apply' ), this.pending, () => this.ask( true ) );
 
@@ -231,6 +237,24 @@ export class SettingsPage {
 	}
 
 	private leaving = false;
+
+	private inactive( id: string, off: boolean ): void {
+
+		const row = this.rows.find( ( r ) => r.id === id );
+		if ( ! row ) return;
+		for ( const [ choice, b ] of row.buttons ) {
+
+			b.disabled = off;
+			if ( off ) {
+
+				flag( b, 'on', choice === 'off' );
+				flag( b, 'dim', choice !== 'off' );
+
+			}
+
+		}
+
+	}
 
 	private ask( on: boolean, leaving = false ): void {
 

@@ -73,8 +73,8 @@ export function createGui( render: RenderParts, island: IslandParts, page: PageP
 	page.environmentLook = environmentLook;
 	const W = render.water!.uniforms;
 	// The quality tier sets every setting that governs the frame's cost (Quality.ts), and changing it
-	// reloads the page. The list holds the active tiers (high alone while medium and low are parked),
-	// and the loaded tier when `?quality` loaded a parked one.
+	// reloads the page. The list holds the active tiers (all three, the menu's presets), and the
+	// loaded tier when `?quality` loaded a parked one.
 	const performanceF = gui.addFolder( 'Performance' );
 	const qualityChoices = ACTIVE_QUALITY.includes( qualityTier ) ? [ ...ACTIVE_QUALITY ] : [ ...ACTIVE_QUALITY, qualityTier ];
 	performanceF.add( skyQuality, 'value', qualityChoices ).name( 'quality (reloads)' ).onFinishChange( ( tier: QualityTier ) => { if ( tier !== qualityTier ) reloadWithQuality( tier ); } );

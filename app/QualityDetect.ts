@@ -1,16 +1,11 @@
 import { QUALITY, QUALITY_TIERS, DEFAULT_QUALITY, isQualityTier, type QualityTier, renderPixelRatio } from '../packages/render/setup.ts';
 import type { PageSettingsQuery } from './AppSettings.ts';
 
-// The quality tier chosen at startup, parked while high is the only active tier.
-//
-// Parked with the medium and low tiers (Quality.ts `PARKED_QUALITY`): high is the only active tier,
-// so `chooseQuality` takes `?quality` or else loads high, and never times the GPU (the measurement
-// could only pick a parked tier). The detector, its cost model and the remembered record stay and
-// keep compiling for the tiers' revival, which re-fits the model and lets `chooseQuality` measure
-// again (with the adapter's name, which the remembered record is keyed by: git history has it); until then what follows describes the parked behaviour.
+// The quality tier chosen on a first visit: the GPU timed behind the loading screen, a preset picked.
 //
 // The quality tier chosen at startup, as games do (Unreal's scalability auto-detect): on a first
-// visit without `?quality`, the page loads as high and times the GPU over the first frames behind the
+// visit without `?quality` and without the player's own graphics settings (GraphicsSettings.ts,
+// which win once the player has chosen in the menu), the page loads as high and times the GPU over the first frames behind the
 // loading screen, then picks the highest tier a cost model predicts fits the display's paced frame
 // interval with headroom. The choice is remembered (localStorage), with the GPU adapter it was made
 // on; it is measured again only on request (the GUI's re-detect, `?autoQuality=detect`) or when the
@@ -162,6 +157,7 @@ export function chooseQuality( params: PageSettingsQuery, stored: QualityTier | 
 	const record = readRecord();
 	if ( ! force && record && record.adapter === adapter && record.slow === slow ) return { tier: record.tier, source: 'auto', why: `measured on this GPU ${ record.at.slice( 0, 10 ) }`, record, adapter, slow };
 	if ( ! force && automated ) return { ...base, tier: DEFAULT_QUALITY, source: 'default', why: 'automated browser: not measured (autoQuality=detect measures)' };
+	if ( ! force && params.has( 'review' ) ) return { ...base, tier: DEFAULT_QUALITY, source: 'default', why: 'the art-review page: not measured (autoQuality=detect measures)' };
 	// a paused scene never switches tier: it keeps the default until a running load measures
 	if ( params.has( 'paused' ) ) return { ...base, tier: DEFAULT_QUALITY, source: 'default', why: 'paused: not measured' };
 	const why = ! record ? 'first visit: measuring' : record.adapter !== adapter ? 'GPU changed: measuring' : 'measuring';

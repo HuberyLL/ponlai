@@ -78,8 +78,9 @@ export type RenderScaleRule =
 	// the maximum. Pixel counts rather than shares of the display's ratio, so a frame costs about
 	// the same on any display; the floor is at most `floorShare` of the maximum per axis, which keeps
 	// a small display's floor below its maximum (post/RenderScale.ts `dynamicRange`).
-	// `share` (0 < share <= 1), when not 0, sets the baseline to that share of the maximum per axis
-	// instead of `baseline`'s pixels (the settings menu's render resolution); `pinned` holds the render
+	// `share` (0 < share <= 1), when not 0, caps the render at that share of the display's ratio per
+	// axis and makes it the baseline instead of `baseline`'s pixels (the settings menu's render
+	// resolution); `pinned` holds the render
 	// at the baseline, the dynamic scale off (the menu's dynamic resolution). Both may change on a
 	// running page (assemble/SceneFrame.ts `setResolution`).
 	| { dynamic: { max: number; baseline: number; floor: number; floorShare: number; step: number; share: number; pinned: boolean } };

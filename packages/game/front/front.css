@@ -1,5 +1,5 @@
-/* The front end (front/): the loading screen, the title screen, the pause menu and the settings,
-   in the 蜃光 style (docs/design/ui.md): no frames, brush strokes, 缟 text over a 黛 mist, one 金
+/* The front end's styles: the loading screen, the title, the pause menu and the settings.
+   In the 蜃光 style (docs/design/ui.md): no frames, brush strokes, 缟 text over a 黛 mist, one 金
    stroke under the chosen choice. Laid out on the interface's 1600 x 900 frame, scaled by --k. */
 
 .pl-loading { display: grid; place-items: center; }

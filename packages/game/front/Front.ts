@@ -91,6 +91,8 @@ export class Front {
 	private from: 'title' | 'pause' = 'title';
 	private k = 0;
 	private orbiting = false;
+	// the simulation's pause when the pause menu opened
+	private heldPause = false;
 	private nextFps = 0;
 
 	constructor( context: FrontContext ) {
@@ -123,6 +125,7 @@ export class Front {
 
 		addEventListener( 'keydown', this.onKey, { capture: true } );
 		addEventListener( 'keydown', this.onPlayKey );
+		// (the first screen: `screen` starts as the title, which it shows)
 		if ( context.opening === 'play' ) this.play();
 		else this.show( 'title' );
 
@@ -155,6 +158,7 @@ export class Front {
 	private show( screen: Screen ): void {
 
 		const { game } = this.context;
+		const was = this.screen;
 		this.screen = screen;
 		flag( this.title, 'shown', screen === 'title' );
 		flag( this.pause, 'shown', screen === 'pause' );
@@ -163,8 +167,20 @@ export class Front {
 		if ( screen === 'title' ) this.resume.hidden = ! game.resumed;
 		// the simulation stands still behind every screen; the camera turns round the island behind
 		// the title (and the settings opened from it) and comes to the island view for play
-		if ( screen !== 'play' ) game.setPaused( true );
-		else if ( ! this.context.holdsPause ) game.setPaused( false );
+		// the simulation stands still behind every screen; play takes up the pause it had before the
+		// pause menu (the player's own, Space), and a paused test page keeps its pause
+		if ( screen !== 'play' ) {
+
+			if ( screen === 'pause' && was === 'play' ) this.heldPause = game.sim.paused;
+			game.setPaused( true );
+
+		} else {
+
+			game.setPaused( this.context.holdsPause || ( was === 'pause' && this.heldPause ) );
+			// the game is on: the title offers to go back to it
+			game.resumed = true;
+
+		}
 		const orbit = screen === 'title' || screen === 'settings' && this.from === 'title' ? true : screen === 'play' ? false : this.orbiting;
 		if ( orbit !== this.orbiting ) {
 
@@ -189,14 +205,13 @@ export class Front {
 		// a new game starts on the island the page loaded where it can, else the app reloads into one
 		if ( game.sim.state.pieces !== 0 ) return this.context.newGameElsewhere();
 		await game.startOver();
-		game.resumed = true;
 		this.play();
 
 	}
 
 	private toTitle(): void {
 
-		this.context.game.autosave();
+		if ( this.context.game.keeps ) this.context.game.autosave();
 		this.show( 'title' );
 
 	}

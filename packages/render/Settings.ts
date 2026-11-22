@@ -90,7 +90,7 @@ export const RENDER_SETTINGS = {
 	dayFog: { type: 'switch', default: 'off', about: 'the day\'s fog layer under a clear or fair sky' },
 	seaFog: { type: 'switch', default: 'off', about: 'the deep sea fog' },
 	// quality, anti-aliasing and the frame
-	quality: { type: 'choice', default: 'high', values: TIERS, about: 'the quality tier (medium and low parked)' },
+	quality: { type: 'choice', default: 'high', values: TIERS, about: 'the quality tier, the settings menu\'s preset' },
 	aa: { type: 'choice', default: 'the tier\'s (high: msaa)', values: AA, about: 'the anti-aliasing mode (`gt` on debug pages only)' },
 	msaa: { type: 'choice', default: 'none', values: [ '1', '2', '4' ], about: 'the older alias of `aa`: `4` msaa, `1` and `2` off' },
 	fsrDebug: { type: 'switch', default: 'off', debug: true, about: 'FSR 3\'s debug view over its output, under `aa=fsr3`' },

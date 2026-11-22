@@ -80,15 +80,16 @@ writing-tsl-and-passes (TSL, passes, GPU buffers).
 - What is generated for the island or fitted to the land derives from the land's footprint, the
   island's SDF and fixed-seed fields, never from hand-placed coordinates. Counts scale with the
   coast or the area (rule 5).
-- Changes hold in the kept weathers (clear, fair) and on the high tier (4K output: 1920x1080 CSS px,
-  DPR 2) only. Parked weathers (`sky/Weather.ts` `PARKED_WEATHER`) and tiers (`Quality.ts`
-  `PARKED_QUALITY`) need no support but keep compiling and loading by name; default checks skip
-  them.
+- Changes hold in the kept weathers (clear, fair) on every quality preset (high, medium, low), judged
+  on high at 4K output (1920x1080 CSS px, DPR 2); the default checks name high, a preset's own runs
+  name it (`--quality`). Parked weathers (`sky/Weather.ts` `PARKED_WEATHER`) need no support but keep
+  compiling and loading by name; default checks skip them.
 - Changes are judged against the high tier's performance target: 4K output at 60 fps with MSAA 4x,
   about 14 ms of GPU time a frame at the baseline (`Quality.ts`; `docs/reference/profile-frame.md`).
-  A quality tier changes the cost, never the mood (weather, clock, lighting). High is the reference
-  tier, the only active one and every module's default. Load-time settings are read once at load, so
-  changing the tier reloads the page.
+  A quality tier or a graphics option (`packages/render/GraphicsOptions.ts`) changes the cost, never
+  the mood (weather, clock, lighting). High is the reference tier, the top preset and every module's
+  default. Load-time settings are read once at load, so changing the tier or a reload option reloads
+  the page.
 - A URL option is declared in the settings table of the lowest layer that reads it, and read only
   through `Settings.ts`'s reader (rule 14; partly: `verify-settings`, `verify-layers`). The render
   pipeline, the island and the game's rules never touch browser globals; the app layer passes in
