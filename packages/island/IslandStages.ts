@@ -25,6 +25,7 @@ import { FreeCameraControls } from './camera/FreeCameraControls.ts';
 import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { FramingGlide, IslandTurn, landOutline } from './camera/IslandFraming.ts';
 import { FallingLeaves } from './world/FallingLeaves.ts';
+import { SeaLife } from './life/SeaLife.ts';
 import { bakeGroundTextures } from './materials/GroundTextures.ts';
 import { buildWorldMeshes } from './world/World.ts';
 import type { WorldData } from './world/types.ts';
@@ -106,6 +107,8 @@ export interface IslandParts {
 	showChunkBorders: ( on: boolean ) => void;
 	grass: THREE.Group;
 	yunpeng: Yunpeng;
+	/** the sea's creatures round the island (life/SeaLife.ts) */
+	seaLife: SeaLife;
 	bamboo: Bamboo;
 	heldOpaque: THREE.Box3[];
 	/** the bamboo's box and its groves' mean free path: the volume the sea's reflection crosses as
@@ -324,12 +327,16 @@ export function createLand( render: RenderParts, island: IslandParts, { landOpti
 /** The world's meshes. */
 export function createWorld( render: RenderParts, island: IslandParts ) {
 
-	const { scene, wind, waveMaps } = render;
+	const { scene, wind, waveMaps, fft } = render;
 	const { textures, data, fields } = island;
 	island.walk = walkPoints( data.walk );
 	const world = buildWorldMeshes( data, textures, shared, waveMaps, fields );
 	island.world = world;
 	scene.add( world.group );
+	// The sea's creatures (life/SeaLife.ts): swimmers (Refraction.ts markSwimmer), functions of the
+	// land and the scene clock; a Grow lays them out again (createGrowth, onSwap).
+	island.seaLife = new SeaLife( data, shared, waveMaps, fft, render.simTime );
+	scene.add( island.seaLife.group );
 	island.fallingLeaves = TEST_MODE ? null : new FallingLeaves( { shared, fields, soil: textures.soil, wind, atlas: singleLeaf() } );
 
 }
@@ -538,6 +545,7 @@ export function createGrowth( render: RenderParts, island: IslandParts, { landOp
 			island.islandMaxDistance = controls.maxDistance;
 			poseIslandView( framing.viewOptions, island.islandTurned, island.islandZoom );
 			if ( follow ) followFraming();
+			island.seaLife.setWorld( version );
 			island.shownData = version;
 			islandEvent( 'world swap' );
 
@@ -646,8 +654,9 @@ export function createIslandFrame( render: RenderParts, island: IslandParts, { f
 
 		},
 
-		advanceLife() {
+		advanceLife( dt ) {
 
+			island.seaLife.update( render.simTime, render.paused ? 0 : dt );
 			island.fallingLeaves?.update( render.simTime, freeControls.enabled ? camera.position : controls.target, camera.position );
 
 		},

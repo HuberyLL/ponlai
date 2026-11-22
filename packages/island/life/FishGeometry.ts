@@ -6,18 +6,23 @@
 
 import * as THREE from 'three/webgpu';
 
-// A fish's mesh from its anatomy table: a lofted body and fins as membranes between rays.
+// A swimmer's mesh from its anatomy table: a lofted body and fins as membranes between rays.
 //
 // A fish's mesh from its anatomy table (tidewater's FishGeometry, 4811ba4: the body lofted from
 // superellipse rings, the fins as membranes between rays), cut to what a swimming fish seen from
-// the island needs: no mouth cavity, eye domes, cut faces or poses.
+// the island needs: no mouth cavity, eye domes, cut faces or poses. The same loft makes the sea's
+// other long bodies: a whale shark (a fish with a lunate tail, its lower lobe the shorter) and a
+// dolphin (its tail turned into horizontal flukes, `caudal.flukes`; its flippers wings angled down).
 //
 // Local frame, the total length 1: the snout at z = +0.5, the tip of the tail fin at z = -0.5,
 // the back at +y, the body's axis on y = 0.
 //
-// Paired fins can be wings (`Wing`): rays fanning out sideways in one plane, spread as in a glide,
-// which the material folds back along the flank about the fin's root (FishMaterial.ts). Tidewater's
-// paired fins fan in the vertical plane and stay spread.
+// Paired fins are wings (`Wing`): rays fanning out sideways in one plane, which the material can
+// fold back along the flank about the fin's root (SwimmerMaterial.ts). Tidewater's paired fins fan
+// in the vertical plane and stay spread. A fin of no rays is left out.
+//
+// The rays, the eagle ray and the turtle (CreatureGeometry.ts) share the frame, the parts and
+// aData's x (the position along the body), so one material poses and paints them all.
 //
 // aData per vertex:
 //   x  the position along the fish (0 snout .. 1 tail tip): the swimming wave
@@ -26,7 +31,7 @@ import * as THREE from 'three/webgpu';
 //         belly .. 1 back); fins: the position along the ray (0 root .. 1 edge) and the ray
 //         coordinate (an integer on the rays, 0 the leading ray)
 
-export const PART = { BODY: 0, DORSAL: 1, ANAL: 2, CAUDAL: 3, PECTORAL: 4, PELVIC: 5 } as const;
+export const PART = { BODY: 0, DORSAL: 1, ANAL: 2, CAUDAL: 3, PECTORAL: 4, PELVIC: 5, DISC: 6, WHIP: 7, CARAPACE: 8, SKIN: 9, FLIPPER: 10, EYE: 11 } as const;
 
 type Profile = readonly ( readonly [ number, number ] )[];
 
@@ -50,8 +55,8 @@ export interface Anatomy {
 	dorsal: readonly MidlineFin[]; anal: readonly MidlineFin[];
 	pectoral: Wing; pelvic: Wing;
 	// forked tail: the lobes' length and span, the middle rays' length relative to the lobes, and
-	// the lower lobe's length relative to the upper
-	caudal: { len: number; span: number; fork: number; lower: number; rays: number };
+	// the lower lobe's length relative to the upper; flukes: the tail lies flat (a cetacean's)
+	caudal: { len: number; span: number; fork: number; lower: number; rays: number; flukes?: boolean };
 }
 
 const TAU = Math.PI * 2;
@@ -78,7 +83,9 @@ export function prof( pts: Profile, u: number ): number {
 
 const lerp = ( a: number, b: number, t: number ) => a + ( b - a ) * t;
 
-class MeshData {
+/** A mesh's positions, aData and triangles as they are built (CreatureGeometry.ts builds with it
+ * too). */
+export class MeshData {
 
 	pos: number[] = [];
 	dat: number[] = [];
@@ -304,7 +311,10 @@ function caudalFin( M: MeshData, S: Anatomy, maxRays: number ): void {
 		const s = - 1 + 2 * k / ( C.rays - 1 ); // -1 the lower lobe .. 1 the upper
 		const a = Math.abs( s );
 		const len = C.len * ( C.fork + ( 1 - C.fork ) * Math.pow( a, 1.3 ) ) * ( s < 0 ? lerp( 1, C.lower, a ) : 1 );
-		return { b: [ 0, hp * s, zb ], t: [ 0, C.span * s * ( s < 0 ? lerp( 1, C.lower, a * 0.6 ) : 1 ), zb - 0.014 - len ], ub: L - 0.014, ut: L + len };
+		const across = C.span * s * ( s < 0 ? lerp( 1, C.lower, a * 0.6 ) : 1 );
+		// flukes: the same outline laid flat, spanning x from the tail stock's sides
+		if ( C.flukes ) return { b: [ end.W * 0.9 * s, 0, zb ], t: [ across, 0, zb - 0.014 - len ], ub: L - 0.014, ut: L + len };
+		return { b: [ 0, hp * s, zb ], t: [ 0, across, zb - 0.014 - len ], ub: L - 0.014, ut: L + len };
 
 	} );
 	membrane( M, PART.CAUDAL, rays, 0.05, 2, ids, false );
@@ -347,17 +357,18 @@ export function wingRoot( S: Anatomy, F: Wing ): number {
 
 // ------------------------------------------------------------------ the fish
 
-/** The fish's mesh. `detail` 0 is the near level (more rings and rays), 1 the far one. */
-export function fishGeometry( S: Anatomy, detail: 0 | 1 = 0 ): THREE.BufferGeometry {
+/** The fish's mesh. `detail` 0 is the near level (more rings and rays), 1 the middle one, 2 the
+ * far one, for a fish a few pixels long. */
+export function fishGeometry( S: Anatomy, detail: 0 | 1 | 2 = 0 ): THREE.BufferGeometry {
 
 	const M = new MeshData();
-	buildBody( M, S, detail === 0 ? 18 : 9, detail === 0 ? 14 : 8 );
-	const rays = detail === 0 ? 9 : 4;
+	const rings = [ 18, 9, 6 ][ detail ], around = [ 14, 8, 6 ][ detail ], rays = [ 9, 4, 3 ][ detail ];
+	buildBody( M, S, rings, around );
 	midlineFins( M, S, S.dorsal, 1, rays );
 	midlineFins( M, S, S.anal, - 1, rays );
-	caudalFin( M, S, detail === 0 ? 9 : 5 );
-	wing( M, S, S.pectoral, PART.PECTORAL, detail === 0 ? 9 : 5 );
-	wing( M, S, S.pelvic, PART.PELVIC, detail === 0 ? 5 : 3 );
+	caudalFin( M, S, [ 9, 5, 3 ][ detail ] );
+	if ( S.pectoral.rays > 0 ) wing( M, S, S.pectoral, PART.PECTORAL, [ 9, 5, 3 ][ detail ] );
+	if ( S.pelvic.rays > 0 && detail < 2 ) wing( M, S, S.pelvic, PART.PELVIC, [ 5, 3, 2 ][ detail ] );
 	return M.build();
 
 }

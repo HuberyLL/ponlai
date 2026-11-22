@@ -118,6 +118,12 @@ Scene jump
   `packages/render/assemble/SceneJump.ts`). It clears every state the earlier scene left behind, so
   the page then holds what a fresh load of the same URL holds.
 
+Sea life
+: The ordinary fauna of the sea round the island, fish, rays, turtles, dolphins and a whale shark,
+  each kind placed from the land and moved as a function of the scene clock
+  (`packages/island/life/SeaLife.ts`;
+  [Life and islanders](../design/life-and-islanders.md#the-seas-life)).
+
 Settled
 : The page's signal that a paused frame is final (`settled`, `packages/render/post/Settled.ts`).
   Captures are taken once it is true.

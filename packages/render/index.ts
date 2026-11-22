@@ -47,10 +47,12 @@ export { DETAIL_SIZE, bakeProceduralTextures } from './materials/ProceduralTextu
 export type { DetailTextures } from './materials/ProceduralTextures.ts';
 export { selectVec3 } from './materials/Select.ts';
 export { DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness } from './materials/Wetness.ts';
-export { refractedGroup, showUnderwater } from './ocean/Refraction.ts';
+export type { OceanFFT } from './ocean/OceanFFT.ts';
+export { markSwimmer, refractedGroup, showUnderwater } from './ocean/Refraction.ts';
 export { OPEN_DRIFT } from './ocean/SeaDetail.ts';
 export type { SeaDetail } from './ocean/SeaDetail.ts';
 export type { ShoreFields, ShoreWaves } from './ocean/ShoreWaves.ts';
+export { swimmerSway } from './ocean/Water.ts';
 export type { WaveMaps } from './ocean/WaveMaps.ts';
 export { AA_MODE, ALPHA_TO_COVERAGE, FSR3, TEMPORAL } from './post/Antialiasing.ts';
 export type { AAMode } from './post/Antialiasing.ts';

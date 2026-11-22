@@ -18,8 +18,8 @@ All MIT ([`LICENSES/MIT.txt`](LICENSES/MIT.txt)) but pbrt-v3, BSD-2-Clause
 carries the notice.
 
 - [tidewater](https://github.com/dgreenheck/tidewater), by Daniel Greenheck: © 2026 DRG Software
-  Solutions LLC. The ocean, the water, the sky, the clouds, the post-processing and the fish, in
-  `packages/render/` and `packages/island/life/`.
+  Solutions LLC. The ocean, the water, the sky, the clouds, the post-processing and the sea's
+  creatures, in `packages/render/` and `packages/island/life/`.
 - [three-geospatial](https://github.com/takram-design-engineering/three-geospatial), by Shota
   Matsuda: © 2024 Shota Matsuda. The lunar disk (`packages/render/sky/NightSky.ts`).
 - [a-starry-sky](https://github.com/Dante83/a-starry-sky), by David Evans: © 2018-2026 David Evans.

@@ -34,7 +34,7 @@ export function islandHandles( render: RenderParts, island: IslandParts, page: P
 				// the meadow's and the cliff's albedos (groundGains)
 				setLawnGain: ( gain: number ) => { setGroundGain( 'lawnGain', gain ); groundBounce.invalidate(); renderEvent( 'retune' ); },
 				setRockGain: ( gain: number ) => { setGroundGain( 'rockGain', gain ); renderEvent( 'retune' ); },
-				grass, fallingLeaves: island.fallingLeaves, characters: island.characters, game: page.game, soilUniforms, weatherEffects: page.weatherEffects,
+				grass, fallingLeaves: island.fallingLeaves, seaLife: island.seaLife, characters: island.characters, game: page.game, soilUniforms, weatherEffects: page.weatherEffects,
 				// the meadow map (world/SwardField.ts: RGBA bytes, G the sward's cover) and the extent it spans
 				// round the origin, for tools that pick a view over the meadow
 				meadowMap: async () => {

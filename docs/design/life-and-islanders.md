@@ -1,13 +1,15 @@
 # Life and islanders
 
 What the island's creatures and its people look like and why, and what to avoid. What every subject
-shares (lighting, exposure, post-processing) is in [Art direction](art-direction.md). The creatures
-below are designed, not yet built.
+shares (lighting, exposure, post-processing) is in [Art direction](art-direction.md). The sea's
+ordinary life is built (`packages/island/life/SeaLife.ts`, [The sea's life](#the-seas-life)); the
+creatures of the texts are designed, not yet built.
 
 Contents:
 
 - [The creatures](#the-creatures)
 - [The cast](#the-cast)
+- [The sea's life](#the-seas-life)
 - [The islanders](#the-islanders)
 
 ## The creatures
@@ -15,7 +17,8 @@ Contents:
 - The island's life, in the sea, on the island and over both, is the life of Penglai and the other
   mountains of the immortals as the old texts describe it (the Liezi, the Shiji, the Shanhaijing,
   Wang Jia's Shiyi ji and their like). Avoid a generic animal added for liveliness: a crab, or a
-  gull for its own sake.
+  gull for its own sake. The sea is the exception: it holds the ordinary life of a warm coast as
+  well, so that the clear water reads as a living sea ([The sea's life](#the-seas-life)).
 - Each creature is a real species in body, gait and habitat, with one or two departures from life,
   as the texts themselves make them: the Liezi's trees are trees whose flowers and fruit are pearl
   and jade. No creature comes from the texts alone, without a living model. Fantasy
@@ -68,6 +71,30 @@ The cast the texts give so far:
 - On the island: the xiushi of Yingzhou ("shaped like a qilin, it eats no living plant, drinks no
   muddy water, and smells gold and jade in stones", the Shiyi ji), a white deer that noses the
   stones rather than grazing.
+
+## The sea's life
+
+The sea round the island holds the fauna of a warm-temperate coast on the Kuroshio, the current that
+runs past southern Japan and Taiwan: the species a diver meets there, at their real sizes, colours
+and gaits. Each kind lives where its species does, and its groups, their members and their routes
+derive from the land (the coast's distance, the floor's depth, the seagrass cover), so a grown
+island carries more of them. From the island view they read as the creatures section above asks: a
+school's glint, a shadow in the shallows, a back breaking the surface.
+
+- In mid-water over the shelf's edge, Japanese sardines (Sardinops melanostictus, 15 to 20 cm) in
+  one polarised school of hundreds, their silver flanks flashing as it turns.
+- Over the sand in the shallows, grey mullet (Mugil cephalus, 35 to 50 cm) in loose shoals.
+- Along the shelf's edge, small groups of greater amberjack (Seriola dumerili, about a metre),
+  silver with a yellow band along the flank.
+- Over the seagrass, green turtles (Chelonia mydas), grazing slowly and rising to breathe every two
+  to four minutes: the young ao of the cast.
+- On the sand in the shallows, red stingrays (Hemitrygon akajei), their disc's margins undulating.
+- In a loose line over the shelf, Naruto eagle rays (Aetobatus narutobiei), plain dark brown,
+  flapping and gliding.
+- Off the shelf, a pod of Indo-Pacific bottlenose dolphins (Tursiops aduncus) circling the island,
+  each pair breaking the surface to breathe every 8 to 20 seconds.
+- Beyond the shelf's edge, one whale shark (Rhincodon typus, 7 to 8 m), pale spots and stripes over
+  its dark back: the great fish of Yingzhou of the cast, still without its horn.
 
 ## The islanders
 
