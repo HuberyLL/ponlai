@@ -171,5 +171,119 @@
 			"hydration": "口渴",
 			"other": "告急"
 		}
+	},
+	"front": {
+		"name": "蓬莱",
+		"load": {
+			"label": "载入中，{{percent}}%",
+			"renderer": "铺开画布",
+			"sky": "点亮天空",
+			"ground": "岛屿浮出海面",
+			"world": "山石成形",
+			"plants": "草木生长",
+			"water": "潮水涌来",
+			"haze": "雾气升起",
+			"warm-up": "研墨调色",
+			"loop": "入画",
+			"failed": "载入失败",
+			"shown": "入画"
+		},
+		"title": {
+			"continue": "继续",
+			"new": "新游戏",
+			"settings": "设置",
+			"menu": "主菜单"
+		},
+		"pause": {
+			"title": "暂停",
+			"continue": "继续",
+			"settings": "设置",
+			"toTitle": "返回标题"
+		},
+		"settings": {
+			"title": "设置",
+			"graphics": "画面",
+			"back": "返回",
+			"preset": "预设",
+			"display": "显示",
+			"quality": "画质",
+			"reload": "重载",
+			"pending": "重新载入后生效：{{list}}",
+			"apply": "重新载入",
+			"confirm": "有的更改要重新载入才生效。现在重新载入？进度会先保存。",
+			"yes": "重新载入",
+			"no": "稍后"
+		},
+		"preset": {
+			"low": "低",
+			"medium": "中",
+			"high": "高",
+			"custom": "自定义"
+		},
+		"option": {
+			"display": {
+				"name": "显示模式",
+				"cost": "全屏不改变渲染开销",
+				"full": "全屏",
+				"window": "窗口"
+			},
+			"resolution": {
+				"name": "渲染分辨率",
+				"cost": "开销随像素数增减，画面越低越柔",
+				"auto": "自动",
+				"50": "50%",
+				"67": "67%",
+				"75": "75%",
+				"85": "85%",
+				"100": "100%"
+			},
+			"dynamic": {
+				"name": "动态分辨率",
+				"cost": "忙时降低分辨率，保住帧率",
+				"on": "开",
+				"off": "关"
+			},
+			"aa": {
+				"name": "抗锯齿",
+				"cost": "MSAA 最清晰；时间性方案更省，动态时略糊",
+				"msaa": "MSAA 4×",
+				"taa": "TAA",
+				"taau": "TAAU",
+				"fsr3": "FSR 3"
+			},
+			"frameRate": {
+				"name": "帧率上限",
+				"cost": "上限越低越省电",
+				"30": "30",
+				"60": "60",
+				"max": "不限"
+			},
+			"fps": {
+				"name": "帧率显示",
+				"cost": "在角落显示每秒帧数",
+				"off": "关",
+				"on": "开"
+			},
+			"meadowShadows": {
+				"name": "草地阴影",
+				"cost": "草叶彼此投下的细影；关闭时环境光遮蔽也随之关闭",
+				"on": "开",
+				"off": "关"
+			},
+			"ao": {
+				"name": "环境光遮蔽",
+				"cost": "草木与石缝的阴影",
+				"on": "开",
+				"off": "关"
+			},
+			"clouds": {
+				"name": "云",
+				"cost": "云的细节与刷新",
+				"high": "高",
+				"medium": "中",
+				"low": "低"
+			}
+		},
+		"fps": "{{fps}} 帧"
 	}
 }

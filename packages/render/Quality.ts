@@ -1,9 +1,11 @@
 // The quality tiers: every setting the frame's cost depends on, per tier, in one table.
 //
-// `?quality` picks the tier at load; without it the app loads high (QualityDetect.ts). The GUI's
-// quality control reloads the page with it.
+// The tiers are the settings menu's presets (低, 中, 高; GraphicsOptions.ts maps the menu's single
+// options onto these fields). `?quality` picks the tier at load; without it the app loads the
+// player's stored choice, else a first visit's GPU timing's (app/QualityDetect.ts), else high.
+// Changing the tier reloads the page.
 //
-// High is the reference image and the only active tier: every trade-off of image quality against
+// High is the reference image and the top preset: every trade-off of image quality against
 // time is judged on it, at its performance target: 4K output (1920x1080 at a device pixel ratio of 2) at 60 fps with
 // MSAA 4x (`aa`), with a GPU budget of about 14 ms a frame in the normal scenes (island views, the
 // meadow close up), leaving about 15 % of the 16.7 ms frame for pacing and the OS. 1440p's pixel
@@ -21,12 +23,10 @@
 // tenths of native 4K's GPU time; `taau` at 1440p softened the meadow to about four fifths of the
 // reference's sharpness.
 //
-// Parked tiers (`PARKED_QUALITY`: medium, low) slowed every line of work down, so until they are
-// revived as their own milestone they are out of the default choice (no GPU timing picks them), the
-// GUI's list and the default checks (the tools' default sets name high only). Their rows stay in the
-// table and keep compiling, and `?quality=medium|low` (or a tool's `--quality` / `--tiers`) still
-// loads them; new work need not support them. Their last tuning: medium runs `taau` at a fixed
-// budget (msaa missed 60 fps there where taau held it), its TAAU sharpening softer than high's; low runs `msaa` at a smaller budget. A revival measures them again against high.
+// Medium and low (their rows say how they were chosen) hold the same paused-page rules as high: the
+// test mode's frames are bit-identical between runs and equal a fresh load's; the default checks
+// name high alone, and a preset's own checks name it (`--quality`, `--tiers`). Every tier runs the
+// dynamic render scale, so the menu's render resolution and dynamic resolution apply on any of them.
 //
 // Each tier picks its anti-aliasing (the `aa` setting, post/Antialiasing.ts; `?aa` or the GUI choose
 // any mode over it). Without multisampling or a temporal resolve geometric edges alias by a pixel's
@@ -42,7 +42,8 @@
 // Load-time settings reach their modules as `water` (Water.ts; its `fftAnisotropy` goes to OceanFFT's
 // output targets), `rainShading` (`setRainShading`), `post` (`PostOptions` for
 // `new Pipeline`), `environmentSource` (`Sky.setEnvironmentSource`, before the first bake),
-// `frameRate` (FramePacer), `ao` (post/GTAO.ts, read there as it loads), `aa` (the anti-aliasing
+// `frameRate` (FramePacer), `ao` (post/GTAO.ts, read there as it loads), `meadowShadows`
+// (post/MeadowShadows.ts, as it loads), `aa` (the anti-aliasing
 // mode, post/Antialiasing.ts, which also chooses the tier, since the vegetation's modules read the
 // mode as they load), `taa` (the temporal resolve's settings, TemporalAA.ts) and `render`
 // (RenderScale.ts). Runtime ones: the cloud view
@@ -50,15 +51,6 @@
 // `Sky.setEnvironmentCadence`, the sky bake interval, the refracted sun's interval and
 // `angleGate`, and the rain's drop count. Every default in the modules themselves is high's.
 // `?tier.<setting>=<value>` overrides one setting for an A/B.
-//
-// The parked medium and low traded a little of high's image quality for time, each setting judged
-// in captures:
-// one screen-space reflection ray (its 14 steps grow by 1.51, so it reaches as far as high's), fewer lawn blades
-// with the canopy light per vertex, a coarser haze grid and fewer depth-of-field taps, a cheaper
-// cloud march and panorama refresh, slower sky bakes with the environment's PMREM on every second
-// one from a 256-wide source, a coarser refracted-sun gate and fewer rain drops; low also draws
-// fewer veil shells and ripple layers. Low keeps the full storm foam: the merged foam turned the crests'
-// streaks into scattered lace.
 //
 // This module imports types only, so the CPU-only tools can read the table under plain node.
 import type { WaterQuality } from './ocean/Water.ts';
@@ -70,10 +62,10 @@ import { settings } from './Settings.ts';
 export const QUALITY_TIERS = [ 'low', 'medium', 'high' ] as const;
 export type QualityTier = typeof QUALITY_TIERS[ number ];
 export const DEFAULT_QUALITY: QualityTier = 'high';
-/** Tiers out of the default choice, the GUI and the default checks; still loaded by name. */
-export const PARKED_QUALITY: ReadonlyArray<QualityTier> = [ 'medium', 'low' ];
+/** Tiers out of the default choice, the GUI and the menu; still loaded by name (none today). */
+export const PARKED_QUALITY: ReadonlyArray<QualityTier> = [];
 export const isParkedQuality = ( tier: string ): boolean => ( PARKED_QUALITY as readonly string[] ).includes( tier );
-/** The active tiers (today high alone). */
+/** The active tiers: all three, the settings menu's presets. */
 export const ACTIVE_QUALITY: ReadonlyArray<QualityTier> = QUALITY_TIERS.filter( ( tier ) => ! isParkedQuality( tier ) );
 
 /** How the scene's render scale (its pixel ratio relative to CSS pixels) is chosen. */
@@ -86,7 +78,12 @@ export type RenderScaleRule =
 	// the maximum. Pixel counts rather than shares of the display's ratio, so a frame costs about
 	// the same on any display; the floor is at most `floorShare` of the maximum per axis, which keeps
 	// a small display's floor below its maximum (post/RenderScale.ts `dynamicRange`).
-	| { dynamic: { max: number; baseline: number; floor: number; floorShare: number; step: number } };
+	// `share` (0 < share <= 1), when not 0, caps the render at that share of the display's ratio per
+	// axis and makes it the baseline instead of `baseline`'s pixels (the settings menu's render
+	// resolution); `pinned` holds the render
+	// at the baseline, the dynamic scale off (the menu's dynamic resolution). Both may change on a
+	// running page (assemble/SceneFrame.ts `setResolution`).
+	| { dynamic: { max: number; baseline: number; floor: number; floorShare: number; step: number; share: number; pinned: boolean } };
 
 /** The temporal resolve's settings (taa and taau; read once as the resolve is built). */
 export interface TemporalSettings {
@@ -192,6 +189,11 @@ export interface QualityProfile {
 	// overrides it; the screen-space shadows over the whole scene build that prepass too, post/MeadowShadows.ts)
 	// read by: post/GTAO.ts as it loads (`GTAO`)
 	ao: boolean;
+	// the meadow's screen-space shadows and the vegetation's depth prepass they march (under MSAA;
+	// post/MeadowShadows.ts): without them the blades take the coarse shadow of their heights alone,
+	// and the ambient occlusion, which reads the same prepass, is off too; `flags=meadowShadows` overrides it
+	// read by: post/MeadowShadows.ts as it loads (`MEADOW_SHADOWS`)
+	meadowShadows: boolean;
 	// the rain veil's shells and the sea's ripple layers
 	// read by: RenderStages.ts createSeaAndPipeline (`setRainShading`: weather/Rain.ts, ocean/Water.ts)
 	rainShading: { veilShells: number; rippleLayers: number };
@@ -228,6 +230,12 @@ export interface QualityProfile {
 
 }
 
+/** The settings that change on a running page, and where: `applySkyQuality` (RenderStages.ts) applies
+ * the sky's, the frame reads the intervals each frame, the sizing takes the render's share and pin
+ * (assemble/SceneFrame.ts `setResolution`) and the pacer its rate (`setRate`). A live graphics option
+ * sets these only (tools/render/verify-graphics-options.mjs). */
+export const RUNTIME_SETTINGS = [ 'cloudView', 'cloudDome', 'cloudMarch', 'cloudShadowRows', 'skyUpdateInterval', 'environmentEvery', 'refractedSun', 'rainDrops', 'render.dynamic.share', 'render.dynamic.pinned', 'frameRate' ] as const;
+
 const TAA: TemporalSettings = {
 	framesStill: 24, framesStillWater: 12, framesMoving: 5, speedFull: 16, gammaStill: 1.25, gammaMove: 0.75,
 	classFrames: [ 1, 1, 0.4, 0.8, 0 ], classGamma: [ 0, 0.25, 0, - 0.25, 0 ], waterFar: [ 150, 600 ], glintReactive: { from: 2, to: 8, max: 1 },
@@ -243,10 +251,11 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		taa: { ...TAA },
 		// 1440p's pixels at the baseline (the standard upscales them, a 2K display is native) and 1080p's
 		// at the floor; a display of 1080p or fewer pixels drops at most a quarter per axis
-		render: { dynamic: { max: 2, baseline: 2560 * 1440, floor: 1920 * 1080, floorShare: 0.75, step: 0.05 } },
+		render: { dynamic: { max: 2, baseline: 2560 * 1440, floor: 1920 * 1080, floorShare: 0.75, step: 0.05, share: 0, pinned: false } },
 		water: { ssrIterations: 48, ssrMinFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { hazeGrid: { width: 160, height: 90, depth: 64 } },
 		ao: true,
+		meadowShadows: true,
 		rainShading: { veilShells: 3, rippleLayers: 2 },
 		environmentSource: 512,
 		frameRate: 60,
@@ -259,18 +268,26 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		refractedSun: { interval: 0.08, angleGate: 0.03 },
 		rainDrops: 49152,
 	},
+	// Medium and low: each a coherent set chosen from a sweep of every setting against high at 4K
+	// output (profile-frame compares; docs/reference/profile-frame.md, Presets): about half of high's
+	// 1440p frame does not follow the pixel count, so their savings come from the fixed passes first
+	// (the meadow's screen-space shadows with their prepass, the ambient occlusion, the clouds' view and
+	// march) and then from a lower baseline of the dynamic render scale. Both keep MSAA (the temporal
+	// modes softened the meadow) and high's look settings; a setting that saved under 0.3 ms takes a
+	// cheaper value only where it costs nothing to see (the haze's grid, the sky's cadence).
 	medium: {
-		aa: 'taau',
-		// TAAU's sharpening softer than high's (higher is softer)
-		taa: { ...TAA, sharpness: { taa: TAA.sharpness.taa, taau: [ 2.0, 1.5 ] } },
-		render: { budget: 1600 * 900 },
+		aa: 'msaa',
+		taa: { ...TAA },
+		// 1080p's pixels at the baseline, 900p's at the floor
+		render: { dynamic: { max: 2, baseline: 1920 * 1080, floor: 1600 * 900, floorShare: 0.75, step: 0.05, share: 0, pinned: false } },
 		water: { ssrIterations: 32, ssrMinFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { hazeGrid: { width: 128, height: 72, depth: 64 } },
 		ao: false,
+		meadowShadows: true,
 		rainShading: { veilShells: 3, rippleLayers: 2 },
 		environmentSource: 256,
 		frameRate: 60,
-		cloudView: { render: 0.5 },
+		cloudView: { display: 0.36 },
 		cloudDome: { width: 1024, height: 256, strideX: 8, strideY: 8 },
 		cloudMarch: { viewSteps: 192, panoramaSteps: 128, lightTaps: 5, rainSteps: 16 },
 		cloudShadowRows: 1 / 8,
@@ -282,18 +299,22 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 	low: {
 		aa: 'msaa',
 		taa: { ...TAA, lite: true, framesStill: 12 },
-		render: { budget: 1280 * 720 },
+		// 900p's pixels at the baseline, 720p's at the floor
+		render: { dynamic: { max: 2, baseline: 1600 * 900, floor: 1280 * 720, floorShare: 0.75, step: 0.05, share: 0, pinned: false } },
 		// (the merged storm foam turned the crests' streaks into scattered lace: kept as on high)
 		water: { ssrIterations: 32, ssrMinFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { hazeGrid: { width: 96, height: 54, depth: 64 } },
 		ao: false,
+		// the blades take the coarse shadow of their heights alone (its prepass and march cost 0.6 to
+		// 1.2 ms over the ambient occlusion's)
+		meadowShadows: false,
 		rainShading: { veilShells: 2, rippleLayers: 1 },
 		environmentSource: 256,
 		// light enough to render on most refreshes of a fast display: held to 60 Hz there, its
 		// frames finished right at the compositor's deadline and were shown one or three refreshes
 		// apart in turn (a quarter of them), where unpaced they keep the refresh's own steps
 		frameRate: 0,
-		cloudView: { render: 0.4 },
+		cloudView: { display: 0.3 },
 		cloudDome: { width: 768, height: 192, strideX: 8, strideY: 8 },
 		cloudMarch: { viewSteps: 128, panoramaSteps: 96, lightTaps: 3, rainSteps: 10 },
 		cloudShadowRows: 1 / 8,
@@ -320,8 +341,11 @@ export function loadTier(): QualityTier {
 }
 
 /** The tier's profile with `?tier.<setting path>=<value>` options over it, for A/B captures of one
- * setting (`tier.post.hazeGrid.width=128`, `tier.water.ssrIterations=64`; `overrides` the app's).
- * A path must name an existing setting; numbers, booleans and comma lists are parsed. */
+ * setting (`tier.post.hazeGrid.width=128`, `tier.water.ssrIterations=64`) and for the player's
+ * graphics options (GraphicsOptions.ts, which the app installs as these options; `overrides` the
+ * app's, applied in order, so a later one wins). A path must name an existing setting; numbers,
+ * booleans and comma lists are parsed, and a value that opens with `{` or `[` is JSON that replaces
+ * the whole setting (`tier.cloudView={"render":0.5}`). */
 export function qualityProfile( tier: QualityTier, overrides: ReadonlyArray<readonly [ string, string ]> = settings.prefixed( 'tier.' ) ): QualityProfile {
 
 	// a JSON copy, not structuredClone: that keeps the table's shared objects shared (the tiers'
@@ -335,7 +359,8 @@ export function qualityProfile( tier: QualityTier, overrides: ReadonlyArray<read
 		const last = path[ path.length - 1 ];
 		if ( ! node || typeof node !== 'object' || ! ( last in node ) ) throw new RangeError( `Unknown quality setting: ${ key }` );
 		const parse = ( v: string ): unknown => v === 'true' ? true : v === 'false' ? false : v !== '' && Number.isFinite( Number( v ) ) ? Number( v ) : v;
-		node[ last ] = Array.isArray( node[ last ] ) ? raw.split( ',' ).map( parse ) : parse( raw );
+		if ( raw.startsWith( '{' ) || raw.startsWith( '[' ) ) node[ last ] = JSON.parse( raw ) as unknown;
+		else node[ last ] = Array.isArray( node[ last ] ) ? raw.split( ',' ).map( parse ) : parse( raw );
 
 	}
 	return profile;

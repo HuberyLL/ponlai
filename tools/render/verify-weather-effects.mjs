@@ -38,6 +38,7 @@ import { acquireGpuLock } from '../kit/gpu-lock.mjs';
 import { DAY_PRESETS } from '../../packages/render/sky/DayCycle.ts';
 import { renderedFrames } from '../kit/page-eval.mjs';
 import { waitForSettled } from '../kit/capture-browser.mjs';
+import { reviewUrl } from '../kit/page-query.mjs';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const out = 'artifacts/verification/weather-effects';
@@ -85,7 +86,7 @@ try {
 		const url = new URL( base );
 		url.search = '';
 		for ( const [ key, value ] of Object.entries( { debug: '', paused: '', preset: 'golden-hour', t: '12', dpr: '1', weather: 'rain', quality, dist: '58', polar: '50', az: '318' } ) ) url.searchParams.set( key, value );
-		await page.goto( url.href );
+		await page.goto( reviewUrl( url.href ) );
 		await page.waitForFunction( () => {
 			const s = window.__PONLAI__, loading = document.getElementById( 'loading' );
 			return s?.rain && s.weatherEffects && s.shared.wetness && ! s.sky.busy && ! s.sky.transitioning &&

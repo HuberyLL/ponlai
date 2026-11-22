@@ -60,7 +60,7 @@ What the look and the game are, and why.
     and fog, the clouds, the sky's colour, the parked weathers.
   - [Night](design/night.md): the moon, the night lighting, the stars.
   - [Life and islanders](design/life-and-islanders.md): the creatures and the people.
-- [Game design](design/game-design.md): the game behind `?game`.
+- [Game design](design/game-design.md): the game, the page at `/`.
 - [Game UI](design/ui.md): the player's interface.
 
 ## Reference

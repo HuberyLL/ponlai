@@ -1,16 +1,11 @@
 import { QUALITY, QUALITY_TIERS, DEFAULT_QUALITY, isQualityTier, type QualityTier, renderPixelRatio } from '../packages/render/setup.ts';
 import type { PageSettingsQuery } from './AppSettings.ts';
 
-// The quality tier chosen at startup, parked while high is the only active tier.
-//
-// Parked with the medium and low tiers (Quality.ts `PARKED_QUALITY`): high is the only active tier,
-// so `chooseQuality` takes `?quality` or else loads high, and never times the GPU (the measurement
-// could only pick a parked tier). The detector, its cost model and the remembered record stay and
-// keep compiling for the tiers' revival, which re-fits the model and lets `chooseQuality` measure
-// again (with the adapter's name, which the remembered record is keyed by: git history has it); until then what follows describes the parked behaviour.
+// The quality tier chosen on a first visit: the GPU timed behind the loading screen, a preset picked.
 //
 // The quality tier chosen at startup, as games do (Unreal's scalability auto-detect): on a first
-// visit without `?quality`, the page loads as high and times the GPU over the first frames behind the
+// visit without `?quality` and without the player's own graphics settings (GraphicsSettings.ts,
+// which win once the player has chosen in the menu), the page loads as high and times the GPU over the first frames behind the
 // loading screen, then picks the highest tier a cost model predicts fits the display's paced frame
 // interval with headroom. The choice is remembered (localStorage), with the GPU adapter it was made
 // on; it is measured again only on request (the GUI's re-detect, `?autoQuality=detect`) or when the
@@ -34,7 +29,7 @@ import type { PageSettingsQuery } from './AppSettings.ts';
 // depth (98 ms for 23 ms frames).
 
 // bumped when the model or the tiers change, so remembered choices are made again
-const VERSION = 1;
+const VERSION = 2;
 const STORAGE_KEY = 'ponlai.quality.auto';
 // seconds before frames count, the frames taken, and the most seconds it may take before it gives up
 const WARMUP = 0.5, MEASURE_FRAMES = 30, TIMEOUT = 5;
@@ -49,15 +44,16 @@ const HEADROOM = 2.8;
 // medium's for its sharper shading, and has no room left for a heavier view.
 //
 // Each tier's GPU time as A + B * scale^2 (scale: render pixels per CSS pixel per axis), relative to
-// high's at 1.5 = 1, at 1920x1080 CSS. Fitted to frames at render scales 1.5 and 1 (production
-// build, timestamps on, the island at noon and golden hour, on one GPU): high 7.4 + 7.9 s^2 ms,
-// medium 6.9 + 6.0 s^2, low 6.1 + 5.8 s^2. A measurement on high gives the GPU's speed; the other
-// tiers follow in these proportions (a GPU of another make may share its time out differently, so
-// the budget keeps headroom).
+// high's at 1.5 = 1, at 1920x1080 CSS. Fitted on the island at noon (production build, timestamps on,
+// on one GPU): high at render scales 1, 4/3, 1.6 and 2 gave 7.31 + 4.14 s^2 ms; medium, 10.91 ms at
+// its baseline (scale 1), and low, 9.27 ms at its own (5/6), share high's pixel term and keep the rest
+// as their fixed part (6.77 and 6.40 ms: what they turn off is mostly fixed work). A measurement on
+// high gives the GPU's speed; the other tiers follow in these proportions (a GPU of another make may
+// share its time out differently, so the budget keeps headroom).
 const COST: Record<QualityTier, { fixed: number; pixel: number }> = {
-	high: { fixed: 0.29, pixel: 0.71 / 2.25 },
-	medium: { fixed: 0.27, pixel: 0.53 / 2.25 },
-	low: { fixed: 0.24, pixel: 0.52 / 2.25 },
+	high: { fixed: 0.44, pixel: 0.56 / 2.25 },
+	medium: { fixed: 0.41, pixel: 0.56 / 2.25 },
+	low: { fixed: 0.385, pixel: 0.56 / 2.25 },
 };
 // the view the fit was made at (CSS pixels): the per-pixel part follows the view's area
 const FIT_AREA = 1920 * 1080;
@@ -80,8 +76,8 @@ export interface AutoQualityRecord {
 
 export interface QualityChoice {
 	tier: QualityTier;
-	// how it was chosen: ?quality, a remembered measurement, a measurement on this load, the default
-	source: 'url' | 'auto' | 'detect' | 'default';
+	// how it was chosen: ?quality, the player's graphics settings, a remembered measurement, a measurement on this load, the default
+	source: 'url' | 'player' | 'auto' | 'detect' | 'default';
 	why: string;
 	record: AutoQualityRecord | null;
 	adapter: string;
@@ -126,15 +122,47 @@ export function forgetQuality(): void {
 
 }
 
-/** The tier this load builds: `?quality` (any tier, parked ones included), else high. The GPU is
- * not measured while the lower tiers are parked (`source` is never 'detect'). */
-export function chooseQuality( params: PageSettingsQuery ): QualityChoice {
+/** A short, stable name of the GPU adapter (vendor, architecture, device, description), which a
+ * remembered measurement is kept for; '' where the browser has no WebGPU adapter to describe. */
+export async function adapterName(): Promise<string> {
+
+	try {
+
+		const gpu = ( navigator as unknown as { gpu?: { requestAdapter( o: object ): Promise<{ info?: Record<string, string> } | null> } } ).gpu;
+		const adapter = await gpu?.requestAdapter( { powerPreference: 'high-performance' } );
+		const info = adapter?.info;
+		return info ? [ info.vendor, info.architecture, info.device, info.description ].join( '/' ) : '';
+
+	} catch {
+
+		return '';
+
+	}
+
+}
+
+/** The tier this load builds, and whether it measures the GPU (`source === 'detect'`): `?quality`,
+ * else the player's graphics settings (`stored`, GraphicsSettings.ts), else a measurement remembered
+ * for this adapter, else high, measured on a first visit (not in an automated browser, on a paused
+ * page or under `autoQuality=off`; `autoQuality=detect` measures again). */
+export function chooseQuality( params: PageSettingsQuery, stored: QualityTier | null = null, adapter = '', automated = false ): QualityChoice {
 
 	const slow = Math.max( Number( params.get( 'autoQualitySlow' ) ?? 1 ) || 1, 0.01 );
-	const base = { record: null, adapter: '', slow };
+	const base = { record: null, adapter, slow };
 	const requested = params.get( 'quality' );
 	if ( isQualityTier( requested ) ) return { ...base, tier: requested, source: 'url', why: 'set by ?quality' };
-	return { ...base, tier: DEFAULT_QUALITY, source: 'default', why: 'the only active tier (medium and low parked)' };
+	const mode = params.get( 'autoQuality' );
+	const force = mode === 'detect';
+	if ( stored !== null && ! force ) return { ...base, tier: stored, source: 'player', why: 'the player\'s graphics settings' };
+	if ( mode === 'off' ) return { ...base, tier: DEFAULT_QUALITY, source: 'default', why: 'autoQuality=off' };
+	const record = readRecord();
+	if ( ! force && record && record.adapter === adapter && record.slow === slow ) return { tier: record.tier, source: 'auto', why: `measured on this GPU ${ record.at.slice( 0, 10 ) }`, record, adapter, slow };
+	if ( ! force && automated ) return { ...base, tier: DEFAULT_QUALITY, source: 'default', why: 'automated browser: not measured (autoQuality=detect measures)' };
+	if ( ! force && params.has( 'review' ) ) return { ...base, tier: DEFAULT_QUALITY, source: 'default', why: 'the art-review page: not measured (autoQuality=detect measures)' };
+	// a paused scene never switches tier: it keeps the default until a running load measures
+	if ( params.has( 'paused' ) ) return { ...base, tier: DEFAULT_QUALITY, source: 'default', why: 'paused: not measured' };
+	const why = ! record ? 'first visit: measuring' : record.adapter !== adapter ? 'GPU changed: measuring' : 'measuring';
+	return { ...base, tier: DEFAULT_QUALITY, source: 'detect', why };
 
 }
 

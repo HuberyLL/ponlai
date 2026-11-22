@@ -78,9 +78,9 @@ export const RENDER_SETTINGS = {
 	t: { type: 'number', default: '0', range: [ 0, Infinity ], about: 'the scene time (s)' },
 	dpr: { type: 'number', default: 'the display\'s ratio, capped', range: [ 0, Infinity ], about: 'pins the canvas\'s pixel ratio' },
 	// sky and weather
-	hour: { type: 'number', default: 'golden-hour (8 under `game`)', about: 'the hour of the day' },
+	hour: { type: 'number', default: '8 (golden-hour under `review`)', about: 'the hour of the day' },
 	preset: { type: 'choice', default: 'golden-hour', values: PRESETS, about: 'the hour by its sun' },
-	dayLength: { type: 'number', default: '2880 (1440 under `game`)', range: [ 30, Infinity ], about: 'seconds per day' },
+	dayLength: { type: 'number', default: '1440 (2880 under `review`)', range: [ 30, Infinity ], about: 'seconds per day' },
 	moon: { type: 'number', default: '0.5', about: 'the moon\'s phase (0.5 full)' },
 	clock: { type: 'choice', default: 'running', values: [ 'paused' ], about: '`paused`: freezes the day clock only' },
 	weather: { type: 'choice', default: 'auto, from fair', values: WEATHERS, about: 'holds this weather (the parked ones on debug pages only)' },
@@ -90,7 +90,7 @@ export const RENDER_SETTINGS = {
 	dayFog: { type: 'switch', default: 'off', about: 'the day\'s fog layer under a clear or fair sky' },
 	seaFog: { type: 'switch', default: 'off', about: 'the deep sea fog' },
 	// quality, anti-aliasing and the frame
-	quality: { type: 'choice', default: 'high', values: TIERS, about: 'the quality tier (medium and low parked)' },
+	quality: { type: 'choice', default: 'high', values: TIERS, about: 'the quality tier, the settings menu\'s preset' },
 	aa: { type: 'choice', default: 'the tier\'s (high: msaa)', values: AA, about: 'the anti-aliasing mode (`gt` on debug pages only)' },
 	msaa: { type: 'choice', default: 'none', values: [ '1', '2', '4' ], about: 'the older alias of `aa`: `4` msaa, `1` and `2` off' },
 	fsrDebug: { type: 'switch', default: 'off', debug: true, about: 'FSR 3\'s debug view over its output, under `aa=fsr3`' },

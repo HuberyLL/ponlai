@@ -61,7 +61,7 @@ Contents:
 - Growing in place (packages/island/world/Growth.ts): the Grow control (the GUI's Island folder) or
   `await __PONLAI__.growth.grow()` generates the next piece in the background and swaps it in. The
   promise resolves once the frames after the swap are done. From then on, the page keeps the next
-  piece generated ahead. A `?game` page generates it from its start. `growth.start()` generates it
+  piece generated ahead. The game's page generates it from its start. `growth.start()` generates it
   ahead on any page without growing, for a probe that needs the piece ready.
   - `growth.state` holds the step shown, the next piece's phase, and the last swap's chunks and
     times (the preparation, the swap's frame by part, and the frames after it). It also holds
@@ -137,21 +137,21 @@ Contents:
 ## Quality, anti-aliasing and the frame
 
 - `quality` selects the quality tier (low, medium or high), which sets every quality setting in
-  `packages/render/Quality.ts`. Without it, the tier is high, the only active tier; medium and low
-  are parked (see `docs/reference/tools.md`, Parked weathers and quality tiers).
-  `tier.<setting>=<value>` overrides one setting of the tier for an A/B (for example
-  `tier.post.hazeGrid.width=128`). The GPU timing that once chose the tier (`app/QualityDetect.ts`,
-  `autoQuality`, and `autoQualitySlow`, a factor on the time it measures) is parked with them. The
-  load reads neither option to choose the tier, and the GUI's quality control removes
-  `autoQuality=detect` from the address when it reloads.
+  `packages/render/Quality.ts`. Without it, the tier is the player's stored choice
+  (`app/GraphicsSettings.ts`), else the one a first visit's GPU timing chose for this GPU
+  (`app/QualityDetect.ts`), else high. `tier.<setting>=<value>` overrides one setting of the tier for
+  an A/B (for example `tier.post.hazeGrid.width=128`; a JSON value replaces a whole setting:
+  `tier.cloudView={"render":0.5}`); the player's custom options are installed the same way, before
+  the address's own. `autoQuality=detect` times the GPU again, `autoQuality=off` keeps high, and
+  `autoQualitySlow` scales the measured time (a stand-in for a slower GPU). The timing never runs
+  in an automated browser, on a paused page or under `quality`.
 
 The following rendering and A/B options are read at load. The runtime switches for A/Bs inside one
 page are in `packages/render/debug/DebugFlags.ts`.
 
 - `aa` selects the anti-aliasing mode (`packages/render/post/Antialiasing.ts`), over the tier's
-  `aa` setting. Each tier has its default: `msaa` for high (`taau` for the parked medium tier,
-  `msaa` for low). The GUI's Antialiasing control reloads the page with any of MSAA 4x, TAAU, FSR
-  3.1, TAA and Off.
+  `aa` setting. Every tier's default is `msaa`. The GUI's Antialiasing control reloads the page
+  with any of MSAA 4x, TAAU, FSR 3.1, TAA and Off; the game's settings menu offers all but Off.
   - `msaa`: 4 samples, upscaled by FSR 1.
   - `off`: one sample.
   - `taa` and `taau`, the temporal modes: one sample, jittered, with motion vectors, resolved
@@ -164,7 +164,7 @@ page are in `packages/render/debug/DebugFlags.ts`.
     `aa=off`, since WebGPU multisamples with 1 or 4 samples only.
 
   The capture and parity tools apply the temporal tolerances through their own `--aa` option, so a
-  set of captures with the parked medium tier's default passes `--aa taau`.
+  set of captures under a temporal mode passes `--aa taau`.
 - `aa=fsr3` uses AMD's FSR 3.1 upscaler (the TSL port in `packages/render/post/fsr3/`, integrated
   by `Fsr3Upscaler.ts`) at the position in the frame that AMD specifies: one sample, jittered with
   FSR's own sequence, with motion vectors. FSR takes the composite's HDR image at the render
@@ -214,8 +214,7 @@ page are in `packages/render/debug/DebugFlags.ts`.
     starts at the held rate.
   - On a debug page, `__PONLAI__.pacer.choices()` lists the display's whole-divisor rates,
     `setRate( fps | 'auto' )` sets one, `mode` and `rate` read the choice, and `fps` reads the rate
-    held now. A production `?game` settings menu needs the game to be given the pacer, which is
-    not wired yet.
+    held now. The game's settings menu sets the cap through the pacer (`app/GraphicsControl.ts`).
   - The diagnostics' `pacing` block shows `mode`, `fallback`, `falls` and `returns`. For the test
     mode's paused pages, it also shows `queueLimit` (the frames they may keep queued on the GPU),
     `queued` (how many are queued now) and `held` (how many due frames waited for the queue).
@@ -696,7 +695,15 @@ the island's or the game's.
 
 ## Game
 
-- `game` runs the island as a game.
+- The page at `/` is the game. It opens on the title screen over the live island
+  (`packages/game/front/Front.ts`). `opening=play` opens straight into play instead; a reload for a
+  setting made in play does the same.
+- `review` loads the art-review scene instead of the game: one islander walking a loop, the GUI.
+  The capture, parity, probe, profile and verify tools load it (`tools/kit/page-query.mjs`).
+- `graphicsStore=on|off` sets whether the page reads and writes the player's graphics settings
+  (`app/GraphicsSettings.ts`). It is on by default and off in an automated browser, so a capture
+  or a check loads what its address names. Under `quality`, the stored settings are not read; an
+  address's `aa` or `tier.<setting>` wins over the stored choice of that setting.
 - `hour` sets the start hour (default 8).
 - `dayLength` sets the real seconds per game day at 1x (default 1440: 24 minutes).
 - `paused` starts the game paused; the scene runs again once the game does.
@@ -767,9 +774,9 @@ the two equal).
 | `paused` | named (its value unread) | running | render | pauses the scene and both clocks; with it the page is in the test mode |
 | `t` | a number from 0 | 0 | render | the scene time (s) |
 | `dpr` | a number from 0 | the display's ratio, capped | render | pins the canvas's pixel ratio |
-| `hour` | a number | golden-hour (8 under `game`) | render | the hour of the day |
+| `hour` | a number | 8 (golden-hour under `review`) | render | the hour of the day |
 | `preset` | `dawn`, `sunrise`, `noon`, `golden-hour`, `sunset`, `dusk`, `midnight` | golden-hour | render | the hour by its sun |
-| `dayLength` | a number from 30 | 2880 (1440 under `game`) | render | seconds per day |
+| `dayLength` | a number from 30 | 1440 (2880 under `review`) | render | seconds per day |
 | `moon` | a number | 0.5 | render | the moon's phase (0.5 full) |
 | `clock` | `paused` | running | render | `paused`: freezes the day clock only |
 | `weather` | `clear`, `fair`, `cloudy`, `overcast`, `rain`, `storm`, `fog` | auto, from fair | render | holds this weather (the parked ones on debug pages only) |
@@ -778,7 +785,7 @@ the two equal).
 | `clouds` | a number, 0 to 1 | the weather's | render | overrides the cloud coverage |
 | `dayFog` | named (its value unread) | off | render | the day's fog layer under a clear or fair sky |
 | `seaFog` | named (its value unread) | off | render | the deep sea fog |
-| `quality` | `low`, `medium`, `high` | high | render | the quality tier (medium and low parked) |
+| `quality` | `low`, `medium`, `high` | high | render | the quality tier, the settings menu's preset |
 | `aa` | `msaa`, `taa`, `taau`, `fsr3`, `off`, `gt` | the tier's (high: msaa) | render | the anti-aliasing mode (`gt` on debug pages only) |
 | `msaa` | `1`, `2`, `4` | none | render | the older alias of `aa`: `4` msaa, `1` and `2` off |
 | `fsrDebug` | named (its value unread) | off | render | FSR 3's debug view over its output, under `aa=fsr3` (debug pages only) |
@@ -803,7 +810,7 @@ the two equal).
 | `windView` | named bare, `arrows`, `plants` | off | render | makes the vegetation's wind visible (debug pages only) |
 | `cameraInput` | `on`, `off`, named bare | on | island | `off`: the hand does not move the island camera; named bare, as `on` |
 | `seed` | a whole number | 1 | island | the world's seed |
-| `grow` | a whole number from 0 | the save's pieces under `game`, else 0 | island | growth steps after the starting island (up to `GROWTH.maxSteps`) |
+| `grow` | a whole number from 0 | the save's pieces in the game, 0 under `review` | island | growth steps after the starting island (up to `GROWTH.maxSteps`) |
 | `worldCache` | `on`, `off`, `0`, named bare | on | island | `off` or `0`: generates every chunk instead of reading the browser's cache |
 | `bamboo` | a comma list | the default groves | island | another look of the bamboo: `cover,height` |
 | `wenyao` | named (its value unread) | off | island | shows the wenyao, the schools of flying fish off the island (parked) |
@@ -825,11 +832,13 @@ the two equal).
 | `nearFov` | a number, 1 to 179, or `off` | 42 | app | the island view's fov at its closest zoom (degrees; `off`: 27 at every distance) |
 | `nearFovFrom` | a number from 0 | 50 | app | the distance the fov widens from (m) |
 | `soil` | `0`, `1` | on | app | `0`: the ground without its soil layer |
-| `autoQuality` | `detect`, `off` | parked | app | the GPU timing that chose the tier (parked: read by the tier's reload only) |
-| `autoQualitySlow` | a number from 0.01 | 1 | app | scales the GPU timing's measured time (parked) |
+| `autoQuality` | `detect`, `off` | a first visit times the GPU | app | `detect` times the GPU again to choose the tier, `off` keeps high |
+| `graphicsStore` | `on`, `off` | on (off in an automated browser) | app | whether the page reads and writes the player's graphics settings |
+| `autoQualitySlow` | a number from 0.01 | 1 | app | scales the GPU timing's measured time |
 | `renderLook` | `neutral`, `ponlai` | the app's own | app | the look the render pipeline draws with, over the app's own: `neutral` (the render pipeline's) on the island's page, `ponlai` (the island's) on the test scenes' (debug pages only) |
 | `scene` | `ball`, `empty`, `sea`, `plants` | none | app | the test scene `scenes.html` shows |
-| `game` | named (its value unread) | off | app | the island as a game |
+| `review` | named (its value unread) | off (the game) | app | the art-review scene (one islander walking a loop, the GUI) instead of the game |
+| `opening` | `title`, `play` | title | app | where the game opens: the title screen, or straight into play |
 | `tier.<setting>` | text | the tier's | render | overrides one setting of the tier (`tier.post.hazeGrid.width=128`) |
 
 <!-- every-option:end -->

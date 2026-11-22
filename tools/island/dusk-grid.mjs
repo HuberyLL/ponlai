@@ -112,6 +112,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ROOT } from '../kit/root.mjs';
+import { reviewUrl } from '../kit/page-query.mjs';
 
 const USAGE = 'usage: node tools/island/dusk-grid.mjs [base] [--weathers ...] [--sides ...] [--from 2 --to -8 --step 0.5] [--midnight] [--at ...] [--hours ...] [--fine e1:e2:step]... [--views ...] [--split [names] [--fit]] [--night-split] [--twilight] [--compare dir [--compare-tolerance 1e-4]] [--judge 0.02] [--judge-range 2:-8] [--judge-weathers ...] [--overall-weathers ...] [--haze [--haze-sky 3,5,10,20] [--haze-distances 300,1000]] [--frames] [--walk] [--q query] [--src dir] [--out dir] [--timeout ms] [--lock-timeout s] (see the file header)';
 const WEATHERS = [ 'clear', 'fair', 'cloudy', 'overcast', 'rain', 'storm', 'fog' ];
@@ -681,7 +682,7 @@ page.on( 'crash', () => pageErrors.push( 'the page crashed' ) );
 
 async function load( query ) {
 
-	await page.goto( `${ base }?${ query }`, { timeout: options.timeout } );
+	await page.goto( reviewUrl( `${ base }?${ query }` ), { timeout: options.timeout } );
 	await page.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__, null, { timeout: options.timeout } );
 
 }

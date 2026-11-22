@@ -14,7 +14,7 @@ export const ISLAND_SETTINGS = {
 	cameraInput: { type: 'choice', default: 'on', values: [ 'on', 'off', '' ], about: '`off`: the hand does not move the island camera; named bare, as `on`' },
 	// the island
 	seed: { type: 'integer', default: '1', about: 'the world\'s seed' },
-	grow: { type: 'integer', default: 'the save\'s pieces under `game`, else 0', range: [ 0, Infinity ], about: 'growth steps after the starting island (up to `GROWTH.maxSteps`)' },
+	grow: { type: 'integer', default: 'the save\'s pieces in the game, 0 under `review`', range: [ 0, Infinity ], about: 'growth steps after the starting island (up to `GROWTH.maxSteps`)' },
 	worldCache: { type: 'choice', default: 'on', values: [ 'on', 'off', '0', '' ], about: '`off` or `0`: generates every chunk instead of reading the browser\'s cache' },
 	bamboo: { type: 'list', default: 'the default groves', about: 'another look of the bamboo: `cover,height`' },
 	wenyao: { type: 'switch', default: 'off', about: 'shows the wenyao, the schools of flying fish off the island (parked)' },

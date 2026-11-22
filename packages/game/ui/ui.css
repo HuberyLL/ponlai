@@ -409,3 +409,8 @@
 .pl-record .river .arrow { position: absolute; top: 122px; width: 40px; height: 40px; transition: opacity 0.3s ease; }
 .pl-record .river .arrow.off { opacity: 0; pointer-events: none; }
 .pl-ui.recording .pl-hud, .pl-ui.recording .pl-people, .pl-ui.recording .pl-speak, .pl-ui.recording .pl-build, .pl-ui.recording .pl-flights, .pl-ui.recording .pl-veil { visibility: hidden; }
+
+/* the title screen and the menus over it (front/Front.ts): the interface sinks into the mist and
+   surfaces again (ui.md, Motion) */
+.pl-ui > * { transition: opacity 0.6s var( --ease ), filter 0.6s var( --ease ); }
+.pl-ui.away > * { opacity: 0; filter: blur( 6px ); pointer-events: none !important; }

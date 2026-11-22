@@ -9,7 +9,7 @@ import type GUI from 'lil-gui';
 import type { WeatherName, WindLevel, FrameStats, PipelineSettings, SceneFrame, Shared } from '../packages/render/index.ts';
 import type { QualityTier } from '../packages/render/setup.ts';
 import type { QualityDetector } from './QualityDetect.ts';
-import type { Game } from '../packages/game/index.ts';
+import type { Front, Game } from '../packages/game/index.ts';
 import type { IslandFraming } from '../packages/island/index.ts';
 import type { CameraView } from './CameraViews.ts';
 import type { QualityChoice, QualityLines } from './QualityDetect.ts';
@@ -22,6 +22,10 @@ export interface PageParts {
 	reloadWithQuality: ( tier: QualityTier | null ) => void;
 	GAME: boolean;
 	game: Game | null;
+	/** the game's front end (the title screen, the menus: FrontStart.ts), on the game's page */
+	front: Front | null;
+	/** whether the camera turns slowly round the island behind the title (Frame.ts) */
+	titleTurn: boolean;
 	gui: GUI;
 	S: PipelineSettings;
 	cameraSettings: { mode: string };

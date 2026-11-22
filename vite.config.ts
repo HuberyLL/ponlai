@@ -1,6 +1,7 @@
 import { defineConfig, type Plugin } from 'vite';
 import { assets } from './tools/repo/vite-assets.mjs';
 import { worldGeneratorHash } from './tools/repo/vite-world-generator.mjs';
+import { fsAllow } from './tools/repo/vite-fs-allow.mjs';
 
 // Licence texts that must travel with the built site: MIT asks for the full notice in every copy.
 // The /*! */ notices kept in the bundle carry the copyright lines and the SPDX licence; the texts
@@ -63,6 +64,8 @@ export default defineConfig( ( { mode } ) => ( {
 		// glob is anchored to this config's own .claude/: a relative '**/.claude/**' also matched
 		// every file of a dev server started inside a worktree, which then served stale modules.
 		watch: { ignored: [ decodeURIComponent( new URL( './.claude/', import.meta.url ).pathname ) + '**' ] },
+		// a worktree's packages are links to the main checkout's (tools/repo/vite-fs-allow.mjs)
+		fs: { allow: fsAllow() },
 	},
 	build: {
 		target: 'es2022',

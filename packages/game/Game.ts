@@ -18,9 +18,9 @@ import { Session } from './Session.ts';
 import { stockOf } from './sim/stock.ts';
 import type { EntityId, IslandInput, Items } from './sim/types.ts';
 
-// The island as a game (?game): the headless session hosted in the app, with its view and UI.
+// The island as a game (the page at `/`): the headless session hosted in the app, with its view and UI.
 //
-// The island as a game (?game): the game around its simulation runs headless in a session
+// The island as a game (the page at `/`; `?review` is the art-review scene instead): the game around its simulation runs headless in a session
 // (Session.ts: the simulation of packages/game/sim, which runs the islanders' bodies, their needs and the
 // places they act at; its record, Chronicle.ts; the agent in its slot, the stand-in of plain rules by
 // default, sim/standin.ts; the leader's words; the save's contents; the island's growth), and the
@@ -31,7 +31,7 @@ import type { EntityId, IslandInput, Items } from './sim/types.ts';
 // scene, Placement.ts) and the record (沧海录), whose history the session keeps. The debug panel's Game folder (GameDebug.ts) and
 // the methods below, reached from the console as window.__PONLAI__.game, drive the rest. The
 // simulation's clock sets the time of day; the app's sky follows it, so pausing the game stops the
-// sky with it. The weather is the app's own, as without ?game, running on the day
+// sky with it. The weather is the app's own, as on the art-review page, running on the day
 // clock, and its auto chain read ahead is the game's forecast (`forecast`, in game hours). Waves,
 // wind and rain keep real time. The player speaks to the islanders through `speak` (Session.speak:
 // the words go into the record and, for an agent that hears, wait per listener for its next
@@ -48,7 +48,7 @@ import type { EntityId, IslandInput, Items } from './sim/types.ts';
 // new (start a new game), autosave (on, off), dayLength (real seconds per game day at 1x); see
 // docs/reference/url-options.md.
 //
-// Rules: without ?game the app stays the art-review scene, unchanged. The game follows
+// Rules: under `?review` the app stays the art-review scene, unchanged. The game follows
 // docs/design/game-design.md: nothing is built ahead of that design. The agent's
 // tools are the five actions (sim/actions.ts). Thinking is asynchronous to the world: `think( id )`
 // asks the agent with the islander's perception, the simulation never waits for the answer, the
@@ -149,6 +149,7 @@ export class Game {
 		// (a save stands on the world loaded for it, unless the `grow` URL option chose another)
 		sim.state.pieces = context.pieces;
 		if ( context.params.has( 'paused' ) ) sim.paused = true;
+		game.resumed = saved !== null;
 		await game.begin( sim, saved?.record );
 		if ( game.keeps ) {
 
@@ -181,6 +182,8 @@ export class Game {
 
 	/** whether the app keeps the save itself: resumes it at start and saves as the game runs (save.ts) */
 	readonly keeps: boolean;
+	/** whether a saved game was resumed, or one begun since: the title's 继续 (front/Front.ts) */
+	resumed = false;
 	/** when the game was last saved (ms since the epoch), by hand or by the app; null: not since the page loaded */
 	savedAt: number | null = null;
 	// the hour a new game starts at: the app's (the `hour` URL option)
@@ -406,11 +409,11 @@ export class Game {
 	}
 
 	/** Resume the saved game; says whether it was loaded. A save stands on its own island: one of
-	 * another piece count loads with the app (`?game&load`), not here. */
+	 * another piece count loads with the app (`?load`), not here. */
 	async load(): Promise<string> {
 
 		const pieces = savedPieces( readSlot() );
-		if ( pieces !== null && pieces !== this.sim.state.pieces ) return `The save stands on ${ pieces } pieces, this island on ${ this.sim.state.pieces }: reload with ?game&load`;
+		if ( pieces !== null && pieces !== this.sim.state.pieces ) return `The save stands on ${ pieces } pieces, this island on ${ this.sim.state.pieces }: reload with ?load`;
 		const saved = this.savedGame();
 		if ( ! saved ) return 'No saved game was loaded';
 		await this.begin( saved.sim, saved.record );

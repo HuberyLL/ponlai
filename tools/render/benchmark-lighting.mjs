@@ -31,6 +31,7 @@ import { chromium } from 'playwright';
 import { acquireGpuLock } from '../kit/gpu-lock.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
+import { reviewUrl } from '../kit/page-query.mjs';
 
 const urls = process.argv.slice( 2 );
 assert.equal( urls.length, 2 );
@@ -48,7 +49,7 @@ try {
 	page.on( 'console', message => { if ( message.type() === 'error' ) errors.push( message.text() ); } );
 	for ( const version of [ 0, 1, 1, 0 ] ) {
 
-		await page.goto( `${ urls[ version ].replace( /\/$/, '' ) }/?debug&paused&t=12&dpr=1.5&frameRate=0` );
+		await page.goto( reviewUrl( `${ urls[ version ].replace( /\/$/, '' ) }/?debug&paused&t=12&dpr=1.5&frameRate=0` ) );
 		await page.waitForFunction( () => window.__THREE_GAME_DIAGNOSTICS__?.frame > 350, null, { timeout: 90000 } );
 		const samples = [];
 		for ( let i = 0; i < 4; i ++ ) {

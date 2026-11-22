@@ -163,5 +163,119 @@
 			"hydration": "thirsty",
 			"other": "in need"
 		}
+	},
+	"front": {
+		"name": "Ponlai",
+		"load": {
+			"label": "Loading, {{percent}}%",
+			"renderer": "Laying out the canvas",
+			"sky": "Lighting the sky",
+			"ground": "The island rises",
+			"world": "Stone takes shape",
+			"plants": "Plants grow",
+			"water": "The tide comes in",
+			"haze": "Mist rises",
+			"warm-up": "Grinding the ink",
+			"loop": "Into the picture",
+			"failed": "The load failed",
+			"shown": "Into the picture"
+		},
+		"title": {
+			"continue": "Continue",
+			"new": "New game",
+			"settings": "Settings",
+			"menu": "Main menu"
+		},
+		"pause": {
+			"title": "Paused",
+			"continue": "Continue",
+			"settings": "Settings",
+			"toTitle": "Back to title"
+		},
+		"settings": {
+			"title": "Settings",
+			"graphics": "Graphics",
+			"back": "Back",
+			"preset": "Preset",
+			"display": "Display",
+			"quality": "Quality",
+			"reload": "reload",
+			"pending": "Applies after a reload: {{list}}",
+			"apply": "Reload",
+			"confirm": "Some changes apply after a reload. Reload now? The game is saved first.",
+			"yes": "Reload",
+			"no": "Later"
+		},
+		"preset": {
+			"low": "Low",
+			"medium": "Medium",
+			"high": "High",
+			"custom": "Custom"
+		},
+		"option": {
+			"display": {
+				"name": "Display mode",
+				"cost": "Full screen costs nothing more",
+				"full": "Full screen",
+				"window": "Window"
+			},
+			"resolution": {
+				"name": "Render resolution",
+				"cost": "Cost follows the pixel count; lower is softer",
+				"auto": "Auto",
+				"50": "50%",
+				"67": "67%",
+				"75": "75%",
+				"85": "85%",
+				"100": "100%"
+			},
+			"dynamic": {
+				"name": "Dynamic resolution",
+				"cost": "Lowers the resolution when busy to hold the frame rate",
+				"on": "On",
+				"off": "Off"
+			},
+			"aa": {
+				"name": "Anti-aliasing",
+				"cost": "MSAA is sharpest; temporal modes cost less and soften motion",
+				"msaa": "MSAA 4×",
+				"taa": "TAA",
+				"taau": "TAAU",
+				"fsr3": "FSR 3"
+			},
+			"frameRate": {
+				"name": "Frame rate cap",
+				"cost": "A lower cap saves power",
+				"30": "30",
+				"60": "60",
+				"max": "None"
+			},
+			"fps": {
+				"name": "Frame rate readout",
+				"cost": "Shows frames per second in a corner",
+				"off": "Off",
+				"on": "On"
+			},
+			"meadowShadows": {
+				"name": "Meadow shadows",
+				"cost": "The blades' fine shadows on each other; off turns ambient occlusion off too",
+				"on": "On",
+				"off": "Off"
+			},
+			"ao": {
+				"name": "Ambient occlusion",
+				"cost": "Shadows in the grass and between stones",
+				"on": "On",
+				"off": "Off"
+			},
+			"clouds": {
+				"name": "Clouds",
+				"cost": "Cloud detail and refresh",
+				"high": "High",
+				"medium": "Medium",
+				"low": "Low"
+			}
+		},
+		"fps": "{{fps}} fps"
 	}
 }

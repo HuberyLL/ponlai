@@ -5,7 +5,7 @@ import { GAME_SETTINGS } from '../packages/game/sim/index.ts';
 // The app's own URL options, every layer's options merged, and the app's reader.
 //
 // The app's own URL options (the island's view, the GUI, the tier's detection, the test scene, the
-// game switch), declared as the render pipeline declares its own (render/Settings.ts, which holds
+// review page and the game's opening), declared as the render pipeline declares its own (render/Settings.ts, which holds
 // the rules of every table). `PAGE_SETTINGS` merges the four layers' tables: the entries (Boot.ts
 // through PageSettings.ts, ScenesBoot.ts) report the address's problems against it, and `settings`
 // here reads every layer's names. docs/reference/url-options.md explains each option
@@ -24,13 +24,15 @@ export const APP_SETTINGS = {
 	// the island
 	soil: { type: 'choice', default: 'on', values: [ '0', '1' ], about: '`0`: the ground without its soil layer' },
 	// quality, anti-aliasing and the frame
-	autoQuality: { type: 'choice', default: 'parked', values: [ 'detect', 'off' ], about: 'the GPU timing that chose the tier (parked: read by the tier\'s reload only)' },
-	autoQualitySlow: { type: 'number', default: '1', range: [ 0.01, Infinity ], about: 'scales the GPU timing\'s measured time (parked)' },
+	autoQuality: { type: 'choice', default: 'a first visit times the GPU', values: [ 'detect', 'off' ], about: '`detect` times the GPU again to choose the tier, `off` keeps high' },
+	graphicsStore: { type: 'choice', default: 'on (off in an automated browser)', values: [ 'on', 'off' ], about: 'whether the page reads and writes the player\'s graphics settings' },
+	autoQualitySlow: { type: 'number', default: '1', range: [ 0.01, Infinity ], about: 'scales the GPU timing\'s measured time' },
 	// debug
 	renderLook: { type: 'choice', default: 'the app\'s own', values: [ 'neutral', 'ponlai' ], debug: true, about: 'the look the render pipeline draws with, over the app\'s own: `neutral` (the render pipeline\'s) on the island\'s page, `ponlai` (the island\'s) on the test scenes\'' },
 	scene: { type: 'choice', default: 'none', values: [ 'ball', 'empty', 'sea', 'plants' ], about: 'the test scene `scenes.html` shows' },
-	// game
-	game: { type: 'switch', default: 'off', about: 'the island as a game' },
+	// the page: the game, or the art-review scene
+	review: { type: 'switch', default: 'off (the game)', about: 'the art-review scene (one islander walking a loop, the GUI) instead of the game' },
+	opening: { type: 'choice', default: 'title', values: [ 'title', 'play' ], about: 'where the game opens: the title screen, or straight into play' },
 } as const satisfies SettingsTable;
 
 /** Every URL option of the page: the render pipeline's, the island's, the game's and the app's own. */

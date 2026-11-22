@@ -173,8 +173,9 @@ const lines = [];
 const read = new Set();
 for ( const [ pkg, sides ] of Object.entries( entryPoints ) ) for ( const [ side, entry ] of Object.entries( sides ) ) {
 
-	// a headless or setup entry point, loaded in plain node
-	if ( side !== 'main' ) try {
+	// a headless or setup entry point, loaded in plain node (the game's front-end one is a browser
+	// page's, read as a main one)
+	if ( side !== 'main' && side !== 'front' ) try {
 
 		const module = await import( pathToFileURL( path.join( SRC, entry ) ).href );
 		const missing = valueNames( entry ).filter( ( name ) => module[ name ] === undefined );

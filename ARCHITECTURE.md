@@ -16,9 +16,11 @@ change. Everything below that level is written where it is owned:
 ### Two halves
 
 Ponlai is a rendered island and a game played on it. The rendering side draws a physically lit
-island in an open sea in the browser, with WebGPU. It works on its own: without `?game`, the app
-shows the island and nothing else. The game side runs the islanders' world as headless rules. With
-`?game`, the app hosts the game and draws it on the island; a tool hosts the same game in Node.js.
+island in an open sea in the browser, with WebGPU. It works on its own: under `?review`, the app
+shows the island and nothing else (the art-review scene the tools render). The game side runs the
+islanders' world as headless rules. The page at `/` is the game: the app hosts it and draws it on
+the island, behind its front end (the loading screen, the title, the menus); a tool hosts the same
+game in Node.js.
 
 The two halves meet in four places only:
 
@@ -48,7 +50,7 @@ package's entry points (rule 11).
   holds its materials, its camera, the islanders, the creatures and its values for the look's
   tables. Its stages fill the render pipeline's interfaces: they register its plant kinds, its local
   lights, its scene events and its histories, and they pass the land's data to the render pipeline.
-- **The game** (`packages/game/`) is the game behind `?game`, in three parts:
+- **The game** (`packages/game/`) is the game at `/`, in three parts:
   - The rules (`sim/`): the simulation in plain TypeScript, with no three.js or DOM. One tick is one
     game second, the state is the save, and one seeded random generator makes every random choice.
     The rules own the current state and decide what happened (the events). The core is generic: the

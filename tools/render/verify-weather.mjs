@@ -44,6 +44,7 @@ import { chromium } from 'playwright';
 import { acquireGpuLock } from '../kit/gpu-lock.mjs';
 import { DAY_PRESETS } from '../../packages/render/sky/DayCycle.ts';
 import { renderedFrames } from '../kit/page-eval.mjs';
+import { reviewUrl } from '../kit/page-query.mjs';
 
 const base = process.argv.slice( 2 ).find( ( arg ) => ! arg.startsWith( '--' ) ) || 'http://127.0.0.1:5190';
 const coupling = process.argv.includes( '--coupling' );
@@ -75,7 +76,7 @@ try {
 	page.on( 'requestfailed', ( request ) => report.failures.push( `${ request.failure()?.errorText } ${ request.url() }` ) );
 	const url = new URL( base );
 	for ( const [ key, value ] of Object.entries( { debug: '', paused: '', preset: 'golden-hour', t: '12', dpr: '1', weather: 'clear', dist: '58', polar: '50', az: '318' } ) ) url.searchParams.set( key, value );
-	await page.goto( url.href );
+	await page.goto( reviewUrl( url.href ) );
 	await page.waitForFunction( () => window.__PONLAI__?.weather && typeof window.__PONLAI__.setWeather === 'function' &&
 		window.__PONLAI__.pipeline.air && window.__THREE_GAME_DIAGNOSTICS__?.frame > 60 &&
 		document.getElementById( 'loading' )?.classList.contains( 'done' ) );

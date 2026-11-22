@@ -98,8 +98,7 @@ Lookdev
 Parked
 : Kept compiling and loadable by name, but out of the default checks until revived as its own
   milestone: the weathers cloudy, overcast, rain, storm and fog (`PARKED_WEATHER` in
-  `packages/render/sky/Weather.ts`) and the quality tiers medium and low (`PARKED_QUALITY` in
-  `packages/render/Quality.ts`). New work need not support them.
+  `packages/render/sky/Weather.ts`). New work need not support them.
 
 Piece
 : One piece of land: the island grows one piece at a time from a starting island at the world's
@@ -111,8 +110,8 @@ Pre-exposure
 
 Quality tier
 : A named set of the settings that a frame's cost depends on, all in one table
-  (`packages/render/Quality.ts`). High is the only active tier; medium and low are parked. A tier
-  changes the cost, never the weather, the clock or the lighting.
+  (`packages/render/Quality.ts`): high (the reference), medium and low, the settings menu's
+  presets. A tier changes the cost, never the weather, the clock or the lighting.
 
 Scene jump
 : A move of a loaded page to another scene (`establishScene` in

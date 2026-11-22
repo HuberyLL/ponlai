@@ -13,7 +13,8 @@
 // - Every wait is in a slot: a slot that ends in one returns its promise.
 // - It imports each package through its entry points (render/index.ts, render/setup.ts,
 //   render/browser.ts, island/index.ts, island/land.ts, game/sim/index.ts, and the game's own,
-//   game/index.ts, by a dynamic import when `?game` starts it), never a package's module by its
+//   game/index.ts, by a dynamic import as the game starts; game/front.ts, the loading screen, through
+//   LoadingScreen.ts), never a package's module by its
 //   path. An entry point loads its whole package, and no module does anything at load that depends
 //   on the order the modules load in.
 // On the dev server and with ?debug (or ?profile) the assembly hands the scene to the capture and
@@ -35,6 +36,8 @@ import { islandFrame, islandLoop, addKeys, sceneDefaults } from './Frame.ts';
 import { createGui, addLookFolders, addHazeFolders } from './Gui.ts';
 import { islandHandles } from './Diagnostics.ts';
 import { islandJump } from './Scene.ts';
+import { LOADING } from './LoadingScreen.ts';
+import { startFront } from './FrontStart.ts';
 
 const island = {} as IslandParts;
 const page = {} as PageParts;
@@ -49,18 +52,22 @@ setSoilStrength( ground.soil );
 // read as the modules load, before this code runs. Changing the quality tier reloads the page.
 page.qualityChoice = QUALITY_CHOICE;
 page.detector = null;
-// ?game turns the island into the game: its own islanders, a clock that drives the sky and the
-// player's interface (packages/game/ui/GameUi.ts); the GUI's Game folder and window.__PONLAI__.game
-// drive the rest. Without it the scene stays the art-review scene with one islander walking a loop.
-const GAME = params.has( 'game' );
+// The page is the game: its own islanders, a clock that drives the sky, the player's interface
+// (packages/game/ui/GameUi.ts) and its front end (the title screen, the pause menu, the settings:
+// packages/game/front/Front.ts); the GUI's Game folder and window.__PONLAI__.game drive the rest.
+// `?review` makes it the art-review scene instead, with one islander walking a loop (the capture,
+// parity and verify tools' page).
+const GAME = ! params.has( 'review' );
 page.GAME = GAME;
 island.characters = null;
 page.game = null;
+page.front = null;
+page.titleTurn = false;
 // The bamboo leaves the wind takes off the island (world/FallingLeaves.ts), made once the world
 // exists (the test mode leaves them out): their step is a pass the pipeline declares from this list.
 island.fallingLeaves = null as FallingLeaves | null;
 
-const host = browserHost( { canvasHost: document.getElementById( 'app' )!, loading: document.getElementById( 'loading' ) } );
+const host = browserHost( { canvasHost: document.getElementById( 'app' )!, loading: LOADING.element, onProgress: LOADING.progress } );
 // The scene the query names (render/index.ts `sceneOptions`), the load's and a scene jump's alike,
 // from the app's defaults (Frame.ts `sceneDefaults`); a parked weather loads on a debug page only.
 await startScene( host, { look: PAGE_LOOK, defaults: sceneDefaults( GAME ) }, {
@@ -171,6 +178,7 @@ await startScene( host, { look: PAGE_LOOK, defaults: sceneDefaults( GAME ) }, {
 	},
 	async afterShared() {
 
+		if ( page.game ) await startFront( render, island, page );
 		// The falling leaves, which the warm-up ran before they existed, and their kernels are precompiled
 		// as latents of the opaque pass, so the view that first finds them builds no pipeline.
 		if ( island.fallingLeaves ) await render.latents.latent( 'opaque', [ island.fallingLeaves.mesh ], [ island.fallingLeaves.kernel, island.fallingLeaves.prewarm ] );

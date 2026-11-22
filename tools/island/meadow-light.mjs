@@ -105,6 +105,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { NOON_ELEVATION, morningHour, eveningHour } from '../../packages/render/sky/DayCycle.ts';
 import { ROOT } from '../kit/root.mjs';
+import { reviewUrl } from '../kit/page-query.mjs';
 
 const usage = 'usage: node tools/island/meadow-light.mjs [url] [--elev 50,20] [--azimuth 135] [--view name=tilt,dist,fov]... [--target x,z] [--views-file f [--views a,b]] [--side afternoon|morning] [--weather clear] [--expect lo,hi] [--flags a,b] [--q extra] [--w --h --scale] [--timeout ms] [--out dir] [--pages a,b|none] [--save dir] [--reuse dir] (see the file header)';
 const argv = process.argv.slice( 2 );
@@ -384,7 +385,7 @@ if ( capturePages.length ) {
 					const q = queryFor( p, view );
 					if ( current === null ) {
 
-						await page.goto( `${ url }?${ q }` );
+						await page.goto( reviewUrl( `${ url }?${ q }` ) );
 						await page.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__, null, { timeout } );
 						await waitForScene( page, { frames: 1, timeout } );
 

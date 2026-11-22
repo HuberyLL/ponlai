@@ -2,8 +2,8 @@
 
 A physically based render pipeline for the browser, on three.js WebGPU, shown on a small island in
 an open sea (features and usage: `README.md`). The island is calm and painterly, lit naturally by
-the sun and the sky (deep clear water, chunky stone, a lush meadow that moves in the wind); `?game`
-opens a game prototype.
+the sun and the sky (deep clear water, chunky stone, a lush meadow that moves in the wind); `/` is
+the game, `?review` the tools' art-review scene.
 
 ## Where things are written
 
@@ -80,15 +80,14 @@ writing-tsl-and-passes (TSL, passes, GPU buffers).
 - What is generated for the island or fitted to the land derives from the land's footprint, the
   island's SDF and fixed-seed fields, never from hand-placed coordinates. Counts scale with the
   coast or the area (rule 5).
-- Changes hold in the kept weathers (clear, fair) and on the high tier (4K output: 1920x1080 CSS px,
-  DPR 2) only. Parked weathers (`sky/Weather.ts` `PARKED_WEATHER`) and tiers (`Quality.ts`
-  `PARKED_QUALITY`) need no support but keep compiling and loading by name; default checks skip
-  them.
+- Changes hold in the kept weathers (clear, fair) on every preset, judged on high at 4K output
+  (1920x1080 CSS px, DPR 2); default checks name high. Parked weathers (`sky/Weather.ts`
+  `PARKED_WEATHER`) need no support but keep compiling and loading by name.
 - Changes are judged against the high tier's performance target: 4K output at 60 fps with MSAA 4x,
   about 14 ms of GPU time a frame at the baseline (`Quality.ts`; `docs/reference/profile-frame.md`).
-  A quality tier changes the cost, never the mood (weather, clock, lighting). High is the reference
-  tier, the only active one and every module's default. Load-time settings are read once at load, so
-  changing the tier reloads the page.
+  A tier or a graphics option (`packages/render/GraphicsOptions.ts`) changes the cost, never the mood
+  (weather, clock, lighting). High is the reference and every module's default. Load-time
+  settings are read once at load: changing them reloads the page.
 - A URL option is declared in the settings table of the lowest layer that reads it, and read only
   through `Settings.ts`'s reader (rule 14; partly: `verify-settings`, `verify-layers`). The render
   pipeline, the island and the game's rules never touch browser globals; the app layer passes in
@@ -194,7 +193,7 @@ The folders in full: `ARCHITECTURE.md`, Code map; file by file: `node tools/repo
 `app/`: the app layer (entry, assembly, frame loop, GUI, scene jump); `app/scenes/`, `scenes.html`:
 the render pipeline's test scenes. `packages/render/`: the render pipeline, built without the
 island. `packages/island/`: the island, its world in chunks, grown in place. `packages/game/`: the
-game behind `?game`, its headless rules in `sim/`. `tools/`: checks, captures, probes, profiling,
-the GPU lock, the code lint. `packages/render/`, `packages/island/` and `tools/` have their own
-rules in an `AGENTS.md`. `skills/`: linked from `.claude/skills/`. `docs/`: the documentation by
-kind (`docs/README.md`). `public/` (git-ignored): the assets.
+game at `/`, its headless rules in `sim/`. `tools/`: checks, captures, probes, profiling, the GPU
+lock, the code lint. `packages/render/`, `packages/island/` and `tools/` have their own rules in an
+`AGENTS.md`. `skills/`: linked from `.claude/skills/`. `docs/`: the documentation by kind
+(`docs/README.md`). `public/` (git-ignored): the assets.

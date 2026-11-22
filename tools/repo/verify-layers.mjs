@@ -14,7 +14,7 @@
 //
 // The layers, lowest first: render (light, sky, weather, sea, the frame's passes, the generic
 // materials and vegetation machinery, the quality tiers), island (this island's generation and
-// growth, its materials, plants, camera, characters, creatures), game (everything behind `?game`)
+// growth, its materials, plants, camera, characters, creatures), game (the page at `/`: everything but the art-review scene)
 // and app (the app's entry, which assembles the others). A file may import its own layer and the
 // layers below it, never one above: a lower layer defines an interface and the higher one fills it.
 // A file's folder is its layer: the three lower layers are packages, each a folder of `packages/`
@@ -26,7 +26,9 @@
 // setup entry point (render/setup.ts): what the app needs before the render pipeline's other
 // modules load (the settings, the look, the quality tiers and the render scale they set). It loads
 // in node too. The render pipeline's fourth is its browser entry point (render/browser.ts): the
-// host a running scene takes from a browser page, which only the app layer imports. The modules
+// host a running scene takes from a browser page, which only the app layer imports. The game has a
+// third too, its front-end entry point (game/front.ts: the loading screen the app shows before the
+// game loads), a browser-side entry point checked as a main one. The modules
 // the app loads on demand are lazy entry points (`lazy`): the main entry points leave them out, so
 // they keep chunks of their own.
 //
@@ -497,7 +499,7 @@ for ( const [ key, pair ] of upward ) if ( ! known.has( key ) ) failures.push( `
 for ( const key of KNOWN ) if ( ! upward.has( key ) ) failures.push( `KNOWN lists ${ key }, which no longer imports upward: remove the entry` );
 
 // the entry points
-const entryPoints = new Map(); // file -> { layer, side: 'main' | 'headless' | 'setup' | 'browser' }
+const entryPoints = new Map(); // file -> { layer, side: 'main' | 'headless' | 'setup' | 'browser' | 'front' }
 for ( const [ layer, sides ] of Object.entries( layers.entryPoints ) ) for ( const [ side, file ] of Object.entries( sides ) ) entryPoints.set( file, { layer, side } );
 const lazy = new Set( layers.lazy );
 for ( const layer of Object.keys( RANK ).filter( ( l ) => l !== 'app' ) ) if ( ! layers.entryPoints[ layer ]?.main || ! layers.entryPoints[ layer ]?.headless ) failures.push( `tools/repo/layers.json: the ${ layer } package has no main or no headless entry point` );
@@ -557,7 +559,8 @@ for ( const from of sceneFiles ) {
 const headlessFiles = new Set();
 for ( const [ file, { side } ] of entryPoints ) {
 
-	if ( side === 'main' ) continue;
+	// (the game's front-end entry point loads in the browser, as a main one does)
+	if ( side === 'main' || side === 'front' ) continue;
 	for ( const f of loadClosure( file ) ) {
 
 		headlessFiles.add( f );

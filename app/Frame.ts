@@ -13,11 +13,24 @@
 //   nominal until it is done and reads the GPU's time from the frame's timer, or times frames on an
 //   idle queue where there is none; the loading screen waits for it, and a lower tier reloads.
 // - A resize keeps the island view's framing on the window's aspect.
+// - Behind the game's title screen the camera turns slowly round the island (`titleTurn`).
 // - The keys: Space pauses (the game its own clock), H hides the GUI, R / 1, 2, 3 the camera views.
+import * as THREE from 'three/webgpu';
 import { DAY_PRESETS, renderEvent, type RenderParts, type SceneContent, type SceneFrameSpec } from '../packages/render/index.ts';
 import { isCameraInputTarget, createIslandFrame, type IslandParts } from '../packages/island/index.ts';
 import { QualityDetector, qualityLines, rememberQuality } from './QualityDetect.ts';
 import type { PageParts } from './Page.ts';
+
+// the title's turn round the island (radians a second: a whole turn in about four minutes)
+const TITLE_TURN = THREE.MathUtils.degToRad( 1.5 );
+const UP = new THREE.Vector3( 0, 1, 0 );
+
+function turnRound( camera: THREE.PerspectiveCamera, target: THREE.Vector3, angle: number ): void {
+
+	camera.position.sub( target ).applyAxisAngle( UP, angle ).add( target );
+	camera.lookAt( target );
+
+}
 
 /** The island page's frame. */
 export function islandFrame( render: RenderParts, island: IslandParts, page: PageParts ): SceneFrameSpec {
@@ -55,7 +68,7 @@ export function islandFrame( render: RenderParts, island: IslandParts, page: Pag
 			const { game } = page;
 			return {
 				start: ( time ) => frameStats.record( time, frame.pacer.interval, frame.pacer.period ),
-				// ?game&paused starts the game paused; once the game runs, so does the scene
+				// a paused game page (`paused`) starts the game paused; once the game runs, so does the scene
 				beforeClock() {
 
 					if ( render.paused && game && ! game.sim.paused ) render.paused = false;
@@ -76,7 +89,11 @@ export function islandFrame( render: RenderParts, island: IslandParts, page: Pag
 						page.shownWind = `${ windTarget.level },${ windTarget.heading }`;
 
 					}
+					// behind the title the camera turns slowly round the island (FrontStart.ts), at the
+					// player's pace: the turn is the menu's, not the scene's
+					if ( page.titleTurn && ! render.paused ) turnRound( render.camera, island.controls.target, rawDt * TITLE_TURN );
 					stages.moveCamera( time, dt, rawDt );
+					page.front?.update();
 
 				},
 				localLights: () => stages.night(),
@@ -138,7 +155,7 @@ export function islandLoop( parts: () => RenderParts, island: IslandParts, page:
 			const { dynamicResolution, gpuTimer } = frame;
 			return ! island.approachWritten || sunShadow.draws === 0 || ! ambientRelight.ready || ( detector !== null && ( detector.pending || ( detector.result !== null && detector.result.tier !== qualityTier ) ) ) || ( game !== null && ! game.ready() ) || dynamicResolution !== null && dynamicResolution.settling && ( gpuTimer !== null || profiler?.timestamps === true ) &&
 				// eslint-disable-next-line ponlai/scene-clock -- the loading screen's longest wait: when it lifts, not what is drawn
-				! render.paused && ! resolution.full && performance.now() < until;
+				! render.paused && ! resolution.full && ! frame.sizing.pinned && performance.now() < until;
 
 		},
 		onRevealed() {

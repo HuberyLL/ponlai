@@ -100,6 +100,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import PROJECT from '../project.mjs';
+import { reviewUrl } from './page-query.mjs';
 
 // the app's globals and its loading screen, as the project's configuration names them, for the
 // page code below (passed in: a closure run in the page sees nothing of node's scope)
@@ -139,7 +140,7 @@ const renderedFrame = ( page ) => page.evaluate( ( n ) => window[ n.handle ]?.re
 async function load( page, query ) {
 
 	// the navigation takes --timeout too: Playwright's own 30 s runs out on a contended GPU
-	await page.goto( `${ url }?${ query }`, { timeout } );
+	await page.goto( reviewUrl( `${ url }?${ query }` ), { timeout } );
 	await page.waitForFunction( ( n ) => window[ n.handle ] && window[ n.diagnostics ], PAGE, { timeout } ).catch( async ( error ) => {
 
 		// where the load stood: the loading screen's status line

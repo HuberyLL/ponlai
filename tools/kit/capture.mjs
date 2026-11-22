@@ -124,6 +124,7 @@ import { evalSource, runInPage } from './page-eval.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import PROJECT from '../project.mjs';
 import { outputDir } from './root.mjs';
+import { reviewUrl } from './page-query.mjs';
 
 /** The scene jump contract's version this tool drives (`__PONLAI__.sceneJump`, packages/render/assemble/SceneJump.ts). */
 const SCENE_JUMP = 1;
@@ -232,7 +233,7 @@ async function loadToWorld( page, url ) {
 
 	const started = Date.now();
 	// (not the load event: the page's top-level awaits wait for the gate)
-	await page.goto( url, { waitUntil: 'domcontentloaded', timeout: worldTimeout } );
+	await page.goto( reviewUrl( url ), { waitUntil: 'domcontentloaded', timeout: worldTimeout } );
 	// the world in, or the device asked for (the renderer's start, after the world's module has run)
 	// on a page without the marker
 	await page.waitForFunction( ( n ) => window[ n.world ]?.ready || ( ! window[ n.world ] && window[ n.gpuGate ]?.asked ),

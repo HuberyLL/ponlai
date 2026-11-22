@@ -84,6 +84,7 @@ import { selectViews, viewQuery } from './adhoc.mjs';
 import { resolveRefDir } from '../reference.mjs';
 import PROJECT from '../../project.mjs';
 import { ROOT } from '../root.mjs';
+import { reviewUrl } from '../page-query.mjs';
 
 const { VIEWS, viewEval } = viewTable;
 const { CLIPS } = clipTable;
@@ -229,7 +230,7 @@ export async function main( argv ) {
 			const page = session.page;
 			page.on( 'console', ( m ) => { if ( m.type() === 'error' || m.type() === 'warning' ) errors.push( m.type() + ': ' + m.text() ); } );
 			page.on( 'pageerror', ( e ) => errors.push( 'pageerror: ' + e.message ) );
-			await page.goto( url );
+			await page.goto( reviewUrl( url ) );
 			await page.waitForFunction( ( p ) => window[ p.handle ] && window[ p.diagnostics ], PAGE, { timeout } );
 			await page.evaluate( viewEval( view, crops ) );
 			viewRecord.loadMs = Date.now() - t0 - viewRecord.lockMs;

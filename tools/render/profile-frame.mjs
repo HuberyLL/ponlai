@@ -109,6 +109,7 @@ import { announceHeadedRun, requireDisplayAllowed } from '../kit/display-gate.mj
 import { QUALITY as QUALITY_TABLE } from '../../packages/render/Quality.ts';
 import { dynamicRange, OUTPUT_PIXEL_RATIO_CAP } from '../../packages/render/post/RenderScale.ts';
 import { startLoadTimeline, markSlices, windowLoad } from '../kit/load-timeline.mjs';
+import { reviewUrl } from '../kit/page-query.mjs';
 
 // ------------------------------------------------------------------ options
 
@@ -276,16 +277,16 @@ if ( DISPLAY ) requireDisplayAllowed( 'profile-frame --display' );
 if ( ( ACCEPT || SCALES.length ) && ( COMPARE || TOGGLE ) ) throw new Error( '--accept and --scales are for profile runs, not --compare or --toggle' );
 // the page reads the first of a repeated option, so a dpr in the url or --q would win over --scales
 if ( SCALES.length && [ new URL( URL_A ).search.slice( 1 ), EXTRA_Q ].some( ( q ) => new URLSearchParams( q ).has( 'dpr' ) ) ) throw new Error( '--scales sets the dpr option itself: remove dpr from the url and --q' );
-// Pinning the high tier at its performance target: a profile or --compare of high is timed at that
-// target (packages/render/Quality.ts: 1440p's pixel count, the baseline of its dynamic rule for the
-// viewport: 4/3 at the default 1920x1080@2, 1 at 2560x1440@1). Its render scale is pinned by the
+// Pinning a tier at its baseline: a profile or --compare of a tier with the dynamic rule is timed at
+// its baseline (packages/render/Quality.ts; high's is its performance target, 1440p's pixel count:
+// 4/3 at the default 1920x1080@2, 1 at 2560x1440@1). Its render scale is pinned by the
 // page's `dpr`, so every run measures the level that trade-offs are judged at.
 // `--unpinned` leaves the dynamic resolution steering (where it settles); --accept (the frame rate
 // a player sees), --display, --scales and a dpr in the url or --q are never pinned.
 const UNPINNED = flags.has( '--unpinned' );
-const BASELINE_DPR = QUALITY === 'high' && ! UNPINNED && ! ACCEPT && ! DISPLAY && ! SCALES.length &&
+const BASELINE_DPR = 'dynamic' in QUALITY_TABLE[ QUALITY ].render && ! UNPINNED && ! ACCEPT && ! DISPLAY && ! SCALES.length &&
 	! [ new URL( URL_A ).search.slice( 1 ), COMPARE ? new URL( COMPARE[ 1 ] ).search.slice( 1 ) : '', EXTRA_Q ].some( ( q ) => new URLSearchParams( q ).has( 'dpr' ) )
-	? String( dynamicRange( W, H, SCALE, QUALITY_TABLE.high.render, OUTPUT_PIXEL_RATIO_CAP ).baseline ) : '';
+	? String( dynamicRange( W, H, SCALE, QUALITY_TABLE[ QUALITY ].render, OUTPUT_PIXEL_RATIO_CAP ).baseline ) : '';
 const OUT = opt( 'out', path.join( 'artifacts/perf', LABEL ) );
 // The page's remembered dynamic scale (`drsStore`): an A/B (--compare) or an acceptance run turns it
 // off (`drsStore=off`), so neither side starts from a scale the other, or an earlier run, settled at;
@@ -1039,7 +1040,7 @@ async function load( page, base, q, timestamps ) {
 
 	const url = pageUrl( base, q, timestamps );
 	const started = Date.now();
-	await page.goto( url );
+	await page.goto( reviewUrl( url ) );
 	await page.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__?.frame > 30 &&
 		document.getElementById( 'loading' )?.classList.contains( 'done' ), null, { timeout: 180000, polling: 250 } );
 	const startup = await page.evaluate( () => {
@@ -2775,7 +2776,7 @@ async function preload( label, chrome ) {
 		for ( const e of todo ) {
 
 			const started = Date.now();
-			await page.goto( e.url );
+			await page.goto( reviewUrl( e.url ) );
 			await page.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__?.frame > 30 &&
 				document.getElementById( 'loading' )?.classList.contains( 'done' ), null, { timeout: 180000, polling: 'raf' } );
 			e.worldCache = await page.evaluate( () => window.__THREE_GAME_DIAGNOSTICS__.worldCache ?? 'unsupported' );
