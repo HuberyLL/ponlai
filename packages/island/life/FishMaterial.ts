@@ -16,7 +16,7 @@ type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
-// The material of a fish drawn from instances (Wenyao.ts), its look by its skin table.
+// The material of a fish drawn from instances (the sea life), its look by its skin table.
 //
 // The vertex stage poses the model (tidewater's swimVertex: a travelling wave down the body that
 // grows toward the tail, and the turning bend) and folds its wings: each ray of a paired fin turns

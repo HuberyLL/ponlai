@@ -139,11 +139,6 @@ Test mode
   once `settled` is true. In the test mode, a paused frame is bit-identical between runs and equals
   a fresh load's frame, except in the held region ([Test mode](test-mode.md)).
 
-Wenyao
-: The flying fish of the old texts, in schools that break from the swell offshore and glide
-  (`packages/island/life/Wenyao.ts`;
-  [Life and islanders](../design/life-and-islanders.md#the-cast)).
-
 Yunpeng
 : A herb of the old texts: single clumps of straight white stalks far apart on the open meadow,
   which glow softly at night (`packages/island/world/Yunpeng.ts`;

@@ -1,9 +1,8 @@
 # Life and islanders
 
 What the island's creatures and its people look like and why, and what to avoid. What every subject
-shares (lighting, exposure, post-processing) is in [Art direction](art-direction.md). Of the
-creatures below, only the wenyao is built (`packages/island/life/Wenyao.ts`), and it is parked:
-the scene leaves it out unless the `wenyao` URL option is given. The others are designed.
+shares (lighting, exposure, post-processing) is in [Art direction](art-direction.md). The creatures
+below are designed, not yet built.
 
 Contents:
 
@@ -18,9 +17,8 @@ Contents:
   Wang Jia's Shiyi ji and their like). Avoid a generic animal added for liveliness: a crab, or a
   gull for its own sake.
 - Each creature is a real species in body, gait and habitat, with one or two departures from life,
-  as the texts themselves make them: the Shanhaijing's wenyao is a flying fish with a white head, a
-  red beak and a bird's wings, and it flies by night; the Liezi's trees are trees whose flowers and
-  fruit are pearl and jade. No creature comes from the texts alone, without a living model. Fantasy
+  as the texts themselves make them: the Liezi's trees are trees whose flowers and fruit are pearl
+  and jade. No creature comes from the texts alone, without a living model. Fantasy
   plants follow the same rule.
 - Each has a reason in the world for being there. It lives where its real species would: a turtle on
   the seagrass it grazes, a clam in the sunlit shallows its algae need. Its numbers follow the
@@ -28,8 +26,8 @@ Contents:
   placed by hand.
 - The island's own birds and beasts are white: real species in white plumage or coat ("its birds and
   beasts are all pure white", the Liezi; "its creatures, birds and beasts, are all white", the
-  Shiji). Visitors from elsewhere (the jingwei from the western mountains, the wenyao from the
-  western sea) and the creatures of the sea keep their own colours.
+  Shiji). Visitors from elsewhere (the jingwei from the western mountains) and the creatures of
+  the sea keep their own colours.
 - Creatures belong to nature, so they are shaded as realistically as the plants, never stylised.
   From the island view they read by silhouette and motion: a flock wheeling overhead, a tall bird
   standing at the water's edge, a large shadow gliding through the clear shallows, a school breaking
@@ -56,8 +54,6 @@ The cast the texts give so far:
 - In deep water: the great fish of Yingzhou, "a thousand zhang long, spotted, with a horn on its
   snout, dancing and playing in schools" (the Shiyi ji), a whale shark with a horn: now and then a
   vast spotted shadow passing beyond the shelf's edge.
-- On the sea: the wenyao, flying fish in schools that break from the swell offshore and glide, by
-  night as by day.
 - Over the island and its coast, Penglai's own birds in the Shiyi ji:
   - The yuanyang ("like a wild goose, it wheels among the clouds, roosts on high peaks, and its feet
     never tread the ground"; not the mandarin duck) is a white skein of geese circling the island

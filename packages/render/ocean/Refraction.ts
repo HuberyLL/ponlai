@@ -200,7 +200,7 @@ export function refractedGroup( seaLevel: number ): THREE.ClippingGroup {
 
 }
 
-/** Marks `material` as something that swims in the water (the wenyao), which the refraction
+/** Marks `material` as something that swims in the water (the sea life), which the refraction
  * image leaves out: it writes an alpha of 0 into the opaque image (three assigns opaque materials
  * an alpha of 1 under normal blending, so the mark takes none), the underwater pyramid leaves it
  * out (Pipeline.ts), and the water finds it along its refracted rays (Water.ts). A swimmer is not

@@ -27,14 +27,14 @@ export function islandHandles( render: RenderParts, island: IslandParts, page: P
 		},
 		handles( jump ) {
 
-			const { controls, freeControls, landInfo, fields, wenyao, grass, yunpeng, bamboo, growth } = island;
+			const { controls, freeControls, landInfo, fields, grass, yunpeng, bamboo, growth } = island;
 			const { establishScene, setTime } = jump;
 			return {
 				land: landInfo, controls, freeControls, cameraSettings: page.cameraSettings, setCameraMode: page.setCameraMode, setCameraView: page.setCameraView,
 				// the meadow's and the cliff's albedos (groundGains)
 				setLawnGain: ( gain: number ) => { setGroundGain( 'lawnGain', gain ); groundBounce.invalidate(); renderEvent( 'retune' ); },
 				setRockGain: ( gain: number ) => { setGroundGain( 'rockGain', gain ); renderEvent( 'retune' ); },
-				grass, wenyao, fallingLeaves: island.fallingLeaves, characters: island.characters, game: page.game, soilUniforms, weatherEffects: page.weatherEffects,
+				grass, fallingLeaves: island.fallingLeaves, characters: island.characters, game: page.game, soilUniforms, weatherEffects: page.weatherEffects,
 				// the meadow map (world/SwardField.ts: RGBA bytes, G the sward's cover) and the extent it spans
 				// round the origin, for tools that pick a view over the meadow
 				meadowMap: async () => {
