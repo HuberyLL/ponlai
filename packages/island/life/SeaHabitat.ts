@@ -3,9 +3,12 @@ import { hash3i, mulberry32 } from '../../render/data.ts';
 import type { Rock, WorldData } from '../world/types.ts';
 import { openSeaBeds, openSeaHeight } from '../world/Bathymetry.ts';
 import { LAND_REACH } from '../world/WorldShapes.ts';
+import { rockExtent } from '../world/Stones.ts';
 
+// What the sea offers its life at a point.
+//
 // What the sea offers its life at a point: the distance from the coast, the floor's depth, the
-// seagrass, the stones; and the measures the numbers of each kind follow.
+// seagrass, the stones and the reefs on them; and the measures the numbers of each kind follow.
 //
 // Everything here reads the land's own fields (WorldData: the shore's signed distance, the rendered
 // floor's height and its beds), so a creature's habitat is a function of the land, and nothing is
@@ -32,6 +35,11 @@ function lookup( f: ShoreField, stride = 1, c = 0 ): ( x: number, z: number ) =>
 
 }
 
+// A reef grows on a stone at least REEF_SIZE metres across its half axis, whose foot lies deeper than
+// REEF_FOOT metres: a smaller stone rolls in a swell, and a shallower one is scoured by the waves
+// and dries at the lowest tides (FloorLife.ts settles them, the reef's fish keep round them).
+const REEF_SIZE = 0.3, REEF_FOOT = - 1.4;
+
 /** The sea's habitat over a land (WorldData). */
 export class SeaHabitat {
 
@@ -43,6 +51,8 @@ export class SeaHabitat {
 	/** The area of seagrass meadow (cover-weighted, m²) within the fields' bounds. */
 	readonly meadowArea: number;
 	readonly rocks: readonly Rock[];
+	/** The stones a reef grows on. */
+	readonly reefs: readonly Rock[];
 	/** The fields' bounds (m). */
 	readonly bounds: { x0: number; z0: number; x1: number; z1: number };
 	private readonly coastAt: ( x: number, z: number ) => number;
@@ -55,6 +65,7 @@ export class SeaHabitat {
 		this.floorAt = lookup( data.seabedField );
 		this.grassAt = lookup( data.seabedBeds, 2, 0 );
 		this.rocks = data.rocks;
+		this.reefs = data.rocks.filter( ( r ) => r.s >= REEF_SIZE && r.floor <= REEF_FOOT );
 		const f = data.shore;
 		this.bounds = { x0: f.x0, z0: f.z0, x1: f.x0 + f.nx * f.cell, z1: f.z0 + f.nz * f.cell };
 		const m = measure( this, f );
@@ -89,6 +100,20 @@ export class SeaHabitat {
 
 	}
 
+	/** Whether ( x, z ) lies `gap` metres or more outside every reef stone's footprint. */
+	offReef( x: number, z: number, gap: number ): boolean {
+
+		for ( const r of this.reefs ) {
+
+			const dx = x - r.x, dz = z - r.z, d = Math.hypot( dx, dz );
+			if ( d > r.s * 2 + gap ) continue;
+			if ( d < 1e-6 || d < rockExtent( r, dx / d, dz / d ) + gap ) return false;
+
+		}
+		return true;
+
+	}
+
 	/** Cells of a world-anchored grid of `cell` metres whose jittered point `fits`, in the order of a
 	 * hash of their own (salted by `salt`): the candidates a kind takes its homes from, so the
 	 * layout is a function of the land alone. */
@@ -97,7 +122,8 @@ export class SeaHabitat {
 		const B = this.bounds, out: { x: number; z: number; seed: number; key: number }[] = [];
 		for ( let cj = Math.floor( ( B.z0 - margin ) / cell ); cj * cell < B.z1 + margin; cj ++ ) for ( let ci = Math.floor( ( B.x0 - margin ) / cell ); ci * cell < B.x1 + margin; ci ++ ) {
 
-			const seed = hash3i( ci, cj, salt );
+			// (an integer: the generator takes its seed's 32 bits)
+			const seed = Math.floor( hash3i( ci, cj, salt ) * 4294967296 );
 			const rng = mulberry32( seed );
 			const x = ( ci + 0.5 + ( rng() - 0.5 ) * 0.8 ) * cell, z = ( cj + 0.5 + ( rng() - 0.5 ) * 0.8 ) * cell;
 			if ( fits( x, z ) ) out.push( { x, z, seed, key: rng() } );

@@ -244,6 +244,7 @@ export class WaveMaps {
 	private readonly origins = WAVE_EXTENTS.map( () => uniform( new THREE.Vector2() ) );
 	private readonly wavesReady = uniform( 0 );
 	private bakes: { quad: THREE.QuadMesh; layer: number }[] = [];
+	private damping: WaveDampingInputs | null = null;
 	// the caustics: their splats (which refract the key's direction, shared.sunDir) and whether
 	// they are drawn
 	/** The caustics' splats, drawn into their layer through `splatCamera`. */
@@ -277,6 +278,17 @@ export class WaveMaps {
 
 	}
 
+	/** The share of the longest cascade's height (the swell's, whose waves are all longer than the
+	 * next cascade's band) that the sea's surface keeps at a world xz: its floor's depth and the
+	 * island's lee (WaveDamping.ts). For what the swell moves under the surface; the node is built
+	 * from the waves the bake reads, so call it while a shader builds, after `attachWaves`. */
+	swellShare( xz: THREE.Node<'vec2'> ): THREE.Node<'float'> {
+
+		if ( ! this.damping ) throw new Error( 'WaveMaps.swellShare: the waves are not attached yet.' );
+		return waveDamping( this.damping, xz ).weights.x;
+
+	}
+
 	/** Compiles the splats' draws for their layer ahead of their first frame: while the key gives no
 	 * light that frame comes only with the dawn. */
 	warm(): Promise<void> {
@@ -290,6 +302,7 @@ export class WaveMaps {
 	attachWaves( inputs: WaveMapInputs ): void {
 
 		const { fft } = inputs;
+		this.damping = inputs;
 		WAVE_EXTENTS.forEach( ( extent, level ) => {
 
 			const texel = extent / RES, origin = this.origins[ level ];

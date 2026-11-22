@@ -205,13 +205,29 @@ export function refractedGroup( seaLevel: number ): THREE.ClippingGroup {
  * an alpha of 1 under normal blending, so the mark takes none), the underwater pyramid leaves it
  * out (Pipeline.ts), and the water finds it along its refracted rays (Water.ts). A swimmer is not
  * shown to the refraction's camera: there it would stand in front of the floor that the rays
- * passing beside it reach, which the water then could not read anywhere. */
-export function markSwimmer( material: THREE.NodeMaterial ): void {
+ * passing beside it reach, which the water then could not read anywhere.
+ *
+ * A clear body (a jelly) drawn with 4 samples (post/Antialiasing.ts `ALPHA_TO_COVERAGE`) passes
+ * `cover`, the share of each pixel its tissue covers, and is drawn by alpha to coverage: its alpha,
+ * kept under 1, covers that share of the samples and is written into them, so the resolved pixel
+ * holds the tissue over the floor behind it with an alpha under 1, as a fish's antialiased edge
+ * does, and the water reads it the same way. With one sample the material keeps a share of its
+ * pixels itself (an ordered dither) and passes none: it writes the 0. */
+export function markSwimmer( material: THREE.NodeMaterial, cover?: THREE.Node<'float'> ): void {
 
 	material.blending = THREE.NoBlending;
-	material.opacityNode = float( 0 );
+	if ( cover ) {
+
+		material.alphaToCoverage = true;
+		material.opacityNode = cover.clamp( 0, MAX_COVER );
+
+	} else material.opacityNode = float( 0 );
 
 }
+
+// a clear body's greatest alpha under alpha to coverage: under the water's 0.999 (Water.ts), so a
+// pixel it covers whole still reads as a swimmer's
+const MAX_COVER = 0.95;
 
 /** Shows `object` (a mesh that reaches under the sea, or a light) to the refraction's camera. */
 export function showUnderwater( object: THREE.Object3D ): void {

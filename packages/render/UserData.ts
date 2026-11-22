@@ -69,8 +69,8 @@ export const USER_DATA = {
 		means: 'which draw of an instanced plant kind the mesh is (the index of its range in the cull\'s list)',
 	},
 	rainBake: {
-		on: 'object', sets: 'vegetation/PlantInstances.ts', reads: 'RainCollision.ts',
-		means: 'false on a mesh that leaves its shape in the rain\'s collision bake to another (a plant\'s far level)',
+		on: 'object', sets: 'vegetation/PlantInstances.ts, the sea floor\'s life', reads: 'RainCollision.ts',
+		means: 'false on a mesh that leaves its shape in the rain\'s collision bake to another (a plant\'s far level), or that its material places (the sea floor\'s life, under the sea)',
 	},
 	bakeCount: {
 		on: 'object', sets: 'an instanced mesh that picks its count per draw', reads: 'RainCollision.ts',
