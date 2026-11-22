@@ -151,7 +151,7 @@ export function clipNames( group = 'all' ) {
 // The anti-aliasing baseline's entries per quality tier (tools/kit/parity/baseline.mjs): on high
 // every view at rest (the parked weathers' too, run only when named), the views of the default
 // group also as whole frames (for the overall fidelity gate), and the gates' clips; on medium and
-// low six views at rest. Medium and low are parked (packages/render/Quality.ts PARKED_QUALITY).
+// low six views at rest. Medium and low are named by `--tiers` (the default runs high, the reference).
 // The views every lower tier keeps at rest: the meadow near and far, the flowers, the island, the
 // sea's glints and horizon, the night sky.
 const TIER_VIEWS = [ 'meadow-close', 'meadow-24', 'flowers-close', 'island-fair-noon', 'horizon-fair-noon', 'night-moon' ];

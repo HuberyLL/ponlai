@@ -13,7 +13,7 @@
 //
 // Options:
 //   --url base     the server to load (required): the dev server or a production preview
-//   --quality t    a tier or a list of tiers (default high; medium and low are parked, reached by name)
+//   --quality t    a tier or a list of tiers (default high, the reference; medium and low by name)
 //   --aa m         an anti-aliasing mode or a list (default: the page's own mode)
 //   --q query      extra URL options for every page
 //   --steps list   the steps to run, in order (default rest,events,wind,idle,gui,camera,scale,resize,presets,pause);

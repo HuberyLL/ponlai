@@ -13,6 +13,7 @@ Contents:
 
 - [Scenes](#scenes)
 - [The high tier's performance target](#the-high-tiers-performance-target)
+- [The presets' frame times](#the-presets-frame-times)
 - [Timestamps](#timestamps)
 - [Modes](#modes)
 - [A/B comparisons](#ab-comparisons)
@@ -61,16 +62,38 @@ development server works for quick checks. The default viewport is a generic 4K 
 1080 CSS pixels at a pixel ratio of 2.
 
 The high tier is timed at its performance target (`packages/render/Quality.ts`): 4K output at
-1440p's pixel count, upscaled by FSR 1, with MSAA 4x. A profile, `--compare` or `--toggle` run of
-the high tier pins the render scale at the baseline of its dynamic-resolution rule for the
-viewport, by adding a `dpr` to the query. That is `dpr=1.3333333333333333` at the default
-viewport, and `dpr=1` at `--w 2560 --h 1440 --scale 1`, a 2K display
-(`packages/render/post/RenderScale.ts` `dynamicRange`). So profiles and A/Bs measure at the level
-every trade-off is judged at.
+1440p's pixel count, upscaled by FSR 1, with MSAA 4x. A profile, `--compare` or `--toggle` run of a
+tier with the dynamic rule (every tier: high's at the performance target) pins the render scale at
+the baseline of that rule for the viewport, by adding a `dpr` to the query. For high that is
+`dpr=1.3333333333333333` at the default viewport, and `dpr=1` at `--w 2560 --h 1440 --scale 1`, a 2K
+display (`packages/render/post/RenderScale.ts` `dynamicRange`). So profiles and A/Bs measure at the
+level every trade-off is judged at.
 
 `--unpinned` keeps the tier's own rule, with the dynamic render scale adjusting itself. Add
 `--scale-settle 5 --scale-log` to see where it settles. `--accept` (the frame rate a player sees),
 `--display`, `--scales`, and a `dpr` in the URL or in `--q` are never pinned.
+
+## The presets' frame times
+
+The settings menu's presets are the quality tiers (`packages/render/Quality.ts`). A profile of a
+tier with the dynamic rule is pinned at that tier's baseline, as high's is. Measured on a production
+build at their baselines, with GPU timestamps, the GPU time per frame relative to high's on the
+same view and output:
+
+| View | Medium, 4K output | Low, 4K output | Medium, 1440p output | Low, 1440p output |
+| --- | --- | --- | --- | --- |
+| island-fair-noon | 0.75 | 0.64 | 0.75 | 0.63 |
+| meadow-close | 0.71 | 0.56 | 0.71 | 0.55 |
+| horizon-fair-noon | 0.74 | 0.63 | 0.74 | 0.63 |
+| island-clear-golden | 0.77 | 0.65 | 0.77 | 0.65 |
+| island-night-clear | 0.74 | 0.63 | 0.74 | 0.63 |
+
+About half of high's frame at its baseline does not follow the pixel count (a sweep of high's render
+scale fits about 7 ms plus a pixel term on the island at noon), so the presets save most in the
+fixed passes their rows turn down: the meadow's screen-space shadows and their prepass, the ambient
+occlusion and the clouds. High at 1440p output renders the same pixels as at 4K output and takes
+about 4 % less, the upscale and output passes being smaller. Measure a preset again with
+`profile-frame.mjs --quality medium` (or `low`) after a change to its row.
 
 ## Timestamps
 

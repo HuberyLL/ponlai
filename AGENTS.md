@@ -195,7 +195,7 @@ The folders in full: `ARCHITECTURE.md`, Code map; file by file: `node tools/repo
 `app/`: the app layer (entry, assembly, frame loop, GUI, scene jump); `app/scenes/`, `scenes.html`:
 the render pipeline's test scenes. `packages/render/`: the render pipeline, built without the
 island. `packages/island/`: the island, its world in chunks, grown in place. `packages/game/`: the
-game at `/` (the art-review scene behind `?review`), its headless rules in `sim/`. `tools/`: checks, captures, probes, profiling,
-the GPU lock, the code lint. `packages/render/`, `packages/island/` and `tools/` have their own
-rules in an `AGENTS.md`. `skills/`: linked from `.claude/skills/`. `docs/`: the documentation by
-kind (`docs/README.md`). `public/` (git-ignored): the assets.
+game at `/` (the art-review scene behind `?review`), its headless rules in `sim/`. `tools/`: checks,
+captures, probes, profiling, the GPU lock, the code lint. `packages/render/`, `packages/island/` and
+`tools/` have their own rules in an `AGENTS.md`. `skills/`: linked from `.claude/skills/`. `docs/`:
+the documentation by kind (`docs/README.md`). `public/` (git-ignored): the assets.

@@ -29,7 +29,7 @@ import type { PageSettingsQuery } from './AppSettings.ts';
 // depth (98 ms for 23 ms frames).
 
 // bumped when the model or the tiers change, so remembered choices are made again
-const VERSION = 1;
+const VERSION = 2;
 const STORAGE_KEY = 'ponlai.quality.auto';
 // seconds before frames count, the frames taken, and the most seconds it may take before it gives up
 const WARMUP = 0.5, MEASURE_FRAMES = 30, TIMEOUT = 5;
@@ -44,15 +44,16 @@ const HEADROOM = 2.8;
 // medium's for its sharper shading, and has no room left for a heavier view.
 //
 // Each tier's GPU time as A + B * scale^2 (scale: render pixels per CSS pixel per axis), relative to
-// high's at 1.5 = 1, at 1920x1080 CSS. Fitted to frames at render scales 1.5 and 1 (production
-// build, timestamps on, the island at noon and golden hour, on one GPU): high 7.4 + 7.9 s^2 ms,
-// medium 6.9 + 6.0 s^2, low 6.1 + 5.8 s^2. A measurement on high gives the GPU's speed; the other
-// tiers follow in these proportions (a GPU of another make may share its time out differently, so
-// the budget keeps headroom).
+// high's at 1.5 = 1, at 1920x1080 CSS. Fitted on the island at noon (production build, timestamps on,
+// on one GPU): high at render scales 1, 4/3, 1.6 and 2 gave 7.31 + 4.14 s^2 ms; medium, 10.91 ms at
+// its baseline (scale 1), and low, 9.27 ms at its own (5/6), share high's pixel term and keep the rest
+// as their fixed part (6.77 and 6.40 ms: what they turn off is mostly fixed work). A measurement on
+// high gives the GPU's speed; the other tiers follow in these proportions (a GPU of another make may
+// share its time out differently, so the budget keeps headroom).
 const COST: Record<QualityTier, { fixed: number; pixel: number }> = {
-	high: { fixed: 0.29, pixel: 0.71 / 2.25 },
-	medium: { fixed: 0.27, pixel: 0.53 / 2.25 },
-	low: { fixed: 0.24, pixel: 0.52 / 2.25 },
+	high: { fixed: 0.44, pixel: 0.56 / 2.25 },
+	medium: { fixed: 0.41, pixel: 0.56 / 2.25 },
+	low: { fixed: 0.385, pixel: 0.56 / 2.25 },
 };
 // the view the fit was made at (CSS pixels): the per-pixel part follows the view's area
 const FIT_AREA = 1920 * 1080;

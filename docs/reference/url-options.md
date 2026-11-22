@@ -150,8 +150,8 @@ The following rendering and A/B options are read at load. The runtime switches f
 page are in `packages/render/debug/DebugFlags.ts`.
 
 - `aa` selects the anti-aliasing mode (`packages/render/post/Antialiasing.ts`), over the tier's
-  `aa` setting. Every tier's default is `msaa`. The GUI's Antialiasing control reloads the page with any of MSAA 4x, TAAU, FSR
-  3.1, TAA and Off.
+  `aa` setting. Every tier's default is `msaa`. The GUI's Antialiasing control reloads the page
+  with any of MSAA 4x, TAAU, FSR 3.1, TAA and Off; the game's settings menu offers all but Off.
   - `msaa`: 4 samples, upscaled by FSR 1.
   - `off`: one sample.
   - `taa` and `taau`, the temporal modes: one sample, jittered, with motion vectors, resolved

@@ -63,9 +63,11 @@ its results, so it can check its own work.
 ## Status
 
 Ponlai is tuned and tested on the high quality preset at native 4K, in clear and fair weather at
-every time of day, from day through sunset to night. The other presets (`medium`, `low`) and
-weathers (`cloudy`, `overcast`, `rain`, `storm`, `fog`) still load, but they have not been tuned
-recently and may look worse or run slower. The page at `/` is an early game prototype on the island; `?review` shows the island alone.
+every time of day, from day through sunset to night. The medium and low presets, which the game's
+settings menu offers, trade image quality for about a quarter and two fifths of the frame's GPU
+time. The other weathers (`cloudy`, `overcast`, `rain`, `storm`, `fog`) still load, but they have
+not been tuned recently and may look worse or run slower. The page at `/` is an early game
+prototype on the island; `?review` shows the island alone.
 
 ## Quick start
 
