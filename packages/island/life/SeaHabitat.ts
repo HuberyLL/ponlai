@@ -97,7 +97,8 @@ export class SeaHabitat {
 		const B = this.bounds, out: { x: number; z: number; seed: number; key: number }[] = [];
 		for ( let cj = Math.floor( ( B.z0 - margin ) / cell ); cj * cell < B.z1 + margin; cj ++ ) for ( let ci = Math.floor( ( B.x0 - margin ) / cell ); ci * cell < B.x1 + margin; ci ++ ) {
 
-			const seed = hash3i( ci, cj, salt );
+			// (an integer: the generator takes its seed's 32 bits)
+			const seed = Math.floor( hash3i( ci, cj, salt ) * 4294967296 );
 			const rng = mulberry32( seed );
 			const x = ( ci + 0.5 + ( rng() - 0.5 ) * 0.8 ) * cell, z = ( cj + 0.5 + ( rng() - 0.5 ) * 0.8 ) * cell;
 			if ( fits( x, z ) ) out.push( { x, z, seed, key: rng() } );
