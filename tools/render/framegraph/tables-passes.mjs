@@ -966,6 +966,15 @@ export const checks = [
 
 			}, /use readOptional/ ],
 			[ 'several attachments without an mrt', ( g, r ) => g.addPass( 'p', 'scene', ( b ) => ( b.write( r.a ), b.write( r.b ), { label: '' } ) ), /without an mrt/ ],
+			[ 'an mrt output with no attachment', ( g, r ) => g.addPass( 'p', 'scene', ( b ) => ( b.write( r.a ), b.write( r.b ), { label: '', mrt: { outputNodes: { a: 1, c: 1 } } } ) ), /writes 'c', which is not one of its attachments/ ],
+			[ 'one mrt drawn into two layouts', ( g, r ) => {
+
+				const mrt = { outputNodes: { a: 1, b: 1 } };
+				let a, v;
+				g.addPass( 'p1', 'scene', ( b ) => ( a = b.write( r.a ), v = b.write( r.b ), { label: '', mrt } ) );
+				g.addPass( 'p2', 'scene', ( b ) => ( b.write( v ), b.write( a ), { label: '', mrt } ) );
+
+			}, /into other attachments \(b,a\)/ ],
 			[ 'attachments of different size classes', ( g, r ) => g.addPass( 'p', 'scene', ( b ) => ( b.write( r.a ), b.write( r.half ), { label: '', mrt: {} } ) ), /different size classes/ ],
 			[ 'attachments of different sample counts', ( g, r ) => g.addPass( 'p', 'scene', ( b ) => ( b.write( r.a ), b.depth( r.ms, { write: true, clear: true } ), { label: '' } ) ), /different sample counts/ ],
 			[ 'a depth resource as colour', ( g, r ) => g.addPass( 'p', 'scene', ( b ) => ( b.write( r.d ), { label: '' } ) ), /use depth\(\)/ ],

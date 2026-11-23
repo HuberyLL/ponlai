@@ -62,7 +62,7 @@ import { postOptionsFromURL } from './post/PostOptions.ts';
 import { hazeKeyAt, type HazeKey } from './weather/HazeKeys.ts';
 import { OUTPUT_PIXEL_RATIO_CAP, outputPixelRatio } from './post/RenderScale.ts';
 import { SubmitBatch, type SubmitDevice } from './post/SubmitBatch.ts';
-import { installCacheKeyPatches, installBindingPatches, primeSharedNodes } from './three/ThreePatches.ts';
+import { installBindingPatches, primeSharedNodes } from './three/ThreePatches.ts';
 import { checkRenderer } from './three/Internals.ts';
 import { isWebGPU, gpuDevice } from './three/Backend.ts';
 import { shared } from './shared.ts';
@@ -323,10 +323,6 @@ export function setUpRenderer( render: RenderParts ) {
 	// the three.js internals of the renderer the app uses beyond its public interface: a three.js
 	// without one stops the app here, naming it (three/Internals.ts)
 	checkRenderer( renderer );
-	// three r187 keys its node builds and pipelines by the first attachment, not the whole layout (an
-	// MRT picks its outputs by the textures' names): patched before any material builds, so a material
-	// drawn into two layouts gets a build each (three/ThreePatches.ts)
-	installCacheKeyPatches( renderer );
 	// a new render object's texture bindings start at their node's current texture, so a texture the
 	// growth replaced and disposed is not uploaded again (three/ThreePatches.ts)
 	installBindingPatches( renderer );

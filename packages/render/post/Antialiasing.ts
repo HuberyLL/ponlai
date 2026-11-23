@@ -12,9 +12,8 @@
 // - `off`: one sample, leaves alpha-tested and grass blades dithered (`msaa=1` before);
 // - `taa`, `taau`: temporal anti-aliasing at the render's size, and temporal upsampling to the
 //   canvas: one sample, jittered, with motion vectors (Jitter.ts, Motion.ts), resolved against a
-//   history (TemporalAA.ts). A tier's setting may ask for them (none does today: Quality.ts), and `aa=` or the GUI choose them on any tier. Their scene materials build one
-//   shader per MRT, through three's cache keys patched for it (three/ThreePatches.ts, which
-//   throws on a three it is not written for);
+//   history (TemporalAA.ts). A tier's setting may ask for them (none does today: Quality.ts), and `aa=` or the GUI choose them on any tier. Their scene passes draw
+//   through MRTs, each paired with its pass's target (graph/GraphCompiler.ts `checkMrt`);
 // - `fsr3`: AMD's FSR 3.1 upscaler (post/fsr3/, Fsr3Upscaler.ts): one sample, jittered with FSR's
 //   own sequence, with motion vectors, like the temporal modes, but resolved by FSR at AMD's
 //   placement: on the composite's HDR image, before the bloom and the grade, which run on FSR's
