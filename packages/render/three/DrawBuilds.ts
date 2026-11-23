@@ -59,6 +59,40 @@ function internals( renderer: WebGPURenderer ): Internals {
 
 }
 
+// A material drawn under two MRTs (two passes' blends) into targets of one attachment count: three
+// r187 keys a pipeline by the draw's code and the first attachment's format, not by the MRT whose
+// blend per attachment it bakes in (WebGPUPipelineUtils reads `context.mrt.getBlendMode`), so
+// where both builds emit the same code, as a material that writes every output itself does, the
+// second draw gets the first one's pipeline and blends as the first MRT says. Each pass's MRT is
+// fixed with its target (post/graph/GraphCompiler.ts `checkMrt`); this refuses a material that two
+// of them would draw with different blends. The warm-up builds every draw the frame makes
+// (Compile.ts), so the check sees them all.
+type Blend = { blending: number; blendSrc: number; blendDst: number; blendEquation: number; blendSrcAlpha: number | null;
+	blendDstAlpha: number | null; blendEquationAlpha: number | null };
+const mrtBlends = new WeakMap<WebGPURenderer, WeakMap<Material, { mrt: MRTNode; count: number; blends: string }>>();
+
+// the refusal for `material`'s draw under the renderer's MRT and target, or null
+function checkMrtBlends( renderer: WebGPURenderer, material: Material ): string | null {
+
+	const mrt = renderer.getMRT();
+	const textures = renderer.getRenderTarget()?.textures;
+	if ( mrt === null || ! textures ) return null;
+	const blends = textures.map( ( t ) => {
+
+		const b = mrt.getBlendMode( t.name ) as unknown as Blend;
+		return `${ t.name }:${ b.blending }/${ b.blendSrc }/${ b.blendDst }/${ b.blendEquation }/${ b.blendSrcAlpha }/${ b.blendDstAlpha }/${ b.blendEquationAlpha }`;
+
+	} ).join( ' ' );
+	let seen = mrtBlends.get( renderer );
+	if ( ! seen ) mrtBlends.set( renderer, seen = new WeakMap() );
+	const first = seen.get( material );
+	if ( ! first ) seen.set( material, { mrt, count: textures.length, blends } );
+	else if ( first.mrt !== mrt && first.count === textures.length && first.blends !== blends )
+		return `material '${ material.name || material.type }' is drawn under two MRTs that blend differently (${ first.blends } | ${ blends }): three r187 would give both draws one pipeline; draw it under one MRT, or let MaterialBlending decide`;
+	return null;
+
+}
+
 /** Builds the draws of `object` as `renderer.compileAsync( object, camera, scene )` collects them,
  * each with three's own steps for a draw (its compileAsync loop's and `_createObjectPipeline`'s),
  * in this call instead of after an await, and without `updateBefore`, which would render the passes
@@ -72,6 +106,7 @@ export function buildDrawsNow( renderer: WebGPURenderer, object: Object3D, camer
 	const pending: Promise<unknown>[] = [];
 	const own = Object.prototype.hasOwnProperty.call( r, '_createObjectPipeline' ) ? r._createObjectPipeline! : null;
 	let nested: RenderContext | null = null;
+	let refused: string | null = null;
 	const build: CreateObjectPipeline = function ( object, material, scene, camera, lightsNode, group, clippingContext, passId ) {
 
 		// (compileAsync's own context, filled for this collection)
@@ -90,6 +125,8 @@ export function buildDrawsNow( renderer: WebGPURenderer, object: Object3D, camer
 			context = nested;
 
 		}
+		// (refused after the collection, so three's precompilation state is ended first)
+		refused ??= checkMrtBlends( renderer, material );
 		const ro = r._objects.get( object, material, scene, camera, lightsNode, context, clippingContext, passId );
 		ro.drawRange = ( object as Mesh ).geometry.drawRange;
 		ro.group = group;
@@ -115,6 +152,7 @@ export function buildDrawsNow( renderer: WebGPURenderer, object: Object3D, camer
 		else delete r._createObjectPipeline;
 
 	}
+	if ( refused !== null ) throw new Error( refused );
 	return { states, done: Promise.all( [ collected, ...pending ] ).then( () => undefined ) };
 
 }

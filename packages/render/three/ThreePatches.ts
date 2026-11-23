@@ -2,35 +2,9 @@ import { REVISION, Mesh, MeshStandardNodeMaterial, PlaneGeometry } from 'three/w
 import type { Camera, Light, Node, RenderTarget, Scene, WebGPURenderer } from 'three/webgpu';
 import { missing } from './Internals.ts';
 
-// Cache-key patches for three's node and pipeline caches: one shader per target layout.
+// Patches of three's internals where r187 has no public path, and one build ahead of the frame.
 //
-// Cache-key patches for three r187's node and pipeline caches, so a material drawn into targets
-// of different layouts (another MRT, other attachment formats or names) gets a shader and a
-// pipeline per layout. Installed by main.ts right after `renderer.init()`, before any material
-// builds.
-//
-// In r187 a draw's node build is cached by `NodeManager.getForRenderCacheKey( renderObject )`, the
-// render object's initial cache key. That key ends in its render context's id, and the contexts are
-// keyed by the attachment count, the first attachment's format and type, samples, depth, the MRT
-// and the call depth, so those already tell builds apart; the other attachments' formats and the
-// textures' names do not, though the node builder reads them while it builds (an MRT picks its
-// outputs by name): two targets of one such layout whose later attachments differ shared the first
-// one's build. The backend's `getRenderCacheKey` takes only the first colour attachment's format,
-// and nothing of the context MRT, which carries the per-attachment blend modes (WebGPUPipelineUtils
-// reads `context.mrt.getBlendMode( texture.name )`). Both keys gain the MRT and every attachment's
-// format, type and name.
-//
-// A render object keeps the node key it was first built under: three asks for it again when it
-// disposes the object (NodeManager.delete), when its shared context may hold another target's
-// textures, and a key read then would miss the build's cache entry (leaking it) or evict another
-// layout's. (A render object never changes its build: three makes a new one when its key changes.)
-//
-// `tools/render/verify-frame-graph-gpu.mjs` checks the patches (both orders of an MRT and a plain draw, a
-// swapped layout). On another three revision, or a renderer without the members they patch, they
-// throw, naming the entry of `three-internals.json` (Internals.ts `missing`): re-check them on a
-// three upgrade (packages/render/three/README.md).
-//
-// One more patch, of the bindings (`installBindingPatches`): a render object's bind groups are cloned
+// A patch of the bindings (`installBindingPatches`): a render object's bind groups are cloned
 // from its build's (NodeBuilderState.createBindings), and a cloned texture binding starts with the
 // texture its node held when the material was built; `_createBindings` makes that texture ready on
 // the GPU before the first update moves the binding to the node's current one. Once the app has
@@ -68,21 +42,9 @@ import { missing } from './Internals.ts';
 // frame. The graph declares every clear and load of the depth it owns, so it marks each target
 // with depth initialised as it binds it, and three adds no clear of its own.
 
-type Texture = { format: unknown; type: unknown; name: string };
-type RenderContext = { mrt?: { id: number } | null; textures: Texture[] | null };
-type RenderObject = { initialCacheKey: unknown; context: RenderContext };
 type Callable = ( this: unknown, ...args: unknown[] ) => unknown;
 type Host = Record<string, unknown>;
 type BindGroup = { bindings: { isSampledTexture?: boolean; textureNode?: { value: unknown } | null; texture: unknown }[] };
-
-// the attachment layout: their count, and each texture's format, type and name
-function layoutKey( context: RenderContext ): string {
-
-	const textures = context.textures;
-	if ( textures === null ) return 'canvas';
-	return `${ textures.length }:${ textures.map( ( t ) => `${ t.format }/${ t.type }/${ t.name }` ).join( ',' ) }`;
-
-}
 
 const patched = new WeakSet<object>();
 
@@ -90,49 +52,6 @@ const patched = new WeakSet<object>();
 function checkRevision( user: string, revision: string ): void {
 
 	if ( ! /^187(\.|$)/.test( revision ) ) throw missing( 'revision', `${ user } (written for r187, this is r${ revision })` );
-
-}
-
-/** Patches the renderer's node manager and backend (instances) so their cache keys include the
- * context MRT and the whole attachment layout (the node key fixed per render object). Call after
- * `renderer.init()`. Throws on a three revision other than 187, whose internals it was written
- * against, or on a renderer without the members it patches (not initialised, or not WebGPU). Returns
- * true (a patched renderer is left as it is). */
-export function installCacheKeyPatches( renderer: unknown, revision: string = REVISION ): true {
-
-	checkRevision( 'installCacheKeyPatches', revision );
-	const r = renderer as { _nodes?: Host | null; backend?: Host & { utils?: { getCurrentColorFormats?( context: RenderContext ): string[] } } };
-	const nodes = r._nodes, backend = r.backend;
-	if ( typeof nodes?.getForRenderCacheKey !== 'function' ) throw missing( 'NodeManager.getForRenderCacheKey', 'installCacheKeyPatches' );
-	if ( typeof backend?.getRenderCacheKey !== 'function' ) throw missing( 'WebGPUBackend.getRenderCacheKey', 'installCacheKeyPatches' );
-	if ( typeof backend.utils?.getCurrentColorFormats !== 'function' ) throw missing( 'WebGPUUtils.getCurrentColorFormats', 'installCacheKeyPatches' );
-	if ( patched.has( nodes ) ) return true;
-	patched.add( nodes );
-
-	const nodeKey = nodes.getForRenderCacheKey as Callable;
-	const keys = new WeakMap<RenderObject, string>();
-	nodes.getForRenderCacheKey = function ( this: unknown, renderObject: RenderObject ) {
-
-		let key = keys.get( renderObject );
-		if ( key === undefined ) {
-
-			const context = renderObject.context;
-			key = `${ nodeKey.call( this, renderObject ) }|${ context.mrt?.id ?? '-' }|${ layoutKey( context ) }`;
-			keys.set( renderObject, key );
-
-		}
-		return key;
-
-	};
-	const pipelineKey = backend.getRenderCacheKey as Callable;
-	backend.getRenderCacheKey = function ( this: unknown, renderObject: RenderObject ) {
-
-		const context = renderObject.context;
-		const formats = backend.utils!.getCurrentColorFormats!( context );
-		return `${ pipelineKey.call( this, renderObject ) },${ formats.join( '/' ) },${ context.mrt?.id ?? '-' }`;
-
-	};
-	return true;
 
 }
 

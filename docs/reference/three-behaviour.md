@@ -243,9 +243,13 @@ Under the temporal modes:
   [Materials](../bindings/building-cinematic-stylised-realism.md#materials)).
 - The blend state of each render target comes only from the pass's own MRT (`post/Motion.ts`
   `sceneMRT`, `overlayMRT`), whatever a material's MRT node says.
-- **r187.** A material drawn into two render-target layouts needs one pipeline per layout, but
-  three.js's cache keys do not tell the layouts apart. The cache keys of `three/ThreePatches.ts`
-  (`installCacheKeyPatches`) make it build once per layout.
+- An MRT and its pass's render target are a pair. three.js keys a draw's build by the MRT and its
+  pipeline by the first attachment's format, not by the later attachments' names or the MRT's
+  blend per attachment. So every output of a pass's MRT names one of the pass's attachments, every
+  pass that draws with one MRT has the same attachments in the same order
+  (`post/graph/GraphCompiler.ts` `checkMrt`), and a material is never drawn under two MRTs that
+  blend differently (`three/DrawBuilds.ts`, which refuses it in the warm-up). A material whose
+  attachments blend differently by draw takes `MaterialBlending` on its MRT.
 - The scene passes (the graph's jittered span) see the camera's projection jittered by a fraction
   of a render pixel. Work that the camera keys, culls or places uses the unjittered projection
   (`jitter.uniforms.unjitteredProjection`). The sky dome, the grass culling, the haze's froxel grid
@@ -254,7 +258,8 @@ Under the temporal modes:
 Code that changes the scene in a way its frames do not show (a seek, a jump, a new scene, a
 control that retunes a paused frame) raises a scene event (`post/SceneEvents.ts`).
 
-Check: `tools/render/verify-frame-graph-gpu.mjs` (the layouts); the rest needs judgement.
+Check: `tools/render/verify-framegraph.mjs` (the MRT and its target),
+`tools/render/verify-frame-graph-gpu.mjs` (the blends and the layouts); the rest needs judgement.
 
 ### Split draws
 

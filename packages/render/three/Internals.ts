@@ -24,7 +24,6 @@ export function missing( entry: string, user: string ): Error {
 // prototypes or other objects: their users check them.)
 const MEMBERS: [ string, string, 'object' | 'function' | 'present' ][] = [
 	[ 'Renderer._nodes', '_nodes', 'object' ],
-	[ 'NodeManager.getForRenderCacheKey', '_nodes.getForRenderCacheKey', 'function' ],
 	[ 'NodeManager.getForRender', '_nodes.getForRender', 'function' ],
 	[ 'NodeManager.updateForRender', '_nodes.updateForRender', 'function' ],
 	[ 'NodeManager.nodeFrame', '_nodes.nodeFrame', 'object' ],
@@ -60,9 +59,6 @@ const MEMBERS: [ string, string, 'object' | 'function' | 'present' ][] = [
 	[ 'WebGPUBackend.device', 'backend.device', 'object' ],
 	// (a getter that configures the canvas's context on first read: only its presence is checked)
 	[ 'WebGPUBackend.context', 'backend.context', 'present' ],
-	[ 'WebGPUBackend.utils', 'backend.utils', 'object' ],
-	[ 'WebGPUUtils.getCurrentColorFormats', 'backend.utils.getCurrentColorFormats', 'function' ],
-	[ 'WebGPUBackend.getRenderCacheKey', 'backend.getRenderCacheKey', 'function' ],
 	[ 'WebGPUBackend.createNodeBuilder', 'backend.createNodeBuilder', 'function' ],
 	[ 'WebGPUBackend.beginRender', 'backend.beginRender', 'function' ],
 	[ 'WebGPUBackend.updateAttribute', 'backend.updateAttribute', 'function' ],

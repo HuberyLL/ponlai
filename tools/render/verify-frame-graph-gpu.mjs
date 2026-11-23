@@ -1,10 +1,11 @@
 // Checks on the GPU that three draws the frame graph's passes into their MRT layouts as the graph expects.
 //
-// It covers the frame graph's compile path (packages/render/post/graph/Compile.ts, the cache-key
-// patches in packages/render/three/ThreePatches.ts) and its warm-up, the blends per attachment the
-// temporal modes rest on, and the app's own materials under their passes' MRT. The graph's
-// compiler and runtime on the CPU are checked by tools/render/verify-framegraph.mjs. Run it after a
-// change to the patches, the graph's compile or warm-up, the motion MRTs, or an upgrade of three
+// It covers the frame graph's compile path (packages/render/post/graph/Compile.ts, the refusal of a
+// material under two MRTs that blend differently in packages/render/three/DrawBuilds.ts) and its
+// warm-up, the blends per attachment the temporal modes rest on, and the app's own materials under
+// their passes' MRT. The graph's compiler and runtime on the CPU are checked by
+// tools/render/verify-framegraph.mjs. Run it after a change to the draw builds, the graph's compile
+// or warm-up, the motion MRTs, or an upgrade of three
 // (packages/render/three/README.md).
 //
 // Usage:
@@ -19,15 +20,15 @@
 //    both orders; then again with each draw compiled first through the warm-up's compile
 //    (`compileInto`, under the draw's target and MRT), whose draw must then create no pipeline.
 //    Each draw's fragment shader must have the outputs its target has (one, or two) and every
-//    attachment the values the material writes. With the cache-key patches installed
-//    (`installCacheKeyPatches`, as main.ts does), all must pass. A control shows that the probe
-//    sees the fault it guards against: the same MRT drawn into two targets of one layout whose
-//    attachments are named in the other order (unpatched three serves the first draw's shader to
-//    the second, whose outputs land in the wrong attachments); it must fail. A scene of two meshes
+//    attachment the values the material writes. One material under two MRTs of one layout that
+//    blend the velocity differently: the warm-up's compile must refuse it, and compile it under two
+//    that blend alike; a control shows the fault the refusal guards against, the second MRT's draw
+//    blending as the first's (three r187 keys the pipeline by neither); it must fail, and once it
+//    passes, three keys the blends itself and the refusal can go. A scene of two meshes
 //    is compiled under the MRT with three's own compileAsync (since r187 it builds each draw under
 //    the binding it was called with, so the MRT is unbound before the second mesh builds) and
 //    through `compileInto`; both must give each mesh the velocity output.
-// 2. What the temporal frame graph rests on, in three r187 (bare page, patched renderer): blending
+// 2. What the temporal frame graph rests on, in three r187 (bare page): blending
 //    per attachment comes only from the renderer's context MRT, here Motion.ts's sceneMRT and
 //    overlayMRT, the passes' own. Into a two-attachment target
 //    (`sceneColor`, `velocity`, half float, as the graph names them), each read back:
@@ -42,14 +43,13 @@
 //      velocity) overwrites the velocity while its colour adds;
 //    - `renderer.copyTextureToTexture` between single-sampled render-target textures, RGBA16F and
 //      R32F, copies every texel exactly.
-// 3. The app (`?debug`), in its default mode and under taa: the cache-key patches installed on its
-//    renderer, the warm-up done (FrameGraph.warmStats), and no pipeline created in the 60 frames
+// 3. The app (`?debug`), in its default mode and under taa: the warm-up done (FrameGraph.warmStats), and no pipeline created in the 60 frames
 //    after its first 60.
 // 4. The app's own materials (the taa page): a vegetation mesh with its depth copy (the meadow's
 //    near draw, a plain mesh whose blades its compute pass generates in the probe's renderer for
 //    the probe's camera and draws from indirect arguments), under a shadow-casting sun (whose pass
 //    builds their nodes without an MRT), and the storm's spray, each
-//    drawn by a fresh patched renderer into a plain target and into its pass's layout and MRT (the
+//    drawn by a fresh renderer into a plain target and into its pass's layout and MRT (the
 //    scene MRT; the spray's after-resolve MRT), in both orders, drawn and warmed (`compileInto`
 //    first). Each draw needs its own pipeline (a warmed one none), a fragment shader with one output
 //    per attachment, and the vegetation's velocity its motion class over a tenth of the target.
@@ -137,9 +137,7 @@ try {
 				perFrame.push( s.pipelines.total - n );
 
 			}
-			const nodes = s.renderer._nodes;
 			return {
-				patched: Object.prototype.hasOwnProperty.call( nodes, 'getForRenderCacheKey' ),
 				warm: s.pipeline.graph.warmStats,
 				created: s.pipelines.total - before,
 				perFrameMax: Math.max( ...perFrame ),
@@ -147,7 +145,6 @@ try {
 
 		} );
 		const mode = aa ?? 'default mode';
-		check( result.patched, `${ mode }: the app's renderer has the cache-key patches` );
 		check( result.warm !== null && result.warm.passes > 0 && ( result.warm.failed ?? [] ).length === 0, `${ mode }: the warm-up ran, nothing failed (${ JSON.stringify( result.warm ) })` );
 		check( result.created === 0, `${ mode }: no pipeline in the 60 frames after the first 60 (${ result.created })` );
 		if ( aa === 'taa' ) {
@@ -180,7 +177,6 @@ async function probeMrt() {
 	const url = ( name ) => source.match( new RegExp( `from\\s*["'](/[^"']*${ name }[^"']*)["']` ) )?.[ 1 ];
 	const THREE = await import( url( 'three_webgpu' ) );
 	const TSL = await import( url( 'three_tsl' ) );
-	const { installCacheKeyPatches } = await import( '/packages/render/three/ThreePatches.ts' );
 	const { compileInto } = await import( '/packages/render/post/graph/Compile.ts' );
 
 	const SIZE = 4;
@@ -188,11 +184,10 @@ async function probeMrt() {
 	const cases = [];
 	let serial = 0;
 
-	async function setup( patched ) {
+	async function setup() {
 
 		const renderer = new THREE.WebGPURenderer();
 		await renderer.init();
-		if ( patched && ! installCacheKeyPatches( renderer ) ) throw new Error( 'installCacheKeyPatches failed' );
 		renderer.setClearColor( new THREE.Color( CLEAR[ 0 ], CLEAR[ 1 ], CLEAR[ 2 ] ), CLEAR[ 3 ] );
 		const device = renderer.backend.device;
 		// fragment shader modules by label, and pipelines created
@@ -275,9 +270,9 @@ async function probeMrt() {
 
 	// the material drawn without and with the MRT, in `order`; `warm`: each draw compiled first
 	// through the warm-up's compile under its own target and MRT, the draw then creating no pipeline
-	async function orders( patched, order, warm ) {
+	async function orders( order, warm ) {
 
-		const env = await setup( patched );
+		const env = await setup();
 		const m = material();
 		const quad = new THREE.QuadMesh( m );
 		const single = target( [ 'output' ] ), double = target( [ 'output', 'velocity' ] );
@@ -302,33 +297,63 @@ async function probeMrt() {
 
 	for ( const warm of [ false, true ] ) for ( const order of [ 'plain-first', 'mrt-first' ] ) {
 
-		const r = await orders( true, order, warm );
+		const r = await orders( order, warm );
 		cases.push( { name: `${ warm ? 'warmed' : 'drawn' }, ${ order }`, expected: true, pass: r.ok, detail: r.detail, results: r.results } );
 
 	}
 
-	// control: one material drawn by two meshes into two targets of one layout, their attachments
-	// named in the other order (one render context: unpatched, the second mesh's draw is served the
-	// first one's shader, whose outputs go by the first target's names)
-	async function swapped( patched ) {
+	// one material under two MRTs of one layout that blend the velocity differently: three r187
+	// keys the pipeline by neither (a control: drawn, the second MRT's draw blends as the first's),
+	// and the warm-up's compile refuses it (three/DrawBuilds.ts); two MRTs that blend alike compile
+	const blendedMrt = ( blending ) => {
 
-		const env = await setup( patched );
-		const m = material();
-		const a = target( [ 'output', 'velocity' ] ), b = target( [ 'velocity', 'output' ] );
 		const mrt = velocityMrt();
-		await draw( env, new THREE.QuadMesh( m ), a, mrt );
-		const first = await verifyDraw( env, m, a, [ 'output', 'velocity' ] );
-		await draw( env, new THREE.QuadMesh( m ), b, mrt );
-		const got = [ await read( env.renderer, b, 0 ), await read( env.renderer, b, 1 ) ];
-		const ok = first.ok && near( got[ 0 ], VELOCITY ) && near( got[ 1 ], COLOR ) && env.counts.errors.length === 0;
+		if ( blending !== null ) mrt.setBlendMode( 'velocity', new THREE.BlendMode( blending ) );
+		return mrt;
+
+	};
+	{
+
+		const env = await setup();
+		const m = material();
+		const rt = target( [ 'output', 'velocity' ] );
+		const plain = blendedMrt( null ), additive = blendedMrt( THREE.AdditiveBlending );
+		await draw( env, new THREE.QuadMesh( m ), rt, plain );
+		// the additive MRT drawn twice without a clear: blended, the velocity doubles
+		env.renderer.setRenderTarget( rt );
+		env.renderer.setMRT( additive );
+		const quad = new THREE.QuadMesh( m );
+		env.renderer.autoClear = true;
+		quad.render( env.renderer );
+		env.renderer.autoClear = false;
+		quad.render( env.renderer );
+		env.renderer.setRenderTarget( null );
+		env.renderer.setMRT( null );
+		const got = await read( env.renderer, rt, 1 );
+		cases.push( { name: 'one material under two MRTs that blend differently, drawn', expected: false, pass: near( got, VELOCITY.map( ( v ) => v * 2 ) ), detail: `the additive MRT's velocity reads ${ JSON.stringify( got ) } (blended: ${ JSON.stringify( VELOCITY.map( ( v ) => v * 2 ) ) })` } );
 		env.renderer.dispose();
-		return { ok, detail: `the second target's attachments (velocity, output) read ${ JSON.stringify( got ) }` };
 
 	}
-	for ( const patched of [ false, true ] ) {
+	for ( const alike of [ false, true ] ) {
 
-		const r = await swapped( patched );
-		cases.push( { name: `attachments named in another order, ${ patched ? 'patched' : 'unpatched' }`, expected: patched, pass: r.ok, detail: r.detail } );
+		const env = await setup();
+		const m = material();
+		const quad = new THREE.QuadMesh( m );
+		const rt = target( [ 'output', 'velocity' ] );
+		let error = null;
+		try {
+
+			await compileInto( env.renderer, quad, quad.camera, rt, null, blendedMrt( null ) );
+			await compileInto( env.renderer, quad, quad.camera, rt, null, blendedMrt( alike ? null : THREE.AdditiveBlending ) );
+
+		} catch ( e ) {
+
+			error = String( e?.message ?? e );
+
+		}
+		const pass = alike ? error === null : /blend differently/.test( error ?? '' );
+		cases.push( { name: `one material compiled under two MRTs that blend ${ alike ? 'alike' : 'differently' }`, expected: true, pass, detail: alike ? ( error ?? 'compiled' ) : ( error ? `refused: ${ error.slice( 0, 120 ) }` : 'not refused' ) } );
+		env.renderer.dispose();
 
 	}
 
@@ -337,7 +362,7 @@ async function probeMrt() {
 	// warm-up's compile both build the two under it
 	for ( const bound of [ false, true ] ) {
 
-		const env = await setup( true );
+		const env = await setup();
 		const scene = new THREE.Scene();
 		const camera = new THREE.OrthographicCamera( - 1, 1, 1, - 1, 0, 1 );
 		// (two shaders: materials of one code would share the first one's program)
@@ -378,7 +403,6 @@ async function probeTemporal() {
 	const url = ( name ) => source.match( new RegExp( `from\\s*["'](/[^"']*${ name }[^"']*)["']` ) )?.[ 1 ];
 	const THREE = await import( url( 'three_webgpu' ) );
 	const TSL = await import( url( 'three_tsl' ) );
-	const { installCacheKeyPatches } = await import( '/packages/render/three/ThreePatches.ts' );
 
 	const SIZE = 4;
 	const CLEAR = [ 0.125, 0.25, 0.375, 1 ];
@@ -391,7 +415,6 @@ async function probeTemporal() {
 
 	const renderer = new THREE.WebGPURenderer();
 	await renderer.init();
-	if ( ! installCacheKeyPatches( renderer ) ) throw new Error( 'installCacheKeyPatches failed' );
 	renderer.setClearColor( new THREE.Color( CLEAR[ 0 ], CLEAR[ 1 ], CLEAR[ 2 ] ), CLEAR[ 3 ] );
 	const errors = [];
 	renderer.backend.device.addEventListener( 'uncapturederror', ( e ) => errors.push( e.error.message.split( '\n' )[ 0 ] ) );
@@ -527,7 +550,7 @@ async function probeTemporal() {
 
 // In the app's page under taa (dev server): the cache keys with the app's own materials, a
 // vegetation mesh (its depth copy and its shaded draw, and a shadow pass over them, which builds
-// their nodes without an MRT) and the storm's spray, each drawn by a fresh patched renderer into a
+// their nodes without an MRT) and the storm's spray, each drawn by a fresh renderer into a
 // plain target and into the target and MRT its pass draws with (the scene MRT; the spray's
 // after-resolve MRT), in both orders, and again with each draw compiled first by the warm-up's
 // compile (`compileInto`). Every draw of the material must have its own pipeline for its layout (a
@@ -538,7 +561,6 @@ async function probeReal() {
 	const source = await ( await fetch( '/packages/render/post/graph/FrameGraph.ts' ) ).text();
 	const url = ( name ) => source.match( new RegExp( `from\\s*["'](/[^"']*${ name }[^"']*)["']` ) )?.[ 1 ];
 	const THREE = await import( url( 'three_webgpu' ) );
-	const { installCacheKeyPatches } = await import( '/packages/render/three/ThreePatches.ts' );
 	const { compileInto } = await import( '/packages/render/post/graph/Compile.ts' );
 	const { sceneMRT, MOTION_CLASS } = await import( '/packages/render/post/Motion.ts' );
 	const { afterMRT, RAIN_OVERLAY } = await import( '/packages/render/post/AfterResolve.ts' );
@@ -558,8 +580,7 @@ async function probeReal() {
 
 		const renderer = new THREE.WebGPURenderer();
 		await renderer.init();
-		if ( ! installCacheKeyPatches( renderer ) ) throw new Error( 'installCacheKeyPatches failed' );
-		renderer.shadowMap.enabled = true;
+			renderer.shadowMap.enabled = true;
 		renderer.setClearColor( new THREE.Color( 0, 0, 0 ), 0 );
 		const device = renderer.backend.device;
 		const env = { renderer, modules: [], pipelines: [], errors: [] };

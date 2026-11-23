@@ -221,6 +221,8 @@ export class GraphDecl {
 	debugView: number | null = null;
 	private building: PassDecl | null = null;
 	private names = new Set<string>();
+	// each MRT's attachment names, in order, from the first pass that drew with it (checkMrt)
+	private mrtLayouts = new Map<object, string>();
 
 	private resource( name: string, kind: ResourceKind, desc: ResourceDesc, persistent: boolean, canvas: boolean ): ResourceHandle {
 
@@ -393,6 +395,7 @@ export class GraphDecl {
 			pass.hasMrt = flags.mrt != null;
 			pass.size = flags.size ?? null;
 			this.checkPass( pass );
+			this.checkMrt( pass, flags.mrt );
 			return flags;
 
 		} catch ( error ) {
@@ -411,6 +414,27 @@ export class GraphDecl {
 			this.building = null;
 
 		}
+
+	}
+
+	// An MRT and its pass's target are a pair (three's contract, which its cache keys rest on): an
+	// MRT picks each output's attachment by the texture's name, and three r187 keys a draw's node
+	// build by the MRT and its pipeline by the first attachment, not by the later attachments'
+	// names. So every output of the MRT names an attachment of the pass (none is computed only to be
+	// dropped; a material's own mrtNode may add the attachments the MRT leaves out), and every pass
+	// that draws with one MRT has the same attachments in the same order: a second layout would get
+	// the first one's shader, its outputs in the wrong attachments.
+	private checkMrt( pass: PassDecl, mrt: unknown ): void {
+
+		if ( mrt === null || typeof mrt !== 'object' ) return;
+		const names = pass.writes.map( ( w ) => this.resources[ w.resource ].name );
+		const outputs = ( mrt as { outputNodes?: Record<string, unknown> } ).outputNodes;
+		if ( outputs ) for ( const output of Object.keys( outputs ) ) if ( ! names.includes( output ) )
+			fail( `'${ pass.name }': its mrt writes '${ output }', which is not one of its attachments (${ names.join( ', ' ) })` );
+		const layout = names.join( ',' );
+		const first = this.mrtLayouts.get( mrt );
+		if ( first === undefined ) this.mrtLayouts.set( mrt, layout );
+		else if ( first !== layout ) fail( `'${ pass.name }' draws with an mrt another pass drew into (${ first }), into other attachments (${ layout }): give each layout an mrt of its own` );
 
 	}
 

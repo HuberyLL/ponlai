@@ -123,7 +123,7 @@ export const checks = [
 		const scene = new THREE.Scene();
 		const mesh = new THREE.Mesh( new THREE.BufferGeometry(), new THREE.MeshBasicNodeMaterial() );
 		scene.add( mesh );
-		const mrt = { id: 7 };
+		const mrt = { id: 7, getBlendMode: () => new THREE.BlendMode() };
 		g.addPass( 'opaque', 'scene', ( b ) => {
 
 			color = b.write( color, { clear: true } );
