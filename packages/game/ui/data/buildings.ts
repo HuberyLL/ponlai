@@ -40,7 +40,7 @@ export interface BuildingRow {
 	/** its small group within the group ('' for none) and that small group's name */
 	sub: SubId | '';
 	subName: string;
-	/** its icon (Icons.ts); null: not drawn yet */
+	/** its icon (IconArt.ts); null: not drawn yet */
 	icon: string | null;
 	/** resource id to count */
 	cost: Readonly<Record<string, number>>;

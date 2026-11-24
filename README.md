@@ -11,7 +11,7 @@
 **English** | [简体中文](README.zh-CN.md)
 
 [![Check](https://github.com/HuberyLL/ponlai/actions/workflows/check.yml/badge.svg)](https://github.com/HuberyLL/ponlai/actions/workflows/check.yml)
-[![MIT License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Licence: MIT, AGPL-3.0, CC](https://img.shields.io/badge/licence-MIT%20%7C%20AGPL--3.0%20%7C%20CC-blue)](LICENSE)
 [![three.js r187](https://img.shields.io/badge/three.js-r187-black?logo=threedotjs)](https://threejs.org/)
 [![WebGPU](https://img.shields.io/badge/WebGPU-required-005a9c)](https://www.w3.org/TR/webgpu/)
 [![Node.js 26](https://img.shields.io/badge/Node.js-26-5fa04e?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
@@ -162,5 +162,14 @@ Conduct](.github/CODE_OF_CONDUCT.md). To report a security issue, see [Security]
 
 ## Licence
 
-Ponlai is released under the [MIT License](LICENSE). [Credits](CREDITS.md) lists the third-party
-code and assets and their licences.
+Ponlai is licensed in layers ([LICENSE](LICENSE)):
+
+- The render pipeline (`packages/render/`), the tools and the project template: the MIT License.
+- The island, the game and the app: the GNU Affero General Public License, version 3 or later. A
+  modified version, whether it is distributed or run as an online service, comes with its source.
+- The game's creative content, that is the words the player reads and the icons' art: Creative
+  Commons Attribution-NonCommercial-ShareAlike 4.0.
+- The documentation: Creative Commons Attribution 4.0.
+
+The licences do not grant the use of the name Ponlai (蓬莱): a modified version is welcome under a
+name of its own. [Credits](CREDITS.md) lists the third-party code and assets and their licences.

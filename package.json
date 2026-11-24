@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "license": "MIT",
+  "license": "MIT AND AGPL-3.0-or-later AND CC-BY-NC-SA-4.0 AND CC-BY-4.0",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5190",
     "build": "node tools/kit/qos.mjs tsc && node tools/kit/qos.mjs vite build",

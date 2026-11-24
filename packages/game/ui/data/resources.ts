@@ -31,7 +31,7 @@ export interface ResourceRow {
 	/** its name (for screen readers and the record) */
 	name: string;
 	group: ResourceGroup;
-	/** its icon (Icons.ts); null: not drawn yet */
+	/** its icon (IconArt.ts); null: not drawn yet */
 	icon: string | null;
 	/** the simulation's item kind it counts in the stores; none: the placeholder count shows */
 	item?: string;

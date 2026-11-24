@@ -10,7 +10,7 @@ import { PALETTE } from '../Palette.ts';
 // `need`, by id), else its id.
 
 export interface NeedLook {
-	/** its icon (Icons.ts); null: not drawn yet */
+	/** its icon (IconArt.ts); null: not drawn yet */
 	icon: string | null;
 	/** its bar's colour (Palette.ts) */
 	colour: string;

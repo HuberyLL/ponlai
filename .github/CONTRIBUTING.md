@@ -75,8 +75,9 @@ why. The types are `feat`, `fix`, `perf`, `refactor`, `style`, `test`, `docs`, `
 - Assets never go into git. If your change needs a new texture, model or other file, describe it in
   the pull request with its source and licence; the maintainer publishes it in a new asset release.
 - Third-party code opens with a `/*! ... */` notice that names its source and carries its SPDX
-  copyright and licence tags, and its licence must allow the MIT release. The licence texts are in
-  `LICENSES/`, and [Credits](../CREDITS.md) lists the sources that ask for a credit.
+  copyright and licence tags, and its licence must allow the licence of the file it goes into
+  (`LICENSE`). The licence texts are in `LICENSES/`, and [Credits](../CREDITS.md) lists the sources
+  that ask for a credit.
 
 ## Send a pull request
 
@@ -89,5 +90,6 @@ The maintainer reviews the pull request and merges it.
 
 ## Licence
 
-Your contribution is released under the project's [MIT License](../LICENSE), the licence of the
-project itself.
+Your contribution is released under the licence of the files it changes or adds, as
+[LICENSE](../LICENSE) and `REUSE.toml` give it: MIT, AGPL-3.0-or-later, CC-BY-NC-SA-4.0 or
+CC-BY-4.0.
