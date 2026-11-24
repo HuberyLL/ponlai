@@ -10,7 +10,9 @@ import { LOCALES, SOURCE_LOCALE, matchLocale, type Locale } from './locales.ts';
 // key of a catalogue here, one JSON file per language: zh-CN.json is the source, written with the
 // game; en.json is its translation, kept complete with it (tools/game/verify-i18n.mjs fails on a
 // key it lacks). A key a catalogue still lacked would show the Chinese (i18next's fallback, key by
-// key). The languages and how a tag names one are in locales.ts.
+// key). The languages and how a tag names one are in locales.ts. The catalogues are the game's
+// creative content and carry its licence, not the code's (REUSE.toml), so the words stay in them,
+// never in code.
 //
 // The language is a load-time setting, read once from `?lang=` (zh-CN or en; none or another:
 // zh-CN). On a player's page the app fills it in when the address names none: the language chosen

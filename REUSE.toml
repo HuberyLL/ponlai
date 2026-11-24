@@ -1,13 +1,54 @@
 # Licensing of the files that carry no tags of their own (https://reuse.software/spec-3.3/).
-# Ponlai's own files are MIT. A file holding third-party code carries that code's SPDX tags in its
-# /*! */ notice; "aggregate" adds them to the lines below rather than replacing them.
+# Ponlai is licensed in layers (LICENSE): the render pipeline and the tools are MIT, the island, the
+# game and the app are AGPL-3.0-or-later, the game's creative content (the words the player reads,
+# the icons' art) is CC-BY-NC-SA-4.0, and the documentation is CC-BY-4.0. A file holding
+# third-party code carries that code's SPDX tags in its /*! */ notice; "aggregate" adds them to the
+# lines below rather than replacing them. Where several tables match a file, the last one applies.
 version = 1
 
+# Everything not named below: the render pipeline, the tools, the template, the configuration.
 [[annotations]]
 path = "**"
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Hubery"
 SPDX-License-Identifier = "MIT"
+
+# The island, the game and the app that assembles them.
+[[annotations]]
+path = [
+	"app/**",
+	"packages/island/**",
+	"packages/game/**",
+	"index.html",
+	"scenes.html",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Hubery"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# The documentation: the Markdown pages, the skills among them.
+[[annotations]]
+path = "**/*.md"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Hubery"
+SPDX-License-Identifier = "CC-BY-4.0"
+
+# The template is copied into new projects, so all of it stays MIT, its pages included.
+[[annotations]]
+path = "templates/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Hubery"
+SPDX-License-Identifier = "MIT"
+
+# The game's creative content: the words the player reads and the icons' art.
+[[annotations]]
+path = [
+	"packages/game/ui/i18n/*.json",
+	"packages/game/ui/IconArt.ts",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Hubery"
+SPDX-License-Identifier = "CC-BY-NC-SA-4.0"
 
 # The game interface's fonts come from npm; their licence texts travel with the build.
 [[annotations]]

@@ -10,7 +10,7 @@
 [English](README.md) | **简体中文**
 
 [![Check](https://github.com/HuberyLL/ponlai/actions/workflows/check.yml/badge.svg)](https://github.com/HuberyLL/ponlai/actions/workflows/check.yml)
-[![MIT License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Licence: MIT, AGPL-3.0, CC](https://img.shields.io/badge/licence-MIT%20%7C%20AGPL--3.0%20%7C%20CC-blue)](LICENSE)
 [![three.js r187](https://img.shields.io/badge/three.js-r187-black?logo=threedotjs)](https://threejs.org/)
 [![WebGPU](https://img.shields.io/badge/WebGPU-required-005a9c)](https://www.w3.org/TR/webgpu/)
 [![Node.js 26](https://img.shields.io/badge/Node.js-26-5fa04e?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
@@ -120,4 +120,11 @@ claude plugin install ponlai@ponlai
 
 ## 许可证
 
-Ponlai 以 [MIT 许可证](LICENSE)发布。[致谢](CREDITS.md)列出了第三方代码和资源及其许可证。
+Ponlai 分层授权（[LICENSE](LICENSE)）：
+
+- 渲染管线（`packages/render/`）、工具和项目模板：MIT 许可证。
+- 小岛、游戏和应用：GNU Affero 通用公共许可证第 3 版或更新版本。修改后的版本无论是分发还是作为在线服务运行，都要附上源码。
+- 游戏的创作内容，即玩家读到的文字和图标的美术：知识共享 署名-非商业性使用-相同方式共享 4.0。
+- 文档：知识共享 署名 4.0。
+
+这些许可证不授予 Ponlai（蓬莱）这个名字的使用权：欢迎发布修改版，但请用自己的名字。[致谢](CREDITS.md)列出了第三方代码和资源及其许可证。

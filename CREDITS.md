@@ -1,6 +1,8 @@
 # Credits
 
-Ponlai is released under the MIT License (`LICENSE`). This page lists the third-party sources whose
+Ponlai is licensed in layers (`LICENSE`): the render pipeline and the tools are MIT, the island, the
+game and the app are AGPL-3.0-or-later, the game's creative content is CC-BY-NC-SA-4.0 and the
+documentation is CC-BY-4.0. This page lists the third-party sources whose
 licences ask for a notice or a credit. The repository follows the
 [REUSE specification](https://reuse.software/spec-3.3/): a file holding third-party code carries
 that code's SPDX copyright and licence tags in its `/*! */` notice, `REUSE.toml` covers the files
@@ -85,7 +87,8 @@ given in `public/` (`tools/repo/assets.mjs`). A file made by a tool says how in 
   acknowledgement, which this is. `public/sky/stars.bin`.
 - *Ultimate Modular Men Pack*, Quaternius,
   [quaternius.com](https://quaternius.com/packs/ultimatemodularcharacters.html), CC0-1.0:
-  `public/characters/hanming/` is built from it.
+  `public/characters/hanming/` is built from it, and Ponlai's changes to it are the game's creative
+  content, CC-BY-NC-SA-4.0.
 - *A single white feather closeup*, João Estevão Andrade de Freitas,
   [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:A_single_white_feather_closeup.jpg),
   public domain: `public/characters/hanming/textures/feather-atlas.png`.
