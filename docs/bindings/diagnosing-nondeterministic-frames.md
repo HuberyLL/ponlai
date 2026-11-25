@@ -18,6 +18,14 @@ Check a fingerprint against these first.
   pixels one level apart over the water, small clusters in shallow water, and the pre-exposure's EV
   different in its last bits. In the hashes, only layer 2 of the wave maps' target differs. It was
   fixed by computing the ratio per triangle in the vertex stage.
+- Under the temporal modes, a held result whose rest is not aligned with the temporal rest. The sea
+  reflection's rest (`packages/render/ocean/SeaReflection.ts`) is traced under the frame's jitter.
+  It once started a frame before the temporal rest, so its first frame took the running
+  sequence's jitter, whose place depends on how many frames the page had drawn. Fingerprint: a scene
+  jump under `aa=taa` differs from fresh loads, which agree with each other, in low-frequency blotches
+  over the near water (about 10 % of the pixels, window bias near 0.3 to 0.5). `diff-set.py`'s best
+  pairing can hide it when one side of a pair is a load rather than a jump. To check it, record each
+  frame's rest index beside the jitter's `k` (`P.jitter`) on both paths.
 - Draws split differently, the order in which materials are first built, and draws skipped while
   their pipeline compiles: see Split draws, Build order and Draws skipped while compiling in
   `docs/reference/three-behaviour.md`.
