@@ -1143,9 +1143,15 @@ export class Pipeline {
 			frame.settle !== undefined && this.settled.sceneQuiet, this.settled.settle );
 		const projection = TEMPORAL ? jitter.uniforms.unjitteredProjection.value : camera.projectionMatrix;
 		const haze = frame.haze ?? { time: frame.time, signature: [], stable: false };
+		// (the sea's reflection rests once the haze's has: the opaque image it reflects is then still.
+		// It reads the haze's rest as it stood before this frame's update, as the temporal rest does
+		// (RenderStages.ts `temporalFrame`), so both rests start on the same frame and the reflection's
+		// i-th rest frame is traced under the temporal rest's i-th jitter. Read after the update, it
+		// started a frame early, under the running sequence's jitter, which depends on how many frames
+		// the page had drawn: a scene jump then held another reflection than a fresh load.)
+		const hazeRested = ! this.air.pending;
 		this.air.update( camera, projection, this.width, this.height, this.outputWidth, this.outputHeight, haze );
-		// (the sea's reflection rests once the haze's has: the opaque image it reflects is then still)
-		this.seaReflection.update( camera, projection, this.width, this.height, { ...haze, stable: haze.stable && ! this.air.pending } );
+		this.seaReflection.update( camera, projection, this.width, this.height, { ...haze, stable: haze.stable && hazeRested } );
 		this.shafts.update( camera as THREE.PerspectiveCamera, this.air.seaLevelExtinction, this.air.transmittance( camera.position.y, this.shafts.flareDirection ), projection );
 		this.updateDisplay( frame );
 		this.u.afterOn.value = frame.afterScene !== undefined ? 1 : 0;

@@ -104,7 +104,10 @@ type Histories = Pick<FrameGraph<never>, 'color' | 'previous' | 'texture' | 'cop
 // the clock, the sizes, the scene's epoch, the pre-exposure, the app's signature and the box the
 // reflection traces in. At its first frame of the sequence the histories are cleared, and the
 // passes run its `sequence` frames with the rest's own noise indices: what they hold after the last
-// one is a function of the scene and of the opaque frames they read. It is then held: the passes
+// one is a function of the scene and of the opaque frames they read. Under the temporal modes those
+// frames are jittered: the rest starts on the temporal rest's frame (both wait for the haze's rest
+// as it stood before the frame: Pipeline.ts `render`), so its i-th frame is traced under that rest's
+// i-th jitter, never the running sequence's, whose place depends on the page's path. It is then held: the passes
 // stop and the water reads the last resolve. `pending` holds the page's settled signal until then.
 // A cut (SceneHistory) and a scene jump clear the histories and the rest. Under MSAA a few opaque
 // frames of a paused page can differ in their last bits from load to load (the browser's or the
